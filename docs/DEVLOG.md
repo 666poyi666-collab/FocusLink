@@ -17,6 +17,10 @@
 - 兼容收口：旧“已授权设备生成码”路径也申请 `devices:manage`，与新设备本机码反向批准路径权限一致；定向 typecheck 与 64 项账户/移动/权限回归通过，仍归入 0.12.104。
 - 权限收口源码提交为 `9b6138c`；已有 `106dcbf` Windows/APK 候选随之废弃，0.12.104 将从新提交重新构建和覆盖安装，不复用旧哈希。
 - 权限收口最终候选身份为 `8db91bf`：Windows 启动验证与 `/S` 覆盖回读通过，华为回读 `0.12.104/1304`；小米仍因旧签名拒绝覆盖并保留 `0.12.87`。最终 APK SHA256 `BA19FD3A2488F3189E49D00388D1F14E7D9143B49202C55EE13BC510E6C6B107`，Windows 哈希已更新到候选目录。
+- 用户否决“第一台/已授权设备/陌生人猜码/尝试过多”设计前提，并明确个人本地产品无需此限制。0.12.104 普通流程改为两台无凭据设备直接互配：A 生成码，B exchange 后获得独立凭据，A 自动 claim 获得独立凭据，两台进入同一同步空间；管理员网页退出客户端入口。
+- pairing request/exchange/claim 的公网 RateLimit 调用已移除；同一 installation 重复提交同一码确定性返回同一 token，不再报“已使用”。真实本地 Durable Object 已验证两台无登录设备直连、双方 status/task/live/ledger 访问以及 exchange/claim 幂等重试。
+- 生产 gateway `e6278900-14d2-4a7b-b016-0c92a2224814` 与 authority `a005d012-c856-4d7e-a05f-8b65c0e2f57a` 上，两台无登录临时设备真实直连成功：双方 status/tasks/live/ledger 均 200，task revision 33、live revision 101，exchange/claim 重试凭据一致。
+- 生产清理捕获私有 Worker 撤销路径把 `/sync/v2` 错替换为空、导致 `/devices/.../revoke` 404；修正保留 `/v2` 并部署 authority `f66f74e6-7245-405e-baf7-f97f04a1aff4`。复验已撤销全部 8 台临时 smoke 设备，撤销均 200，双方 status 变为 401。
 
 ## 2026-08-25
 

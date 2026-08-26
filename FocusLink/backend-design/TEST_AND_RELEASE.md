@@ -111,7 +111,7 @@ OAuth/device 双向拒绝、`opId` applied/duplicate/复用拒绝、旧 revision
 
 账号 bootstrap 门禁必须覆盖严格 start/poll 字段、canonical `/owner/*` URL、`flb_*` poll token 短期单次消费、过期 flow、额外字段、错误 origin、凭据/日志脱敏和“未登录不得 authenticated”。`npm run probe:account-bootstrap` 只输出结构化状态；只有 `deployed-login-required` 返回成功退出码，`not-deployed` 是可诊断的真实阻塞，不算公网通过。上线验收必须在无旧凭据的新安装上完成 owner 登录、独立 `fl2` 签发和第二次 poll 拒绝，并确认旧安装原位升级仍在线。
 
-可信设备短码配对门禁额外覆盖：offer 只有合法 `fl2 + sync:write` 或 dedicated pair-service authority 能创建；设备路径只返回 8 位数字 code + 10 分钟 expiresAt，DO 落盘只含域分离 HMAC。exchange 不携带 bearer，必须绑定完整 installationId/displayName/platform/deviceKind/appVersion，签发的 deviceId 与 token identity 一致且 scopes 精确为 sync/live 四项。错误码、过期、单次消费、重放、跨账号/绑定不符、短码碰撞有界重试、client/credential-hash 限流和日志脱敏都必须有负测。真实验收从已登录设备生成码，在全新隔离 profile/新设备输入；成功后分别确认任务 revision 收敛、live 长轮询确认和 completed-ledger 同步，任何一条不能由另外两条冒充。
+8 位短码配对门禁额外覆盖：两台都没有凭据时，设备 A `/pair/requests` 生成 code/request token，设备 B `/pair/exchange` 输入 code 后获得独立凭据，设备 A `/pair/claim` 自动获得独立凭据；两者进入同一 account。exchange 不携带 bearer，必须绑定完整 installationId/displayName/platform/deviceKind/appVersion；同 installation 重试返回相同 token，其他 installation 重用已占用码失败。配对入口不得返回 429，不设 client/credential 次数限流；短码跨表碰撞、过期、绑定不符和日志脱敏必须有负测。成功后分别确认任务 revision、live 长轮询和 completed-ledger 收敛，任何一条不能由另外两条冒充。
 
 任务快照 freshness 门禁使用不含真实任务正文的 fixture，覆盖发布回读一致性、GET `no-store`、前台 15 秒自动刷新、revision 36→37 收敛、延迟 36 不回退、同 revision 异文拒绝，以及父子 ID/parentId 数量守恒。Account DO 与 loopback 都必须接受 `publishedAt = serverTime + 5 分钟` 以内的边界值、拒绝超限值并返回 `422 task_snapshot_timestamp_too_far_ahead`，且超限不得改写当前 register；已持久化 legacy far-future 快照必须可由合法新快照恢复。桌面 durable pending 收到该 422 后只可执行一次可信 GET 与一次重戳 POST；第二次 422、GET/解析/重试失败或连接 scope/generation 变化均保留 pending，`stale_task_snapshot` 才可清除，`task_snapshot_conflict` 必须保留。
 

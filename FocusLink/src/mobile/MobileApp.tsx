@@ -640,7 +640,7 @@ export function MobileApp() {
       setCommandNotice(
         token
           ? '本机配对码已生成，可在新设备中输入'
-          : '本机配对码已生成，请在一台已授权设备中输入；本机会自动加入',
+          : '本机配对码已生成，请在另一台设备输入；两台会自动加入同步',
       );
     } catch (error) {
       setCommandNotice(errorMessage(error));
@@ -2060,7 +2060,6 @@ export function MobileApp() {
             pairingOffer={pairingOffer}
             devices={managedDevices}
             onClose={() => setConfigOpen(false)}
-            onLogin={() => void bootstrapOwnerAccount()}
             onPairingCodeChange={(value) => setPairingCode(normalizePairingCodeInput(value))}
             onPair={(value) => void redeemPairingCode(value)}
             onCreatePairingCode={() => void createPairingCode()}

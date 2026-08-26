@@ -18,13 +18,14 @@ describe('desktop FocusLink account settings', () => {
     expect(source).not.toContain('deviceSyncToken');
   });
 
-  it('offers trusted-device pairing, recovery, sync status and logout', () => {
+  it('offers direct local pairing, sync status and logout', () => {
     expect(source).toContain('FocusLink 设备授权');
     expect(source).toContain('8 位设备配对码');
     expect(source).toContain('显示本机配对码');
     expect(source).toContain('已配对设备');
     expect(source).toContain('删除设备');
-    expect(source).toContain('首次授权（只需一次）');
+    expect(source).toContain('输入一次就能把两台连起来');
+    expect(source).not.toContain('首次授权（只需一次）');
     expect(source).toContain('本机功能不依赖登录');
     expect(source).toContain('退出登录');
   });

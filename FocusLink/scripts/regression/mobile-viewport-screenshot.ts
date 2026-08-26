@@ -405,8 +405,8 @@ async function validateFreshInstall(indexPath: string): Promise<void> {
     assert(
       accountGuide.text.includes('每台设备都有自己的配对码') &&
         accountGuide.text.includes('显示本机配对码') &&
-        accountGuide.text.includes('首次设备授权'),
-      'device authorization sheet does not expose pairing and first-device recovery',
+        !accountGuide.text.includes('首次设备授权'),
+      'device authorization sheet does not expose direct local pairing',
     );
     win.showInactive();
     await sleep(80);

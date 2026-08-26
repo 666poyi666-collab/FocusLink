@@ -12,7 +12,6 @@ export interface ConnectionSheetProps {
   pairingOffer: { code: string; expiresAt: number; requestToken?: string } | null;
   devices: DeviceSyncManagedDevice[];
   onClose: () => void;
-  onLogin: () => void;
   onPairingCodeChange: (value: string) => void;
   onPair: (value?: string) => void;
   onCreatePairingCode: () => void;
@@ -30,7 +29,6 @@ export function ConnectionSheet({
   pairingOffer,
   devices,
   onClose,
-  onLogin,
   onPairingCodeChange,
   onPair,
   onCreatePairingCode,
@@ -104,9 +102,7 @@ export function ConnectionSheet({
         onPair();
       }}
     >
-      <label htmlFor="focuslink-pairing-code">
-        {authenticated ? '输入新设备显示的本机配对码' : '输入另一台已授权设备的本机配对码'}
-      </label>
+      <label htmlFor="focuslink-pairing-code">输入另一台设备显示的本机配对码</label>
       <input
         ref={pairingInputRef}
         id="focuslink-pairing-code"
@@ -128,9 +124,7 @@ export function ConnectionSheet({
         aria-describedby="focuslink-pairing-code-status"
       />
       <span id="focuslink-pairing-code-status" className="account-pairing-hint">
-        {authenticated
-          ? '输入后会批准那台新设备，它会自动加入同步'
-          : '也可以把上方本机码输入已授权设备，批准后本机会自动加入'}
+        输入后会把两台设备连到同一同步空间
       </span>
       <button
         ref={primaryRef}
@@ -203,7 +197,7 @@ export function ConnectionSheet({
 
         {pairingOffer && (
           <div className="account-pairing-offer" role="status">
-            <span>本机配对码 · {authenticated ? '可在新设备输入' : '请在已授权设备输入'}</span>
+            <span>本机配对码 · 请在另一台设备输入</span>
             <strong>
               {pairingOffer.code.slice(0, 4)} {pairingOffer.code.slice(4)}
             </strong>
@@ -232,8 +226,8 @@ export function ConnectionSheet({
         {!authenticated ? (
           <>
             <div className="account-pairing-simple">
-              <strong>任选一种方式，结果一样</strong>
-              <p>把本机码输入已授权设备，或在这里输入已授权设备的码。</p>
+              <strong>把任一设备的码输入另一台</strong>
+              <p>输入一次就会把两台设备连到同一同步空间。</p>
             </div>
             {pairingEntry}
             <button
@@ -244,13 +238,6 @@ export function ConnectionSheet({
             >
               {pairingOffer ? '刷新本机配对码' : '显示本机配对码'}
             </button>
-            <details className="account-owner-fallback">
-              <summary>首次设备授权</summary>
-              <p>如果没有任何已授权设备，先完成一次账号授权。之后所有设备都用本机配对码加入。</p>
-              <button type="button" onClick={onLogin} disabled={busy}>
-                打开首次授权
-              </button>
-            </details>
           </>
         ) : (
           <>

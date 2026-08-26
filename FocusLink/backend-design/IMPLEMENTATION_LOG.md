@@ -3,11 +3,11 @@
 ## 2026-08-26 · v0.12.104 每台设备本机码与反向批准
 
 - **用户反证**：0.12.103 未授权设备只能输入另一台设备的码，点击首次授权则进入裸露英文管理员页面；这仍不是用户要求的“每台设备都有配对码”。
-- **方案比较**：继续让已授权设备生成 offer 改动小，但新设备没有可读身份且配对方向固定；新增 request → approve → claim 三段协议多一组状态，却能让新设备先显示自己的码，同时保持已授权设备作为信任根。采用后者，并保留旧 offer → exchange 兼容路径。
-- **协议**：未授权设备向 `/sync/v1/pair/requests` 提交完整 installation metadata，收到 8 位码、10 分钟过期时间与只留本机的高强度 request token；已授权设备向 `/approve` 提交短码；申请设备通过 `/claim` 轮询，批准后获得按 installation 稳定绑定的独立凭据并自动启动任务、live 与账本同步。
-- **安全边界**：短码和 request token 分别做域分离 HMAC，服务端不保存明文；request/claim 明确拒绝 bearer，approve 明确要求 `fl2 + sync:write`；领取凭据由 request token 确定性派生，使成功响应丢失后可在 10 分钟内幂等重试。新配对凭据包含 `devices:manage`，设备撤销不删除云端业务数据。
-- **三端交互**：PC、手机和平板都会显示本机码；未授权设备把码输入任一已授权设备即可等待自动加入，也可继续输入已授权设备的码立即加入；已授权设备的输入框改为“批准设备”。完全没有已授权设备时仍需首次管理员授权，不能让两个陌生未授权设备互相提升权限。
-- **身份页修复**：生产共享 OAuth 已部署 `a6137e93-0e49-463b-ad91-3b80bc2ead52`；公网回读 `授权第一台设备 · FocusLink`、CSP/no-store/frame deny 正确，1365×900 与 390×844 渲染无横向溢出。
+- **最终产品取舍**：用户明确拒绝“第一台/已授权设备/陌生人猜码”的账号安全叙事，并确认这是个人本地产品。最终采用两台无凭据设备直接互配：任一设备输入另一台的 8 位码一次，两台进入同一固定同步空间；Poyi owner 页面退出普通入口。
+- **协议**：设备 A `/sync/v1/pair/requests` 提交 installation metadata，收到 8 位码、10 分钟过期时间与只留本机的高强度 request token；设备 B `/pair/exchange` 输入该码后获得自己的独立 `fl2`，A 的 `/pair/claim` 随后自动获得自己的 `fl2`。旧 offer/approve 路径只保留兼容。
+- **幂等与次数**：同一 installation 在 TTL 内重复 exchange 或 claim 确定性获得同一凭据，不再返回“已使用”；其他 installation 占用同一码才 410。public edge 移除 pairing request/exchange/claim 的 RateLimit 调用，不再出现“尝试次数过多”。短码和 request token 仍分别只以域分离 HMAC 落盘，日志不含明文。
+- **三端交互**：PC、手机和平板统一只显示“本机配对码 / 输入另一台设备的本机配对码 / 加入同步”，不出现第一台、已授权、批准或管理员码。配对后的设备都包含 `devices:manage`；撤销设备不删除业务数据。
+- **旧身份页退场**：生产共享 OAuth 中文页版本 `a6137e93-0e49-463b-ad91-3b80bc2ead52` 仍作为后台维护兼容存在，但普通 FocusLink 客户端不再打开或要求 43 位管理员码。
 - **候选身份**：0.12.103 已实际安装，新增跨端行为不得复用；候选提升为 0.12.104/1304。按版本节流，本组后续测试与 UI 修补继续使用 0.12.104。
 - **本轮门禁**：根类型检查、Lint、全量 Vitest `120 files / 898 tests`、移动 360/412/640/760/915 横竖屏、桌面 UI、Cloudflare 本地真实配对闭环与 MCP `108` 项通过；Android `assembleDebug`、`testDebugUnitTest`、`lintDebug` 均通过并回读 `0.12.104/1304`。含中文路径首次运行 Gradle 的 7 个 `ClassNotFoundException` 通过同一工作区 `F:` 短路径重跑消除，确认是 Gradle worker 路径解析问题而非 Android 源码失败。
 - **线上部署**：公网 gateway `foxlink-mcp` 版本 `f34ee99a-ad22-42d7-aa84-3492554cf23b`，私有 authority `focuslink-sync` 版本 `6e525dd1-73f4-402c-b52e-feab7343416b`；`/healthz=200`，匿名 request/claim/approve credential boundary 负测分别回读 400/400/401，匿名 request 携 bearer 回读 403。
@@ -15,6 +15,9 @@
 - **最终回填**：根 `npm test` `120 files / 898 tests`、`npm audit --audit-level=high` 0、typecheck/lint/format、打包版 UI/mini/live fallback smoke 全部通过。Windows `/S` exit 0，卸载项与安装 EXE 均回读 `0.12.104`，应用已重启；Android APK 备份 SHA256 `1F641CC7FB3BDC4E822EEEF301FA26264A645E8A0005EB7479D439500BF1661A`。华为平板真机生成本机码并截图确认倒计时、输入框自动聚焦与软键盘不遮挡；小米仍因签名不一致 BLOCKED。最终 EXE 哈希见 `release-v012104/SHA256SUMS.txt`。
 - **兼容收口**：旧的“已授权设备生成码”路径也统一申请 `devices:manage`，与“新设备本机码反向批准”路径权限一致；定向 typecheck 与 64 项账户/移动/权限回归通过，仍归入 0.12.104，不新增版本号。权限收口候选源码身份更新为 `8db91bf`，重新构建后的 Windows/APK 旧哈希全部废弃。
 - **权限候选重验**：从系统临时目录重新打包，启动验证回读 `0.12.104 / 8db91bf`；Windows `/S` exit 0，卸载项与安装 EXE 回读 `0.12.104`；华为覆盖安装回读 `0.12.104/1304`，小米仍因旧签名 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 保留 `0.12.87`，不卸载不清数据。新 APK SHA256 `BA19FD3A2488F3189E49D00388D1F14E7D9143B49202C55EE13BC510E6C6B107`。
+- **用户纠正后的直连闭环**：普通配对最终改为两台无凭据设备直接互配，移除 pairing request/exchange/claim 的公网 RateLimit 调用；同 installation 重试 exchange/claim 返回同一凭据。UI 删除“第一台、已授权、批准、管理员码”及恢复入口，只保留双方 8 位码。
+- **生产实证**：私有 authority `a005d012-c856-4d7e-a05f-8b65c0e2f57a`、公网 gateway `e6278900-14d2-4a7b-b016-0c92a2224814` 首次部署后，两个无登录临时设备成功直连，双方 status/tasks/live/ledger 均 200，task revision `33`、live revision `101`，exchange/claim 重试 token 保持一致。
+- **Bug-02（设备撤销路径丢失 `/v2`）**：生产 smoke 清理临时设备时 `/sync/v2/devices/:id/revoke` 回读 404。根因是私有 Worker 将 canonical 路径误映射成 `/devices/:id/revoke`；修正为 `/v2/devices/:id/revoke` 并部署 `f66f74e6-7245-405e-baf7-f97f04a1aff4`。第二次生产 smoke 撤销全部 8 台临时设备，所有 revoke 200，双方撤销后 status 401。
 
 ## 2026-08-25 · v0.12.103 配对超时与本机配对码
 

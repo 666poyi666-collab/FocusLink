@@ -231,7 +231,7 @@ export async function approveDeviceSyncPairingCode(
 ): Promise<DeviceSyncPairingApprovalResult> {
   const token = getDeviceSyncToken();
   if (!token || !isFocusLinkDeviceAccessToken(token)) {
-    throw new Error('只有已授权设备可以批准另一台设备');
+    throw new Error('当前设备还没有加入同步');
   }
   const code = normalizeFocusLinkPairingCode(codeInput);
   if (!FOCUSLINK_PAIRING_CODE_PATTERN.test(code)) throw new Error('请输入 8 位数字配对码');
@@ -618,7 +618,7 @@ function pairingErrorMessage(value: unknown, status: number): string {
           : ''
     : '';
   if (code === 'pairing_expired') return '配对码已过期或已使用';
-  if (code === 'pair_rate_limited') return '尝试次数过多，请稍后再试';
+  if (code === 'pair_rate_limited') return '配对服务暂时忙，请直接重试';
   if (code === 'scope_denied' || status === 401 || status === 403)
     return '当前设备没有生成配对码的权限';
   return `配对服务返回 HTTP ${status}`;

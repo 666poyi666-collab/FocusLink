@@ -686,8 +686,13 @@ async function verifyNumericPairing(context: ProtocolContext, runId: string): Pr
     redirect: 'error',
     signal: AbortSignal.timeout(5_000),
   });
-  assert.equal(replay.status, 410, `${runId} numeric pairing replay must be rejected`);
-  assert.equal(await responseErrorCode(replay), 'pairing_expired');
+  assert.equal(replay.status, 200, `${runId} numeric pairing retry must be idempotent`);
+  const replayedCredential = (await replay.json()) as {
+    accessToken?: unknown;
+    deviceId?: unknown;
+  };
+  assert.equal(replayedCredential.accessToken, credential.accessToken);
+  assert.equal(replayedCredential.deviceId, credential.deviceId);
 }
 
 async function verifyDeviceOwnedPairing(context: ProtocolContext, runId: string): Promise<void> {
@@ -744,22 +749,45 @@ async function verifyDeviceOwnedPairing(context: ProtocolContext, runId: string)
     retryAfterMs: 1_500,
   });
 
-  const approval = await fetch(context.endpoint + '/sync/v1/pair/approve', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${context.deviceToken}`,
-      'content-type': 'application/json',
+  const peerInstallationId = `peer-${randomToken(24)}`;
+  const peerBody = {
+    code: pairingRequest.code,
+    device: {
+      installationId: peerInstallationId,
+      displayName: 'FocusLink peer protocol device',
+      platform: 'web',
+      deviceKind: 'phone',
+      appVersion: 'protocol-test',
     },
-    body: JSON.stringify({ code: pairingRequest.code }),
+  };
+  const peerExchange = await fetch(context.endpoint + '/sync/v1/pair/exchange', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(peerBody),
     redirect: 'error',
     signal: AbortSignal.timeout(5_000),
   });
-  assert.equal(approval.status, 200);
-  assert.deepEqual(await approval.json(), {
-    status: 'approved',
-    displayName: device.displayName,
-    expiresAt: pairingRequest.expiresAt,
+  assert.equal(peerExchange.status, 200);
+  const peerCredential = (await peerExchange.json()) as {
+    accessToken?: unknown;
+    deviceId?: unknown;
+    scopes?: unknown;
+  };
+  const parsedPeer = parseDeviceToken(String(peerCredential.accessToken));
+  assert(parsedPeer, `${runId} direct peer exchange did not return an fl2 credential`);
+  assert.equal(peerCredential.deviceId, `device-${parsedPeer.devicePublicId}`);
+
+  const peerRetry = await fetch(context.endpoint + '/sync/v1/pair/exchange', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(peerBody),
+    redirect: 'error',
+    signal: AbortSignal.timeout(5_000),
   });
+  assert.equal(peerRetry.status, 200);
+  const retriedPeer = (await peerRetry.json()) as { accessToken?: unknown; deviceId?: unknown };
+  assert.equal(retriedPeer.accessToken, peerCredential.accessToken);
+  assert.equal(retriedPeer.deviceId, peerCredential.deviceId);
 
   const claimed = await fetch(context.endpoint + '/sync/v1/pair/claim', {
     method: 'POST',
@@ -819,6 +847,13 @@ async function verifyDeviceOwnedPairing(context: ProtocolContext, runId: string)
     method: 'GET',
   });
   assert.equal(Number.isSafeInteger(pairedLive.snapshot.revision), true);
+  const peerContext: ProtocolContext = {
+    endpoint: context.endpoint,
+    installationId: peerInstallationId,
+    deviceId: String(peerCredential.deviceId),
+    deviceToken: String(peerCredential.accessToken),
+  };
+  assertEpoch(await request<EpochStatus>(peerContext, '/sync/v2/status', { method: 'GET' }));
 }
 
 async function verifyPersistence(context: ProtocolContext, state: SavedState): Promise<void> {
