@@ -18,6 +18,7 @@
 - **用户纠正后的直连闭环**：普通配对最终改为两台无凭据设备直接互配，移除 pairing request/exchange/claim 的公网 RateLimit 调用；同 installation 重试 exchange/claim 返回同一凭据。UI 删除“第一台、已授权、批准、管理员码”及恢复入口，只保留双方 8 位码。
 - **生产实证**：私有 authority `a005d012-c856-4d7e-a05f-8b65c0e2f57a`、公网 gateway `e6278900-14d2-4a7b-b016-0c92a2224814` 首次部署后，两个无登录临时设备成功直连，双方 status/tasks/live/ledger 均 200，task revision `33`、live revision `101`，exchange/claim 重试 token 保持一致。
 - **Bug-02（设备撤销路径丢失 `/v2`）**：生产 smoke 清理临时设备时 `/sync/v2/devices/:id/revoke` 回读 404。根因是私有 Worker 将 canonical 路径误映射成 `/devices/:id/revoke`；修正为 `/v2/devices/:id/revoke` 并部署 `f66f74e6-7245-405e-baf7-f97f04a1aff4`。第二次生产 smoke 撤销全部 8 台临时设备，所有 revoke 200，双方撤销后 status 401。
+- **最终源码身份**：无登录直连、无配对次数限流、同 installation 幂等和设备撤销修正提交为 `d22962c`；旧 `8db91bf` 二进制废弃，0.12.104 从新身份重新构建，不增加版本号。
 
 ## 2026-08-25 · v0.12.103 配对超时与本机配对码
 

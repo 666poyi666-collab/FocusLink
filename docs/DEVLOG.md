@@ -21,6 +21,7 @@
 - pairing request/exchange/claim 的公网 RateLimit 调用已移除；同一 installation 重复提交同一码确定性返回同一 token，不再报“已使用”。真实本地 Durable Object 已验证两台无登录设备直连、双方 status/task/live/ledger 访问以及 exchange/claim 幂等重试。
 - 生产 gateway `e6278900-14d2-4a7b-b016-0c92a2224814` 与 authority `a005d012-c856-4d7e-a05f-8b65c0e2f57a` 上，两台无登录临时设备真实直连成功：双方 status/tasks/live/ledger 均 200，task revision 33、live revision 101，exchange/claim 重试凭据一致。
 - 生产清理捕获私有 Worker 撤销路径把 `/sync/v2` 错替换为空、导致 `/devices/.../revoke` 404；修正保留 `/v2` 并部署 authority `f66f74e6-7245-405e-baf7-f97f04a1aff4`。复验已撤销全部 8 台临时 smoke 设备，撤销均 200，双方 status 变为 401。
+- 无登录直连与撤销修正的源码身份为 `d22962c`；0.12.104 将从该提交重新生成 Windows/APK 候选，前一轮 `8db91bf` 二进制不再作为最终交付。
 
 ## 2026-08-25
 
