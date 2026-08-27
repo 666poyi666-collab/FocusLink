@@ -453,13 +453,6 @@ export function SettingsPanel() {
     }
     setDeviceSyncSaving(true);
     try {
-      if (deviceSyncStatus?.signedIn) {
-        const approved = await window.focuslink.deviceSync.approvePairingCode(code);
-        setDevicePairingCode('');
-        devicePairingAutoAttemptRef.current = '';
-        addToast(`已批准“${approved.displayName}”，对方设备会自动加入同步`, 'success');
-        return;
-      }
       const result = await window.focuslink.deviceSync.redeemPairingCode(code);
       setDeviceSyncStatus(result.status);
       setDevicePairingOffer(null);

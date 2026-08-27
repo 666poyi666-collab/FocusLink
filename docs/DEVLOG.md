@@ -12,6 +12,7 @@
 - 打包 UI smoke 原先把 FocusLink 2.0 覆盖层的旧成功色 `52 124 86` 当成固定事实；统一 token 后实际浅色 emerald 成功色为 `11 122 85`，回归已改为检查共享语义值，避免再次阻断用户强调色切换。
 - 最终包身份 `0.12.104 / 6defd1b` 通过 packaged UI、mini、live fallback，Android build/unit/lint 和移动五视口明暗验收。Windows、华为均回读 0.12.104；小米在线但旧包签名不同，覆盖失败后保留 0.12.87 与用户数据，三端同版门禁未冒充完成。
 - 合并远端 `main` 后，Git 把等价历史提交中的 poll/approve/type/test 块再次插入；类型检查立即捕获重复声明。已删除 184 行重复块并再次通过全量 903 项与跨设备 59 项，正常 UI 继续只走直接互配。
+- 远端协议脚本中的旧 approve 闭环保留为明确命名的兼容测试，和正常 `request → exchange → claim` 闭环分别执行；桌面设置页再次移除合并带回的 approve 分支。Cloudflare 两阶段持久化门禁复跑通过。
 
 ## 2026-08-26
 

@@ -348,6 +348,7 @@ async function runProtocol(context: ProtocolContext): Promise<SavedState> {
   assertEpoch(status);
   await verifyNumericPairing(context, runId);
   await verifyDeviceOwnedPairing(context, runId);
+  await verifyLegacyDeviceApprovalPairing(context, runId);
 
   const invalidCursor = await raw(context, '/sync/v2/exchange', {
     method: 'POST',
@@ -856,7 +857,10 @@ async function verifyDeviceOwnedPairing(context: ProtocolContext, runId: string)
   assertEpoch(await request<EpochStatus>(peerContext, '/sync/v2/status', { method: 'GET' }));
 }
 
-async function verifyDeviceOwnedPairing(context: ProtocolContext, runId: string): Promise<void> {
+async function verifyLegacyDeviceApprovalPairing(
+  context: ProtocolContext,
+  runId: string,
+): Promise<void> {
   const installationId = `request-${randomToken(24)}`;
   const device = {
     installationId,
