@@ -1446,7 +1446,7 @@ export function SettingsPanel() {
       tab: 'devices',
       title: '手机 / 平板同步',
       desc: '每台设备显示 8 位码；把任一设备的码输入另一台即可同步，电脑关闭也不会中断。',
-      keywords: '手机 平板 安卓 android 移动端 跨设备 配对码 实时 云端 device sync pairing',
+      keywords: '手机 平板 安卓 android 移动端 跨设备 配对码 二维码 实时 云端 device sync pairing',
       render: () => (
         <>
           {!deviceSyncStatus?.signedIn && (
