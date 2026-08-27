@@ -763,13 +763,13 @@ async function liveFocusFetch(
   } catch {
     throw new MobileLiveRequestError(
       'configuration_error',
-      '移动端只允许连接 HTTPS 云端同步服务，请重新登录',
+      '移动端只允许连接 FocusLink 官方 HTTPS 云端同步服务，请重新配对',
       false,
     );
   }
   const token = input.token.trim();
   if (!token) {
-    throw new MobileLiveRequestError('configuration_error', '请先登录 FocusLink 账号', false);
+    throw new MobileLiveRequestError('configuration_error', '请先完成设备配对', false);
   }
 
   let lastTransportError: unknown = null;
@@ -799,7 +799,7 @@ async function liveFocusFetch(
         if (response.status === 401 || response.status === 403) {
           throw new MobileLiveRequestError(
             response.status === 401 ? 'authentication_failed' : 'authorization_failed',
-            response.status === 401 ? '登录凭据已失效，请重新登录' : '当前设备没有实时控制权限',
+            response.status === 401 ? '设备凭据已失效，请重新配对' : '当前设备没有实时控制权限',
             false,
             response.status,
           );

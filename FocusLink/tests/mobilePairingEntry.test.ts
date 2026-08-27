@@ -72,7 +72,7 @@ describe('mobile owner account entry', () => {
 
     expect(mobile).toContain('const [configOpen, setConfigOpen] = useState(false);');
     expect(mobile).toContain('onClose={() => setConfigOpen(false)}');
-    expect(markup).toContain('aria-label="关闭账号设置，返回本机模式"');
+    expect(markup).toContain('aria-label="关闭设备同步，返回本机模式"');
     expect(markup).toContain('每台设备都有自己的配对码');
     expect(markup).toContain('输入另一台设备显示的本机配对码');
     expect(markup).toContain('显示本机配对码');

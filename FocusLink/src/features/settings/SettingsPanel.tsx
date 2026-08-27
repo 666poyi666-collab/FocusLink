@@ -317,7 +317,7 @@ export function SettingsPanel() {
 
   const handleRevokeDevice = async (device: DeviceSyncManagedDevice) => {
     if (device.deviceId === deviceSyncStatus?.deviceId) {
-      addToast('不能从设备列表删除当前设备，请使用退出登录', 'info');
+      addToast('不能从设备列表删除当前设备，请使用“退出此设备同步”', 'info');
       return;
     }
     if (!window.confirm(`删除“${device.displayName}”？它将停止访问 FocusLink 同步。`)) return;
@@ -353,7 +353,7 @@ export function SettingsPanel() {
       setDevicePairingCode('');
       devicePairingAutoOfferAttemptedRef.current = false;
       setSettings(await window.focuslink.settings.get());
-      addToast('已退出 FocusLink 账号；本机记录仍保留', 'success');
+      addToast('这台设备已退出同步；本机记录仍保留', 'success');
     } catch (error) {
       addToast(`退出失败：${ipcErrorMessage(error)}`, 'error');
     } finally {
@@ -419,8 +419,8 @@ export function SettingsPanel() {
           setDevicePairingCode('');
           addToast(
             result.result.syncError
-              ? '配对已批准，网络恢复后会继续同步'
-              : '配对已批准，本机已加入多端同步',
+              ? '两台设备已配对，网络恢复后会继续同步'
+              : '两台设备已配对，本机已加入多端同步',
             result.result.syncError ? 'info' : 'success',
           );
         })
@@ -453,13 +453,6 @@ export function SettingsPanel() {
     }
     setDeviceSyncSaving(true);
     try {
-      if (deviceSyncStatus?.signedIn) {
-        const approved = await window.focuslink.deviceSync.approvePairingCode(code);
-        setDevicePairingCode('');
-        devicePairingAutoAttemptRef.current = '';
-        addToast(`已批准“${approved.displayName}”，对方设备会自动加入同步`, 'success');
-        return;
-      }
       const result = await window.focuslink.deviceSync.redeemPairingCode(code);
       setDeviceSyncStatus(result.status);
       setDevicePairingOffer(null);
@@ -1452,8 +1445,8 @@ export function SettingsPanel() {
       id: 'device-sync',
       tab: 'devices',
       title: '手机 / 平板同步',
-      desc: '电脑、手机和平板直接连接同一云端账号；电脑关闭不会中断移动端同步。',
-      keywords: '手机 平板 安卓 android 移动端 跨设备 账号 登录 实时 云端 device sync account',
+      desc: '每台设备显示 8 位码；把任一设备的码输入另一台即可同步，电脑关闭也不会中断。',
+      keywords: '手机 平板 安卓 android 移动端 跨设备 配对码 实时 云端 device sync pairing',
       render: () => (
         <>
           {!deviceSyncStatus?.signedIn && (
@@ -1463,13 +1456,13 @@ export function SettingsPanel() {
             </div>
           )}
           <Row
-            label="FocusLink 设备授权"
-            desc="本机功能不依赖登录；授权后才把任务、专注和统计同步到其他设备"
+            label="FocusLink 设备配对"
+            desc="本机功能不依赖账号；互相输入 8 位码后同步任务、清单颜色、专注和统计"
           >
             {deviceSyncStatus?.signedIn ? (
               <div className="flex items-center gap-2">
                 <span className="settings-status-badge tone-success">
-                  {deviceSyncStatus.accountLabel ?? '已登录'}
+                  {deviceSyncStatus.accountLabel ?? '已配对'}
                 </span>
                 <button
                   type="button"
@@ -1486,7 +1479,7 @@ export function SettingsPanel() {
                   onClick={() => void handleDeviceSyncLogout()}
                   disabled={deviceSyncSaving}
                 >
-                  退出登录
+                  退出此设备同步
                 </button>
               </div>
             ) : (
@@ -1513,7 +1506,7 @@ export function SettingsPanel() {
                 </strong>
               </div>
               <p>
-                一次性使用 · 剩余 {Math.floor(devicePairingRemaining / 60)}:
+                有效期内输错可重试 · 剩余 {Math.floor(devicePairingRemaining / 60)}:
                 {String(devicePairingRemaining % 60).padStart(2, '0')}
               </p>
               <button
@@ -1636,8 +1629,8 @@ export function SettingsPanel() {
                     : deviceSyncStatus?.configured
                       ? '连接已配置，等待首次同步'
                       : deviceSyncStatus?.signedIn
-                        ? '账号已登录，等待首次同步'
-                        : '登录后开启云同步'}
+                        ? '设备已配对，等待首次同步'
+                        : '配对后开启云同步'}
                 <span
                   className={`settings-status-badge ${
                     deviceSyncStatus?.enabled ? 'tone-success' : 'tone-neutral'
@@ -1658,8 +1651,8 @@ export function SettingsPanel() {
                       : deviceSyncStatus?.lastSyncAt
                         ? `上次同步：${new Date(deviceSyncStatus.lastSyncAt).toLocaleString('zh-CN')}`
                         : deviceSyncStatus?.signedIn
-                          ? '账号已登录，等待首次同步；本机计时不受网络影响'
-                          : '登录后自动同步专注状态、任务和历史记录'}
+                          ? '设备已配对，等待首次同步；本机计时不受网络影响'
+                          : '配对后自动同步专注状态、任务、清单颜色和历史记录'}
               </p>
             </div>
             <div className="flex shrink-0 gap-2">

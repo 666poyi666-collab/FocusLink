@@ -412,7 +412,7 @@ async function validateFreshInstall(indexPath: string): Promise<void> {
     await sleep(80);
     await capture('phone-360-light-设备授权', win);
     const closable = await win.webContents.executeJavaScript(`(() => {
-      const close = document.querySelector('[aria-label="关闭账号设置，返回本机模式"]');
+      const close = document.querySelector('[aria-label="关闭设备同步，返回本机模式"]');
       if (!close) return false;
       close.click();
       return true;
@@ -439,7 +439,7 @@ async function setThemeAndReload(
   await win.webContents.executeJavaScript(`
     localStorage.setItem(
       'focuslink.mobile.appearance.v1',
-      JSON.stringify({ theme: ${JSON.stringify(theme)}, focusColor: 'emerald', fontProfile: 'noto' })
+      JSON.stringify({ theme: ${JSON.stringify(theme)}, focusColor: 'emerald', fontProfile: 'noto', timerStyle: 'standard' })
     );
     localStorage.setItem(
       'focuslink.mobile.endpoint',

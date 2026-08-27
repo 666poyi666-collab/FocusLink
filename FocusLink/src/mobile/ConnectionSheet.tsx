@@ -132,7 +132,7 @@ export function ConnectionSheet({
         type="submit"
         disabled={busy || pairingCode.length !== 8}
       >
-        {busy ? '正在处理…' : authenticated ? '批准设备' : '加入同步'}
+        {busy ? '正在处理…' : authenticated ? '连接设备' : '加入同步'}
       </button>
     </form>
   );
@@ -174,7 +174,7 @@ export function ConnectionSheet({
             className="sheet-close"
             type="button"
             onClick={onClose}
-            aria-label={authenticated ? '关闭账号设置' : '关闭账号设置，返回本机模式'}
+            aria-label={authenticated ? '关闭设备同步' : '关闭设备同步，返回本机模式'}
           >
             ×
           </button>
@@ -184,8 +184,8 @@ export function ConnectionSheet({
           <strong>{authenticated ? '这台设备已加入同步' : '每台设备都有自己的配对码'}</strong>
           <p>
             {authenticated
-              ? `${accountLabel ?? 'FocusLink 账号'} · 这台设备已加入云同步。`
-              : '任务、专注和统计都会保存在本机；设备授权只用于电脑、手机和平板之间同步。'}
+              ? `${accountLabel ?? 'FocusLink 同步空间'} · 这台设备已加入多端同步。`
+              : '任务、专注和统计都会保存在本机；输入另一台设备的 8 位码即可加入同一同步空间。'}
           </p>
         </div>
 
@@ -202,7 +202,7 @@ export function ConnectionSheet({
               {pairingOffer.code.slice(0, 4)} {pairingOffer.code.slice(4)}
             </strong>
             <small>
-              一次性使用 · 剩余 {Math.floor(remainingSeconds / 60)}:
+              有效期内输错可重试 · 剩余 {Math.floor(remainingSeconds / 60)}:
               {String(remainingSeconds % 60).padStart(2, '0')}
             </small>
             <button
@@ -272,7 +272,7 @@ export function ConnectionSheet({
                 清除本机缓存
               </button>
               <button type="button" onClick={onLogout} disabled={busy}>
-                退出登录
+                退出此设备同步
               </button>
             </div>
           </>

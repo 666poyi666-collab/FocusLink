@@ -69,7 +69,7 @@ npm run smoke:live-fallback -- <本次构建的 win-unpacked\FocusLink.exe>
 
 历史事实：2026-08-24 的 legacy bootstrap 会打开 43 位管理员码网页；2026-08-26 页面曾完成中文化。当前产品事实：普通 FocusLink 配对已经退出该 bootstrap 流程，客户端只使用 8 位设备码。若旧日志仍含 `deployed-login-required`，将其记录为旧客户端/后台维护路径，不要引导用户输入管理员码，也不要清缓存或数据库。
 
-若手机任务页长期停在旧 revision：先确认 canonical `GET /sync/v2/tasks` 响应含 `Cache-Control: no-store`，再比较 PC 发布日志的 revision/source/payload 确认与手机回读。移动端可见态应在 15 秒内拉新；低 revision 不覆盖本机缓存，同 revision 异文会报告 authority 不一致。PC 的 pending task snapshot 只有服务端原样回读后才清除，因此 pending 未清说明发布链仍未确认，不要手工伪造 revision。
+若手机任务页长期停在旧 revision：先确认 canonical `GET /sync/v2/tasks` 响应含 `Cache-Control: no-store`，再比较 PC 发布日志的 revision/source/payload 确认与手机回读。v0.12.104 当前候选中，移动端持续可见时应在 5 秒内拉新，回到前台、窗口重新聚焦或 pageshow 会立即刷新；低 revision 不覆盖本机缓存，同 revision 异文会报告 authority 不一致。PC 的创建/改色/移动/完成/恢复在 renderer 返回前会等待本次 pending task snapshot 发布尝试，pending 只有服务端原样回读后才清除；pending 未清说明发布链仍未确认，不要手工伪造 revision。
 
 v0.12.71 起，Electron 从 `fl2` token 解析与 authority 一致的 `deviceId`，live command 和任务快照不再发送 legacy 本机 UUID。若空闲状态下仍收到 401/403，“开始专注”会退回本地计时并在 `liveFocus` 日志写入 `credential-rejected`；已经进行中的云端会话不会降级。任务快照日志应显示具体 HTTP 状态/消息，不应只出现 `[object Object]`。
 
