@@ -532,6 +532,26 @@ export function MobileApp() {
         setCommandNotice('请输入 8 位数字配对码');
         return;
       }
+      const connection = preferencesRef.current;
+      if (connection.token) {
+        setAccountBusy(true);
+        setCommandNotice('正在批准另一台设备…');
+        try {
+          const approved = await approveDeviceSyncPairingCode({
+            endpoint: connection.endpoint,
+            token: connection.token,
+            code,
+          });
+          if (preferencesRef.current.token !== connection.token) return;
+          setPairingCode('');
+          setCommandNotice(`已批准“${approved.displayName}”，对方会自动加入同步`);
+        } catch (error) {
+          setCommandNotice(errorMessage(error));
+        } finally {
+          setAccountBusy(false);
+        }
+        return;
+      }
       const operation = accountLifecycle.issue();
       setAccountLoginPolling(false);
       setAccountBusy(true);

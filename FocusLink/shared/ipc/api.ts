@@ -241,6 +241,16 @@ export interface DeviceSyncPairingApprovalResult {
   expiresAt: number;
 }
 
+export type DeviceSyncPairingPollResult =
+  | { status: 'pending'; expiresAt: number; retryAfterMs: number }
+  | { status: 'authenticated'; result: DeviceSyncAccountLoginResult };
+
+export interface DeviceSyncPairingApprovalResult {
+  status: 'approved';
+  displayName: string;
+  expiresAt: number;
+}
+
 export interface DeviceSyncManagedDevice {
   deviceId: string;
   devicePublicId: string;

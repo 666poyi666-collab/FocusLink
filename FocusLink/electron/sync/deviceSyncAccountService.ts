@@ -238,6 +238,99 @@ export async function approveDeviceSyncPairingCode(
   };
 }
 
+export function pollDeviceSyncPairingCode(): Promise<DeviceSyncPairingPollResult> {
+  if (pairingPollInFlight) return pairingPollInFlight;
+  const operation = pollDeviceSyncPairingCodeInternal().finally(() => {
+    if (pairingPollInFlight === operation) pairingPollInFlight = null;
+  });
+  pairingPollInFlight = operation;
+  return operation;
+}
+
+async function pollDeviceSyncPairingCodeInternal(): Promise<DeviceSyncPairingPollResult> {
+  if (getDeviceSyncAccountIdentity().signedIn) {
+    return {
+      status: 'authenticated',
+      result: { status: getDeviceSyncStatus(), sync: null, syncError: null },
+    };
+  }
+  const pending = pendingLocalPairRequest;
+  if (!pending || pending.expiresAt <= Date.now()) {
+    pendingLocalPairRequest = null;
+    throw new Error('本机配对码已过期，请重新生成');
+  }
+  const registration = pairingDeviceRequest();
+  const response = await requestPairing('/sync/v1/pair/claim', {
+    body: { requestToken: pending.requestToken, device: registration },
+  });
+  if (
+    isRecord(response) &&
+    response.status === 'pending' &&
+    Number.isSafeInteger(response.expiresAt) &&
+    Number.isSafeInteger(response.retryAfterMs)
+  ) {
+    return {
+      status: 'pending',
+      expiresAt: Number(response.expiresAt),
+      retryAfterMs: Number(response.retryAfterMs),
+    };
+  }
+  if (
+    !isRecord(response) ||
+    response.status !== 'authenticated' ||
+    typeof response.accessToken !== 'string' ||
+    !isFocusLinkDeviceAccessToken(response.accessToken) ||
+    typeof response.deviceId !== 'string' ||
+    response.deviceId !== deviceIdFromToken(response.accessToken)
+  ) {
+    throw new Error('配对领取响应无效');
+  }
+  const generation = ++loginGeneration;
+  const controller = new AbortController();
+  loginAbortController?.abort();
+  loginAbortController = controller;
+  invalidateDeviceSyncConnection();
+  setDeviceSyncToken(response.accessToken);
+  enableOfficialSync();
+  pendingLocalPairRequest = null;
+  try {
+    return {
+      status: 'authenticated',
+      result: await finishLogin(generation, controller.signal),
+    };
+  } finally {
+    if (loginAbortController === controller) loginAbortController = null;
+  }
+}
+
+export async function approveDeviceSyncPairingCode(
+  codeInput: string,
+): Promise<DeviceSyncPairingApprovalResult> {
+  const token = getDeviceSyncToken();
+  if (!token || !isFocusLinkDeviceAccessToken(token)) {
+    throw new Error('只有已授权设备可以批准另一台设备');
+  }
+  const code = normalizeFocusLinkPairingCode(codeInput);
+  if (!FOCUSLINK_PAIRING_CODE_PATTERN.test(code)) throw new Error('请输入 8 位数字配对码');
+  const response = await requestPairing('/sync/v1/pair/approve', {
+    headers: { authorization: `Bearer ${token}` },
+    body: { code },
+  });
+  if (
+    !isRecord(response) ||
+    response.status !== 'approved' ||
+    typeof response.displayName !== 'string' ||
+    !Number.isSafeInteger(response.expiresAt)
+  ) {
+    throw new Error('配对批准响应无效');
+  }
+  return {
+    status: 'approved',
+    displayName: response.displayName,
+    expiresAt: Number(response.expiresAt),
+  };
+}
+
 export async function listDeviceSyncDevices(): Promise<DeviceSyncManagedDevice[]> {
   const token = getDeviceSyncToken();
   if (!token || !isFocusLinkDeviceAccessToken(token)) throw new Error('请先在这台设备完成授权');
