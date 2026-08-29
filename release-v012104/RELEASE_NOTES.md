@@ -20,6 +20,7 @@
 - 已配对设备按“当前设备 / 其他设备 / 无效与测试设备”分层；测试、staging、smoke、久未同步和已撤销设备默认折叠，不再铺满页面。
 - 普通清单现在可在 PC、手机和平板确认后删除；其中任务及子任务安全迁入收件箱，收件箱本身不可删除，删除发布未确认时保留错误并恢复本地状态。
 - 云端 MCP 新增 FocusLink 自有清单/任务读取与管理工具，支持任务创建、更新、完成、恢复、删除、移动及截止时间、优先级、标签、父子任务；写入使用 `operationId` + `expectedRevision`，冲突不覆盖并返回脱敏确认。
+- 修复便携版退出沉浸模式时 native 全屏确认迟到导致覆盖层不消失的问题；退出现在有界收束并保持计时状态。
 
 ## 验证
 
@@ -38,5 +39,5 @@
 
 ## 下载与校验
 
-| `FocusLink-0.12.104-x64.exe` | `068D2D084AC2CB9E54861D40421B506294B0A2091BD2FA0B041A037179E31EF3` |
-| `FocusLink-0.12.104-x64-portable.exe` | `D9BA18338960C77F9A4A42C8F9BD9FDA67D0A0576D6B81B55D07A5D505EB9619` |
+| `FocusLink-0.12.104-x64.exe` | `8182F3BB4FAD043496B6BFE9E48C9B88E3EBF4AF8DAA57F0A968CD67ADF61CAA` |
+| `FocusLink-0.12.104-x64-portable.exe` | `98E8B4CB91D651B51D2111BBA41365A6B7F8FF41DBDBDBEEF046AF449BE670F9` |

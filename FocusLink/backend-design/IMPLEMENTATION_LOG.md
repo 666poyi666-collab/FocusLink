@@ -6,6 +6,7 @@
 - **云端 MCP 任务面**：`foxlink-cloud-mcp` 新增 `focuslink_list_projects`、`focuslink_list_tasks`、`focuslink_get_task`，以及清单创建/更新/删除、任务创建/更新/完成/恢复/删除/移动工具。任务字段包含清单、`parentId`、截止时间（Unix ms）、优先级和标签；清单删除返回 `moved_to_inbox`，任务删除返回 `permanent_subtree_delete`。所有写工具要求 `operationId` + `expectedRevision`，Account DO 在同一 `task_state`/`task_operations` 持久化事务中执行 CAS 与重放，冲突不覆盖，成功只返回稳定 ID、revision、计数等脱敏确认。
 - **协议与权限**：新增 canonical `/sync/v2/tasks/mutate` 到 Account DO `/v1/tasks/mutate` 的转发；旧 `/sync/v2/tasks` 完整快照读写与旧客户端保持兼容。MCP 2026-07-28 discovery 保持，读写 token 额外允许 `focuslink:write`，写调用要求 `focuslink:read focuslink:write`；MCP D1 投影不保存任务。
 - **Cloudflare 配置**：独立 `cloud/mcp/wrangler.jsonc` 的 compatibility date 从历史 `2025-03-10` 对齐到项目门禁 `2026-07-25`，仅是兼容运行时配置修正，不改变 task snapshot 协议版本或 MCP discovery 目标。
+- **Portable immersive 修复**：packaged portable smoke 曾因 native `setFullScreen(false)` Promise 长时间不返回而使 body immersive overlay 无法卸载；`TimerPanel` 现在以 250 ms 有界 fallback 后继续 360 ms 卸载过渡，native 正常确认仍优先。修复后须从新干净源码重建并重跑 installer/portable UI smoke，未重跑前不宣称 portable UI 通过。
 - **验证**：根 typecheck、全量 Vitest `122 files / 915 tests` 通过；`cloud/mcp` typecheck、test:typecheck 与全量 MCP 回归 `113 tests` 通过。新增纯函数父子/日期/优先级/标签/安全删除、MCP binding/CAS scope、canonical route、IPC refresh failure 和 UI wiring 回归。生产 Worker/MCP 部署、真实临时任务闭环和本批次三设备新包安装尚未在本条目宣称完成，须按发布门禁继续回填。
 
 ## 2026-08-28 · v0.12.104 移动端功能与直接互配收口
