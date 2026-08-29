@@ -165,7 +165,7 @@ function createFoxlinkMcpServer(env: Env): McpServer {
     query,
     limit,
   }: {
-    projectId?: string;
+    projectId?: string | null;
     includeCompleted: boolean;
     query?: string;
     limit: number;

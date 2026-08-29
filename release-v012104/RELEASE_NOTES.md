@@ -6,7 +6,7 @@
 >
 > 发布类型：本地候选，未创建 GitHub Release
 >
-> 验证状态：直接互配、三端 UI、任务快照、Windows 构建、华为安装通过；小米正式包因历史签名不一致未覆盖，但同版并行包已安装启动
+> 验证状态：源码、Cloudflare dry-run/远端探针、Windows 安装、Android 构建与华为安装通过；完整 packaged UI smoke 与生产 MCP 任务写入仍受阻，不宣称正式发布
 
 ## 主要变化
 
@@ -24,14 +24,16 @@
 
 ## 验证
 
-- format/typecheck/lint、根 Vitest `120 files / 903 tests`、跨设备 `59 tests`、Cloudflare 本地真实配对闭环均通过。
+- format/typecheck/lint、根 Vitest `122 files / 915 tests`、cloud/mcp `113 tests`、Cloudflare 本地真实配对闭环均通过。
 - 桌面 packaged UI、固定两态 mini、live fallback smoke 通过；移动 360/412/640/760/915 横竖屏明暗门禁通过。
-- Windows 静默覆盖回读 `0.12.104 / 90686c8`；小米正式包保留 `0.12.87/1287` 未清数据，并行包 `app.focuslink.mobile.v012104` 已覆盖回读 `0.12.104/1304` 并在前台运行。华为本轮地址离线，仍保留此前已安装的 `0.12.104/1304`，设备列表降噪子修订未能再次覆盖。
+- Windows 静默覆盖回读 `0.12.104 / 0.12.104.0`，应用已重启且 SQLite/credential 保留；Huawei `192.168.1.7:5555` 正式包回读 `0.12.104/1304`，小米正式包因历史签名不一致保留旧包且未清数据，并行包 `app.focuslink.mobile.v012104` 回读 `0.12.104/1304` 并启动；旧 Xiaomi 地址 `192.168.1.4:5555` offline。
 - 公网新路由的 credential-boundary 与无次数限流回归通过；本地真实 Durable Object 已验证两台无登录设备直连、幂等重试和任务/live/账本读取。
-- 本地 MCP/Cloudflare 合同回归覆盖任务 CAS、幂等重放、旧 revision 冲突、父子子树和清单安全删除；生产 Worker/MCP 部署与本批次三设备新包安装不在本 notes 中提前宣称，须完成后回填对应提交和哈希。
+- 本地 MCP/Cloudflare 合同回归覆盖任务 CAS、幂等重放、旧 revision 冲突、父子子树和清单安全删除；private/public Worker 与 Poyi OAuth scope migration 已部署，但生产 MCP 任务写入仍缺 OAuth access token，未创建临时数据。
 - 生产环境两个无登录临时设备直连成功，双方任务 revision 33、live revision 101、账本接口 200；exchange/claim 重试幂等。
 - 设备删除 canonical 路由已实修并复验：8 台临时 smoke 设备全部撤销成功，撤销后凭据均返回 401。
-- Android `assembleDebug`、单元测试与 lint 通过；正式 APK `versionName=0.12.104/versionCode=1304`，备份 SHA256：`FA0DDE78B76F908C1388B3BE7C83E1D03C21513645C3DA7C975FAB98DD1B7D01`。
+- 本轮部署版本：`focuslink-sync` `8b19926e-b7f4-46f7-90cc-4b2d96065770`、`foxlink-mcp` `b961c9d3-f9da-4079-b135-c8088fb06eb4`、Poyi OAuth `2b1f9e76-76ce-4af2-811a-b1d8048a0b71`；远端匿名 probe 19/19 通过。
+- Android `assembleDebug`、单元测试、lint 与隔离 instrumentation（Huawei terminal lifecycle 4/4 + app context 1/1）通过；正式 APK `versionName=0.12.104/versionCode=1304`，备份 SHA256：`D3834D6C6DD3CEBF6EB38B8D833176BB52EDE4144852970E28F8F37C6946309D`。
+- 新候选的 unpacked/portable `smoke:ui` 均出现状态收敛断言失败（unpacked toggle/flip-history，portable paused）；`verify-startup` portable 通过，不能把该启动证据扩大为完整 UI smoke 通过。
 
 ## 已知限制
 
@@ -39,5 +41,5 @@
 
 ## 下载与校验
 
-| `FocusLink-0.12.104-x64.exe` | `8182F3BB4FAD043496B6BFE9E48C9B88E3EBF4AF8DAA57F0A968CD67ADF61CAA` |
-| `FocusLink-0.12.104-x64-portable.exe` | `98E8B4CB91D651B51D2111BBA41365A6B7F8FF41DBDBDBEEF046AF449BE670F9` |
+| `FocusLink-0.12.104-x64.exe` | `E8B35A8B958784879D994AB4E6BD353A1DE6C6AA12A8812E873F647709A5CE9F` |
+| `FocusLink-0.12.104-x64-portable.exe` | `63FC4211E90573F91833BFE9006A14B61BF9EE41D9C03D36CEECA731AD51F0D8` |
