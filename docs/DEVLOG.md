@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-08-29
+
+- 接管前代理留下的 FocusLink 任务快照/清单改动，修复普通清单删除：PC 与移动端先确认，收件箱不可删除，任务及子树迁入收件箱；桌面 SQLite 迁移与删除清单同事务，发布前不合并旧云快照，未确认时回滚。
+- 完成 `foxlink-cloud-mcp` 第一方任务面：`focuslink_list_projects`、`focuslink_list_tasks`、`focuslink_get_task` 与清单/任务创建、更新、完成、恢复、删除、移动。字段覆盖截止时间、优先级、标签、父子关系；Account DO `task_state` + `task_operations` 以 `operationId`/`expectedRevision` 做原子 CAS/幂等，冲突不覆盖并只返回脱敏确认。
+- 新增 `/sync/v2/tasks/mutate` canonical 转发和 `focuslink:write` scope（写调用要求与 read 组合），保持旧完整快照客户端和 MCP 2026-07-28 discovery 兼容；D1 不存任务。
+- 将独立 MCP Wrangler compatibility date 从历史 `2025-03-10` 对齐到 `2026-07-25`，与 Cloudflare 项目门禁一致；未改变协议版本或公网身份。
+- 新增纯函数、MCP service binding/scope、canonical route、IPC 失败反馈与移动/桌面清单安全删除回归。根 typecheck、Vitest `122 files / 915 tests`，cloud/mcp typecheck/test:typecheck/测试 `113` 项通过；生产部署、真实任务清理和三设备本批次安装留待后续门禁，不以本地测试冒充。
+
 ## 2026-08-28
 
 - Luna Max 第二次独立只读复核确认：已有同步设备仍误走旧 approve 分支；FocusLink 2.0 最终样式层把用户选中的强调色覆盖为青绿色；首次任务写入存在空快照覆盖竞态；移动任务/清单 Promise 失败没有稳定提示。

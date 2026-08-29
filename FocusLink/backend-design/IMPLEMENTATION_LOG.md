@@ -1,5 +1,13 @@
 # FocusLink 实施日志
 
+## 2026-08-29 · v0.12.104 自有任务清单删除与云端 MCP 任务管理
+
+- **清单删除安全语义**：PC 与移动端普通 FocusLink 清单现在都提供删除入口并二次确认；收件箱固定不可删除。删除清单只在 SQLite/快照中把全部任务及子树迁入 `local-inbox`，不静默丢失任务；只有显式任务删除才永久删除子树。PC 本地迁移与清单删除使用同一 SQLite 事务，删除发布前跳过旧云快照合并，发布未获确认时恢复原清单和任务归属；移动端仅在服务端回读成功后更新内存与 IndexedDB，失败保留旧树并显示错误。
+- **云端 MCP 任务面**：`foxlink-cloud-mcp` 新增 `focuslink_list_projects`、`focuslink_list_tasks`、`focuslink_get_task`，以及清单创建/更新/删除、任务创建/更新/完成/恢复/删除/移动工具。任务字段包含清单、`parentId`、截止时间（Unix ms）、优先级和标签；清单删除返回 `moved_to_inbox`，任务删除返回 `permanent_subtree_delete`。所有写工具要求 `operationId` + `expectedRevision`，Account DO 在同一 `task_state`/`task_operations` 持久化事务中执行 CAS 与重放，冲突不覆盖，成功只返回稳定 ID、revision、计数等脱敏确认。
+- **协议与权限**：新增 canonical `/sync/v2/tasks/mutate` 到 Account DO `/v1/tasks/mutate` 的转发；旧 `/sync/v2/tasks` 完整快照读写与旧客户端保持兼容。MCP 2026-07-28 discovery 保持，读写 token 额外允许 `focuslink:write`，写调用要求 `focuslink:read focuslink:write`；MCP D1 投影不保存任务。
+- **Cloudflare 配置**：独立 `cloud/mcp/wrangler.jsonc` 的 compatibility date 从历史 `2025-03-10` 对齐到项目门禁 `2026-07-25`，仅是兼容运行时配置修正，不改变 task snapshot 协议版本或 MCP discovery 目标。
+- **验证**：根 typecheck、全量 Vitest `122 files / 915 tests` 通过；`cloud/mcp` typecheck、test:typecheck 与全量 MCP 回归 `113 tests` 通过。新增纯函数父子/日期/优先级/标签/安全删除、MCP binding/CAS scope、canonical route、IPC refresh failure 和 UI wiring 回归。生产 Worker/MCP 部署、真实临时任务闭环和本批次三设备新包安装尚未在本条目宣称完成，须按发布门禁继续回填。
+
 ## 2026-08-28 · v0.12.104 移动端功能与直接互配收口
 
 - **Luna Max 独立复核**：确认移动端自由专注、仪表入口、任务首写和 PC/移动颜色级联存在真实缺口；复核服务第一次返回 503，第二次成功完成只读审计，未直接改动源码。
