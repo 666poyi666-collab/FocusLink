@@ -231,6 +231,24 @@ v0.12.105 的开始时间与结构化循环仍使用 task snapshot v1 envelope�
 
 运行 `npm test -- tests/taskRecurrence.test.ts tests/taskSnapshotMutation.test.ts tests/taskSnapshotCloud.test.ts tests/focuslinkCli.test.ts`，并运行 `cloud/mcp` 全量测试。兼容门禁必须同时覆盖无 capability 的旧 GET 不含新字段、旧整包 POST 保留循环、带 capability 的 PC/移动/MCP/CLI round-trip、重复 operation 不二次推进次数。
 
+## FL-SYNC-013：平板显示“实时状态已连接”，但任务第一次创建/移动/完成失败
+
+### 含义与根因
+
+实时 long-poll、任务快照和已结束账本是三条独立链路。“实时状态已连接”只证明 live 链当前确认，不能证明用户动作前的 task GET 已提交。v0.12.105 补修前，移动端后台每 5 秒刷新与创建/移动/完成前的强制刷新共用 latest-wins lifecycle；同账号的后发 GET 会 abort 先发 GET，前台收到 `null` 后显示“未能确认最新任务清单”，稍后重试却成功。这是同账号读请求竞态，不是配对码、revision 冲突或凭据失效。
+
+### 处理步骤
+
+1. 分别记录顶部 live 状态、任务 revision、动作时间和错误；不要连续点击、清 IndexedDB 或重新配对。
+2. 等待一个 5 秒周期后只读观察 revision。revision 前进且立即重试成功，优先按同账号 refresh 竞态排查；401/403、transport timeout 和 `task_revision_conflict` 仍按各自错误分类。
+3. 修复后的客户端以 connection key 合并同账号 in-flight task refresh；前台 mutation await 同一个 Promise。账号/endpoint/token 切换仍必须 invalidate 并 abort 旧请求，禁止跨账号复用。
+4. 账号切换从 native credential mutation 开始建立 transition barrier；task/live/ledger 在提交 React 或 IndexedDB 前同时核对 request lease、connection key 和 barrier。清缓存仍未结束时，旧账号 interval 即使触发也只能返回空结果。
+5. completed-ledger 同样合并同账号在途 pull，避免一次 pull 已落 IndexedDB 却在 React 状态提交前被另一轮取消；Cloudflare 往返期间保留旧账本并显示 pulling，完成后无需重载页面收敛。
+
+### 验证
+
+自动化覆盖同 key 只执行一次、两个 await 获得同结果、不同 key 新建请求且旧 finally 不清新请求。真机先触发顶部刷新，再在 50ms 内第一次完成/恢复任务，两个动作都必须直接成功；删除临时账本后连续触发两次刷新，页面应在有界请求完成后从 1 场变为 0 场且不 reload。所有临时任务、清单、会话和 tombstone 结果必须精确回读并清理。
+
 ## 日志位置与收集方式
 
 Windows 日志在 `%APPDATA%\focuslink\logs\focuslink-YYYY-MM-DD.log`。只提供包含错误编号/时间、endpoint（可打码）和 HTTP 状态的片段；不要提供 `focuslink-device-sync-credential.json`、访问令牌或整个 SQLite 文件。
