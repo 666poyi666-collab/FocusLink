@@ -1,5 +1,21 @@
 # FocusLink 实施日志
 
+## 2026-08-30 · v0.12.105 时间任务合同与三端视觉升级
+
+- **任务循环与时间**：任务快照在 v1 envelope 内增加 capability-gated `startDate` 与结构化 recurrence；定义日/周/月/年、间隔、星期/月日、结束时间、总次数、已完成次数和 `from_schedule/from_completion` 顺延。客户端 mutation 不能写 `completedCount`，Account DO 在完成事务中原子推进；循环未耗尽时更新下一次日期并保持未完成，耗尽后才进入已完成。旧 0.12.104 严格客户端不收到扩展字段，旧整包写回由 authority 合并保留新字段并在日期冲突时拒绝。
+- **MCP / CLI**：MCP 新增 `focuslink_get_current_time`、`focuslink_get_project`，扩展任务过滤与开始/截止/循环字段；ChatGPT Web 继续使用 OAuth read/write scopes。新增 `npm run focuslink` 第一方 CLI，支持 time、projects 和 tasks 的读写，复用 `operationId + expectedRevision`，并从 `fl2` 派生且校验绑定 deviceId；OAuth token 不作为 CLI 凭据。
+- **设置与同步事实**：设置页移除大号分区编号并压缩导航/间距。跨设备区分当前实时连接、最近账本确认和最近尝试诊断；历史 `lastError` 不再冒充当前离线。设备列表显示 `lastSeenAt`、过期/久未同步/测试归档。番茄 To-do 分为本机写入、上传队列、桌面桥接和手机显示四个事实域，明确上传确认不等于手机端回读。
+- **Dashboard / 字体**：桌面与移动 24 小时地图新增五时段、每轨累计、当前时间标签和独立 gap/night 色；620px 以上平板完整展示 00–24，手机仅地图内部可横向查看。界面字体从六套扩展至八套，新增思源宋体和站酷快乐体；设置页提供真实预览。
+- **自动证据（阶段性）**：Node 22.22.2 下 format、typecheck（含 Cloudflare）、lint、根 Vitest `125 files / 943 tests`、cloud/mcp `114 tests`、生产 build 通过。设置分组/番茄/设备页、桌面 Dashboard 明暗及 980×660、移动 360/412/640/760/915×412 截图门禁通过；原桌面 screenshot 误以 `.app-stage` 当页面就绪导致 history 截到旧任务页，现改为 `.history-page` / `.task-workspace-page` 专属根节点并重拍通过。Cloudflare dry-run/部署、dist、packaged smoke 和三设备安装矩阵待后续回填，不提前标记完成。
+
+## 2026-08-30 · 临时数据清理入口与历史残留回收
+
+- **失败证据与根因**：递归 `Remove-Item -Recurse -Force` 在进程启动前被执行策略拒绝；目标 ACL 为当前账户 FullControl，抽样文件可独占打开，因此历史“删不掉”不是 NTFS 权限或应用文件锁，而是清理命令入口不被允许。原有流程只能清空部分文件并留下目录，外置 LFS watcher 缓存仍占用大量空间。
+- **可复用修复**：新增 `npm run clean:temp-data`。默认 dry-run，只有 `--apply` 才删除；候选必须是批准根目录的直接子项、通过 FocusLink fixture 名称与年龄门槛，符号链接拒绝遍历，Windows `EPERM/EACCES/EBUSY/ENOTEMPTY` 仅做有界重试并验证路径最终不存在。`FL-INSTALL-008` 固化诊断与命令。
+- **真实清理结果**：首轮 24 小时门槛删除 115 个目标，补充本轮 smoke 后以 `--max-age-hours=0` 删除 14 个目标；合计 129 个目标、12,178 个文件、3,691 个目录、`127,294,493,385 B` 逻辑大小，两个 apply 均 exit 0、`failed=[]`，最终 dry-run 候选 0。基线、apply 与验证 JSON 保存在 `C:\Temp\focuslink-temp-cleanup-20260830-*.json`。
+- **保护与复验**：首轮 apply 后回读已安装 FocusLink 的 5 个进程仍在；最终审计时当前进程数为 0，本轮未执行 `Stop-Process`、`taskkill` 或应用退出命令，两次事实均保留。工作区两处 `android-apk-backups`、`device-screens`、已安装 EXE、`%APPDATA%\focuslink\focuslink.db` 均保留，`.git/lfs/tmp` 为 0 文件。真实 SQLite `PRAGMA quick_check=ok`，清理前后仍为 111 sessions / 250 segments / 193 pauses / 75 sync queue / 206 remote writeback rows，证明未把业务数据或待补传队列当作临时文件删除。
+- **自动验证**：临时清理器项目身份、路径/符号链接保护、APK 证据保护和只读嵌套目录删除回归 `4/4` 通过；format、根 typecheck（含 Cloudflare）、Lint 与全量 Vitest `123 files / 919 tests` 全部通过。
+
 ## 2026-08-29 · v0.12.104 自有任务清单删除与云端 MCP 任务管理
 
 - **清单删除安全语义**：PC 与移动端普通 FocusLink 清单现在都提供删除入口并二次确认；收件箱固定不可删除。删除清单只在 SQLite/快照中把全部任务及子树迁入 `local-inbox`，不静默丢失任务；只有显式任务删除才永久删除子树。PC 本地迁移与清单删除使用同一 SQLite 事务，删除发布前跳过旧云快照合并，发布未获确认时恢复原清单和任务归属；移动端仅在服务端回读成功后更新内存与 IndexedDB，失败保留旧树并显示错误。
