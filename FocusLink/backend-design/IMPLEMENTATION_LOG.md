@@ -11,6 +11,10 @@
 - **PC 旧端合并保护**：桌面 `LocalTaskProvider.mergeCloudSnapshot` 将缺少 `startDate/recurrence` 解释为 0.12.104 旧 shape 未表达，而不是显式清空；SQLite 既有循环规则与次数继续保留，显式 `null` 仍可取消调度。
 - **移动幂等重试**：移动端完成/恢复任务的 operationId 由 deviceId、taskId、目标 completed 状态和 expected revision 确定性生成；同一意图在响应丢失/failover 重试时复用同一 ID，不会把一次完成推进两次。
 - **Portable 沉浸退出**：packaged portable UI smoke 复现退出覆盖层在 650ms 窗口内未卸载。根因先是 renderer 串行等待 native 全屏确认最多 250ms，再启动 360ms 离场；改为并行后仍证实 portable 的 native 切换会阻塞 renderer timer。最终顺序为先完成 360ms 覆盖层离场并卸载，再在下一事件循环请求 Windows 退出全屏，使视觉状态不再受系统 IPC 阻塞。
+- **最终自动门禁**：Node 22.22.2 下 format/typecheck/lint、根 Vitest `126 files / 957 tests`、cloud/mcp `11 files / 115 tests`、cross-device `6 files / 63 tests`、Cloudflare 两阶段协议、production dependency audit 0 vulnerabilities、Android unit/lint/assemble 全部通过。桌面/移动视口与八字体门禁通过；unpacked UI、mini、live fallback，以及 portable startup/完整 UI smoke 均通过，包内身份 `0.12.105 / cdce0cf`。
+- **Cloudflare 部署**：private `focuslink-sync` 已部署版本 `4fbf1576-9f9a-4d92-980a-2ba40146e32c`；public `foxlink-mcp` 最终部署版本 `77354996-ec46-452e-b694-4d4c95744fe1`；远端匿名 probe `19/19`。生产 MCP 写入仍因没有 OAuth access token 明确 BLOCKED，`verify:pc-off` 返回 `FOCUSLINK_MCP_ACCESS_TOKEN is missing or invalid`，未创建生产临时任务。
+- **Windows/Android 安装矩阵**：Windows installer `/S` exit 0，已安装 EXE 回读 `0.12.105 / 0.12.105.0` 并重启，SQLite 保留。小米 `192.168.1.4:5555` 正式包因历史签名返回 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，未卸载/清数据；并行包 `app.focuslink.mobile.v012105` 已安装、启动并回读 `0.12.105/1305`。华为平板旧地址 `192.168.1.7:5555` offline，mDNS/ARP 未发现新地址，本轮未安装，故三设备同版门禁为 BLOCKED。
+- **最终候选资产**：正式 APK `app.focuslink.mobile` 为 `0.12.105/1305`，SHA256 `F7A75ECFDD0878BCB5E72A478BFA4A98C3B7051B7A5CC70EA02691F6BCE33216`；installer SHA256 `23220E3AA43A81423631B30C2E375A405AADABACD99C591C9AD39C7B3DC6CFC5`，portable `CBB5FBEB868AF579796C8C6D071951C067240B8C949691BCCB93055D32D5A703`。`.git/lfs/tmp` 全程 0 文件/0 B；未创建 tag 或 GitHub Release。
 
 ## 2026-08-30 · 临时数据清理入口与历史残留回收
 

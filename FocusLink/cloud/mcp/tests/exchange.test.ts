@@ -301,14 +301,16 @@ describe('canonical /sync/v2 adapter', () => {
     capable.headers.set('x-focuslink-task-capabilities', 'task-scheduling-v1');
     expect((await handleCanonicalSync(capable, exchangeEnv(upstream))).status).toBe(200);
     expect(
-      (await handleCanonicalSync(
-        request('/sync/v2/live/command', 'POST', TOKEN, {
-          protocolVersion: 1,
-          deviceId: 'device-reader01',
-          command: { type: 'pause' },
-        }),
-        exchangeEnv(upstream),
-      )).status,
+      (
+        await handleCanonicalSync(
+          request('/sync/v2/live/command', 'POST', TOKEN, {
+            protocolVersion: 1,
+            deviceId: 'device-reader01',
+            command: { type: 'pause' },
+          }),
+          exchangeEnv(upstream),
+        )
+      ).status,
     ).toBe(200);
     expect(seen).toEqual([
       { path: '/sync/v2/tasks/mutate', capability: 'task-scheduling-v1' },
