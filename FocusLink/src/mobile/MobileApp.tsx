@@ -157,6 +157,7 @@ import { isTabletFocusViewport } from './viewportPolicy';
 import {
   createEmptyTaskSnapshot,
   deleteTaskSnapshotProject,
+  mobileTaskCompletionOperationId,
   moveTaskSnapshotSubtree,
   updateTaskSnapshotProject,
 } from './taskSnapshotMutations';
@@ -1000,7 +1001,12 @@ export function MobileApp() {
         endpoint: preferences.endpoint,
         token: preferences.token,
         deviceId,
-        operationId: `mobile-task:${crypto.randomUUID()}`,
+        operationId: mobileTaskCompletionOperationId({
+          deviceId,
+          taskId: freshTask.id,
+          completed: completing,
+          expectedRevision: confirmed.revision,
+        }),
         expectedRevision: confirmed.revision,
         mutation: {
           kind: 'set_task_completed',

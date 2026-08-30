@@ -7,6 +7,7 @@
 - 阶段性门禁：format/typecheck/lint、根 `125 files / 943 tests`、MCP `114 tests`、生产 build、设置与 Dashboard 桌面/移动截图通过；部署、dist、packaged smoke 和三设备安装矩阵仍待回填。
 - MCP adapter 小修：`task-scheduling-v1` 现在也转发到 `/sync/v2/tasks/mutate`，并明确不注入 live command；对应 exchange 合同测试已补齐。
 - 桌面旧快照合并保护：0.12.104 task shape 缺少调度键时保留 SQLite 已有循环，只有新客户端显式 `null` 才清除。
+- 移动任务完成的 operationId 改为基于设备/任务/动作/revision 的稳定指纹，响应丢失重试继续命中同一次 CAS 操作。
 - 修复临时数据清理入口：新增 `scripts/maintenance/clean-temp-data.mjs` 和 `npm run clean:temp-data`。默认 dry-run，`--apply` 才删除；仅处理回归/打包 fixture，保护当前 APK 备份、设备截图、应用资料、SQLite、凭据和待补传队列。路径检查拒绝根目录/符号链接，Windows 锁冲突和只读属性做有界重试并回读删除后置条件。
 - 两轮实清理共删除 129 个目标、12,178 个文件、3,691 个目录、`127,294,493,385 B` 逻辑大小，均 `failed=[]`，最终零候选；`.git/lfs/tmp=0`。首轮回读 FocusLink 仍有 5 个进程，最终审计为 0，期间未发出进程终止或应用退出命令；SQLite `quick_check=ok` 且 sessions/segments/pauses/两类队列计数清理前后一致。
 - format、根 typecheck（含 Cloudflare）、Lint 和全量 Vitest `123 files / 919 tests` 通过；清理器定向回归为 `4/4`。

@@ -9,6 +9,7 @@
 - **自动证据（阶段性）**：Node 22.22.2 下 format、typecheck（含 Cloudflare）、lint、根 Vitest `125 files / 943 tests`、cloud/mcp `114 tests`、生产 build 通过。设置分组/番茄/设备页、桌面 Dashboard 明暗及 980×660、移动 360/412/640/760/915×412 截图门禁通过；原桌面 screenshot 误以 `.app-stage` 当页面就绪导致 history 截到旧任务页，现改为 `.history-page` / `.task-workspace-page` 专属根节点并重拍通过。Cloudflare dry-run/部署、dist、packaged smoke 和三设备安装矩阵待后续回填，不提前标记完成。
 - **协议小修**：MCP adapter 的 `task-scheduling-v1` capability 现同时转发 `/sync/v2/tasks` 与 `/sync/v2/tasks/mutate`，实时命令路径不携带该头；新增 adapter 回归，避免移动/CLI 循环 mutation 被旧客户端字段裁切。
 - **PC 旧端合并保护**：桌面 `LocalTaskProvider.mergeCloudSnapshot` 将缺少 `startDate/recurrence` 解释为 0.12.104 旧 shape 未表达，而不是显式清空；SQLite 既有循环规则与次数继续保留，显式 `null` 仍可取消调度。
+- **移动幂等重试**：移动端完成/恢复任务的 operationId 由 deviceId、taskId、目标 completed 状态和 expected revision 确定性生成；同一意图在响应丢失/failover 重试时复用同一 ID，不会把一次完成推进两次。
 
 ## 2026-08-30 · 临时数据清理入口与历史残留回收
 
