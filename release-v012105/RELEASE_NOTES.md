@@ -2,7 +2,7 @@
 
 > 发布日期：2026-08-30
 >
-> 对应打包提交：`03c96d8`
+> 对应打包提交：`e6dde4b`
 >
 > 发布类型：本地候选，未创建 tag 或 GitHub Release
 >
@@ -23,13 +23,13 @@
 
 - Node 22.22.2：format/typecheck/lint 通过；根 Vitest `127 files / 977 tests`，cloud/mcp `11 files / 116 tests`，cross-device `6 files / 63 tests`。
 - Cloudflare 两阶段协议通过；private/public dry-run 通过。private `focuslink-sync` 已部署 `5c413507-a033-46ed-9ed2-b541f5190947`，public `foxlink-mcp` 已部署 `3592ccde-efdf-4ce0-8f1a-34a1b9fb697b`，远端 probe `19/19`。
-- unpacked UI、固定两态 mini、live fallback、portable startup 与 portable 完整 UI smoke 全部通过；包内身份 `0.12.105 / 03c96d8`。
+- unpacked UI、固定两态 mini、live fallback 与 portable startup 通过。portable UI 的旧固定 650ms 检查曾连续三次在 native fullscreen 几何恢复前误点暂停；门禁改为等待 viewport 回到进入前尺寸并保留最后 DOM 诊断后，完整 UI 连续通过。包内身份 `0.12.105 / e6dde4b`。
 - Windows installer `/S` exit 0；卸载项、FileVersion、ProductVersion 回读 `0.12.105 / 0.12.105 / 0.12.105.0`。SQLite `quick_check=ok`，安装前后保持 111 sessions / 250 segments / 193 pauses，设备凭据保留。
 - 番茄 To-do bridge ensure 启动标准客户端并回读 `connected=true`；设置页真实显示“当前无可上传记录 / 223 条过期历史已停止重试 / 连接已确认”，没有无效上传按钮。
-- 华为 DBY-W09 正式包覆盖并回读 `0.12.105/1305`，WebView 构建 `03c96d8`、配对 live、无横向溢出。隔离 terminal `4/4` 与非手工系统合同 `13/13`（含 PiP）通过；`.test` 包已卸载。
+- 华为 DBY-W09 正式包覆盖并回读 `0.12.105/1305`，WebView 构建 `e6dde4b`、配对 live、无横向溢出。隔离 terminal `4/4` 与非手工系统合同 `13/13`（含 PiP）通过；`.test` 包已卸载。
 - 平板与 Windows 真实配对后，任务创建/移动/完成/恢复双向收敛；实时链完成“平板开始 → PC 暂停 → 平板继续/结束”；PC 回读账本 `2 segments + 1 pause`。所有临时任务、清单和会话最终精确匹配为 0。
 - 小米 `192.168.1.4:5555` 旧正式包因历史签名不能覆盖，未卸载、未清数据；同源码并行包 `app.focuslink.mobile.v012105` 已覆盖、启动并回读 `0.12.105/1305`。
-- 正式 Android APK `app.focuslink.mobile` SHA256：`A735FA7439B713056B9AADD4DB0276E812FAFD88F9AC8025D53CDF1F58BAAAC4`。
+- 正式 Android APK `app.focuslink.mobile` SHA256：`6B68B0F2A42F7098E1474E077D272A2A2684B4EC7C14F0B1CD7BC167BD7E6A07`。
 - `.git/lfs/tmp` 打包前后均为 0 文件 / 0 B。
 
 ## 已知限制
@@ -44,7 +44,7 @@
 
 | 文件 | SHA256 |
 | --- | --- |
-| `FocusLink-0.12.105-x64.exe` | `F8C85B20784CC86A3CC2E3E5C7BC7D5ADE1EAC50219D7E6FDE3071BA70C0AE6A` |
-| `FocusLink-0.12.105-x64-portable.exe` | `4D9BD09EA696C27516D29A10F8F038B66C4F49DD054AA7E0D09DFB163B827520` |
+| `FocusLink-0.12.105-x64.exe` | `3F954B6A35A796D996F37879C0F5E94DAB8D30EF895AE48B2D58004EA257ECD5` |
+| `FocusLink-0.12.105-x64-portable.exe` | `448C9F162B82EAC46E07D38E98F98DCB291018AA97873DF771D85E21E2A8BC1B` |
 
 同时提供 `SHA256SUMS.txt`。
