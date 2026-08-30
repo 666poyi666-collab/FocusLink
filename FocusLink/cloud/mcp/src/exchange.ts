@@ -99,7 +99,7 @@ export async function handleCanonicalSync(request: Request, env: ExchangeEnv): P
   upstreamUrl.search = url.search;
   let init: RequestInit = { method: request.method };
   const schedulingCapability: Record<string, string> =
-    url.pathname === '/sync/v2/tasks' &&
+    (url.pathname === '/sync/v2/tasks' || url.pathname === '/sync/v2/tasks/mutate') &&
     taskSnapshotSupportsScheduling(request.headers.get(TASK_SNAPSHOT_CAPABILITY_HEADER))
       ? { [TASK_SNAPSHOT_CAPABILITY_HEADER]: TASK_SNAPSHOT_SCHEDULING_CAPABILITY }
       : {};

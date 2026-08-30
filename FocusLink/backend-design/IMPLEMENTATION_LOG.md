@@ -7,6 +7,7 @@
 - **设置与同步事实**：设置页移除大号分区编号并压缩导航/间距。跨设备区分当前实时连接、最近账本确认和最近尝试诊断；历史 `lastError` 不再冒充当前离线。设备列表显示 `lastSeenAt`、过期/久未同步/测试归档。番茄 To-do 分为本机写入、上传队列、桌面桥接和手机显示四个事实域，明确上传确认不等于手机端回读。
 - **Dashboard / 字体**：桌面与移动 24 小时地图新增五时段、每轨累计、当前时间标签和独立 gap/night 色；620px 以上平板完整展示 00–24，手机仅地图内部可横向查看。界面字体从六套扩展至八套，新增思源宋体和站酷快乐体；设置页提供真实预览。
 - **自动证据（阶段性）**：Node 22.22.2 下 format、typecheck（含 Cloudflare）、lint、根 Vitest `125 files / 943 tests`、cloud/mcp `114 tests`、生产 build 通过。设置分组/番茄/设备页、桌面 Dashboard 明暗及 980×660、移动 360/412/640/760/915×412 截图门禁通过；原桌面 screenshot 误以 `.app-stage` 当页面就绪导致 history 截到旧任务页，现改为 `.history-page` / `.task-workspace-page` 专属根节点并重拍通过。Cloudflare dry-run/部署、dist、packaged smoke 和三设备安装矩阵待后续回填，不提前标记完成。
+- **协议小修**：MCP adapter 的 `task-scheduling-v1` capability 现同时转发 `/sync/v2/tasks` 与 `/sync/v2/tasks/mutate`，实时命令路径不携带该头；新增 adapter 回归，避免移动/CLI 循环 mutation 被旧客户端字段裁切。
 
 ## 2026-08-30 · 临时数据清理入口与历史残留回收
 
