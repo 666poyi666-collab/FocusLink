@@ -8,6 +8,7 @@
 - **设置与系统权限**：主题改为三段控制，八套字体分别以自身 family 直接预览；人工截图发现旧平板双栏规则把字体卡压成细竖条，已改为全宽四列两行并新增单卡宽度门禁。“任务快照/本机会话”改为“任务同步/本机专注记录”，账本新鲜度明确为最近云端账本确认。root 批次只运行 native 固定命令，通知/overlay/电池/后台逐项 readback；API 24/26/28 AppOps 分支、矛盾结果归一化、陈旧批次被 fresh status 覆盖和 OEM 自启动 `manual-required` 均有自动测试。
 - **任务与专注一致性**：快速新增任务显式选择目标清单，新建清单成功后自动进入并成为下一任务目的地；详情直接提供“标记完成/恢复为待办”。移动端删除独立 `MobileTemporalRibbon`，以纯 adapter 把 live snapshot 的服务器时钟、暂停和复用 segment 转成桌面 `TimerSnapshot`，实际渲染同一个 `TemporalRibbon`；连接面板区分实时来源、缓存/本机会话和最近确认。
 - **虚拟门禁**：Node 22.22.2 下 format/typecheck/lint 通过，根 Vitest 最终 `129 files / 1006 tests`；全量首轮并发有 3 个 dida 子进程用例失败，串行后只剩一个 5.338 秒超过默认 5 秒，保持断言并把该多进程用例窗口放宽到 15 秒后全绿。移动 production 五视口明暗四页最终通过；门禁先后真实抓到 38px 任务清单选择、40px 平板时间支架控制和字体卡半宽审美问题，修后所有交互 ≥44px、字体卡 ≥100px。API 35 emulator 安装回读 `1.3.0/1306`；全量 instrumentation 33 项中 8 项条件跳过，overlay 人工截图用例首次因权限未开失败，显式授予模拟器 overlay 后同一用例 `1/1` 通过。Windows 与两台真实 Android 安装仍待最终干净构建，不提前标记完成。
+- **隐藏窗口计时**：1.3 桌面 smoke 首次对 portable 隐藏窗口观察到翻牌节点和确认层迟迟不收敛；根因是 Electron renderer background throttling 让 UI fallback/动画停顿，而非计时 authority 错误。主窗与 mini 的 WebView 现显式 `backgroundThrottling: false`，墙钟投影继续由主进程权威值驱动；待从新干净构建复跑 portable UI smoke。
 
 ## 2026-08-30 · v0.12.105 时间任务合同与三端视觉升级
 
