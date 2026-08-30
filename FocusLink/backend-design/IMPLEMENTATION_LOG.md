@@ -26,6 +26,7 @@
 - **华为配对与三路真实闭环**：电脑输入平板本机码后 exchange 成功、平板自动 claim，未记录凭据；任务链由平板创建两张临时清单与一项任务，完成移动/完成/恢复并在 PC 回读相同 revision；live 链由平板开始、PC 暂停、平板继续/结束；completed ledger 在 PC 精确回读 `2 segments + 1 pause`。两个临时会话均以 v2 tombstone 删除，临时任务/清单以 CAS `73→75` 删除，PC/平板精确匹配最终均为 0。
 - **华为最终 UI/系统证据**：正式包持续回读 `0.12.105/1305`，配对凭据在覆盖安装、instrumentation 与仅卸载 `.test` 后仍为 live。隔离 terminal `4/4`、非手工系统合同 `13/13`（含 PiP）通过；全量 25 项中 4 项因缺真实云参数/非小米被条件跳过，3 个仅供人工截图保持的通知/悬浮窗用例因系统权限未开启失败，未冒充全绿。640×992 真机确认 5 时段、25 刻度、3 轨、8 字体、9 仪表、待办/已完成和无横向溢出；标准/制图预览 transform 几何已收口，不再裁切。
 - **ChatGPT Web 现状**：设置中已有 `FocusLink（云端 OAuth）`，URL 指向正式 MCP，但连接时间仍为 2026-07-28、工具只有旧专注只读面且 scope 仅 `focuslink:read`。已停在插件“刷新”动作前；刷新会更新持久插件权限并触发 `focuslink:write` OAuth，按用户要求等待动作时确认，不能写成已配置完成。
+- **最终构建/部署/安装证据**：源码合并提交 `03c96d8`；Node 22.22.2 下根 `127/977`、MCP `11/116`、cross-device `6/63`、Cloudflare 两阶段协议、Android build/unit/lint 均通过。unpacked UI/mini/live fallback 与 portable startup/UI 通过，installer `/S` exit 0，包内/已安装身份 `0.12.105 / 03c96d8`。private Worker `5c413507-a033-46ed-9ed2-b541f5190947`、public MCP `3592ccde-efdf-4ce0-8f1a-34a1b9fb697b`，远端 `19/19`。Windows SQLite/凭据保留；华为正式包和小米并行包回读 `0.12.105/1305`。installer SHA256 `F8C85B20784CC86A3CC2E3E5C7BC7D5ADE1EAC50219D7E6FDE3071BA70C0AE6A`，portable `4D9BD09EA696C27516D29A10F8F038B66C4F49DD054AA7E0D09DFB163B827520`，正式 APK `A735FA7439B713056B9AADD4DB0276E812FAFD88F9AC8025D53CDF1F58BAAAC4`；LFS tmp 始终为 0。
 
 ## 2026-08-30 · 临时数据清理入口与历史残留回收
 
