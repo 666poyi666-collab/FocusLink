@@ -2,6 +2,9 @@
 
 ## 2026-08-30 · v0.12.105 时间任务合同与三端视觉升级
 
+- **验收期版本节流**：本轮番茄 To-do/平板实测属于未闭合的 0.12.105 候选补修，按用户“减少版本号”要求和同组功能节流规则继续使用 `0.12.105/1305`，不为每次诊断重打新补丁号。
+- **Bug-01（无配对本机专注被清成 idle）**：华为平板真实 WebView 点击“开始本机专注”后提示已开始，但界面仍为 `phase-idle` 且开始按钮锁死。根因是 `offlineRuntime` 创建成功后触发 live effect，`configured=false` 分支无条件清空 `liveSnapshot`；运行 runtime 仍在 IndexedDB。修复后 unconfigured 分支优先从 `offlineRuntimeRef` 投影 running/paused 快照，只在没有本机 runtime 时清缓存。新增 lifecycle 源码合同并在平板保留真实运行记录等待升级后恢复验证。
+- **Bug-02（223 条永久过期记录伪装成待上传）**：真实日志两次为 `total=223/uploaded=0/failed=223`，桥 probe `connected=true`；脱敏解析 `tomatodo_db.json` 确认 223/223 全部早于 7 天，最新一条为 2026-08-14。当前时间临时记录真实 smoke 已得到 `cloudUploadConfirmed=true`，证明桥和上传 API 正常。修复为共享 7 天窗口策略：过期历史保留本机、不改日期、不标已同步，并退出 FocusLink 自动重试；设置页分别显示可上传数与“历史已停止重试”，仅有可投递记录时显示上传按钮。
 - **任务循环与时间**：任务快照在 v1 envelope 内增加 capability-gated `startDate` 与结构化 recurrence；定义日/周/月/年、间隔、星期/月日、结束时间、总次数、已完成次数和 `from_schedule/from_completion` 顺延。客户端 mutation 不能写 `completedCount`，Account DO 在完成事务中原子推进；循环未耗尽时更新下一次日期并保持未完成，耗尽后才进入已完成。旧 0.12.104 严格客户端不收到扩展字段，旧整包写回由 authority 合并保留新字段并在日期冲突时拒绝。
 - **MCP / CLI**：MCP 新增 `focuslink_get_current_time`、`focuslink_get_project`，扩展任务过滤与开始/截止/循环字段；ChatGPT Web 继续使用 OAuth read/write scopes。新增 `npm run focuslink` 第一方 CLI，支持 time、projects 和 tasks 的读写，复用 `operationId + expectedRevision`，并从 `fl2` 派生且校验绑定 deviceId；OAuth token 不作为 CLI 凭据。
 - **设置与同步事实**：设置页移除大号分区编号并压缩导航/间距。跨设备区分当前实时连接、最近账本确认和最近尝试诊断；历史 `lastError` 不再冒充当前离线。设备列表显示 `lastSeenAt`、过期/久未同步/测试归档。番茄 To-do 分为本机写入、上传队列、桌面桥接和手机显示四个事实域，明确上传确认不等于手机端回读。
@@ -15,6 +18,7 @@
 - **Cloudflare 部署**：private `focuslink-sync` 已部署版本 `4fbf1576-9f9a-4d92-980a-2ba40146e32c`；public `foxlink-mcp` 最终部署版本 `77354996-ec46-452e-b694-4d4c95744fe1`；远端匿名 probe `19/19`。生产 MCP 写入仍因没有 OAuth access token 明确 BLOCKED，`verify:pc-off` 返回 `FOCUSLINK_MCP_ACCESS_TOKEN is missing or invalid`，未创建生产临时任务。
 - **Windows/Android 安装矩阵**：Windows installer `/S` exit 0，已安装 EXE 回读 `0.12.105 / 0.12.105.0` 并重启，SQLite 保留。小米 `192.168.1.4:5555` 正式包因历史签名返回 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，未卸载/清数据；并行包 `app.focuslink.mobile.v012105` 已安装、启动并回读 `0.12.105/1305`。华为平板旧地址 `192.168.1.7:5555` offline，mDNS/ARP 未发现新地址，本轮未安装，故三设备同版门禁为 BLOCKED。
 - **最终候选资产**：正式 APK `app.focuslink.mobile` 为 `0.12.105/1305`，SHA256 `F7A75ECFDD0878BCB5E72A478BFA4A98C3B7051B7A5CC70EA02691F6BCE33216`；installer SHA256 `23220E3AA43A81423631B30C2E375A405AADABACD99C591C9AD39C7B3DC6CFC5`，portable `CBB5FBEB868AF579796C8C6D071951C067240B8C949691BCCB93055D32D5A703`。`.git/lfs/tmp` 全程 0 文件/0 B；未创建 tag 或 GitHub Release。
+- **华为恢复与首轮实机**：华为 DBY-W09 在 mDNS `192.168.1.7:5555` 恢复在线，正式 `0.12.105/1305` 覆盖安装成功。隔离 instrumentation 9/9（应用/Manifest/华为胶囊/系统能力/提醒/命令/旧快照/加密）通过；PiP 首次因锁屏 Activity 45 秒启动超时失败，解锁后同一测试 1/1 通过，两个事实按时间保留。WebView 640×992 回读四入口、无横向溢出和本地字体；真实本机专注复现 Bug-01，待补修 APK 覆盖后完成暂停/继续/结束和各页面验收。
 
 ## 2026-08-30 · 临时数据清理入口与历史残留回收
 

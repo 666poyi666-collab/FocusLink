@@ -1373,12 +1373,24 @@ export function MobileApp() {
     liveRequest.current?.abort();
     const configured = Boolean(preferences.endpoint && preferences.token);
     if (!configured) {
-      liveSnapshotRef.current = null;
-      setLiveSnapshot(null);
-      setLiveSnapshotSource('none');
       setConnectionState('unconfigured');
       setLiveConnectionNotice(null);
-      void enqueueMutation(cacheMutationQueue, clearCachedLiveFocusSnapshot);
+      const localRuntime = offlineRuntimeRef.current;
+      if (localRuntime) {
+        const localSnapshot = offlineRuntimeSnapshot(localRuntime, deviceId);
+        liveSnapshotRef.current = localSnapshot;
+        setLiveSnapshot(localSnapshot);
+        setLiveSnapshotSource('local');
+        const localMode =
+          authorityModeRef.current === 'forked-local' ? 'forked-local' : 'local-offline';
+        authorityModeRef.current = localMode;
+        setAuthorityMode(localMode);
+      } else {
+        liveSnapshotRef.current = null;
+        setLiveSnapshot(null);
+        setLiveSnapshotSource('none');
+        void enqueueMutation(cacheMutationQueue, clearCachedLiveFocusSnapshot);
+      }
       return;
     }
     if (!online) {
@@ -1476,6 +1488,7 @@ export function MobileApp() {
   }, [
     commitLiveSnapshot,
     connectionEpoch,
+    deviceId,
     offlineRuntime,
     online,
     preferences,

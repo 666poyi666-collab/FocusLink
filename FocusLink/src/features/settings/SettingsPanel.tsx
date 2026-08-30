@@ -196,6 +196,7 @@ export function SettingsPanel() {
   const [search, setSearch] = useState('');
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyRegistrationStatus | null>(null);
   const [tomatodoPending, setTomatodoPending] = useState<number>(0);
+  const [tomatodoExpired, setTomatodoExpired] = useState<number>(0);
   const [tomatodoPendingError, setTomatodoPendingError] = useState<string | null>(null);
   const [tomatodoBridge, setTomatodoBridge] = useState<TomatodoBridgeStatus | null>(null);
   const [tomatodoUploading, setTomatodoUploading] = useState(false);
@@ -288,8 +289,9 @@ export function SettingsPanel() {
 
   const refreshTomatodoPending = async () => {
     try {
-      const count = await window.focuslink.tomatodo.pendingCount();
-      setTomatodoPending(count);
+      const summary = await window.focuslink.tomatodo.pendingSummary();
+      setTomatodoPending(summary.uploadable);
+      setTomatodoExpired(summary.expired);
       setTomatodoPendingError(null);
     } catch (error) {
       setTomatodoPendingError(error instanceof Error ? error.message : String(error));
@@ -586,7 +588,12 @@ export function SettingsPanel() {
 
       const result = await window.focuslink.tomatodo.uploadPending();
       if (result.uploaded > 0) {
-        addToast(`番茄 To-do 上传已确认：${result.uploaded} 条记录`, 'success');
+        addToast(
+          `番茄 To-do 上传已确认：${result.uploaded} 条记录${result.expired > 0 ? `；${result.expired} 条历史已停止重试` : ''}`,
+          'success',
+        );
+      } else if (result.expired > 0 && result.failed === 0) {
+        addToast(`${result.expired} 条历史记录超过 7 天，已保留本机并停止重试`, 'info');
       } else if (result.error) {
         addToast(result.error, 'info');
       } else {
@@ -924,15 +931,25 @@ export function SettingsPanel() {
       ? {
           label: '上传队列',
           value: `${tomatodoPending} 条待上传`,
-          detail: '记录保留在本机，收到番茄 To-do 上传确认后才会移出队列',
+          detail:
+            tomatodoExpired > 0
+              ? `另有 ${tomatodoExpired} 条历史超过 7 天，已保留本机并停止重试`
+              : '记录保留在本机，收到番茄 To-do 上传确认后才会移出队列',
           tone: 'warning',
         }
-      : {
-          label: '上传队列',
-          value: '当前无待上传',
-          detail: '这里只表示本机队列已处理，不代表手机端已经显示',
-          tone: 'success',
-        };
+      : tomatodoExpired > 0
+        ? {
+            label: '上传队列',
+            value: `${tomatodoExpired} 条历史已停止重试`,
+            detail: '全部超过番茄 To-do 的 7 天窗口；未改日期、未删除本机记录',
+            tone: 'neutral',
+          }
+        : {
+            label: '上传队列',
+            value: '当前无待上传',
+            detail: '这里只表示本机队列已处理，不代表手机端已经显示',
+            tone: 'success',
+          };
   const tomatodoPhoneFact: SettingsStatusFact = {
     label: '手机端显示',
     value: '需在番茄 To-do 核对',
