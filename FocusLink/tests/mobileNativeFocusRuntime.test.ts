@@ -8,6 +8,7 @@ import {
   normalizeNativePauseReminderDelayMinutes,
   readNativeFocusStatus,
   requeueNativeTerminalLedger,
+  requestNativeAllPermissions,
   restoreOrMigrateNativeFocusConnection,
   updateNativeAuthorityProjectionHistory,
 } from '../src/mobile/nativeFocusRuntime';
@@ -26,6 +27,7 @@ const nativePluginHarness = vi.hoisted(() => ({
   updateAuthorityProjectionHistory: vi.fn(),
   getConnection: vi.fn(),
   getNativeStatus: vi.fn(),
+  requestAllPermissions: vi.fn(),
 }));
 
 vi.mock('@capacitor/core', () => ({
@@ -63,6 +65,12 @@ describe('mobile native focus display projection', () => {
     nativePluginHarness.getNativeStatus.mockReset();
     nativePluginHarness.getNativeStatus.mockResolvedValue({
       cloudPoll: { terminalLedgerCount: 0 },
+    });
+    nativePluginHarness.requestAllPermissions.mockReset();
+    nativePluginHarness.requestAllPermissions.mockResolvedValue({
+      rootAvailable: false,
+      attemptedAtEpochMs: 100,
+      items: [],
     });
   });
 
@@ -115,6 +123,81 @@ describe('mobile native focus display projection', () => {
 
     capacitorHarness.native = false;
     expect(isNativeFocusRuntimeAvailable()).toBe(false);
+  });
+
+  it('keeps only verified permission facts returned by the native root batch', async () => {
+    capacitorHarness.native = true;
+    capacitorHarness.pluginAvailable = true;
+    nativePluginHarness.requestAllPermissions.mockResolvedValue({
+      rootAvailable: true,
+      attemptedAtEpochMs: 123,
+      items: [
+        {
+          id: 'notification',
+          state: 'granted',
+          verified: true,
+          commandAttempted: true,
+          commandSucceeded: true,
+        },
+        {
+          id: 'overlay',
+          state: 'not-granted',
+          verified: true,
+          commandAttempted: true,
+          commandSucceeded: true,
+        },
+        {
+          id: 'autostart',
+          state: 'manual-required',
+          verified: false,
+          commandAttempted: false,
+          commandSucceeded: false,
+        },
+        {
+          id: 'battery',
+          state: 'granted',
+          verified: false,
+          commandAttempted: true,
+          commandSucceeded: true,
+        },
+        { id: 'unknown', state: 'granted', verified: true },
+      ],
+    });
+
+    await expect(requestNativeAllPermissions()).resolves.toEqual({
+      rootAvailable: true,
+      attemptedAtEpochMs: 123,
+      items: [
+        {
+          id: 'notification',
+          state: 'granted',
+          verified: true,
+          commandAttempted: true,
+          commandSucceeded: true,
+        },
+        {
+          id: 'overlay',
+          state: 'not-granted',
+          verified: false,
+          commandAttempted: true,
+          commandSucceeded: true,
+        },
+        {
+          id: 'autostart',
+          state: 'manual-required',
+          verified: false,
+          commandAttempted: false,
+          commandSucceeded: false,
+        },
+        {
+          id: 'battery',
+          state: 'not-granted',
+          verified: false,
+          commandAttempted: true,
+          commandSucceeded: true,
+        },
+      ],
+    });
   });
 
   it('restores the Keystore credential without overwriting it from a legacy browser copy', async () => {

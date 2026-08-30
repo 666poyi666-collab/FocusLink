@@ -64,6 +64,25 @@ export interface NativePauseReminderPreference {
   delayMinutes: number;
 }
 
+export type NativePermissionId =
+  'notification' | 'overlay' | 'battery' | 'background' | 'autostart';
+export type NativePermissionState =
+  'granted' | 'manual-required' | 'root-unavailable' | 'failed' | 'not-granted';
+
+export interface NativePermissionResult {
+  id: NativePermissionId;
+  state: NativePermissionState;
+  verified: boolean;
+  commandAttempted: boolean;
+  commandSucceeded: boolean;
+}
+
+export interface NativeAllPermissionsResult {
+  rootAvailable: boolean;
+  items: NativePermissionResult[];
+  attemptedAtEpochMs: number;
+}
+
 export interface NativePictureInPictureAspectRatio {
   width: number;
   height: number;
@@ -99,6 +118,7 @@ export interface NativeFocusStatus {
   manufacturer?: string;
   batteryOptimizationExempt?: boolean;
   backgroundRestricted?: boolean;
+  backgroundAppOpsAllowed?: boolean;
   overlayPermissionGranted?: boolean;
   overlayEnabled?: boolean;
   systemSurface?: NativeSystemFocusSurface;
@@ -166,6 +186,7 @@ interface FocusRuntimePlugin {
     canPostNotification?: boolean;
     settingsOpened?: boolean;
   }>;
+  requestAllPermissions(): Promise<NativeAllPermissionsResult>;
   requestQuickSettingsTile(): Promise<{ status?: string; manualRequired?: boolean }>;
   configureConnection(options: {
     endpoint: string;
@@ -751,6 +772,37 @@ export async function requestNativeNotificationPermission(): Promise<{
   };
 }
 
+/**
+ * Runs the bounded native permission batch. The Android side returns only
+ * redacted per-permission facts; command text and root output never cross the
+ * WebView boundary.
+ */
+export async function requestNativeAllPermissions(): Promise<NativeAllPermissionsResult | null> {
+  if (!isNativeFocusRuntimeAvailable()) return null;
+  const result = await FocusRuntime.requestAllPermissions();
+  const items: NativePermissionResult[] = [];
+  for (const item of Array.isArray(result.items) ? result.items : []) {
+    if (!isNativePermissionId(item?.id)) continue;
+    const state = normalizeNativePermissionState(item?.state);
+    const verified = item.verified === true && state === 'granted';
+    items.push({
+      id: item.id,
+      state: state === 'granted' && !verified ? 'not-granted' : state,
+      verified,
+      commandAttempted: item.commandAttempted === true,
+      commandSucceeded: item.commandSucceeded === true,
+    });
+  }
+  return {
+    rootAvailable: result.rootAvailable === true,
+    items,
+    attemptedAtEpochMs:
+      typeof result.attemptedAtEpochMs === 'number' && Number.isFinite(result.attemptedAtEpochMs)
+        ? result.attemptedAtEpochMs
+        : Date.now(),
+  };
+}
+
 export async function requestNativeQuickSettingsTile(): Promise<{
   added: boolean;
   manualRequired: boolean;
@@ -766,4 +818,27 @@ export async function requestNativeQuickSettingsTile(): Promise<{
 export async function readNativeFocusStatus(): Promise<NativeFocusStatus | null> {
   if (!isNativeFocusRuntimeAvailable()) return null;
   return FocusRuntime.getNativeStatus();
+}
+
+function isNativePermissionId(value: unknown): value is NativePermissionId {
+  return (
+    value === 'notification' ||
+    value === 'overlay' ||
+    value === 'battery' ||
+    value === 'background' ||
+    value === 'autostart'
+  );
+}
+
+function normalizeNativePermissionState(value: unknown): NativePermissionState {
+  if (
+    value === 'granted' ||
+    value === 'manual-required' ||
+    value === 'root-unavailable' ||
+    value === 'failed' ||
+    value === 'not-granted'
+  ) {
+    return value;
+  }
+  return 'failed';
 }

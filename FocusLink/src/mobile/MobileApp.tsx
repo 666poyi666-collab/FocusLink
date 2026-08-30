@@ -239,6 +239,18 @@ export function MobileApp() {
     }),
   );
 
+  // A task can be removed or moved by another device while this renderer is open. Do not let
+  // the old selection/title survive that snapshot transition and create an unlinked session with
+  // a stale task name.
+  useEffect(() => {
+    if (!selectedTaskId || !taskSnapshot) return;
+    const stillPresent =
+      taskSnapshot.snapshot?.tasks.some((task) => task.id === selectedTaskId) ?? false;
+    if (stillPresent) return;
+    setSelectedTaskId('');
+    setTitleDraft('');
+  }, [selectedTaskId, taskSnapshot]);
+
   const [deviceId, setDeviceId] = useState(() => getOrCreateDeviceId());
   const [nativeConnectionLease, setNativeConnectionLease] = useState<string | null>(null);
   const preferencesRef = useRef(preferences);
@@ -947,6 +959,7 @@ export function MobileApp() {
       const projectCount = snapshot.projects.filter(
         (project) => !isFocusLinkInboxProject(project.id),
       ).length;
+      const projectId = crypto.randomUUID();
       const response = await publishTaskSnapshot({
         endpoint: preferences.endpoint,
         token: preferences.token,
@@ -957,7 +970,7 @@ export function MobileApp() {
           projects: [
             ...snapshot.projects,
             {
-              id: crypto.randomUUID(),
+              id: projectId,
               source: 'local',
               name,
               color: defaultTaskProjectColor(projectCount + 1),
@@ -974,6 +987,7 @@ export function MobileApp() {
         );
       }
       setCommandNotice('清单已保存到 FocusLink 云端');
+      return projectId;
     },
     [deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
@@ -2147,6 +2161,7 @@ export function MobileApp() {
                 configured={configured}
                 lastSyncAt={cache.lastSyncAt}
                 cursor={cache.cursor}
+                tasks={taskSnapshot?.snapshot?.tasks ?? null}
               />
             )}
             {activeView === 'settings' && (
