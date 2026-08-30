@@ -339,17 +339,17 @@ export function TimerPanel() {
         immersiveExitTimer.current = null;
         setImmersive(false);
         setImmersiveLeaving(false);
+        window.setTimeout(() => {
+          void Promise.race([
+            window.focuslink.window.setFullScreen(false),
+            new Promise<void>((resolve) => window.setTimeout(resolve, 250)),
+          ]).catch(() => {
+            // The operating system may already have left fullscreen.
+          });
+        }, 0);
       },
       reducedMotion ? 40 : 360,
     );
-    // UI exit timing is independent from the native acknowledgement. Portable builds can leave
-    // this promise pending even after Windows has already left full screen.
-    void Promise.race([
-      window.focuslink.window.setFullScreen(false),
-      new Promise<void>((resolve) => window.setTimeout(resolve, 250)),
-    ]).catch(() => {
-      // The operating system may already have left fullscreen.
-    });
   }, [immersive, immersiveLeaving, reducedMotion]);
 
   useEffect(() => {

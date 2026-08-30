@@ -10,7 +10,7 @@
 - **协议小修**：MCP adapter 的 `task-scheduling-v1` capability 现同时转发 `/sync/v2/tasks` 与 `/sync/v2/tasks/mutate`，实时命令路径不携带该头；新增 adapter 回归，避免移动/CLI 循环 mutation 被旧客户端字段裁切。
 - **PC 旧端合并保护**：桌面 `LocalTaskProvider.mergeCloudSnapshot` 将缺少 `startDate/recurrence` 解释为 0.12.104 旧 shape 未表达，而不是显式清空；SQLite 既有循环规则与次数继续保留，显式 `null` 仍可取消调度。
 - **移动幂等重试**：移动端完成/恢复任务的 operationId 由 deviceId、taskId、目标 completed 状态和 expected revision 确定性生成；同一意图在响应丢失/failover 重试时复用同一 ID，不会把一次完成推进两次。
-- **Portable 沉浸退出**：packaged portable UI smoke 复现退出覆盖层在 650ms 窗口内未卸载。根因是 renderer 先串行等待 native 全屏确认最多 250ms，再启动 360ms 离场，总下限 610ms。现改为离场动画立即计时，native 退出并行有界执行；覆盖层不再受系统 IPC 延迟拖住。
+- **Portable 沉浸退出**：packaged portable UI smoke 复现退出覆盖层在 650ms 窗口内未卸载。根因先是 renderer 串行等待 native 全屏确认最多 250ms，再启动 360ms 离场；改为并行后仍证实 portable 的 native 切换会阻塞 renderer timer。最终顺序为先完成 360ms 覆盖层离场并卸载，再在下一事件循环请求 Windows 退出全屏，使视觉状态不再受系统 IPC 阻塞。
 
 ## 2026-08-30 · 临时数据清理入口与历史残留回收
 
