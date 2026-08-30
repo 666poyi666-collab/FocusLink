@@ -302,6 +302,14 @@ export const LocalTaskProvider = {
       if (task.source !== 'local') continue;
       const existing = current.get(task.id);
       if (existing && (existing.updatedAt ?? 0) >= (task.updatedAt ?? 0)) continue;
+      const startDate =
+        task.startDate === undefined ? (existing?.startDate ?? null) : task.startDate;
+      const recurrence =
+        task.recurrence === undefined
+          ? (existing?.recurrence ?? null)
+          : task.recurrence
+            ? JSON.stringify(task.recurrence)
+            : null;
       upsertTaskCache({
         id: task.id,
         source: 'local',
@@ -311,9 +319,9 @@ export const LocalTaskProvider = {
         title: task.title,
         status: task.isCompleted ? 'completed' : (task.status ?? 'incomplete'),
         priority: task.priority,
-        startDate: task.startDate ?? null,
+        startDate,
         dueDate: task.dueDate,
-        recurrence: task.recurrence ? JSON.stringify(task.recurrence) : null,
+        recurrence,
         tags: JSON.stringify(task.tags),
         content: existing?.content ?? null,
         rawJson: existing?.rawJson ?? null,

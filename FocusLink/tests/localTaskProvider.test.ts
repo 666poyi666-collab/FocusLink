@@ -251,6 +251,64 @@ describe('local task completion mutations', () => {
     expect(restored).toMatchObject({ isCompleted: false, recurrence: { completedCount: 1 } });
   });
 
+  it('preserves scheduling when an older peer sends a strict legacy task shape', () => {
+    const dueDate = Date.parse('2026-08-30T09:00:00+08:00');
+    LocalTaskProvider.mergeCloudSnapshot(
+      [{ id: 'local-inbox', source: 'local', name: '收件箱', color: '#16899f' }],
+      [
+        {
+          id: 'legacy-preserve',
+          source: 'local',
+          projectId: 'local-inbox',
+          title: '循环保留',
+          status: 'incomplete',
+          priority: null,
+          dueDate,
+          recurrence: {
+            timezone: 'Asia/Shanghai',
+            frequency: 'daily',
+            interval: 1,
+            byWeekday: [],
+            byMonthDay: [],
+            endAt: null,
+            count: 4,
+            completedCount: 1,
+            rollover: 'from_schedule',
+          },
+          tags: [],
+          parentId: null,
+          isCompleted: false,
+          updatedAt: 10,
+        },
+      ],
+      10,
+    );
+    LocalTaskProvider.mergeCloudSnapshot(
+      [{ id: 'local-inbox', source: 'local', name: '收件箱', color: '#16899f' }],
+      [
+        {
+          id: 'legacy-preserve',
+          source: 'local',
+          projectId: 'local-inbox',
+          title: '旧端改名',
+          status: 'incomplete',
+          priority: 3,
+          dueDate,
+          tags: ['旧端'],
+          parentId: null,
+          isCompleted: false,
+          updatedAt: 11,
+        },
+      ],
+      11,
+    );
+    expect(LocalTaskProvider.getById('legacy-preserve')).toMatchObject({
+      title: '旧端改名',
+      priority: 3,
+      recurrence: { count: 4, completedCount: 1 },
+    });
+  });
+
   it('fails precisely when the local task no longer exists', () => {
     expect(() => LocalTaskProvider.setCompleted('missing', false)).toThrow(/本地任务不存在/);
   });
