@@ -73,6 +73,7 @@ import {
   subscribeToNativeFocusCommands,
   updateNativeAuthorityProjectionHistory,
   updateNativeFocusSnapshot,
+  waitForNativeFocusRuntimeStartup,
   type NativeFocusConnectionState,
   type NativeFocusCommand,
 } from './nativeFocusRuntime';
@@ -127,6 +128,7 @@ import {
   createMobileAccountLifecycle,
   createMobileAccountRequestCoalescer,
   createMobileAccountRequestLifecycle,
+  createMobileStartupRestoreCoordinator,
   isMobileAccountRequestCommitCurrent,
   mobileAccountConnectionKey,
   runMobileAccountCommit,
@@ -222,6 +224,7 @@ export function MobileApp() {
   const [commandNotice, setCommandNotice] = useState<string | null>(null);
   const [liveConnectionNotice, setLiveConnectionNotice] = useState<string | null>(null);
   const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const [nativeReadinessEpoch, setNativeReadinessEpoch] = useState(0);
   const [activeView, setActiveView] = useState<MobileView>('focus');
   const [liveSnapshotSource, setLiveSnapshotSource] = useState<LiveSnapshotSource>('none');
   const [offlineRuntime, setOfflineRuntime] = useState<OfflineFocusRuntime | null>(null);
@@ -252,6 +255,7 @@ export function MobileApp() {
   }, [selectedTaskId, taskSnapshot]);
 
   const [deviceId, setDeviceId] = useState(() => getOrCreateDeviceId());
+  const startupDeviceId = useRef(deviceId).current;
   const [nativeConnectionLease, setNativeConnectionLease] = useState<string | null>(null);
   const preferencesRef = useRef(preferences);
   const cacheRef = useRef(cache);
@@ -277,7 +281,8 @@ export function MobileApp() {
   const lastResumeRefreshAt = useRef(0);
   const mobileAppActive = useRef(true);
   const connectionKeyRef = useRef(mobileAccountConnectionKey(initialPreferences));
-  const accountLifecycle = useRef(createMobileAccountLifecycle()).current;
+  const [accountLifecycle] = useState(createMobileAccountLifecycle);
+  const [startupRestore] = useState(() => createMobileStartupRestoreCoordinator(accountLifecycle));
   const accountTransitionOperation = useRef<number | null>(null);
 
   const beginAccountTransition = useCallback(
@@ -401,22 +406,66 @@ export function MobileApp() {
   }, [preferences, refreshManagedDevices]);
 
   useEffect(() => {
-    if (!isNativeFocusRuntimeAvailable()) return;
-    const operation = accountLifecycle.issue();
+    if (nativeSystemControls.available) return;
+    let disposed = false;
+    let removeAppStateListener: (() => Promise<void>) | undefined;
+    const retryWhenVisible = () => {
+      if (!disposed && document.visibilityState === 'visible') {
+        setNativeReadinessEpoch((value) => value + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', retryWhenVisible);
+    window.addEventListener('focus', retryWhenVisible);
+    window.addEventListener('pageshow', retryWhenVisible);
+    void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) retryWhenVisible();
+    }).then((handle) => {
+      if (disposed) void handle.remove();
+      else removeAppStateListener = () => handle.remove();
+    });
+    return () => {
+      disposed = true;
+      document.removeEventListener('visibilitychange', retryWhenVisible);
+      window.removeEventListener('focus', retryWhenVisible);
+      window.removeEventListener('pageshow', retryWhenVisible);
+      if (removeAppStateListener) void removeAppStateListener();
+    };
+  }, [nativeSystemControls.available]);
+
+  useEffect(() => {
+    if (nativeSystemControls.available) return;
+    const readiness = new AbortController();
+    void waitForNativeFocusRuntimeStartup({ signal: readiness.signal }).then((ready) => {
+      if (ready) {
+        setNativeSystemControls((current) =>
+          current.available ? current : { ...current, available: true },
+        );
+      }
+    });
+    return () => readiness.abort();
+  }, [nativeReadinessEpoch, nativeSystemControls.available]);
+
+  useEffect(() => {
+    if (!nativeSystemControls.available) return;
+    const operation = startupRestore.current();
+    if (operation === null) return;
+    const operationSignal = accountLifecycle.signal(operation);
     let disposed = false;
     const legacyPreferences = preferencesRef.current;
     void accountLifecycle
-      .enqueueNative(() =>
-        restoreOrMigrateNativeFocusConnection(
+      .enqueueNative(async () => {
+        if (disposed || !accountLifecycle.isCurrent(operation)) return null;
+        return restoreOrMigrateNativeFocusConnection(
           legacyPreferences.endpoint && legacyPreferences.token
             ? {
                 endpoint: normalizeDeviceSyncEndpoint(legacyPreferences.endpoint),
                 accessToken: legacyPreferences.token,
-                deviceId,
+                deviceId: startupDeviceId,
               }
             : null,
-        ),
-      )
+          operationSignal,
+        );
+      })
       .then(async (connection) => {
         if (disposed || !accountLifecycle.isCurrent(operation) || !connection) return;
         const next: MobileConnectionPreferences = {
@@ -452,7 +501,14 @@ export function MobileApp() {
     return () => {
       disposed = true;
     };
-  }, [accountLifecycle, commitNativeConnectionLease, deviceId, resetAccountScopedState]);
+  }, [
+    accountLifecycle,
+    commitNativeConnectionLease,
+    nativeSystemControls.available,
+    resetAccountScopedState,
+    startupDeviceId,
+    startupRestore,
+  ]);
 
   const applyOwnerAccountSession = useCallback(
     async (session: OwnerAccountSession, operation: number): Promise<boolean> => {
@@ -472,19 +528,21 @@ export function MobileApp() {
         rememberToken: true,
       };
       beginAccountTransition(operation);
+      const operationSignal = accountLifecycle.signal(operation);
       let committed = false;
       try {
         const transition = await runMobileAccountCommit(
           accountLifecycle,
           operation,
           {
-            read: readNativeFocusConnectionState,
+            read: () => readNativeFocusConnectionState(operationSignal),
             async mutate(baseline): Promise<NativeFocusConnectionState> {
               const connection = await configureNativeFocusConnection(
                 next.endpoint,
                 next.token,
                 session.deviceId,
                 baseline.connectionLease,
+                operationSignal,
               );
               return {
                 connection,
@@ -502,6 +560,11 @@ export function MobileApp() {
           resetAccountScopedState,
         );
         if (!transition.current) return false;
+        if (isNativeFocusRuntimeAvailable()) {
+          setNativeSystemControls((current) =>
+            current.available ? current : { ...current, available: true },
+          );
+        }
         commitNativeConnectionLease(transition.nativeState?.connectionLease ?? null);
         const profile = {
           accountId: session.accountId,
@@ -1947,6 +2010,7 @@ export function MobileApp() {
       return;
     }
     const operation = accountLifecycle.invalidate();
+    const operationSignal = accountLifecycle.signal(operation);
     invalidateOwnerAccountBootstrap();
     setAccountLoginPolling(false);
     setAccountBusy(true);
@@ -1957,8 +2021,9 @@ export function MobileApp() {
         accountLifecycle,
         operation,
         {
-          read: readNativeFocusConnectionState,
-          mutate: (baseline) => clearNativeFocusConnection(baseline.connectionLease),
+          read: () => readNativeFocusConnectionState(operationSignal),
+          mutate: (baseline) =>
+            clearNativeFocusConnection(baseline.connectionLease, operationSignal),
           async restore(baseline, applied) {
             const restored = await restoreNativeFocusConnectionState(
               baseline,

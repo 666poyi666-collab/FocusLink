@@ -15,6 +15,7 @@ import {
   requestNativeQuickSettingsTile,
   setNativeOverlayEnabled,
   setNativePauseReminderPreference,
+  waitForNativeFocusRuntimeStartup,
   type NativePauseReminderPreference,
   type NativeAllPermissionsResult,
   type NativeFocusStatus,
@@ -22,7 +23,8 @@ import {
 } from './nativeFocusRuntime';
 
 export function NativeSystemControls() {
-  const [available] = useState(() => isNativeFocusRuntimeAvailable());
+  const [available, setAvailable] = useState(() => isNativeFocusRuntimeAvailable());
+  const [readinessEpoch, setReadinessEpoch] = useState(0);
   const [status, setStatus] = useState<NativeFocusStatus | null>(null);
   const [permissionBatch, setPermissionBatch] = useState<NativeAllPermissionsResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -46,6 +48,30 @@ export function NativeSystemControls() {
     const next = await readNativeFocusStatus();
     setStatus(next);
   }, []);
+
+  useEffect(() => {
+    if (available) return;
+    const controller = new AbortController();
+    void waitForNativeFocusRuntimeStartup({ signal: controller.signal }).then((ready) => {
+      if (ready) setAvailable(true);
+    });
+    return () => controller.abort();
+  }, [available, readinessEpoch]);
+
+  useEffect(() => {
+    if (available) return;
+    const retryWhenVisible = () => {
+      if (document.visibilityState === 'visible') setReadinessEpoch((value) => value + 1);
+    };
+    document.addEventListener('visibilitychange', retryWhenVisible);
+    window.addEventListener('focus', retryWhenVisible);
+    window.addEventListener('pageshow', retryWhenVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', retryWhenVisible);
+      window.removeEventListener('focus', retryWhenVisible);
+      window.removeEventListener('pageshow', retryWhenVisible);
+    };
+  }, [available]);
 
   useEffect(() => {
     if (!available) return;

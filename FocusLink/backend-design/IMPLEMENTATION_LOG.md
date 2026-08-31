@@ -3,12 +3,14 @@
 ## 2026-08-31 · v1.3 移动端审计（实施中）
 
 - **范围与版本**：本轮将移动设置、系统权限、Dashboard、清单/任务、专注仪表和连接状态纳入同一 `1.3.0/1306` 验收批次；界面显示 `1.3`。已确认的 PC/手机配对成功作为基线保留，不重复配对或清空用户数据。
+- **本轮真机验收范围（2026-08-31 用户最新指令）**：指定小米手机承担完整真实功能验收，必须以正式 `app.focuslink.mobile` APK 覆盖安装并回读 `1.3.0/1306`，在保留现有数据与配对凭据的前提下验证 native 凭据恢复、权限、Dashboard、清单/任务和专注流程。指定华为平板本轮只安装同一正式 APK并回读 `versionName/versionCode`，不执行功能、视觉、胶囊、同步或 instrumentation smoke；历史华为结果不能替代本轮安装回读。Windows 静默覆盖、注册表/EXE 版本回读和重启门禁保持不变。上述三项当前均未完成，不提前标记通过。
 - **待验证合同**：主题与字体选择必须在选择界面直接使用目标样式渲染；root 权限必须逐项执行并读取系统实际状态；Dashboard 日期范围与 24 小时段详情必须与共享日账本/任务快照一致；移动专注必须使用桌面 `TemporalRibbon` 的同源状态语义。
 - **Dashboard 遮挡与交互根因**：窄屏主读数是不可换行数字，旧末层样式没有把它限制在自己的 `minmax(0, 1fr)` 列内，能继续绘制到固定 donut 列，形成用户看到的数字/圆环遮挡。1.3 将主读数和 108px donut 明确隔离，≤380px 收敛为 96px 列/92px donut；日期默认近 7 天，并增加昨天、本/上 7 天、本/上 30 天与包含结束日的自定义本地自然日范围。24 小时色条继续只消费共享 session/segment ledger；图上按时间命中，键盘/触控使用互不覆盖的 48px 明细按钮，详情的完成/待办来自当前任务快照，禁止用 finished session 冒充任务完成。
 - **设置与系统权限**：主题改为三段控制，八套字体分别以自身 family 直接预览；人工截图发现旧平板双栏规则把字体卡压成细竖条，已改为全宽四列两行并新增单卡宽度门禁。“任务快照/本机会话”改为“任务同步/本机专注记录”，账本新鲜度明确为最近云端账本确认。root 批次只运行 native 固定命令，通知/overlay/电池/后台逐项 readback；API 24/26/28 AppOps 分支、矛盾结果归一化、陈旧批次被 fresh status 覆盖和 OEM 自启动 `manual-required` 均有自动测试。
 - **任务与专注一致性**：快速新增任务显式选择目标清单，新建清单成功后自动进入并成为下一任务目的地；详情直接提供“标记完成/恢复为待办”。移动端删除独立 `MobileTemporalRibbon`，以纯 adapter 把 live snapshot 的服务器时钟、暂停和复用 segment 转成桌面 `TimerSnapshot`，实际渲染同一个 `TemporalRibbon`；连接面板区分实时来源、缓存/本机会话和最近确认。
-- **虚拟门禁**：Node 22.22.2 下 format/typecheck/lint 通过，根 Vitest 最终 `129 files / 1006 tests`；全量首轮并发有 3 个 dida 子进程用例失败，串行后只剩一个 5.338 秒超过默认 5 秒，保持断言并把该多进程用例窗口放宽到 15 秒后全绿。移动 production 五视口明暗四页最终通过；门禁先后真实抓到 38px 任务清单选择、40px 平板时间支架控制和字体卡半宽审美问题，修后所有交互 ≥44px、字体卡 ≥100px。API 35 emulator 安装回读 `1.3.0/1306`；全量 instrumentation 33 项中 8 项条件跳过，overlay 人工截图用例首次因权限未开失败，显式授予模拟器 overlay 后同一用例 `1/1` 通过。Windows 与两台真实 Android 安装仍待最终干净构建，不提前标记完成。
+- **虚拟门禁**：Node 22.22.2 下 format/typecheck/lint 通过，根 Vitest 最终 `129 files / 1016 tests`；全量首轮并发有 3 个 dida 子进程用例失败，串行后只剩一个 5.338 秒超过默认 5 秒，保持断言并把该多进程用例窗口放宽到 15 秒后全绿。移动 production 五视口明暗四页最终通过；门禁先后真实抓到 38px 任务清单选择、40px 平板时间支架控制和字体卡半宽审美问题，修后所有交互 ≥44px、字体卡 ≥100px。API 35 emulator 安装回读 `1.3.0/1306`；全量 instrumentation 33 项中 8 项条件跳过，overlay 人工截图用例首次因权限未开失败，显式授予模拟器 overlay 后同一用例 `1/1` 通过。Windows 与两台真实 Android 安装仍待最终干净构建，不提前标记完成。
 - **隐藏窗口计时**：1.3 桌面 smoke 首次对 portable 隐藏窗口观察到翻牌节点和确认层迟迟不收敛；根因是 Electron renderer background throttling 让 UI fallback/动画停顿，而非计时 authority 错误。主窗与 mini 的 WebView 现显式 `backgroundThrottling: false`，墙钟投影继续由主进程权威值驱动；待从新干净构建复跑 portable UI smoke。
+- **Bug-04（覆盖安装后 Keystore 有凭据但界面显示未配对）**：小米并行包覆盖后，native `getConnection()` 脱敏探测仍确认安全凭据存在，renderer 却停在“尚未配对设备”。根因是 `MobileApp`、专注原生控制和设置权限区都只在首次 render 读取一次 `isPluginAvailable('FocusRuntime')`；OEM WebView 若稍晚注入插件，该次 `false` 会永久跳过恢复。原生能力现独立执行连续三段、每段最多 5 秒的 Android-only readiness 探测，并在重新回到前台、focus、pageshow 时再触发；startup generation 在组件创建时预留，显式登录、配对或退出一旦产生新 generation，旧恢复永久失效且不能取消新操作。native connection read/configure/clear 在 Android 插件暂不可用时等待后失败关闭，禁止以 `null` 冒充 Keystore 写入或清除成功；Web 路径保持无原生存储。Node 22 定向恢复/lifecycle/设置测试 `45/45`、根 Vitest `1016/1016` 与 typecheck/lint 已通过，最终仍须在小米正式包原位覆盖后证明无需重新配对即可恢复连接。
 
 ## 2026-08-30 · v0.12.105 时间任务合同与三端视觉升级
 

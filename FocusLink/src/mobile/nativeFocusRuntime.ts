@@ -263,6 +263,93 @@ export function isNativeFocusRuntimeAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('FocusRuntime');
 }
 
+export interface NativeFocusRuntimeReadinessOptions {
+  signal?: AbortSignal;
+  shouldContinue?: () => boolean;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}
+
+export interface NativeFocusRuntimeStartupReadinessOptions extends NativeFocusRuntimeReadinessOptions {
+  attempts?: number;
+}
+
+const NATIVE_FOCUS_RUNTIME_READY_TIMEOUT_MS = 5_000;
+const NATIVE_FOCUS_RUNTIME_READY_POLL_MS = 100;
+const NATIVE_FOCUS_RUNTIME_STARTUP_ATTEMPTS = 3;
+
+/**
+ * Capacitor may expose a registered Android plugin shortly after the renderer mounts.
+ * Keep startup recovery bounded while allowing a newer login, pairing, or unmount to cancel it.
+ */
+export async function waitForNativeFocusRuntime({
+  signal,
+  shouldContinue = () => true,
+  timeoutMs = NATIVE_FOCUS_RUNTIME_READY_TIMEOUT_MS,
+  pollIntervalMs = NATIVE_FOCUS_RUNTIME_READY_POLL_MS,
+}: NativeFocusRuntimeReadinessOptions = {}): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  const boundedTimeoutMs = normalizeNativeReadinessDuration(
+    timeoutMs,
+    NATIVE_FOCUS_RUNTIME_READY_TIMEOUT_MS,
+    NATIVE_FOCUS_RUNTIME_READY_TIMEOUT_MS,
+  );
+  const boundedPollMs = normalizeNativeReadinessDuration(
+    pollIntervalMs,
+    NATIVE_FOCUS_RUNTIME_READY_POLL_MS,
+    Math.max(1, boundedTimeoutMs),
+  );
+  const attempts = Math.max(1, Math.ceil(boundedTimeoutMs / boundedPollMs));
+
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    if (signal?.aborted || !shouldContinue()) return false;
+    if (isNativeFocusRuntimeAvailable()) return true;
+    if (attempt === attempts) return false;
+    if (!(await waitForNativeReadinessPoll(boundedPollMs, signal))) return false;
+  }
+  return false;
+}
+
+/** Covers OEM WebViews that finish plugin injection just after the first bounded window. */
+export async function waitForNativeFocusRuntimeStartup({
+  attempts = NATIVE_FOCUS_RUNTIME_STARTUP_ATTEMPTS,
+  ...options
+}: NativeFocusRuntimeStartupReadinessOptions = {}): Promise<boolean> {
+  const boundedAttempts = Number.isFinite(attempts)
+    ? Math.min(6, Math.max(1, Math.round(attempts)))
+    : NATIVE_FOCUS_RUNTIME_STARTUP_ATTEMPTS;
+  for (let attempt = 0; attempt < boundedAttempts; attempt += 1) {
+    if (await waitForNativeFocusRuntime(options)) return true;
+    if (options.signal?.aborted || options.shouldContinue?.() === false) return false;
+  }
+  return false;
+}
+
+function normalizeNativeReadinessDuration(
+  value: number,
+  fallback: number,
+  maximum: number,
+): number {
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.min(maximum, Math.max(1, Math.round(value)));
+}
+
+function waitForNativeReadinessPoll(delayMs: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const timer = globalThis.setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve(true);
+    }, delayMs);
+    const abort = () => {
+      globalThis.clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      resolve(false);
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export function normalizeNativePauseReminderDelayMinutes(value?: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_NATIVE_PAUSE_REMINDER_DELAY_MINUTES;
@@ -321,8 +408,9 @@ export async function configureNativeFocusConnection(
   accessToken: string,
   deviceId: string,
   expectedConnectionLease: string | null,
+  signal?: AbortSignal,
 ): Promise<NativeFocusConnection | null> {
-  if (!isNativeFocusRuntimeAvailable()) return null;
+  if (!(await requireNativeFocusRuntimeForDurableConnection(signal))) return null;
   const routed = parseDeviceToken(accessToken.trim());
   if (
     !isCanonicalFocusLinkDeviceConnection(endpoint, accessToken) ||
@@ -348,8 +436,11 @@ export async function configureNativeFocusConnection(
 
 export async function clearNativeFocusConnection(
   expectedConnectionLease: string | null,
+  signal?: AbortSignal,
 ): Promise<NativeFocusConnectionState> {
-  if (!isNativeFocusRuntimeAvailable()) return { connection: null, connectionLease: null };
+  if (!(await requireNativeFocusRuntimeForDurableConnection(signal))) {
+    return { connection: null, connectionLease: null };
+  }
   const result = await FocusRuntime.clearConnection({
     expectedConnectionLease: requireNativeConnectionLease(expectedConnectionLease),
   });
@@ -497,8 +588,12 @@ export async function updateNativeAuthorityProjectionHistory(input: {
  * Restores the Keystore-protected credential into renderer memory only.  The
  * caller must never write accessToken to Web Storage or IndexedDB.
  */
-export async function readNativeFocusConnectionState(): Promise<NativeFocusConnectionState> {
-  if (!isNativeFocusRuntimeAvailable()) return { connection: null, connectionLease: null };
+export async function readNativeFocusConnectionState(
+  signal?: AbortSignal,
+): Promise<NativeFocusConnectionState> {
+  if (!(await requireNativeFocusRuntimeForDurableConnection(signal))) {
+    return { connection: null, connectionLease: null };
+  }
   const value = await FocusRuntime.getConnection();
   const connectionLease = requireNativeConnectionLease(value.connectionLease);
   const routed =
@@ -613,6 +708,16 @@ function requireNativeConnectionLease(value: unknown): string {
   return value;
 }
 
+async function requireNativeFocusRuntimeForDurableConnection(
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  if (signal?.aborted) throw new DOMException('Android 账号连接已变化', 'AbortError');
+  if (await waitForNativeFocusRuntime({ signal })) return true;
+  if (signal?.aborted) throw new DOMException('Android 账号连接已变化', 'AbortError');
+  throw new Error('Android 安全存储尚未就绪，请返回应用后重试');
+}
+
 /**
  * Restores the existing Keystore credential or atomically migrates a legacy
  * renderer credential. The caller may purge Web Storage only after this
@@ -620,9 +725,10 @@ function requireNativeConnectionLease(value: unknown): string {
  */
 export async function restoreOrMigrateNativeFocusConnection(
   legacyConnection: Omit<NativeFocusConnection, 'connectionLease'> | null,
+  signal?: AbortSignal,
 ): Promise<NativeFocusConnection | null> {
-  if (!isNativeFocusRuntimeAvailable()) return null;
-  const stored = await readNativeFocusConnectionState();
+  if (!(await requireNativeFocusRuntimeForDurableConnection(signal))) return null;
+  const stored = await readNativeFocusConnectionState(signal);
   if (stored.connection) return stored.connection;
   if (!legacyConnection?.endpoint || !legacyConnection.accessToken || !legacyConnection.deviceId) {
     return null;
@@ -632,6 +738,7 @@ export async function restoreOrMigrateNativeFocusConnection(
     legacyConnection.accessToken,
     legacyConnection.deviceId,
     stored.connectionLease,
+    signal,
   );
 }
 
