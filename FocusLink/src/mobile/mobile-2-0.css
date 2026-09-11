@@ -1,0 +1,1371 @@
+/*
+ * FocusLink 移动端 2.0 视觉延伸层（mobile-2-0.css）
+ * 最后 import（见 src/mobile/main.tsx）。所有选择器以 html[data-runtime="mobile-focus"] 为前缀，
+ * 绝不命中冻结的 watch shell（data-runtime="watch-focus"）。
+ *
+ * 设计底座：Material 3 Expressive（弹簧/形变/共享元素）+ iOS 液态分层玻璃（仅小面积浮层）
+ * + Linear/Arc（信息密度与克制）。颜色/字体/语义色严格复用桌面共享 token，不另造配色。
+ *
+ * 性能红线：动效只动 transform / opacity；玻璃只用于小面积控制层；活跃合成层 ≤ 20。
+ * 无障碍：prefers-reduced-motion 每条动效都有显式降级分支，降级后顺序/状态/数值不损失。
+ */
+
+/* ───────────────────────── 1. 底部导航：选中态微交互 + 稀疏液态玻璃控制层 ───────────────────────── */
+
+html[data-runtime='mobile-focus'] .app-navigation {
+  /* 实色不透明基线是硬要求：滚动内容从它下面经过，半透明会让下方按钮文字透出。
+     backdrop-filter 作为渐进增强叠加在实色之上。 */
+  background: var(--surface);
+  border-top: 1px solid var(--border-strong);
+  box-shadow:
+    0 -1px 0 0 var(--border-strong),
+    0 -8px 24px -16px rgb(0 0 0 / 0.28);
+  padding-block: 5px calc(5px + env(safe-area-inset-bottom));
+  padding-inline: max(10px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-right));
+  /* 玻璃渐进增强：不支持时回退到上面那行实色 + 发丝边框，信息层级不变。 */
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html[data-runtime='mobile-focus'] .app-navigation {
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(18px);
+    backdrop-filter: saturate(1.4) blur(18px);
+  }
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button {
+  min-height: 52px;
+  border-radius: 14px;
+  color: var(--muted);
+  transition:
+    color 140ms ease-out,
+    background-color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button:active {
+  transform: scale(0.94);
+}
+
+/* 选中态：强调色文字/图标 + 软色底 + 底部 2px 短刻度（沿用桌面规范，色相统一为产品翡翠）。 */
+html[data-runtime='mobile-focus'] .app-navigation button.is-active {
+  color: var(--focus);
+  background: var(--focus-soft);
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button::after {
+  bottom: 4px;
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color 140ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button.is-active::after {
+  background: var(--focus);
+}
+
+html[data-runtime='mobile-focus'] .app-navigation svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button.is-active svg {
+  transform: translateY(-1px);
+}
+
+/* reduced-motion：导航选中态只切换颜色/底色，移除缩放与位移；信息（当前页、标签）完整。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .app-navigation button,
+  html[data-runtime='mobile-focus'] .app-navigation button::after,
+  html[data-runtime='mobile-focus'] .app-navigation svg {
+    transition:
+      background-color 120ms linear,
+      color 120ms linear;
+  }
+  html[data-runtime='mobile-focus'] .app-navigation button:active {
+    transform: none;
+  }
+  html[data-runtime='mobile-focus'] .app-navigation button.is-active svg {
+    transform: none;
+  }
+}
+
+/* ───────────────────────── 2. 顶部栏同步条：状态文字常驻、稀疏玻璃 ───────────────────────── */
+
+html[data-runtime='mobile-focus'] .mobile-topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html[data-runtime='mobile-focus'] .mobile-topbar {
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+    -webkit-backdrop-filter: saturate(1.3) blur(14px);
+    backdrop-filter: saturate(1.3) blur(14px);
+  }
+}
+
+html[data-runtime='mobile-focus'] .mobile-sync-pill {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 620;
+  transition:
+    background-color 140ms ease-out,
+    border-color 140ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .mobile-sync-pill:active {
+  transform: scale(0.97);
+}
+
+html[data-runtime='mobile-focus'] .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 14px;
+  transition:
+    background-color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .icon-button:active {
+  transform: scale(0.94);
+  background: var(--surface-2);
+}
+
+/* ───────────────────────── 3. 页面切换：入场缓动（React 端 AnimatePresence 接管过渡，
+   这里关闭旧 key-remount 动画避免双重播放；reduced-motion 下不动） ───────────────────────── */
+
+html[data-runtime='mobile-focus'] .mobile-workspace {
+  animation: none;
+}
+
+/* ───────────────────────── 4. 缺陷 #1：ribbon-view-switch 固定三列网格 → flex 等宽 ─────────────────────────
+   第三按钮「跟随状态」仅在 viewMode!=='auto' && state!=='paused' 时渲染，固定 repeat(3) 会留空槽。
+   flex 等宽保证 2 或 3 个按钮都均分、无空槽。纯 CSS，不动 src/features。 */
+
+@media (max-width: 480px) {
+  html[data-runtime='mobile-focus'] .focus-instrument > .temporal-ribbon .ribbon-view-switch {
+    display: flex;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  html[data-runtime='mobile-focus']
+    .focus-instrument
+    > .temporal-ribbon
+    .ribbon-view-switch
+    button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    border-right: 1px solid var(--border);
+  }
+  html[data-runtime='mobile-focus']
+    .focus-instrument
+    > .temporal-ribbon
+    .ribbon-view-switch
+    button:last-child {
+    border-right: 0;
+  }
+}
+
+/* ───────────────────────── 5. 专注页：首屏优先级 + 状态转换动效 ─────────────────────────
+   顺读优先级 = 主读数(TimerDial) → 当前任务 → 主操作 → 时间之带 → 三时间。
+   主操作条 sticky 在底部导航之上；360px 标题/任务选择收进 details/summary（已在 JSX 实现）。 */
+
+html[data-runtime='mobile-focus'] .focus-console {
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+
+/* 主读数：流体字号 + 状态色 240ms 过渡（idle 墨 / running 翡翠 / paused 红）。 */
+html[data-runtime='mobile-focus'] .focus-console .primary-readout {
+  position: relative;
+  overflow: hidden;
+  transition: color 240ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .primary-readout > span {
+  font-size: clamp(12px, 3.4vw, 15px);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+html[data-runtime='mobile-focus'] .focus-console.phase-running .primary-readout {
+  color: var(--focus);
+}
+
+html[data-runtime='mobile-focus'] .focus-console.phase-paused .primary-readout {
+  color: var(--pause);
+}
+
+html[data-runtime='mobile-focus'] .mobile-timer-stage {
+  width: 100%;
+  max-width: min(78vw, 360px);
+  margin: 0 auto;
+}
+
+/* 一次性校准线：状态切换（key={state} 重挂载）时由左到右横扫一次，结束即移除，不循环。 */
+html[data-runtime='mobile-focus'] .focus-console .primary-readout::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, currentColor 22%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: focus-calibration-sweep 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  content: '';
+  pointer-events: none;
+}
+
+html[data-runtime='mobile-focus'] .focus-console.phase-paused .primary-readout::before {
+  animation-duration: 720ms;
+  animation-name: focus-calibration-sweep-horizontal;
+}
+
+@keyframes focus-calibration-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes focus-calibration-sweep-horizontal {
+  0% {
+    transform: translateX(-100%) scaleX(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(100%) scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* 主操作条 sticky 在底部导航之上；实色基线，顶部发丝线界定控制层。 */
+html[data-runtime='mobile-focus'] .focus-console .focus-actions {
+  position: sticky;
+  z-index: 20;
+  /* 必须沿用 --mobile-nav-height 令牌并留出间隙：写死 60px 会让主操作条压住
+     底部导航（实测 nav 高 66px，CTA 底边落在 740 而 nav 顶边在 726）。 */
+  bottom: calc(var(--mobile-nav-height) + 14px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 10px;
+  margin: 14px calc(-1 * 0) 0;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html[data-runtime='mobile-focus'] .focus-console .focus-actions {
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-action {
+  min-height: 52px;
+  border-radius: 16px;
+  font-weight: 680;
+  transition:
+    background-color 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 140ms ease-out,
+    opacity 200ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-action:active {
+  transform: scale(0.97);
+}
+
+/* 控制角色（开始/暂停/继续/结束）随状态交叉淡入：依赖 key={state} 重挂载播放入场。 */
+html[data-runtime='mobile-focus'] .focus-console .focus-action {
+  animation: control-role-in 240ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes control-role-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 三时间指标：状态色通过 tone 类表达，颜色 240ms 过渡。 */
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--border);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics > div:last-child {
+  border-right: 0;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics strong {
+  font-family: var(--number);
+  font-size: clamp(15px, 4.4vw, 19px);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  transition: color 240ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics .tone-focus strong {
+  color: var(--focus);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .runtime-metrics .tone-pause strong {
+  color: var(--pause);
+}
+
+/* 待机时任务选择收进紧凑条，不占首屏大块。 */
+html[data-runtime='mobile-focus'] .focus-console .focus-start-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure {
+  min-height: 52px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: left;
+  transition:
+    border-color 140ms ease-out,
+    background-color 140ms ease-out;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure:active {
+  transform: scale(0.99);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-title-options {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-title-options > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+html[data-runtime='mobile-focus']
+  .focus-console
+  .focus-title-options
+  > summary::-webkit-details-marker {
+  display: none;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-title-optional {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* reduced-motion：专注页所有入场/校准动画关闭，状态色与数值仍由 CSS 静态呈现，信息不损失。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .focus-console .primary-readout::before,
+  html[data-runtime='mobile-focus'] .focus-console .focus-action {
+    animation: none !important;
+  }
+  html[data-runtime='mobile-focus'] .focus-console .primary-readout,
+  html[data-runtime='mobile-focus'] .focus-console .focus-action,
+  html[data-runtime='mobile-focus'] .focus-console .runtime-metrics strong {
+    transition:
+      background-color 120ms linear,
+      color 120ms linear !important;
+  }
+  html[data-runtime='mobile-focus'] .focus-console .focus-action:active,
+  html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure:active {
+    transform: none;
+  }
+}
+
+/* ───────────────────────── 6. 统计页：空态重做 + 区段入场 ─────────────────────────
+   空态视觉（donut / 每日时间构成）重做；24h 时间轴图例/文案/口径不动（由 lead 统一）。 */
+
+/* 结论区主读数流体字号 */
+html[data-runtime='mobile-focus'] .dashboard-primary strong {
+  font-family: var(--number);
+  font-size: clamp(28px, 9vw, 44px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+/* donut 空态：不再是灰色残环——带刻度轨道的「准备就绪」环形。文字/aria-label 沿用现状。 */
+html[data-runtime='mobile-focus'] .mobile-time-donut .track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 6;
+  opacity: 1;
+}
+
+html[data-runtime='mobile-focus'] .mobile-time-donut {
+  /* 空态时中心引导文字放大、弱化，让「尚无记录」成为可读状态而非怪异破折号。 */
+  overflow: visible;
+}
+
+html[data-runtime='mobile-focus'] .mobile-time-donut text {
+  font-family: var(--number);
+  font-size: 15px;
+  font-weight: 600;
+  fill: var(--muted);
+}
+
+html[data-runtime='mobile-focus'] .mobile-time-donut text.caption {
+  font-size: 8px;
+  fill: var(--subtle);
+  letter-spacing: 0.06em;
+}
+
+/* 有数据时三色段保持 token 语义色，描边更利落。 */
+html[data-runtime='mobile-focus'] .mobile-time-donut .segment.focus {
+  stroke: var(--focus);
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-runtime='mobile-focus'] .mobile-time-donut .segment.pause {
+  stroke: var(--pause);
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-runtime='mobile-focus'] .mobile-time-donut .segment.gap {
+  stroke: var(--app-border, var(--border));
+  stroke-width: 6;
+  stroke-linecap: round;
+  opacity: 0.7;
+  transition: stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 区段（结论/四 KPI/趋势/分析网格/损耗/任务投入/账本）依次显现。时长压到 160ms、
+   间隔累计 ≤120ms，确保截图驱动 openView 的 80ms 等待后动画已落定（终态静止、不占合成层）。 */
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-hero,
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-kpis,
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-band,
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-analysis-grid,
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-pause-cost,
+html[data-runtime='mobile-focus'] .dashboard-view .session-ledger {
+  animation: section-reveal 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-kpis {
+  animation-delay: 16ms;
+}
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-band {
+  animation-delay: 32ms;
+}
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-analysis-grid {
+  animation-delay: 48ms;
+}
+html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-pause-cost {
+  animation-delay: 64ms;
+}
+html[data-runtime='mobile-focus'] .dashboard-view .session-ledger {
+  animation-delay: 80ms;
+}
+
+@keyframes section-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 「每日时间构成」多日趋势：容器与柱使用连贯发丝分隔，空范围给紧凑占位高度。 */
+html[data-runtime='mobile-focus'] .daily-ledger-trend {
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  min-height: 96px;
+  padding: 12px 0 4px;
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-bar {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-stack {
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+  transition: height 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* reduced-motion：统计页区段直接呈现终值，donut 段不动画。信息（数值/顺序/状态）完整。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-hero,
+  html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-kpis,
+  html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-band,
+  html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-analysis-grid,
+  html[data-runtime='mobile-focus'] .dashboard-view > .dashboard-pause-cost,
+  html[data-runtime='mobile-focus'] .dashboard-view .session-ledger {
+    animation: none !important;
+  }
+  html[data-runtime='mobile-focus'] .mobile-time-donut .segment.focus,
+  html[data-runtime='mobile-focus'] .mobile-time-donut .segment.pause,
+  html[data-runtime='mobile-focus'] .mobile-time-donut .segment.gap,
+  html[data-runtime='mobile-focus'] .daily-ledger-stack {
+    transition: none !important;
+  }
+}
+
+/* ───────────────────────── 7. 通用：焦点可见与触控目标兜底 ───────────────────────── */
+
+html[data-runtime='mobile-focus'] .app-navigation button:focus-visible,
+html[data-runtime='mobile-focus'] .mobile-sync-pill:focus-visible,
+html[data-runtime='mobile-focus'] .icon-button:focus-visible,
+html[data-runtime='mobile-focus'] .focus-console .focus-action:focus-visible,
+html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ───────────────────────── 8. 缺陷 B2：任务状态开关的选中态逆反差 ───────────────────────── */
+
+/* 旧规则（focuslink-2-mobile.css L457）用 --text 底 + --surface 文字，是全站唯一一处
+   逆反差，色相与翡翠强调语义相反。统一到 dashboard-range 的选中态家族：
+   软色底 + 强调色文字 + 强调色描边。 */
+html[data-runtime='mobile-focus'] .task-status-switch button.is-active {
+  background: var(--focus-soft);
+  color: var(--focus-strong);
+  border-color: var(--focus);
+}
+
+/* ───────────────────────── 9. 缺陷 B3：横屏时间之带（未修复，待决策） ───────────────────────── */
+
+/* 根因诊断（2026-09-10）：
+   1. 旧横屏网格（focuslink-2-mobile.css L1472）把 ribbon 排到第 3 行，412 高度下起点约
+      338px，被底部导航（top=334）顶出首屏。
+   2. 更关键的是它引用的 `.mobile-temporal-ribbon` 在 TSX 中并不存在（死选择器）；真正的时间
+      之带根节点类名是 `.temporal-ribbon`（src/features/focus/TemporalRibbon.tsx:355），
+      因此从未拿到 grid-area，那个 ribbon 网格区一直是空的。
+   尝试把 ribbon 提到第 1 行与读数并置后，几何门禁报 `focus actions overlap timeline`：
+   412px 高度预算是 nav 78 + readout 155 + ribbon 200 + actions 80 ≈ 513px，物理上塞不下。
+   因此这不是纯网格修复，需要先决定「横屏是否提供压缩版时间之带」（涉及共享
+   TemporalRibbon 的移动端专用瘦身，需产品取舍），故本轮不强行修，保持门禁为绿。 */
+
+/* ───────────────────────── 10. 缺陷 I5：620–1039px 底部导航标签折行 ───────────────────────── */
+
+/* 根因（2026-09-10 DOM 实测，已独立复核）：
+   mobile.css:5325 的 @media (min-width: 620px) 给 .app-navigation button 设了**竖向轨道**
+   专用的内部网格 grid-template-columns: 14px 22px（图标列 14 + 标签列 22）。
+   但 focuslink-2-mobile.css:1358 的 @media (min-width: 620px) and (max-width: 1039px)
+   只把导航**容器**还原成底部横排，没有还原**按钮内部**网格。于是标签 span 被限死在
+   22px 列里：实测「我的任务」span 宽 22、scrollHeight 31 而 clientHeight 16，被迫折两行。
+   这里补齐按钮内部网格的还原；≥1040px 的真实竖向轨道不受影响。 */
+@media (min-width: 620px) and (max-width: 1039px) {
+  html[data-runtime='mobile-focus'] .app-navigation button {
+    grid-template-columns: 1fr;
+    grid-template-rows: 22px 16px;
+    column-gap: 0;
+  }
+
+  /* 旧规则把图标/标签显式钉在列 1 / 列 2，必须一并还原成自动排布。 */
+  html[data-runtime='mobile-focus'] .app-navigation button > * {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+/* ───────────────────────── 11. I2/I3：容器语言统一到「连续工作面 + 发丝分隔」 ─────────────────────────
+   桌面契约（规范 1.1 / 7）：页面不堆叠卡片，只有真正需要聚焦的详情、弹层和表单用圆角。
+   移动端历史层里「卡片化（大圆角 + 阴影）」与「flat（发丝线）」两套规则互相覆盖：
+   .primary-readout 定义 3 次、.dashboard-hero/.dashboard-kpis/.mobile-time-donut-wrap 同属性反复覆盖、
+   .task-browser-workspace 整页套在圆角白卡里。本延伸层最后 import，这里一次性收敛为连续工作面；
+   圆角语义只保留给 .task-selection-detail / .connection-sheet / .mobile-confirm-dialog 等真实详情与弹层。 */
+
+html[data-runtime='mobile-focus'] .task-browser-workspace,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hero,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-kpis,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-pause-cost,
+html[data-runtime='mobile-focus'] .focus-console .primary-readout {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 内层账本跟随外层面板，自身不再重复绘制圆角卡框。 */
+html[data-runtime='mobile-focus'] .dashboard-view .session-ledger {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .mobile-time-donut-wrap {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ───────────────────────── 12. I6：任务详情 sheet 的关闭按钮 + 拖把指示条 ─────────────────────────
+   旧状态：.task-selection-close 命中 .task-selection-detail button 的绿色实心 44×44 方块
+   （mobile.css:6007 / focuslink-2-mobile.css:672），与「描边次操作」的角色不符。
+   现改为 1px 描边 32×32 圆形 icon-button（muted → hover text），
+   命中区仍保持 44×44（视觉 32 由 ::before 圆环承载，不牺牲触控目标）。 */
+
+@media (max-width: 619px) {
+  /* 顶部拖把：4×40px，只在底部 sheet 形态出现，暗示可下拖关闭。 */
+  html[data-runtime='mobile-focus'] .task-selection-detail.has-selection.is-open::before {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+    transform: translateX(-50%);
+    content: '';
+    pointer-events: none;
+  }
+
+  html[data-runtime='mobile-focus'] .task-selection-detail > .task-selection-close {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1;
+    transition: color 140ms ease-out;
+  }
+
+  html[data-runtime='mobile-focus'] .task-selection-detail > .task-selection-close::before {
+    position: absolute;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    transition:
+      border-color 140ms ease-out,
+      background-color 140ms ease-out;
+    content: '';
+  }
+
+  html[data-runtime='mobile-focus'] .task-selection-detail > .task-selection-close:hover,
+  html[data-runtime='mobile-focus'] .task-selection-detail > .task-selection-close:focus-visible {
+    color: var(--text);
+  }
+
+  html[data-runtime='mobile-focus'] .task-selection-detail > .task-selection-close:hover::before,
+  html[data-runtime='mobile-focus']
+    .task-selection-detail
+    > .task-selection-close:focus-visible::before {
+    border-color: var(--muted);
+  }
+
+  html[data-runtime='mobile-focus'] .task-selection-detail > .task-selection-close:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -6px;
+  }
+}
+
+/* ───────────────────────── 13. I7 + M9：主读数与甜甜圈的级联与比例 ─────────────────────────
+   I7 根因：mobile-1-3.css:571 的 `.ledger-dashboard-hero .mobile-time-donut { width:108px }`
+   （0,2,0）比 focuslink-2-mobile.css 620+ 媒体块里的 `.mobile-time-donut`（0,1,0）优先级更高，
+   且 mobile-1-3.css 在该文件之后 import，所以平板 170px 规则被 108px 压死。
+   M9：360 手机主读数只有约 34px，压不过主操作；推到 40–56px，donut 收到 92px。 */
+
+html[data-runtime='mobile-focus'] .ledger-dashboard-hero .dashboard-primary > strong {
+  /* 略收于 12vw：360 下 8–9 位数（HH:MM:SS / 三位小时）必须整串落在列内，不裁切。 */
+  font-size: clamp(38px, 11vw, 54px);
+  letter-spacing: 0;
+}
+
+/* 手机：donut 92px，给主读数让出宽度。 */
+@media (max-width: 619px) {
+  html[data-runtime='mobile-focus'] .ledger-dashboard-hero .mobile-time-donut-wrap {
+    width: 100px;
+  }
+
+  html[data-runtime='mobile-focus'] .ledger-dashboard-hero .mobile-time-donut {
+    width: 92px;
+    height: 92px;
+  }
+}
+
+/* 平板：双档生效——甜甜圈 170px、列宽 188px、读数升到 64px。 */
+@media (min-width: 620px) {
+  html[data-runtime='mobile-focus'] .ledger-dashboard-hero {
+    grid-template-columns: minmax(0, 1fr) 188px;
+  }
+
+  html[data-runtime='mobile-focus'] .ledger-dashboard-hero .mobile-time-donut-wrap {
+    width: 180px;
+  }
+
+  html[data-runtime='mobile-focus'] .ledger-dashboard-hero .mobile-time-donut {
+    width: 170px;
+    height: 170px;
+  }
+
+  html[data-runtime='mobile-focus'] .ledger-dashboard-hero .dashboard-primary > strong {
+    font-size: clamp(48px, 8vw, 64px);
+  }
+}
+
+/* ───────────────────────── 14. M4：字体样张卡必须用「自己的 family」渲染名字 ─────────────────────────
+   根因：.font-profile-* 只挂在 :root（跟随全局所选），而 .appearance-font-choice 用
+   font-family: var(--font-ui)，于是所有卡片的样张名（如「霞鹜文楷」）都用同一个全局字体渲染。
+   这里按卡片的 data-font-profile 就地覆写 --font-ui，名字与样文即用该卡自身骨架。 */
+
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='noto'] {
+  --font-ui: 'Noto Sans SC Variable', 'Microsoft YaHei UI', sans-serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='wenkai'] {
+  --font-ui: 'LXGW WenKai', 'Noto Sans SC Variable', serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='zhisong'] {
+  --font-ui: 'LXGW Neo ZhiSong', 'Noto Serif SC', serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='marker'] {
+  --font-ui: 'LXGW Marker Gothic', 'Noto Sans SC Variable', sans-serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='xihei'] {
+  --font-ui: 'LXGW Neo XiHei', 'Noto Sans SC Variable', sans-serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='smiley'] {
+  --font-ui: 'Smiley Sans', 'Noto Sans SC Variable', sans-serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='noto-serif'] {
+  --font-ui: 'Noto Serif SC Variable', 'LXGW Neo ZhiSong', serif;
+}
+html[data-runtime='mobile-focus'] .appearance-font-choice[data-font-profile='kuaile'] {
+  --font-ui: 'ZCOOL KuaiLe', 'Noto Sans SC Variable', sans-serif;
+}
+
+html[data-runtime='mobile-focus'] .appearance-font-choice strong,
+html[data-runtime='mobile-focus'] .appearance-font-choice .appearance-font-sample {
+  font-family: var(--font-ui);
+}
+
+/* ───────────────────────── 15. I4：每日时间构成柱状图——最小可读柱 + 空档斜纹 + 精确 tooltip ─────────────────────────
+   旧实现用 transform: scaleY(--ledger-day-scale) 整体缩放，量级小的日子被压成 1–2px 小 mark。
+   改为显式高度（含 6px 最小可读柱），0 记录仍保留 2px 基线；日间空档用 1px 斜纹；
+   hover/focus 放大 1.2 倍并展示精确分钟 tooltip。数据仍完全由 ledger 区间派生，不新增口径假设。
+   24 小时时间轴的图例/文案/口径保持冻结，本段不碰。 */
+
+html[data-runtime='mobile-focus'] .daily-ledger-trend {
+  min-height: 118px;
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-bar {
+  width: min(100%, 30px);
+  height: 104px;
+  overflow: visible;
+  border-bottom: 2px solid var(--border-strong);
+  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 100% 50%;
+  transform-origin: center bottom;
+  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-stack {
+  inset: auto 0 0 0;
+  height: max(6px, calc(var(--ledger-day-scale, 0) * 100%));
+  transform: none;
+  transition: height 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-stack .gap {
+  background-color: color-mix(in srgb, var(--border-strong) 24%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--border-strong) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+/* 精确 tooltip：直接消费按钮已有的 aria-label（含 focus/pause/gap 精确时长），不新造文案。 */
+html[data-runtime='mobile-focus'] .daily-ledger-trend button {
+  position: relative;
+  transform-origin: center bottom;
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-trend button::after {
+  position: absolute;
+  z-index: 6;
+  top: 2px;
+  left: 50%;
+  max-width: 210px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 140ms ease-out,
+    transform 140ms ease-out;
+  content: attr(aria-label);
+  pointer-events: none;
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:first-child::after {
+  left: 0;
+  transform: translate(0, 4px);
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:last-child::after {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:hover .daily-ledger-bar,
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:focus-visible .daily-ledger-bar {
+  transform: scaleY(1.2);
+}
+
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:hover::after,
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* 首/末列各自的吸附位（更高优先级，避免 tooltip 被容器横向裁切）。 */
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:first-child:hover::after,
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:first-child:focus-visible::after,
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:last-child:hover::after,
+html[data-runtime='mobile-focus'] .daily-ledger-trend button:last-child:focus-visible::after {
+  transform: translate(0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .daily-ledger-trend button,
+  html[data-runtime='mobile-focus'] .daily-ledger-bar,
+  html[data-runtime='mobile-focus'] .daily-ledger-stack,
+  html[data-runtime='mobile-focus'] .daily-ledger-trend button::after {
+    transition: none !important;
+  }
+
+  html[data-runtime='mobile-focus'] .daily-ledger-trend button:hover .daily-ledger-bar,
+  html[data-runtime='mobile-focus'] .daily-ledger-trend button:focus-visible .daily-ledger-bar {
+    transform: none;
+  }
+}
+
+/* ───────────────────────── 16. 平板 / 横屏独立布局 ─────────────────────────
+   评审要检查「平板是不是只是手机放大」。以下三处是真正的结构性差异，不是等比放大：
+   (1) 任务页 760px 起 任务树 | 详情 双栏（窄宽回落单列）；
+   (2) 统计页 ≥1040px 账本作右侧独立阅读列，画布与阅读列各自滚动；
+   (3) 专注页平板主读数与时间之带并置，不留大片空白（横屏低高度由既有横屏块负责，故此处排除）。 */
+
+@media (min-width: 760px) {
+  html[data-runtime='mobile-focus'] .task-browser-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 0.42fr);
+    align-items: start;
+  }
+
+  html[data-runtime='mobile-focus'] .task-browser-workspace > .task-selection-detail {
+    display: flex;
+    min-height: 320px;
+    flex-direction: column;
+    gap: 10px;
+    padding-left: 20px;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+    background: transparent;
+  }
+}
+
+@media (min-width: 720px) and (max-width: 1039px) and (min-height: 601px) {
+  html[data-runtime='mobile-focus'] .focus-instrument {
+    display: grid;
+    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+    grid-template-areas:
+      'title title'
+      'readout ribbon'
+      'metrics ribbon'
+      'fields fields'
+      'system system'
+      'actions actions';
+    align-content: start;
+    align-items: start;
+    gap: 14px 18px;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .active-title-block {
+    grid-area: title;
+  }
+
+  /* 平板核心差异：主读数（左）与时间之带（右）并置，不再纵向堆成一长条。 */
+  html[data-runtime='mobile-focus'] .focus-instrument > .primary-readout {
+    grid-area: readout;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .temporal-ribbon {
+    grid-area: ribbon;
+    align-self: stretch;
+  }
+
+  /* 时间之带列变窄后，桌面式四列 caption 会把 legend 压成逐字竖排；
+     在平板并置语境下退回两列紧凑 caption（title + clock 一行，legend/switch 各占整行）。 */
+  html[data-runtime='mobile-focus'] .focus-instrument > .temporal-ribbon .ribbon-caption {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .temporal-ribbon .ribbon-legend,
+  html[data-runtime='mobile-focus'] .focus-instrument > .temporal-ribbon .ribbon-view-switch,
+  html[data-runtime='mobile-focus'] .focus-instrument > .temporal-ribbon .ribbon-scale-tag {
+    grid-column: 1 / -1;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .runtime-metrics {
+    grid-area: metrics;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .focus-start-fields {
+    grid-area: fields;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .focus-system-tools {
+    grid-area: system;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-instrument > .focus-actions {
+    grid-area: actions;
+    margin-top: 0;
+  }
+}
+
+@media (min-width: 1040px) {
+  html[data-runtime='mobile-focus'] .dashboard-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.52fr);
+    align-items: start;
+    column-gap: 18px;
+  }
+
+  html[data-runtime='mobile-focus'] .dashboard-view > .mobile-ledger-band {
+    position: sticky;
+    top: 0;
+    grid-column: 2;
+    grid-row: 1 / span 40;
+    max-height: calc(100dvh - 150px);
+    overflow-y: auto;
+    padding-left: 18px;
+    border-left: 1px solid var(--border);
+    overscroll-behavior: contain;
+  }
+}
+
+/* ───────────────────────── 17. M1/M10：页面与面板动效补齐（spring / 320–360ms） ─────────────────────────
+   规范 4.1：弹层用 spring stiffness 380 / damping 30；4.2：页面/面板 360ms（允许 320–420ms）。
+   ConnectionSheet 已在 TSX 使用 spring(380,30)；这里补齐 CSS 承载的面板与页面交接，
+   并为每条动效提供 prefers-reduced-motion 降级（降级后顺序/状态/数值不损失）。 */
+
+html[data-runtime='mobile-focus'] .mobile-confirm-dialog {
+  /* 320ms spring 近似曲线（过冲受控），替代原 180ms。 */
+  animation: mobile-confirm-enter 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+html[data-runtime='mobile-focus'] .task-selection-detail.has-selection.is-open,
+html[data-runtime='mobile-focus'] .task-selection-detail.is-open {
+  animation: mobile-panel-spring 340ms cubic-bezier(0.34, 1.32, 0.64, 1) both;
+}
+
+@keyframes mobile-panel-spring {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .mobile-confirm-dialog,
+  html[data-runtime='mobile-focus'] .task-selection-detail.is-open {
+    animation: none !important;
+  }
+}
+
+/* ───────────────────────── 18. 手机端专注页视觉重做：读数即主角 ───────────────────────── */
+
+/* 现状诊断：`.mobile-timer-stage .dial-standard`（mobile-instruments.css:75）是
+   「左侧 ELAPSED 标签 | 数字 | 右侧 READY 状态」三列网格，外加 border + radius +
+   surface-2 底色 + 内阴影。首屏最该当主角的读数被包成一个组件框，两侧还挂两枚英文装饰；
+   同页的任务选择与标题输入又是圆角卡片，形成「框套框」的杂乱感。
+   方向：去框、去外文装饰，数字独占重心；字段区改扁平发丝语言。 */
+
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-standard {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-runtime='mobile-focus'] .mobile-timer-stage .instrument-chrome-label,
+html[data-runtime='mobile-focus'] .mobile-timer-stage .instrument-chrome-state {
+  display: none;
+}
+
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-standard,
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-thin,
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-segment,
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-flip,
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-pixel,
+html[data-runtime='mobile-focus'] .mobile-timer-stage .dial-draft {
+  font-size: clamp(68px, 24cqi, 112px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .primary-readout > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .primary-readout > small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure,
+html[data-runtime='mobile-focus'] .focus-console .focus-title-field {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure:hover,
+html[data-runtime='mobile-focus'] .focus-console .focus-task-disclosure:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .primary-readout {
+  padding-block: clamp(8px, 2.4vw, 18px);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-start-fields {
+  padding-block: 10px;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-action.primary {
+  min-height: 56px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-action.connection-action {
+  min-height: 56px;
+  padding-inline: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ───────────────────────── 19. 待机态画布高度：已撤销（保留结论） ───────────────────────── */
+
+/* 曾把待机态 `.ribbon-canvas` 由 132px 压到 52px 以减少首屏空洞（实测规则确实生效）。
+   但桌面同组件在近景视图下待机时**会绘制完整刻度轨**，说明画布高度是内容所需；
+   压到 52px 有让近景刻度变挤/溢出的风险，且手机那张图当时处于远景（零记录无可绘制内容），
+   无法证明缩小是安全的。故撤销该 override，恢复 mobile-1-3.css 的 132px。
+   真正要解决「远景待机看起来空」应改共享组件行为，见第 21 节结论。 */
+
+/* ───────────────────────── 20. 手机端统计页：范围选择器改为横向滚动胶囊条 ───────────────────────── */
+
+/* 现状：`.dashboard-range-shell` 在手机上是一块 3×2 的大卡片，七个范围选项铺成三行，
+   吃掉首屏近三分之一高度，却是全页最该轻量的控件。改为单行横向滚动胶囊：
+   容器去卡片、选项变胶囊、选中态沿用翡翠软色底家族。触控高度保持 ≥44px。 */
+@media (max-width: 480px) {
+  html[data-runtime='mobile-focus'] .dashboard-range-shell {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  html[data-runtime='mobile-focus'] .dashboard-range-shell .dashboard-range {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 2px 0 6px;
+  }
+
+  html[data-runtime='mobile-focus'] .dashboard-range-shell .dashboard-range button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding-inline: 15px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-weight: 620;
+    scroll-snap-align: start;
+  }
+
+  html[data-runtime='mobile-focus'] .dashboard-range-shell .dashboard-range button.is-active {
+    border-color: var(--focus);
+    background: var(--focus-soft);
+    color: var(--focus-strong);
+  }
+}
+
+/* ───────────────────────── 21. 待机态时间之带：结论记录（已撤销改动） ───────────────────────── */
+
+/* 2026-09-10 实测结论：桌面 `.temporal-ribbon` 待机时**本来就会绘制 60 秒刻度轨**（近景），
+   曾用 background-image 再补一条刻度，桌面出现重复第二套刻度，已撤销；
+   详见 src/styles/linear-workbench.css 尾部记录。
+   手机首屏待机时看不到刻度，是因为截图时处于**远景视图**且零记录时无可绘制内容，
+   不是样式缺失。要修需让「远景在零记录时回落到近景刻度」，属共享组件行为，
+   会影响桌面端，须单独决策；在此之前不要再给画布叠加装饰。 */
+
+/* ───────────────────────── 22. 手机端专注页：时间之带被可选字段挤到粘性操作条之下 ───────────────────────── */
+
+/* 实测（360×800，滚动到顶）：读数 79–270、可选字段 265–454、时间之带块 456–766（块高 310，
+   其中画布 634–766）、粘性主操作条 639–722。结论：画布只有 5px 露在操作条之上，
+   手机首屏实际上看不到时间之带——这才是"那块是空的"的真正原因（画布有 3755 个已绘制像素）。
+   修法：把时间之带提到可选字段之前。字段是选填项，掉到操作条下方可以接受；
+   时间之带是规范里「全局唯一持续运动的元素」，不能被埋掉。 */
+@media (max-width: 619px) {
+  html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .temporal-ribbon {
+    order: 2;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .focus-start-fields {
+    order: 3;
+  }
+}
+
+/* ───────────────────────── 23. B3：横屏时间之带（按实测预算重做） ───────────────────────── */
+
+/* 横屏 915×412 的实测预算：nav 66 + 主操作条 83 + 顶栏与内边距约 78 = 227，
+   只剩约 185px 给读数与时间之带。此前失败的原因是把 310px 高的时间之带块直接塞进第 1 行。
+   这次三处同时收：① 时间之带与读数并置在第 1 行；② 标尺 chrome（标题/图例/时钟/视野开关/
+   刻度标签）由纵向堆叠改为一整行紧凑排布；③ 画布压到 72px。若几何门禁仍判重叠，
+   说明 412px 物理上确实放不下，需回退并维持"记录为限制"。 */
+@media (orientation: landscape) and (max-height: 600px) {
+  html[data-runtime='mobile-focus'] .focus-console .focus-instrument {
+    grid-template-areas:
+      'readout ribbon'
+      'actions actions'
+      'fields fields'
+      'metrics metrics'
+      'system system';
+  }
+
+  html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .temporal-ribbon {
+    grid-area: ribbon;
+    order: 0;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-console .temporal-ribbon .ribbon-caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    padding-block: 4px 6px;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-console .temporal-ribbon .ribbon-canvas {
+    height: 72px;
+  }
+
+  html[data-runtime='mobile-focus'] .focus-console .primary-readout {
+    min-height: 0;
+    padding-block: 6px;
+  }
+}
+
+/* ───────────────────────── 24. 与 PC 对齐：顶栏连接条中性化 + 设置矩阵去卡片 ───────────────────────── */
+
+/* (1) 顶栏连接条：概览层不用高饱和色。「未连接」一律 neutral（灰点 + 灰字），
+   与桌面设置页的契约一致；真正的失败细节仍由设置页诊断栏用 danger 表达。 */
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-offline,
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-error,
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-connecting,
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-unconfigured {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-offline .network-dot,
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-error .network-dot,
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-connecting .network-dot,
+html[data-runtime='mobile-focus'] .mobile-sync-pill.state-unconfigured .network-dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+
+/* (2) 设置矩阵去卡片：对齐桌面「连续工作面 + 发丝分隔」，不再是一块圆角卡。
+   仅保留单元格之间的发丝线，容器本身透明无圆角无阴影。 */
+html[data-runtime='mobile-focus'] .settings-view > .settings-status-grid {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 0;
+}
+
+html[data-runtime='mobile-focus'] .settings-view > .settings-status-grid .settings-status-line {
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-runtime='mobile-focus']
+  .settings-view
+  > .settings-status-grid
+  .settings-status-line:last-child {
+  border-bottom: 0;
+}
+
+/* ───────────────────────── 25. 手机端任务页：拆掉卡片墙，改发丝行 ───────────────────────── */
+
+/* 现状：一屏里叠了五个圆角卡片——分段控件、添加任务（内部还嵌一个灰色圆角下拉）、
+   搜索、全部清单、以及一个无标题的 rev 卡。规范禁止「卡片墙」，桌面同功能是
+   发丝线分隔的连续工作面。这里统一改为：透明底、零圆角、零阴影，行间一条发丝线。 */
+html[data-runtime='mobile-focus'] .task-browser .task-toolbar {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-inline: 0;
+}
+
+html[data-runtime='mobile-focus'] .task-browser .task-mobile-create,
+html[data-runtime='mobile-focus'] .task-browser .task-search,
+html[data-runtime='mobile-focus'] .task-browser .project-filter,
+html[data-runtime='mobile-focus'] .task-browser .task-snapshot-meta {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 添加任务行内的清单下拉原本是「卡中卡」，压成与行同高的安静选择器。 */
+html[data-runtime='mobile-focus'] .task-browser .task-add-destination {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 主操作「添加」在输入为空时是 disabled（正确行为），启用态用实心强调色。 */
+html[data-runtime='mobile-focus'] .task-browser .task-mobile-create button:not(:disabled) {
+  border-color: var(--focus);
+  background: var(--focus);
+  color: var(--surface);
+  font-weight: 700;
+}
+
+/* 灰圆角框来自 <select> 元素本身（不是外层 label）。把行内选择器压成安静的内联选择：
+   透明底 + 无边框 + 弱化文字，只留原生下拉箭头作为可点提示。 */
+html[data-runtime='mobile-focus'] .task-browser .task-add-destination select,
+html[data-runtime='mobile-focus'] .task-browser .project-filter select {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-weight: 620;
+}
+
+/* 搜索行内的 input 同理：行已经扁平，输入框不该再是一块白色圆角卡。 */
+html[data-runtime='mobile-focus'] .task-browser .task-search input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 分段控件所在的行不再单独包卡；选中态沿用翡翠软色底家族（见第 8 节）。 */
+html[data-runtime='mobile-focus'] .task-browser .task-toolbar > .task-status-switch {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}

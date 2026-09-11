@@ -33,27 +33,30 @@ const pause: PauseEvent = {
 };
 
 describe('PC history segment ledger', () => {
+  const baseProps = {
+    sessionId: 'session-1',
+    segments: [segment],
+    pauses: [pause],
+    filter: 'all' as const,
+    linking: false,
+    defaultSubject: '学习' as const,
+    onLink: vi.fn(),
+    onClear: vi.fn(),
+    onComplete: vi.fn(),
+    onResync: vi.fn(),
+    onSetSubject: vi.fn(),
+    tomatodoStatus: {},
+    syncStates: {},
+    syncMode: 'local-only' as const,
+    tomatodoEnabled: true,
+    completedTaskIds: new Set<string>(),
+  };
+
+  const render = (props: Partial<typeof baseProps> = {}) =>
+    renderToStaticMarkup(createElement(HistoryTimelineList, { ...baseProps, ...props }));
+
   it('renders focus and pause as distinct ledger rows with six explicit subject choices', () => {
-    const markup = renderToStaticMarkup(
-      createElement(HistoryTimelineList, {
-        sessionId: 'session-1',
-        segments: [segment],
-        pauses: [pause],
-        filter: 'all',
-        linking: false,
-        defaultSubject: '学习',
-        onLink: vi.fn(),
-        onClear: vi.fn(),
-        onComplete: vi.fn(),
-        onResync: vi.fn(),
-        onSetSubject: vi.fn(),
-        tomatodoStatus: {},
-        syncStates: {},
-        syncMode: 'local-only',
-        tomatodoEnabled: true,
-        completedTaskIds: new Set<string>(),
-      }),
-    );
+    const markup = render();
 
     expect(markup).toContain('history-segment-ledger');
     expect(markup).toContain('history-segment-row hm-stagger-in tone-focus is-linked');
@@ -64,5 +67,26 @@ describe('PC history segment ledger', () => {
       expect(markup).toContain(`title="${subject}"`);
     }
     expect(markup).not.toContain('rounded-lg border border-border/60 bg-bg-card/50');
+  });
+
+  it('shows an honest waiting-for-confirmation label without inventing a specific cause', () => {
+    const markup = render({
+      tomatodoStatus: {
+        'segment-1': {
+          subject: '数学',
+          synced: false,
+          writtenLocally: true,
+          cloudSynced: false,
+          state: 'confirmation-pending',
+          source: 'auto',
+        },
+      },
+    });
+
+    expect(markup).toContain('等待同步确认');
+    // The durable queue cannot prove the pending intent is only phone delivery (it may also be a
+    // record write or a subject update), so the label must not claim a specific sub-cause.
+    expect(markup).not.toContain('已上传');
+    expect(markup).not.toContain('等待手机');
   });
 });

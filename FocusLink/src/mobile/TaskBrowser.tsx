@@ -815,7 +815,13 @@ function TaskBranch({
               {(depth > 0 || hiddenAncestorTitles.length > 0) && parentPath
                 ? `父级 ${parentPath}`
                 : hasChildren
-                  ? `${countSyncedTaskTree(task.children)} 项子任务`
+                  ? (() => {
+                      const completedCount = task.children.filter((c) => c.isCompleted).length;
+                      const totalCount = task.children.length;
+                      return completedCount > 0
+                        ? `${completedCount}/${totalCount} 项完成`
+                        : `${totalCount} 项子任务`;
+                    })()
                   : projectNameForTask(task, projects)}
               {task.tags.length > 0 ? ` · ${task.tags.slice(0, 2).join(' · ')}` : ''}
             </small>

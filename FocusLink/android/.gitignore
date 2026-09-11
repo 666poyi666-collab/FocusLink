@@ -57,6 +57,17 @@ captures/
 #*.jks
 #*.keystore
 
+# FocusLink 稳定签名材料：绝对不得进版本库。
+#   keystore.properties 含 storePassword / keyPassword；
+#   keystore/ 是签名库本体（focuslink-release.jks）。
+# app/build.gradle 用 `focuslinkHasStableKeystore = keystore.properties.exists()` 判断，
+# 缺文件时会降级到模板的 debug 签名，因此忽略它们不会破坏构建。
+# 模板默认把 *.jks / *.keystore 注释掉了，等于默认跟踪密钥库——这里显式覆盖。
+keystore.properties
+keystore/
+*.jks
+*.keystore
+
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 .cxx/

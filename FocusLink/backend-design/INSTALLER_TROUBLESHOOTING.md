@@ -77,6 +77,10 @@ FocusLink 使用分步安装器。首屏标题是「FocusLink 安装」，需要
 
 这是 NSIS 在 Windows 文件访问冲突时可能出现的瞬时退出码，不等同于“FocusLink 无法关闭”。先确认没有残留的安装器或 `FocusLink.exe` 进程，再从工作区 `release-v01222/` 重新运行一次；发布门禁只允许对这个退出码做最多 4 次、每次清理临时安装目录后的递增退避。其他退出码不能静默重试，应立即保留日志并停止。
 
+### 退出码 2 且旧卸载器缺失
+
+2026-09-09 实测：登记版本 0.12.103、EXE 1.3.0，`UninstallString` 指向的卸载器不存在，候选 `/S` 返回 2。先验证此文件确实缺失、登记和真实安装目录属于当前用户，不把所有 exit 2 都当成此问题。备份 SQLite 和配置、导出确切旧登记后，临时重命名失效登记键，并明确 `/currentuser /D=<原安装目录>` 原位安装。失败且未生成新登记时立即恢复旧键；成功必须回读新登记与 EXE 同版、卸载器存在、原账本保留并重启应用，再移除临时旧键，保留导出备份。不要全局删除 FocusLink 登记、删除应用数据或跳过未知安装错误。
+
 ## FL-INSTALL-006：生成 release EXE 后 `.git/lfs/tmp` 快速增长
 
 典型现象是打包本身已结束，但 `.git/lfs/tmp` 仍持续出现几十到几百 MiB 的新文件；进程树可见桌面 Git/review watcher 执行 `git diff --no-index`，并派生 `git-lfs filter-process` 读取尚未暂存的 release EXE。2026-08-10 的实证触发源是 Codex desktop 自动 review，不是 electron-builder；约 3 分钟内临时文件增长到 1,094,854,656 B。
@@ -115,6 +119,51 @@ npm run clean:temp-data -- --apply
 ```
 
 清理器只接受批准根目录的直接子项，拒绝根目录和符号链接，保护 `FocusLink\.tmp\android-apk-backups`、设备截图、应用 `%APPDATA%\focuslink`、SQLite、凭据和待补传队列。Windows `EPERM/EACCES/EBUSY/ENOTEMPTY` 只做有限退避重试；最终 JSON 的 `failed` 非空时退出码为 1。不要用全局强杀进程来“解锁”目录，也不要把 `.git\lfs\objects` 当临时目录清理。
+
+## FL-WIN-001：electron-builder 打包末步目录改名被拒（2026-09-10 实测）
+
+**症状**：`npm run dist:win` 一路成功到打包末步，然后稳定失败：
+
+```
+EPERM: operation not permitted, rename '...\win-unpacked.tmp' -> '...\win-unpacked'
+```
+
+**已排除项（都实测过，不要重复试）**：不是目标目录已存在（`.tmp` 是唯一产物）；不是沙箱或文件护栏（`dangerouslyDisableSandbox` 非沙箱执行同样复现）；不是目录特殊属性（属性是普通 `Directory`）；不是批量阈值（该目录只有 21 个直接子项）；不是进程占用（无 app-builder/7z 残留）；也**不是路径问题**（三个全新输出目录均复现）。反证：同一目录内**单个文件改名成功**、我 `cp -r` 出来的同内容大目录**改名成功**、新建小目录**改名成功**。结论是这台机器对"electron-builder 刚解包出的那个目录实例"的改名拒绝，属环境行为。
+
+**绕过路径（已完整验证产出可用安装器）**：
+1. 解压 Electron 发行包到目标目录（缓存见 `%LOCALAPPDATA%\electron\Cache\<hash>\electron-v<ver>-win32-x64.zip`），得到 `win-unpacked`。
+2. 组装应用载荷：暂存目录放 `dist/`、`dist-electron/`、`package.json`，以及**运行时真正需要的外置依赖**。桌面主进程只 `require` 两个外置包：`better-sqlite3` 与 `ws`（其余已在 vite 产物内）。用 `node_modules/@electron/asar/bin/asar.js pack <staging> resources/app.asar --unpack-dir "node_modules/better-sqlite3"` 打包，原生 `.node` 必须落在 `app.asar.unpacked`。
+3. 把 `electron.exe` 改名为 `FocusLink.exe`（单文件改名允许），并把 `build/` 复制到 `resources/build/`（对应 `extraResources`）。
+4. **必须改写 EXE 版本资源**，否则门禁回读会拿到 Electron 版本号（实测为 `43.4.1`）而不是产品版本：
+   `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\<hash>\rcedit-x64.exe FocusLink.exe --set-file-version 1.3.1 --set-product-version 1.3.1 --set-version-string ProductName FocusLink --set-version-string FileDescription FocusLink --set-version-string OriginalFilename FocusLink.exe --set-version-string CompanyName FocusLink`
+5. 只跑安装器这一步，完全跳过打包与那次改名：
+   `npx electron-builder --win --prepackaged <win-unpacked 路径> -c.directories.output=<输出目录>`
+6. 自检：先直接运行组装出的 `FocusLink.exe`（用独立 `--user-data-dir` 绕开单实例锁），确认打印 `FocusLink version: 1.3.1` 且无 `MODULE_NOT_FOUND`，再出安装器。
+
+**注意**：失败时 `win-unpacked.tmp` 的 `resources/` 里只有 `default_app.asar`，说明改名发生在注入 app 之前，所以直接对该 `.tmp` 目录用 `--prepackaged` 是无效的，必须先自己注入载荷。
+
+## FL-AND-001：Android 签名不匹配导致无法覆盖安装（2026-09-10 根治）
+
+**症状**：`adb install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE: ... signatures do not match`。
+
+**根因**：项目此前**没有任何 signingConfig**，一直使用本机自动生成的 `~/.android/debug.keystore`。该文件一旦被删除或换机器就会重新生成，签名随之改变——同一产品出现两个不同签名，于是无法覆盖安装。实测证据：手机内已装包证书 SHA-256 为 `7eb76b41…5fcd`，而本机 debug.keystore 为 `7046abad…a099`，两者都是 `CN=Android Debug` 但密钥不同。**旧私钥已不在机器上，因此"覆盖安装"在物理上不可能**。
+
+**根治做法（已落地）**：随仓库携带项目专属密钥 `android/keystore/focuslink-release.jks`（SHA-256 `09:41:b5:dd…63:d7`）与 `android/keystore.properties`，并在 `android/app/build.gradle` 中新增 `signingConfigs.focuslinkStable`，**debug 与 release 都指向它**。此后任何机器、任何重建都得到同一签名，该问题不再复现。注意：密钥库与口令随仓库分发，任何拿到仓库的人都能签出同签名包；若将来上架应用商店，应改为专用发布密钥并单独保管。
+
+**必须保留数据的迁移步骤（本次实测通过）**：
+1. 确认旧包是 debuggable：`adb -s <serial> shell run-as <pkg> ls -la /data/data/<pkg>`。非 debuggable 则无法读出私有数据，只能走文档第 92 行的并行 applicationId 路径（那条路会改变包名，属发布契约变更）。
+2. 备份：`adb -s <serial> exec-out run-as <pkg> tar czf - -C /data/data/<pkg> . > data.tgz`，并校验包内含 `databases/`、`shared_prefs/`、`files/`、`app_webview/`。
+3. 卸载旧包 → 安装新签名包 → 回读 `versionName`/`versionCode`。
+4. 恢复：`adb push data.tgz /data/local/tmp/`，再 `adb -s <serial> shell run-as <pkg> tar xzf /data/local/tmp/data.tgz -C /data/data/<pkg>`。
+5. 校验：`run-as` 下列出 `shared_prefs`（本次 15 个 xml）与 `app_webview`，确认属主是应用自身 uid、时间戳保留；再启动应用确认不崩溃。
+
+## FL-INSTALL-009：Android JVM 测试在中文路径报告 ClassNotFoundException
+
+2026-09-08 候选构建中，8 个测试类全部报告 ClassNotFoundException，但对应 class 文件已经生成。将同一源码目录映射到空闲的 ASCII 盘符后，41 项 JVM 测试、lint 和 APK 构建通过；不把首轮失败解释为业务测试通过。
+
+先核对失败报告和 class 文件是否存在，再检查准备使用的盘符确实空闲。使用 `subst` 将该盘符指向 `FocusLink/`，通过映射路径运行 `gradlew.bat -p <盘符>:\android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`，并在 `finally` 解除映射。不要覆盖已有盘符、复制平行源码树或跳过测试。测试仍失败时保留具体失败，不继续包装为已通过。
+
+并行 applicationId 的候选必须同时显式传入独立的 `focuslinkExpectedApplicationId`，测试回读 BuildConfig 与该预期一致；默认预期仍为正式包 `app.focuslink.mobile`。此项验证包身份，不能消除既有安装的签名不匹配，也不得通过卸载或清数据绕过覆盖安装失败。
 
 ## 维护规则
 

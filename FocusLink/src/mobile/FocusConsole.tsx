@@ -215,7 +215,7 @@ export function FocusConsole({
                   >
                     <ListTree aria-hidden="true" />
                     <span>
-                      <strong>{selectedTask?.title ?? '自由专注（不关联任务）'}</strong>
+                      <strong>{selectedTask?.title ?? '自由专注'}</strong>
                       <small>
                         {selectedTask ? '已关联 FocusLink 任务' : '轻触选择，也可以保持自由专注'}
                       </small>
@@ -239,21 +239,28 @@ export function FocusConsole({
                     : '先去「任务」创建待办；配对只用于多端同步'}
                 </small>
               </div>
-              <label className="focus-title-field" htmlFor="focus-title">
-                <span>专注标题</span>
-                <input
-                  id="focus-title"
-                  value={titleDraft}
-                  onChange={(event) => onTitleChange(event.target.value)}
-                  maxLength={1_000}
-                  placeholder="例如：整理化学错题"
-                  autoComplete="off"
-                  enterKeyHint="done"
-                  disabled={pendingCommand !== null}
-                  aria-describedby="focus-title-help"
-                />
-                <small id="focus-title-help">标题可留空；直接开始时会记为“自由专注”。</small>
-              </label>
+              <details className="focus-title-options">
+                <summary>
+                  <span>{titleDraft.trim() || '给这次专注起个名字'}</span>
+                  <span className="focus-title-optional">选填</span>
+                  <ChevronRight aria-hidden="true" />
+                </summary>
+                <label className="focus-title-field" htmlFor="focus-title">
+                  <span>专注标题</span>
+                  <input
+                    id="focus-title"
+                    value={titleDraft}
+                    onChange={(event) => onTitleChange(event.target.value)}
+                    maxLength={1_000}
+                    placeholder="例如：整理化学错题"
+                    autoComplete="off"
+                    enterKeyHint="done"
+                    disabled={pendingCommand !== null}
+                    aria-describedby="focus-title-help"
+                  />
+                  <small id="focus-title-help">标题可留空；直接开始时会记为“自由专注”。</small>
+                </label>
+              </details>
             </div>
           )}
 
@@ -273,10 +280,13 @@ export function FocusConsole({
             <RuntimeMetric label="总历时" value={formatClockDuration(durations.wallElapsedMs)} />
           </div>
 
-          {active && nativeSystemControls.available && tabletViewport && (
-            <section className="focus-system-tools" aria-label="平板专注显示">
+          {active && nativeSystemControls.available && (
+            <section
+              className="focus-system-tools"
+              aria-label={tabletViewport ? '平板专注显示' : '手机专注显示'}
+            >
               <div className="focus-system-tools-copy">
-                <strong>平板专注显示</strong>
+                <strong>{tabletViewport ? '平板专注显示' : '手机专注显示'}</strong>
                 <small>
                   {nativeSystemControls.pictureInPictureActive
                     ? '画中画正在运行'

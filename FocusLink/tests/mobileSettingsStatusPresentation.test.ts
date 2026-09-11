@@ -14,7 +14,7 @@ describe('mobile settings sync status presentation', () => {
         connection: 'live',
         accountLabel: 'FocusLink',
       }),
-    ).toMatchObject({ value: '设备离线', tone: 'warning' });
+    ).toMatchObject({ value: '未连接', tone: 'warning' });
     expect(
       presentMobileSettingsConnection({
         authenticated: true,
@@ -22,7 +22,7 @@ describe('mobile settings sync status presentation', () => {
         connection: 'offline',
         accountLabel: 'FocusLink',
       }),
-    ).toMatchObject({ value: '实时链路离线', tone: 'warning' });
+    ).toMatchObject({ value: '未连接', tone: 'warning' });
     expect(
       presentMobileSettingsConnection({
         authenticated: true,
@@ -31,7 +31,7 @@ describe('mobile settings sync status presentation', () => {
         accountLabel: '个人同步空间',
       }),
     ).toEqual({
-      value: '当前在线',
+      value: '实时连接',
       detail: '个人同步空间 · 实时状态已由云端确认',
       tone: 'ok',
     });
@@ -41,7 +41,7 @@ describe('mobile settings sync status presentation', () => {
         online: true,
         connection: 'unconfigured',
       }),
-    ).toMatchObject({ value: '未配对', tone: 'neutral' });
+    ).toMatchObject({ value: '尚未配对', tone: 'neutral' });
   });
 
   it('keeps ledger freshness and last success when the current refresh fails', () => {
@@ -85,5 +85,21 @@ describe('mobile settings sync status presentation', () => {
       detail: '已有本机记录不会因此丢失',
       tone: 'warning',
     });
+  });
+
+  it('shows first-sync conflicts and failures even without a previous successful checkpoint', () => {
+    expect(
+      presentMobileLedgerFreshness({ authenticated: true, lastSyncAt: null, pullState: 'partial' }),
+    ).toMatchObject({ value: '有记录待处理', tone: 'warning' });
+    expect(
+      presentMobileLedgerFreshness({ authenticated: true, lastSyncAt: null, pullState: 'error' }),
+    ).toMatchObject({ value: '首次同步未完成', tone: 'warning' });
+    expect(
+      presentMobileLedgerFreshness({
+        authenticated: false,
+        lastSyncAt: null,
+        pullState: 'partial',
+      }),
+    ).toMatchObject({ value: '未启用', tone: 'neutral' });
   });
 });

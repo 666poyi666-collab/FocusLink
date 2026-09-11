@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDayLedger } from '@shared/dayLedgerAnalytics';
+import { buildCalendarDayLedger, buildDayLedger } from '@shared/dayLedgerAnalytics';
 import type { FocusSegment, FocusSession, PauseEvent } from '@shared/types';
 
 const MINUTE = 60_000;
@@ -62,6 +62,49 @@ function pause(overrides: Partial<PauseEvent> = {}): PauseEvent {
 }
 
 describe('buildDayLedger effective-day contract', () => {
+  it('counts all 02:55:16 of a night-time record in calendar-day statistics', () => {
+    const elapsed = 10_516_000;
+    const source = {
+      sessions: [
+        session({
+          startedAt: at(0),
+          endedAt: at(0) + elapsed,
+          activeElapsedMs: elapsed,
+          pauseElapsedMs: 0,
+          wallElapsedMs: elapsed,
+        }),
+      ],
+      segments: [segment({ startedAt: at(0), endedAt: at(0) + elapsed, activeElapsedMs: elapsed })],
+      pauses: [],
+    };
+    const result = buildCalendarDayLedger({ day, now: at(6) }, source);
+    expect(result.totals.focusMs).toBe(elapsed);
+    expect(result.totals.estimatedFocusMs).toBe(0);
+    expect(result.status).toBe('observed');
+    expect(result.tasks[0].activeMs).toBe(elapsed);
+  });
+
+  it('splits a midnight-crossing record without losing or duplicating time', () => {
+    const source = {
+      sessions: [
+        session({
+          startedAt: at(23),
+          endedAt: at(25),
+          activeElapsedMs: 2 * HOUR,
+          pauseElapsedMs: 0,
+          wallElapsedMs: 2 * HOUR,
+        }),
+      ],
+      segments: [segment({ startedAt: at(23), endedAt: at(25), activeElapsedMs: 2 * HOUR })],
+      pauses: [],
+    };
+    const first = buildCalendarDayLedger({ day, now: at(36) }, source);
+    const second = buildCalendarDayLedger({ day: at(24), now: at(36) }, source);
+    expect(first.totals.focusMs).toBe(HOUR);
+    expect(second.totals.focusMs).toBe(HOUR);
+    expect(first.totals.estimatedFocusMs + second.totals.estimatedFocusMs).toBe(0);
+  });
+
   it('does not turn a no-focus day into fifteen hours of fake gap', () => {
     const result = buildDayLedger({ day, now: at(12) }, { sessions: [], segments: [], pauses: [] });
 
@@ -360,5 +403,85 @@ describe('buildDayLedger interval normalization', () => {
       estimatedFocusMs: 40 * MINUTE,
       estimatedPauseMs: 20 * MINUTE,
     });
+  });
+});
+
+describe('buildCalendarDayLedger record-bounded observation (1.3.1 side-effect fix)', () => {
+  it('does not count night-time sleep as gap for an early-morning record (02:55:16 sample)', () => {
+    const start = at(2) + 55 * 60_000 + 16_000; // 02:55:16
+    const elapsed = 44_000; // ends 02:56:00
+    const source = {
+      sessions: [
+        session({
+          startedAt: start,
+          endedAt: start + elapsed,
+          activeElapsedMs: elapsed,
+          pauseElapsedMs: 0,
+          wallElapsedMs: elapsed,
+        }),
+      ],
+      segments: [segment({ startedAt: start, endedAt: start + elapsed, activeElapsedMs: elapsed })],
+      pauses: [],
+    };
+    const result = buildCalendarDayLedger({ day, now: at(36) }, source);
+
+    expect(result.status).toBe('observed');
+    expect(result.totals.focusMs).toBe(elapsed);
+    expect(result.observationStartedAt).toBe(start);
+    expect(result.observationEndedAt).toBe(start + elapsed);
+    expect(result.totals.gapMs).toBe(0);
+    expect(result.totals.observationMs).toBe(elapsed);
+    expect(result.intervals.every((interval) => interval.kind === 'focus')).toBe(true);
+  });
+
+  it('keeps focus + pause + gap = observation after record-bounded capping', () => {
+    const source = {
+      sessions: [session()],
+      segments: [segment()],
+      pauses: [pause()],
+    };
+    const result = buildCalendarDayLedger({ day, now: at(36) }, source);
+
+    expect(result.totals.focusMs + result.totals.pauseMs + result.totals.gapMs).toBe(
+      result.totals.observationMs,
+    );
+    expect(result.observationStartedAt).toBe(at(9));
+    expect(result.observationEndedAt).toBe(at(10)); // last real record (pause) ends at 10:00
+    expect(result.totals.gapMs).toBe(0); // no gap inside 09:00–10:00
+  });
+
+  it('does not fabricate a full-day gap on an empty calendar day', () => {
+    const result = buildCalendarDayLedger(
+      { day, now: at(36) },
+      { sessions: [], segments: [], pauses: [] },
+    );
+
+    expect(result.status).toBe('not-started');
+    expect(result.observationStartedAt).toBeNull();
+    expect(result.intervals).toEqual([]);
+    expect(result.totals.gapMs).toBe(0);
+  });
+
+  it('splits a session longer than a day without wrapping the per-day total', () => {
+    const long = 30 * HOUR;
+    const source = {
+      sessions: [
+        session({
+          startedAt: at(0),
+          endedAt: at(0) + long,
+          activeElapsedMs: long,
+          pauseElapsedMs: 0,
+          wallElapsedMs: long,
+        }),
+      ],
+      segments: [segment({ startedAt: at(0), endedAt: at(0) + long, activeElapsedMs: long })],
+      pauses: [],
+    };
+    const first = buildCalendarDayLedger({ day, now: at(36) }, source);
+    const second = buildCalendarDayLedger({ day: at(24), now: at(36) }, source);
+
+    expect(first.totals.focusMs).toBe(24 * HOUR); // capped at day end, never wraps
+    expect(second.totals.focusMs).toBe(6 * HOUR);
+    expect(first.totals.focusMs + second.totals.focusMs).toBe(30 * HOUR);
   });
 });

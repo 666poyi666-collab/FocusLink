@@ -11,7 +11,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configureIsolatedUserData } from './isolatedUserData';
-import { initDatabase, closeDatabase } from '../../electron/db/index.js';
+import {
+  initDatabase,
+  closeDatabase,
+  insertSession,
+  insertSegment,
+} from '../../electron/db/index.js';
 import { TimerManager } from '../../electron/timer/manager.js';
 import { FocusTimerController } from '../../electron/timer/focusTimerController.js';
 import { registerIpc } from '../../electron/ipc.js';
@@ -41,6 +46,45 @@ app
     fs.mkdirSync(outputDir, { recursive: true });
     initDatabase();
 
+    // Isolated regression data: night-time focus must be visible to the second.
+    const fixtureDay = new Date();
+    fixtureDay.setDate(fixtureDay.getDate() - 1);
+    fixtureDay.setHours(0, 0, 0, 0);
+    const fixtureStart = fixtureDay.getTime();
+    const fixtureElapsed = 10_516_000;
+    const fixtureEnd = fixtureStart + fixtureElapsed;
+    insertSession({
+      id: 'dashboard-night-regression',
+      title: '夜间统计回归',
+      status: 'finished',
+      startedAt: fixtureStart,
+      endedAt: fixtureEnd,
+      activeElapsedMs: fixtureElapsed,
+      pauseElapsedMs: 0,
+      wallElapsedMs: fixtureElapsed,
+      defaultTaskId: null,
+      defaultTaskSource: null,
+      defaultTaskTitle: null,
+      note: null,
+      createdAt: fixtureStart,
+      updatedAt: fixtureEnd,
+    });
+    insertSegment({
+      id: 'dashboard-night-segment',
+      sessionId: 'dashboard-night-regression',
+      taskId: null,
+      taskSource: null,
+      title: '夜间统计回归',
+      startedAt: fixtureStart,
+      endedAt: fixtureEnd,
+      activeElapsedMs: fixtureElapsed,
+      note: null,
+      cloudFocusId: null,
+      tomatodoSubject: null,
+      createdAt: fixtureStart,
+      updatedAt: fixtureEnd,
+    });
+
     const timer = new FocusTimerController(new TimerManager());
     timer.recover();
 
@@ -52,6 +96,7 @@ app
       titleBarStyle: 'hidden',
       backgroundColor: '#f5f7f4',
       webPreferences: {
+        backgroundThrottling: false,
         preload: path.join(projectRoot, 'dist-electron', 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
@@ -221,7 +266,31 @@ app
           await sleep(120);
         }
         if (page.id === 'history') {
+          await mainWindow.webContents.executeJavaScript(`(() => {
+            document.querySelector('[aria-label="回到今天"]')?.click();
+          })()`);
+          await sleep(150);
+          await mainWindow.webContents.executeJavaScript(
+            `document.querySelector('[aria-label="前一天"]')?.click()`,
+          );
+          let exactReadout = '';
+          for (let attempt = 0; attempt < 40; attempt += 1) {
+            exactReadout = await mainWindow.webContents.executeJavaScript(
+              `document.querySelector('.stats-primary-readout strong')?.textContent ?? ''`,
+            );
+            if (exactReadout === '02:55:16') break;
+            await sleep(100);
+          }
+          if (exactReadout !== '02:55:16')
+            throw new Error(`Night-time dashboard readout is ${exactReadout}, expected 02:55:16`);
+          // Snapshot the settled chart, not an arbitrary first frame of its decorative entrance.
+          await mainWindow.webContents.executeJavaScript(`(() => {
+            for (const element of document.querySelectorAll('.history-insights .hm-fade-in')) {
+              for (const animation of element.getAnimations()) animation.finish();
+            }
+          })()`);
           const map = await mainWindow.webContents.executeJavaScript(`(() => ({
+            readoutFont: Number.parseFloat(getComputedStyle(document.querySelector('.stats-primary-readout strong')).fontSize),
             ticks: document.querySelectorAll('.stats-day-map-axis > span').length,
             lanes: document.querySelectorAll('.stats-day-lane').length,
             periods: document.querySelectorAll('.stats-day-periods > span').length,
@@ -232,6 +301,7 @@ app
             scrollWidth: document.querySelector('.stats-day-map-scroll')?.scrollWidth ?? 0,
           }))()`);
           if (
+            map.readoutFont < 24 ||
             map.ticks !== 25 ||
             map.lanes !== 3 ||
             map.periods !== 5 ||

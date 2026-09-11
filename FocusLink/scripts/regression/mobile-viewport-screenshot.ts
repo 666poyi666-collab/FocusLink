@@ -389,8 +389,14 @@ async function validateFreshInstall(indexPath: string): Promise<void> {
     assert(initial.localStartVisible, 'fresh install cannot reach local focus start');
 
     await win.webContents.executeJavaScript(`(() => {
+      const disclosure = document.querySelector('.focus-title-options');
+      const summary = disclosure?.querySelector('summary');
+      if (!summary) throw new Error('optional title disclosure missing');
+      summary.click();
+      if (!disclosure.open) throw new Error('optional title disclosure did not open');
       const input = document.querySelector('#focus-title');
       if (!input) throw new Error('offline title input missing');
+      if (input.getBoundingClientRect().height < 44) throw new Error('offline title input not accessible');
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
       setter?.call(input, '本机离线验收');
       input.dispatchEvent(new Event('input', { bubbles: true }));

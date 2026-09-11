@@ -12,9 +12,11 @@ import {
   BAND_SCALE_FAR,
   BAND_SCALE_NEAR,
   BAND_ZOOM_MS,
+  DISSOLVE_ION_MAX_LIFE_MS,
   PAUSE_LOSS_MAX_LIFE_MS,
   POINTER_GLOW_MAX_ALPHA,
   bandScaleForState,
+  dissolveIons,
   easeInOutQuart,
   focusMaterialPose,
   frontierGlowAlpha,
@@ -25,13 +27,12 @@ import {
   overviewScaleForSpan,
   overviewTickStepSec,
   particleAshColor,
-  pauseFrontierDissolveParticles,
   pointerBreathPulse,
   secondTickAlpha,
   steppedDisplaySeconds,
-  traceResidueDot,
 } from '@shared/focus/bandMath';
 import type { RgbTuple } from '@shared/focus/bandMath';
+import { formatClockSeconds, formatDurationPadded } from '../../lib/time';
 import { getCumulativeActiveMs, getCurrentPauseDisplayMs } from '@shared/focus/selectors';
 import { buildMixedTimelineItems } from '@shared/focus/timeline';
 import type { TimelineItem } from '@shared/focus/timeline';
@@ -129,6 +130,38 @@ export function TemporalRibbon({
   );
   const timelineItemsRef = useRef(timelineItems);
   timelineItemsRef.current = timelineItems;
+
+  /* 结束退场：主进程在 finished → idle 时会把 snapshot 的片段一并清空
+     （实测：finished 时 moments 有数据，3 秒后转 idle 那一帧 moments 变成空数组）。
+     因此材料、账本行、读数会在同一帧被硬拔掉——用户感觉到的「卡顿」就在这里，
+     跟帧率无关（帧率全程满，最大 12.5ms）。
+     这里把最后一笔已结束的会话留一份，idle 之后继续画，由 renderBand 在 320ms 内淡出。 */
+  const exitRef = useRef<{
+    moments: TimelineItem[];
+    endedAt: number;
+    idleSince: number | null;
+  }>({ moments: [], endedAt: 0, idleSince: null });
+  const exit = exitRef.current;
+  if (state === 'finished' && timelineItems.length > 0) {
+    const lastEnd = timelineItems.reduce(
+      (latest, item) => Math.max(latest, item.endedAt ?? item.startedAt),
+      0,
+    );
+    exit.moments = timelineItems;
+    exit.endedAt = lastEnd;
+    exit.idleSince = null;
+  } else if (state === 'idle') {
+    exit.idleSince = exit.idleSince ?? Date.now();
+  } else {
+    exit.idleSince = null;
+  }
+  /** 本帧应该画哪些区间：活动态用自己的数据，idle 退场期用留住的那一份。 */
+  const paintItems =
+    state === 'idle' && exit.moments.length > 0 && exit.idleSince !== null
+      ? exit.moments
+      : timelineItems;
+  const paintItemsRef = useRef(paintItems);
+  paintItemsRef.current = paintItems;
 
   const reducedMotion = useReducedMotion();
   const [viewMode, setViewMode] = useState<'auto' | 'near' | 'far'>('auto');
@@ -274,7 +307,8 @@ export function TemporalRibbon({
         state: currentState,
         nowMs: wallNowMs,
         reducedMotion,
-        moments: timelineItemsRef.current,
+        moments: paintItemsRef.current,
+        exitIdleSince: exitRef.current.idleSince,
         paintStyle,
         viewport,
       });
@@ -327,7 +361,6 @@ export function TemporalRibbon({
   useEffect(() => {
     scheduleDrawRef.current();
   }, [renderRevision, targetScale, timelineItems]);
-
   const viewDescription = isNear
     ? state === 'paused'
       ? reducedMotion
@@ -344,10 +377,14 @@ export function TemporalRibbon({
   );
   const clockAt = live ? now : lastRecordedAt || now;
   const clockLabel = live ? '当前精确时间' : hasRecordedTime ? '最后记录时间' : '待机时间锚点';
-  const clockValue = new Date(clockAt).toLocaleTimeString('zh-CN', { hour12: false });
+  /* 实时时钟必须与刻度标签、账本边界同源。
+     这里原先是 toLocaleTimeString('zh-CN')：zh-CN 的 h24 循环把午夜渲染成 24:00，
+     而同一组件的 wallClockTickLabel 用 00:00，两个字段在同一块画布上自相矛盾；
+     locale 输出还会随 ICU 版本漂移，不适合做产品字段。 */
+  const clockValue = formatClockSeconds(clockAt);
   const clockAccessibleLabel =
     state === 'paused'
-      ? `暂停损耗 ${formatElapsedSeconds(pauseElapsedMs)}，${clockLabel} ${clockValue}`
+      ? `暂停损耗 ${formatDurationPadded(pauseElapsedMs)}，${clockLabel} ${clockValue}`
       : `${clockLabel} ${clockValue}`;
 
   return (
@@ -369,7 +406,7 @@ export function TemporalRibbon({
         <span className="ribbon-title">时间之带</span>
         <span className="ribbon-legend">{viewDescription}</span>
         <span className="ribbon-live-clock" aria-label={clockAccessibleLabel}>
-          {state === 'paused' ? `损耗 ${formatElapsedSeconds(pauseElapsedMs)}` : null}
+          {state === 'paused' ? `损耗 ${formatDurationPadded(pauseElapsedMs)}` : null}
           {state === 'paused' ? ' · ' : null}
           {!live ? (hasRecordedTime ? '最后记录 · ' : '待机 · ') : null}
           {clockValue}
@@ -413,9 +450,9 @@ export function TemporalRibbon({
         ref={canvasRef}
         className="ribbon-canvas"
         role="img"
-        aria-label={`本次累计有效专注 ${formatElapsedSeconds(activeElapsedMs)}，当前${
+        aria-label={`本次累计有效专注 ${formatDurationPadded(activeElapsedMs)}，当前${
           state === 'paused'
-            ? `暂停损耗 ${formatElapsedSeconds(pauseElapsedMs)}，红色粒子正从当前时刻剥离消散`
+            ? `暂停损耗 ${formatDurationPadded(pauseElapsedMs)}，红色粒子正从当前时刻剥离消散`
             : state === 'running'
               ? '专注进行中，强调色实体连续生长'
               : '画面已冻结'
@@ -475,6 +512,8 @@ function renderBand(
     moments: TimelineItem[];
     paintStyle: BandPaintStyle;
     viewport: { width: number; height: number };
+    /** idle 退场的起点时间戳（null 表示不在退场期）。 */
+    exitIdleSince: number | null;
   },
 ): boolean {
   const { width, height } = input.viewport;
@@ -530,7 +569,12 @@ function renderBand(
 
   ctx.clearRect(0, 0, width, height);
 
-  // 1. 轨道：一条内凹的中性槽，是时间尚未被使用的样子。
+  /* 1. 轨道：无论待机还是专注，都只画待机态那条扁平时间轴——
+     顶部发丝 + 底部基线，中段完全透明。
+     这里原先是「待机=扁平轴、有记录=内凹中性槽」两套画法，于是点开始专注之后
+     轨道的材质会突然变一次：同一条时间之带在两态看起来不是同一件东西。
+     统一之后，专注与待机的差别只剩下「走过的那一段」——那由基线上的强调线与
+     刻度染色表达，不需要换一套轨道材质。 */
   drawChannel(ctx, geometry, colors);
 
   // 2. 已发生的时间段。暂停先画（它是底下的疤），专注实体压在其上。
@@ -550,14 +594,6 @@ function renderBand(
     drawPauseScar(ctx, geometry, colors, {
       x0: toX(moment.startedAt),
       x1: toX(endMs),
-    });
-  }
-
-  for (const moment of focusMoments) {
-    const endMs = moment.endedAt ?? input.nowMs;
-    drawFocusMaterial(ctx, geometry, colors, {
-      x0: toX(moment.startedAt),
-      x1: toX(endMs),
       ageSec: (endMs - moment.startedAt) / 1000,
       motionSeconds,
       isOngoing: moment.endedAt === null,
@@ -565,12 +601,33 @@ function renderBand(
     });
   }
 
-  // 3. 指针右侧是尚未发生的墙钟时间。
-  const futureShade = ctx.createLinearGradient(pointerX, 0, width, 0);
-  futureShade.addColorStop(0, rgba(colors.ink, 0.03));
-  futureShade.addColorStop(1, rgba(colors.ink, 0.075));
-  ctx.fillStyle = futureShade;
-  ctx.fillRect(pointerX, channelTop, width - pointerX, channelBottom - channelTop);
+  for (const moment of focusMoments) {
+    const endMs = moment.endedAt ?? input.nowMs;
+    /* 结束后的退场：材料**不能瞬间消失**。
+       实测时间线：点结束后 12ms 状态变 finished，冻结 3 秒，第 3019ms 变 idle——
+       材料、账本行、读数在同一帧全部清空。用户感觉到的「卡」其实在这里：
+       帧率一直是满的（最大 12.5ms），但那一下是硬跳变。
+       现在给结束后的材料一个 320ms 的退场：冻结期间保持满实度（那段已经挣到的
+       时间就该立在带子上给你看），持有期结束后淡出，而不是啪地抽走。 */
+    /* 结束退场的不透明度。
+       注意判据必须用「进入 idle 之后过了多久」，不能用 moment.endedAt：
+       主进程在 finished → idle 时会把片段数据清空，那一帧起 moment 已经不存在了，
+       所以这里用的是组件留住的那份区间 + idle 起点。 */
+    const exitFade =
+      input.state === 'idle' && input.exitIdleSince !== null
+        ? clamp01(1 - (input.nowMs - input.exitIdleSince) / 320)
+        : 1;
+    if (exitFade <= 0.001) continue;
+    drawFocusMaterial(ctx, geometry, colors, {
+      x0: toX(moment.startedAt),
+      x1: toX(endMs),
+      ageSec: (endMs - moment.startedAt) / 1000,
+      motionSeconds,
+      isOngoing: moment.endedAt === null,
+      reducedMotion: input.reducedMotion,
+      opacity: exitFade,
+    });
+  }
 
   // 4. 绝对墙钟刻度；边界与账本 HH:mm 完全一致。
   drawRulerTicks(ctx, geometry, colors, {
@@ -586,26 +643,81 @@ function renderBand(
     fontSmallNumber,
   });
 
-  // 5. 暂停消散：粒子从当前前沿剥离，飞出轨道后熄灭。数量由固定寿命封顶。
+  // 4b. 材料压在刻度之上重画一遍。
+  //     材料是时间之带里最实的一层：让刻度透过来，颜色会被底白与刻度线搅成脏色
+  //     （红会读成熟橙）。先画一遍让刻度只出现在空档里，再盖一遍让材料本身干净。
+  for (const moment of pauseMoments) {
+    const endMs = moment.endedAt ?? input.nowMs;
+    drawPauseScar(ctx, geometry, colors, {
+      x0: toX(moment.startedAt),
+      x1: toX(endMs),
+      ageSec: (endMs - moment.startedAt) / 1000,
+      motionSeconds,
+      isOngoing: moment.endedAt === null,
+      reducedMotion: input.reducedMotion,
+      skipSeam: true,
+    });
+  }
+  for (const moment of focusMoments) {
+    const endMs = moment.endedAt ?? input.nowMs;
+    /* 结束退场的不透明度。
+       注意判据必须用「进入 idle 之后过了多久」，不能用 moment.endedAt：
+       主进程在 finished → idle 时会把片段数据清空，那一帧起 moment 已经不存在了，
+       所以这里用的是组件留住的那份区间 + idle 起点。 */
+    const exitFade =
+      input.state === 'idle' && input.exitIdleSince !== null
+        ? clamp01(1 - (input.nowMs - input.exitIdleSince) / 320)
+        : 1;
+    if (exitFade <= 0.001) continue;
+    drawFocusMaterial(ctx, geometry, colors, {
+      x0: toX(moment.startedAt),
+      x1: toX(endMs),
+      ageSec: (endMs - moment.startedAt) / 1000,
+      motionSeconds,
+      isOngoing: moment.endedAt === null,
+      reducedMotion: input.reducedMotion,
+      opacity: exitFade,
+    });
+  }
+
+  // 4c. 断口蒸发：暂停段的起点就是材料的断口，把断口左侧那段材料擦成渐隐。
+  //     材料自己化掉才是「时间在消散」；只撒粒子、材料硬切一刀，读起来是
+  //     「被剪断 + 旁边有灰」。这一步必须在材料画完之后做。
+  for (const moment of pauseMoments) {
+    const endedAt = moment.endedAt;
+    if (endedAt !== null && input.nowMs - endedAt > PAUSE_LOSS_MAX_LIFE_MS) continue;
+    drawFrontierEvaporation(ctx, geometry, {
+      frontierX: toX(moment.startedAt),
+      fadePx: 18,
+    });
+  }
+
+  /* 5. 时间消散：材料断口的蒸发区升起细离子。
+   *
+   * 前面几版都不对，原因是粒子起点在空档里（「现在」指针附近或断口外侧），
+   * 所以读起来是「旁边飘着灰」，跟材料没有关系。现在起点严格落在断口的蒸发区内
+   * （就是被 destination-out 擦掉的那 18px），离子从材料上「升起」，
+   * 于是它读起来是**材料自己在化掉**。
+   *
+   * 发射窗口 3 秒：暂停刚开始时持续发射，之后只让尾离子散尽，
+   * 所以长时间暂停看到的是一段静止的材料与断口，不会一直冒灰。 */
+  const EVAPORATE_PX = 18;
   let ashAlive = false;
-  if (!input.reducedMotion || input.state === 'paused') {
-    for (const moment of pauseMoments) {
-      const endedAt = moment.endedAt;
-      if (endedAt !== null && input.nowMs - endedAt > PAUSE_LOSS_MAX_LIFE_MS) continue;
-      const frontierX = toX(endedAt ?? input.nowMs);
-      if (frontierX < -80 || frontierX > width + 80) continue;
-      // 发射窗口不得越过暂停段起点，否则暂停刚开始的那两秒会把红色粒子
-      // 直接撒在左边已经挣到的绿色实体上，看起来像弄脏了专注，而不是时间在流失。
-      const emitted = drawPauseDissipation(ctx, geometry, colors, {
-        nowMs: input.nowMs,
-        startedAtMs: moment.startedAt,
-        endedAtMs: endedAt,
-        frontierX,
-        sourceWidth: clamp(frontierX - toX(moment.startedAt), 1.5, 11),
-        reducedMotion: input.reducedMotion,
-      });
-      ashAlive = ashAlive || (emitted && endedAt !== null);
-    }
+  const DISSOLVE_WINDOW_MS = 3_000;
+  for (const moment of pauseMoments) {
+    const endedAt = moment.endedAt;
+    if (endedAt !== null && input.nowMs - endedAt > DISSOLVE_ION_MAX_LIFE_MS) continue;
+    const frontierX = toX(moment.startedAt);
+    if (frontierX < -80 || frontierX > width + 80) continue;
+    const emitted = drawDissolveIons(ctx, geometry, colors, {
+      nowMs: input.nowMs,
+      emissiveStartMs: moment.startedAt,
+      frontierX,
+      evaporatePx: EVAPORATE_PX,
+      windowMs: endedAt === null ? DISSOLVE_WINDOW_MS : Math.max(0, endedAt - moment.startedAt),
+      reducedMotion: input.reducedMotion,
+    });
+    ashAlive = ashAlive || emitted;
   }
 
   // 6. 状态指针：只标记「现在」在墙钟上的位置。
@@ -630,17 +742,15 @@ function renderBand(
 
 function drawChannel(ctx: CanvasRenderingContext2D, geo: BandGeometry, colors: BandColors): void {
   const { channelTop, channelBottom, width } = geo;
-  const bed = ctx.createLinearGradient(0, channelTop, 0, channelBottom);
-  bed.addColorStop(0, rgba(colors.ink, colors.isDark ? 0.3 : 0.055));
-  bed.addColorStop(0.14, rgba(colors.surface2, 1));
-  bed.addColorStop(0.88, rgba(colors.surface, 1));
-  bed.addColorStop(1, rgba(colors.ink, colors.isDark ? 0.16 : 0.05));
-  ctx.fillStyle = bed;
-  ctx.fillRect(0, channelTop, width, channelBottom - channelTop);
 
-  ctx.fillStyle = rgba(colors.borderStrong, 0.92);
+  /* 扁平时间轴：顶部发丝 + 底部实基线，中段完全透明。
+     这里原先有第二套画法——「有记录时」把整条轨道填成内凹中性槽。结果是点开始专注
+     之后轨道的材质会突然换一次，同一条时间之带在两态不像同一件东西。
+     统一成一种材质之后，专注与待机的差别只剩「走过的那一段」：基线上的强调线
+     与刻度染色。 */
+  ctx.fillStyle = rgba(colors.border, 0.7);
   ctx.fillRect(0, channelTop, width, 1);
-  ctx.fillStyle = rgba(colors.border, 0.8);
+  ctx.fillStyle = rgba(colors.borderStrong, 0.95);
   ctx.fillRect(0, channelBottom - 1, width, 1);
 }
 
@@ -657,18 +767,38 @@ function drawFocusMaterial(
     motionSeconds: number;
     isOngoing: boolean;
     reducedMotion: boolean;
+    /** 整体不透明度：结束退场时用它淡出，而不是瞬间抽走材料。 */
+    opacity?: number;
   },
 ): void {
   const left = Math.max(-4, input.x0);
   const right = Math.min(geo.width + 4, input.x1);
   if (right - left < 0.4) return;
 
+  /* 结束退场：整体降不透明度淡出，而不是瞬间抽走整块材料。
+     用 globalAlpha 包一层，保证内部所有笔触（棱线、内阴影、前缘）同步淡出。 */
+  if (input.opacity !== undefined && input.opacity < 0.999) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, input.opacity));
+    drawFrostedFocusRibbon(ctx, geo, colors, input, left, right);
+    ctx.restore();
+    return;
+  }
+
   drawFrostedFocusRibbon(ctx, geo, colors, input, left, right);
 }
 
 /**
- * 所有状态下的专注材料都使用连续磨砂玻璃语言：半透明底色、柔和内雾和极细高光边，
- * 不使用颗粒、毛边或分节纹理。暂停损耗仍由独立红色疤痕与消散层表达。
+ * 时间材料：轨道基线上一条**铺满刻度高度**的磨砂材料。专注是强调色，暂停是红色。
+ *
+ * 画四层，全部零模糊、每层一次填充：
+ *   1. 本体：垂直五段明度阶（色相全程守住，见 toneAtLightness）；
+ *   2. 上棱 1px（最亮）与下棱 1px（最深）——材料的厚度就靠这两条线立住；
+ *   3. 顶部内阴影 5px：让材料像嵌在凹槽里，而不是浮在轨道上的一张色纸；
+ *   4. 前缘受光角：只在最上 1/3 高度亮，下面留暗，像玻璃被光斜切到的断面。
+ *
+ * 材料从 0 宽开始生长，所以宽度门槛是亚像素：卡在 1px 上会让起步那一百多毫秒
+ * 什么都不画。上下沿各自只是一条整像素线——保持上下沿完全平直。
  */
 function drawFrostedFocusRibbon(
   ctx: CanvasRenderingContext2D,
@@ -680,202 +810,257 @@ function drawFrostedFocusRibbon(
     motionSeconds: number;
     isOngoing: boolean;
     reducedMotion: boolean;
+    /** 材料色调：专注用强调色，暂停用红色。画法完全一致。 */
+    tone?: 'focus' | 'pause';
+    opacity?: number;
   },
-  left: number,
-  right: number,
+  rawLeft: number,
+  rawRight: number,
 ): void {
+  const left = Math.round(rawLeft);
+  const right = Math.round(rawRight);
+  const width = Math.max(1, right - left);
   const pose = focusMaterialPose(input.ageSec, 0.5, input.motionSeconds, input.reducedMotion);
-  // 玻璃直接贴合轨道内沿，不再使用材料 inset 或出生收束留下上下缝隙。
+  const base = input.tone === 'pause' ? colors.pause : colors.accent;
+
+  // 材料几何：铺满整个刻度高度（顶部刻度到基线）。这是定稿的形状——
+  // 曾经试过「窄带 / 半透明 / 分区」三种替代画法，用户明确要求保持这一种。
   const top = geo.channelTop + 1;
-  const bodyHeight = geo.channelBottom - geo.channelTop - 2;
-  const bottom = top + bodyHeight;
-  const width = right - left;
-
-  const highlight = mixRgb(colors.accent, colors.light, colors.isDark ? 0.42 : 0.5);
-  const mist = mixRgb(colors.accent, colors.light, colors.isDark ? 0.25 : 0.38);
-  const deep = mixRgb(colors.accentDeep, colors.ink, colors.isDark ? 0.08 : 0.12);
+  const baseline = geo.channelBottom - 1;
+  const height = baseline - top;
 
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(left, top, width, bodyHeight);
-  ctx.clip();
 
-  // 玻璃底色保留轨道明暗透出；上沿略亮、下沿略深，避免读成实心色块。
-  const body = ctx.createLinearGradient(0, top, 0, bottom);
-  body.addColorStop(0, rgba(highlight, colors.isDark ? 0.62 : 0.68));
-  body.addColorStop(0.08, rgba(mist, colors.isDark ? 0.5 : 0.58));
-  body.addColorStop(0.48, rgba(colors.accent, colors.isDark ? 0.5 : 0.54));
-  body.addColorStop(0.78, rgba(colors.accentDeep, colors.isDark ? 0.46 : 0.5));
-  body.addColorStop(1, rgba(deep, colors.isDark ? 0.58 : 0.64));
-  ctx.fillStyle = body;
-  ctx.fillRect(left, top, width, bodyHeight);
-
-  // 两层大尺度散射雾经过模糊后自然叠合，不出现可数的斑点或重复节拍。
-  ctx.save();
-  ctx.filter = `blur(${Math.max(5, bodyHeight * 0.11)}px)`;
-  const upperFog = ctx.createLinearGradient(left, 0, right, 0);
-  upperFog.addColorStop(0, rgba(colors.light, 0.02));
-  upperFog.addColorStop(0.28, rgba(colors.light, 0.2 + pose.sheen * 0.025));
-  upperFog.addColorStop(0.62, rgba(colors.light, 0.08));
-  upperFog.addColorStop(1, rgba(colors.light, 0.17));
-  ctx.fillStyle = upperFog;
-  ctx.fillRect(left - 8, top + bodyHeight * 0.08, width + 16, bodyHeight * 0.48);
-
-  const lowerFog = ctx.createLinearGradient(left, 0, right, 0);
-  lowerFog.addColorStop(0, rgba(mist, 0.12));
-  lowerFog.addColorStop(0.5, rgba(colors.light, 0.04));
-  lowerFog.addColorStop(0.76, rgba(mist, 0.18));
-  lowerFog.addColorStop(1, rgba(colors.light, 0.06));
-  ctx.fillStyle = lowerFog;
-  ctx.fillRect(left - 8, top + bodyHeight * 0.44, width + 16, bodyHeight * 0.45);
-  ctx.restore();
-
-  // 一道宽而弱的漫反射把材质定为磨砂，而不是透明塑料。
-  const frost = ctx.createLinearGradient(0, top, 0, bottom);
-  frost.addColorStop(0, rgba(colors.light, 0.14));
-  frost.addColorStop(0.34, rgba(colors.light, 0.08));
-  frost.addColorStop(0.58, rgba(colors.light, 0.02));
-  frost.addColorStop(1, rgba(colors.light, 0.07));
-  ctx.fillStyle = frost;
-  ctx.fillRect(left, top, width, bodyHeight);
-
-  if (input.isOngoing && right > left + 1) {
-    const cap = ctx.createLinearGradient(right - 18, 0, right, 0);
-    cap.addColorStop(0, rgba(highlight, 0));
-    cap.addColorStop(1, rgba(highlight, 0.48));
-    ctx.fillStyle = cap;
-    ctx.fillRect(Math.max(left, right - 18), top, Math.min(18, width), bodyHeight);
+  /* 1. 磨砂玻璃本体：垂直分五段。
+     色相全程守住（见 toneAtLightness 的说明）：上沿最亮、往下逐段压深，
+     最后一段落到最深。这样材料有厚度、有体积，但不会因为混白而褪成粉/橙。
+     暂停再加 12% 饱和、并把实度抬一档：暂停红在浅底上偏「粉」是用户明确点出的问题。 */
+  const dim = 1;
+  const satBoost = input.tone === 'pause' ? 1.12 : 1;
+  const glass = ctx.createLinearGradient(0, top, 0, baseline);
+  const ramp: Array<[number, number, number]> = [
+    [0, 0.82, (colors.isDark ? 0.5 : 0.6) * dim],
+    [0.07, 0.66, (colors.isDark ? 0.52 : 0.62) * dim],
+    [0.34, 0.5, (colors.isDark ? 0.5 : 0.6) * (input.tone === 'pause' ? 1.08 : 1)],
+    [0.78, 0.3, (colors.isDark ? 0.46 : 0.54) * (input.tone === 'pause' ? 1.08 : 1)],
+    [1, 0.12, (colors.isDark ? 0.54 : 0.6) * (input.tone === 'pause' ? 1.06 : 1)],
+  ];
+  for (const [at, k, alpha] of ramp) {
+    glass.addColorStop(at, rgba(toneAtLightness(base, k, satBoost), Math.min(0.95, alpha)));
   }
-  ctx.restore();
+  ctx.fillStyle = glass;
+  ctx.fillRect(left, top, width, height);
 
-  // 玻璃包边统一在裁剪之外收口，保持上下沿完全平直。
-  ctx.fillStyle = rgba(colors.light, colors.isDark ? 0.58 : 0.82);
+  // 2. 上棱 1px：比本体再亮一档，是「实体感」的来源；下棱压到最深，材料才有厚度。
+  //    上下沿各自只是一条整像素线——保持上下沿完全平直，不出现毛边或阶梯。
+  ctx.fillStyle = rgba(toneAtLightness(base, 0.95, satBoost), colors.isDark ? 0.44 : 0.56 * dim);
   ctx.fillRect(left, top, width, 1);
-  ctx.fillStyle = rgba(deep, colors.isDark ? 0.62 : 0.72);
-  ctx.fillRect(left, bottom - 1, width, 1);
-  if (input.x0 >= 0) {
-    ctx.fillStyle = rgba(deep, 0.74);
-    ctx.fillRect(left, top, 1, bodyHeight);
+  ctx.fillStyle = rgba(toneAtLightness(base, 0.08, satBoost), colors.isDark ? 0.5 : 0.58 * dim);
+  ctx.fillRect(left, baseline - 1, width, 1);
+
+  // 3. 顶部内阴影：上棱往下 5px 的极淡压深。这一笔是「高级感」的关键——
+  //    它让材料读起来是嵌在凹槽里的一块实体，而不是浮在轨道上的一张色纸。
+  //    成本只有一次填充，且不带任何模糊。
+  const innerShadow = ctx.createLinearGradient(0, top + 1, 0, top + 6);
+  innerShadow.addColorStop(
+    0,
+    rgba(toneAtLightness(base, 0.1, satBoost), colors.isDark ? 0.3 : 0.24),
+  );
+  innerShadow.addColorStop(1, rgba(toneAtLightness(base, 0.3), 0));
+  ctx.fillStyle = innerShadow;
+  ctx.fillRect(left, top + 1, width, 5);
+
+  // 4. 内棱：上棱往下 2px 一条极淡的亮线。玻璃的厚度就靠这两条线立住。
+  ctx.fillStyle = rgba(toneAtLightness(base, 0.78), colors.isDark ? 0.14 : 0.18 * dim);
+  ctx.fillRect(left, top + 2, width, 1);
+
+  // 5. 前缘：正在生长的那一头。
+  if (input.isOngoing && input.tone !== 'pause' && width > 1) {
+    const head = 12;
+    const cap = ctx.createLinearGradient(Math.max(left, right - head), 0, right, 0);
+    cap.addColorStop(0, rgba(toneAtLightness(base, 0.72), 0));
+    cap.addColorStop(1, rgba(toneAtLightness(base, 0.72), 0.3 + pose.sheen * 0.08));
+    ctx.fillStyle = cap;
+    ctx.fillRect(Math.max(left, right - head), top, Math.min(head, width), height);
+    // 前缘受光角：只在最上面 1/3 高度给一条亮线，下面留暗。
+    // 整条边均匀发亮会读成一根发光棒；只亮上段才像玻璃被光斜切到的断面。
+    ctx.fillStyle = rgba(toneAtLightness(base, 0.92), 0.6);
+    ctx.fillRect(right - 1, top, 1, Math.max(2, Math.round(height * 0.34)));
   }
-  if (input.isOngoing && right > left + 1) {
-    ctx.fillStyle = rgba(colors.light, 0.88);
-    ctx.fillRect(right - 1.2, top, 1.2, bodyHeight);
-  }
+
+  // 6. 段落两端收口：1px 暗边。
+  const seam = rgba(toneAtLightness(base, 0.1), 0.45);
+  ctx.fillStyle = seam;
+  if (input.x0 >= 0) ctx.fillRect(left, top, 1, height);
+  if (!input.isOngoing) ctx.fillRect(right - 1, top, 1, height);
+  ctx.restore();
 }
 
 /* ─── 暂停：疤痕 + 前沿消散 ────────────────────────────────── */
 
+/**
+ * 暂停：和专注**同一种材料**，只是红的。
+ *
+ * 试过四版才对：① 被掏空的槽（暂停越久色块越大）；② 红虚线（长时段下整条带子变成
+ * 一片红噪点）；③ 只留断面 + 一大簇粒子（细材料旁边像一团渣）；④ 极淡冷红留白
+ * （α≈0.05，等于没画，用户看不到红色）。
+ *
+ * 正确做法是复用专注材料的画法、只换色调：两段是同一种东西、同一高度、同一条基线，
+ * 因此读起来是「这段时间的材料是红的」，而不是「这里有个洞」。再加一道极短断面
+ * 说明断口在哪；不做虚线、不做高墙、不堆粒子。
+ */
 function drawPauseScar(
   ctx: CanvasRenderingContext2D,
   geo: BandGeometry,
   colors: BandColors,
-  input: { x0: number; x1: number },
+  input: {
+    x0: number;
+    x1: number;
+    ageSec: number;
+    motionSeconds: number;
+    isOngoing: boolean;
+    reducedMotion: boolean;
+    /** 第二遍只补材料，不再重复断面。 */
+    skipSeam?: boolean;
+  },
 ): void {
   const left = Math.max(-4, input.x0);
   const right = Math.min(geo.width + 4, input.x1);
   if (right - left < 0.4) return;
 
-  // 槽被掏空：这段时间没有留下任何实体。这道缺口必须读得出来——粒子终会散尽，
-  // 留在带子上的空槽才是「这段时间什么都没挣到」的证据。
-  const hollow = ctx.createLinearGradient(0, geo.channelTop, 0, geo.channelBottom);
-  hollow.addColorStop(0, rgba(colors.ink, colors.isDark ? 0.42 : 0.15));
-  hollow.addColorStop(0.34, rgba(colors.pause, colors.isDark ? 0.15 : 0.09));
-  hollow.addColorStop(1, rgba(colors.pause, colors.isDark ? 0.26 : 0.19));
-  ctx.fillStyle = hollow;
-  ctx.fillRect(left, geo.channelTop + 1, right - left, geo.channelBottom - geo.channelTop - 2);
+  drawFrostedFocusRibbon(
+    ctx,
+    geo,
+    colors,
+    {
+      x0: input.x0,
+      ageSec: input.ageSec,
+      motionSeconds: input.motionSeconds,
+      isOngoing: input.isOngoing,
+      reducedMotion: input.reducedMotion,
+      tone: 'pause',
+    },
+    left,
+    right,
+  );
 
-  // 两端的竖直断面让缺口有明确边界，而不是一片模糊的浅色。
-  ctx.fillStyle = rgba(colors.pause, 0.34);
-  if (input.x0 >= 0)
-    ctx.fillRect(left, geo.channelTop + 1, 1, geo.channelBottom - geo.channelTop - 2);
-  if (input.x1 <= geo.width) {
-    ctx.fillRect(right - 1, geo.channelTop + 1, 1, geo.channelBottom - geo.channelTop - 2);
-  }
+  if (input.skipSeam) return;
 
-  const scarY = geo.materialBottom - 0.5;
-  ctx.fillStyle = rgba(colors.pause, 0.62);
-  ctx.fillRect(left, scarY, right - left, 1.4);
+  /* 断口电离：消散必须发生在**材料的断口上**，不在空档里飘。
+   *
+   * 之前几版都在空档（「现在」指针附近）撒粒子，于是粒子飘在一片什么都没有的地方，
+   * 读起来只是「有灰尘」，和材料没有任何关系。真正在解离的是材料被切断的那一端：
+   * 所以现在把一道很短的电离弧贴在断口上——靠近断口处最亮、向外 30px 渐隐，
+   * 再叠一层逐秒呼吸。弧本身不移动，移动的是它上方那撮离子（见 drawDissolveIons）。
+   *
+   * 颜色跟着材料走（暂停红），不再混灰色灰烬色，所以读起来是「这块材料在解体」，
+   * 而不是「旁边有些脏点」。
+   */
+  const top = geo.channelTop + 1;
+  const bodyHeight = geo.channelBottom - geo.channelTop - 2;
+  const pulse = 0.55 + 0.45 * Math.sin((input.motionSeconds % 1) * Math.PI);
+  const arc = Math.min(30, Math.max(10, Math.round(bodyHeight * 0.4)));
+  const tail = Math.max(0, Math.round(left));
+  const grad = ctx.createLinearGradient(tail, 0, tail + arc, 0);
+  grad.addColorStop(0, rgba(toneAtLightness(colors.pause, 0.86, 1.12), 0.5 * pulse));
+  grad.addColorStop(0.45, rgba(colors.pause, 0.22 * pulse));
+  grad.addColorStop(1, rgba(colors.pause, 0));
+  ctx.fillStyle = grad;
+  ctx.fillRect(tail, top, arc, bodyHeight);
 
-  // 确定性残点：疤痕上方一层极淡的灰烬痕迹，永远不随帧变化。
-  const ash = particleAshColor(colors.pause, colors.muted);
-  const stripTop = Math.max(geo.materialTop, scarY - 26);
-  for (let cellX = Math.floor(left / 9); cellX * 9 <= right; cellX += 1) {
-    for (let cellY = Math.floor(stripTop / 9); cellY * 9 <= scarY; cellY += 1) {
-      const dot = traceResidueDot(cellX, cellY);
-      if (!dot.present) continue;
-      const x = cellX * 9 + dot.offsetX;
-      const y = cellY * 9 + dot.offsetY;
-      if (x < left || x > right || y < stripTop || y > scarY) continue;
-      ctx.fillStyle = rgba(ash, dot.alpha * 2.4);
-      ctx.fillRect(x, y, 1.3, 1.3);
-    }
-  }
+  // 断口断面：1px 高光，把「材料到此为止」说死。
+  ctx.fillStyle = rgba(toneAtLightness(colors.pause, 0.95, 1.12), 0.62);
+  ctx.fillRect(tail, top, 1, bodyHeight);
 }
 
-/** @returns 本帧是否真的画出了粒子。 */
-function drawPauseDissipation(
+/**
+ * 材料在断口处「蒸发」：把断口左侧那段材料按渐隐擦掉。
+ *
+ * 这是「时间消散」的核心一笔，也是前几版一直缺的东西——之前只在断口旁边撒粒子，
+ * 材料本身是硬切的一刀，读起来是「被剪断 + 旁边有灰」。真正像消散的是**材料自己**
+ * 从断口往里渐渐化掉：靠断口最透明，往外 18px 恢复成完整材料。
+ *
+ * 必须画在材料**之后**、且用 destination-out 擦除，而不是覆盖一层白——覆盖会在
+ * 彩色材料上留一层雾，擦除才是真的「这里没有材料」。
+ */
+function drawFrontierEvaporation(
   ctx: CanvasRenderingContext2D,
   geo: BandGeometry,
-  colors: BandColors,
-  input: {
-    nowMs: number;
-    startedAtMs: number;
-    endedAtMs: number | null;
-    frontierX: number;
-    sourceWidth: number;
-    reducedMotion: boolean;
-  },
-): boolean {
-  const sourceWidth = input.sourceWidth;
-  const particles = pauseFrontierDissolveParticles(
-    input.nowMs,
-    input.startedAtMs,
-    input.endedAtMs,
-    sourceWidth,
-    input.reducedMotion,
-    1,
-  );
-  if (particles.length === 0) return false;
-
-  const fieldHeight = geo.materialBottom - geo.materialTop;
-  const ash = particleAshColor(colors.pause, colors.muted);
-  const hot = mixRgb(colors.pause, colors.light, 0.45);
+  input: { frontierX: number; fadePx: number },
+): void {
+  const width = Math.max(2, Math.round(input.fadePx));
+  const right = Math.round(input.frontierX);
+  const left = right - width;
+  if (right < -2 || left > geo.width + 2) return;
+  const top = geo.channelTop + 1;
+  const bodyHeight = geo.channelBottom - geo.channelTop - 2;
 
   ctx.save();
-  for (const particle of particles) {
-    const originX = input.frontierX - sourceWidth + particle.originOffsetX;
-    const x = originX + particle.travelX;
-    const y = geo.materialTop + particle.originRatioY * fieldHeight + particle.travelY;
-    if (x < -12 || x > geo.width + 12 || y < -18 || y > geo.height + 12) continue;
-
-    const color =
-      particle.kind === 'spark'
-        ? mixRgb(hot, ash, particle.progress)
-        : mixRgb(colors.pause, ash, particle.progress * 0.92);
-    ctx.fillStyle = rgba(color, particle.alpha);
-
-    if (particle.kind === 'grain') {
-      ctx.fillRect(x - particle.size / 2, y - particle.size / 2, particle.size, particle.size);
-    } else if (particle.kind === 'flake') {
-      // 薄片保留朝向：翻滚的碎屑比等距圆点更像「剥落」。
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(particle.rotation);
-      ctx.fillRect(
-        -particle.size * 0.62,
-        -particle.size * 0.3,
-        particle.size * 1.24,
-        Math.max(0.6, particle.size * 0.6),
-      );
-      ctx.restore();
-    } else {
-      ctx.beginPath();
-      ctx.arc(x, y, Math.max(0.35, particle.size * 0.42), 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+  ctx.globalCompositeOperation = 'destination-out';
+  const grad = ctx.createLinearGradient(left, 0, right, 0);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.5)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.96)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(left, top, width, bodyHeight);
   ctx.restore();
-  return true;
+}
+
+/**
+ * 在「保色相」的前提下调节明度，并可额外加饱和。
+ *
+ * 这是材料颜色的关键修正。原来的做法是往段落色里混白色（`mixRgb(base, light, k)`）：
+ * 混白会同时拉高明度和**降低饱和度**——暂停红 `rgb(210,67,57)`（饱和 89%）混 0.46 白之后
+ * 只剩 42% 饱和，在白底上就直接读成砖红/锈橙，怎么调透明度都救不回来。
+ *
+ * 现在改为在 HSL 里只动 L：饱和度全程保住，亮的一档仍然是「红」而不是「粉」。
+ * @param k 0 = 最深（L 压低 34%），0.5 = 原色，1 = 最亮（L 提到 88%）
+ * @param satBoost 额外饱和度倍率（1 = 不变）。用于把暂停红压得更实。
+ */
+function toneAtLightness(color: RgbTuple, k: number, satBoost = 1): RgbTuple {
+  const [h, s, l] = rgbToHsl(color);
+  const target = k <= 0.5 ? l * (0.6 + k * 0.8) : l + (0.88 - l) * ((k - 0.5) / 0.5);
+  return hslToRgb(h, Math.min(1, s * satBoost), Math.max(0.05, Math.min(0.94, target)));
+}
+
+function rgbToHsl(color: RgbTuple): [number, number, number] {
+  const r = color[0] / 255;
+  const g = color[1] / 255;
+  const b = color[2] / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return [0, 0, l];
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): RgbTuple {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t: number) => {
+    let x = t;
+    if (x < 0) x += 1;
+    if (x > 1) x -= 1;
+    if (x < 1 / 6) return p + (q - p) * 6 * x;
+    if (x < 1 / 2) return q;
+    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+    return p;
+  };
+  return [
+    Math.round(channel(h + 1 / 3) * 255),
+    Math.round(channel(h) * 255),
+    Math.round(channel(h - 1 / 3) * 255),
+  ];
 }
 
 /* ─── 刻度 ─────────────────────────────────────────────────── */
@@ -1050,6 +1235,60 @@ function drawNowPointer(
   ctx.fillText(input.label, input.pointerX, Math.min(height - 5, channelBottom + 21));
 }
 
+/* ─── 时间消散：断口蒸发区的细离子 ─────────────────────────── */
+
+/**
+ * 把断口蒸发区里的细离子画出来。
+ *
+ * 起点严格落在蒸发区内：`frontierX - evaporatePx * (1 - originRatioX)` → 断口。
+ * 颜色从材料色（亮、饱和）随寿命褪向灰烬色，所以刚离开材料的离子就是材料的一部分，
+ * 越飘越淡、越飘越灰，最后消失——读起来是「时间在消散」，而不是「有灰尘在飞」。
+ * 这也是前几版的病根：粒子起点在空档里，和材料没有任何关系。
+ */
+function drawDissolveIons(
+  ctx: CanvasRenderingContext2D,
+  geo: BandGeometry,
+  colors: BandColors,
+  input: {
+    nowMs: number;
+    emissiveStartMs: number;
+    frontierX: number;
+    evaporatePx: number;
+    windowMs: number;
+    reducedMotion: boolean;
+  },
+): boolean {
+  const ions = dissolveIons(
+    input.nowMs,
+    input.emissiveStartMs,
+    input.evaporatePx,
+    input.windowMs,
+    input.reducedMotion,
+  );
+  if (ions.length === 0) return false;
+
+  const top = geo.channelTop + 1;
+  const bodyHeight = geo.channelBottom - geo.channelTop - 2;
+  const material = colors.pause;
+  const ash = particleAshColor(material, colors.muted);
+  let drawn = 0;
+
+  ctx.save();
+  for (const ion of ions) {
+    const originX = input.frontierX - input.evaporatePx * (1 - ion.originRatioX);
+    const x = originX + ion.travelX;
+    const y = top + ion.originRatioY * bodyHeight + ion.travelY;
+    if (x < -10 || x > geo.width + 10 || y < -24 || y > geo.height + 10) continue;
+    const color = mixRgb(material, ash, (1 - ion.temperature) * 0.85);
+    ctx.fillStyle = rgba(color, ion.alpha);
+    const size = Math.max(0.4, ion.size);
+    ctx.fillRect(x - size / 2, y - size / 2, size, size);
+    drawn += 1;
+  }
+  ctx.restore();
+  return drawn > 0;
+}
+
 /* ─── 工具 ─────────────────────────────────────────────────── */
 
 function rgba(color: RgbTuple, alpha: number): string {
@@ -1064,6 +1303,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
 /** 时长的口语化短标签：总览尺度是动态的，刻度说明必须跟着变。 */
 function formatSpanLabel(seconds: number): string {
   if (seconds < 60) return `${Math.max(1, Math.round(seconds))} 秒`;
@@ -1073,13 +1316,6 @@ function formatSpanLabel(seconds: number): string {
   }
   const hours = seconds / 3600;
   return `${hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours)} 小时`;
-}
-
-function formatElapsedSeconds(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function wallClockTickLabel(totalSeconds: number): string {

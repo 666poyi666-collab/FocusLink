@@ -71,6 +71,13 @@ export interface BuildDayLedgerOptions {
   now?: number;
   effectiveStartHour?: number;
   effectiveEndHour?: number;
+  /**
+   * New calendar-day semantics: end the observation window at the last real record's end
+   * instead of the whole effective-day boundary, so night-time / no-record hours are not
+   * counted as gap. Desktop/mobile product statistics enable this via buildCalendarDayLedger.
+   * The parameterized effective-day kernel keeps the default false for backward compatibility.
+   */
+  capObservationAtLastRecord?: boolean;
 }
 
 interface ExactSourceInterval {
@@ -329,6 +336,17 @@ function partitionObservation(
   return mergeIntervals(intervals);
 }
 
+/** Product statistics cover the entire local calendar day, including night-time work. */
+export function buildCalendarDayLedger(
+  options: Pick<BuildDayLedgerOptions, 'day' | 'now'>,
+  source: DayLedgerSource,
+): DayLedgerAnalytics {
+  return buildDayLedger(
+    { ...options, effectiveStartHour: 0, effectiveEndHour: 24, capObservationAtLastRecord: true },
+    source,
+  );
+}
+
 export function buildDayLedger(
   options: BuildDayLedgerOptions,
   source: DayLedgerSource,
@@ -349,11 +367,21 @@ export function buildDayLedger(
   const calculationWindowEnd = Math.max(effectiveStartedAt, effectiveEndedAt);
   const exact = collectExactIntervals(source, isToday, effectiveStartedAt, calculationWindowEnd);
   const exactFocus = exact.filter((interval) => interval.kind === 'focus');
+  const lastRecordEndedAt =
+    exact.length > 0 ? Math.max(...exact.map((interval) => interval.endedAt)) : null;
   const observationStartedAt =
     exactFocus.length > 0
       ? Math.max(effectiveStartedAt, Math.min(...exactFocus.map((interval) => interval.startedAt)))
       : null;
-  const observationEndedAt = effectiveEndedAt;
+  // 新口径（仅自然日账本启用）：观察窗口终点收束到「当日最后一条真实记录的结束点」。
+  // 今天封顶 now、历史日封顶次日零点；夜间/无记录区不再被算作空档。
+  // focus + pause + gap = observation 不变量在收束后仍成立（区间只是变短）。
+  const observationEndedAt =
+    observationStartedAt !== null &&
+    options.capObservationAtLastRecord &&
+    lastRecordEndedAt !== null
+      ? Math.min(lastRecordEndedAt, effectiveEndedAt)
+      : effectiveEndedAt;
   const intervals =
     observationStartedAt !== null && observationEndedAt > observationStartedAt
       ? partitionObservation(observationStartedAt, observationEndedAt, exact)

@@ -4,6 +4,7 @@ import type { DayLedgerAnalytics, DayLedgerInterval } from '@shared/dayLedgerAna
 import type { SyncedTask } from '@shared/sync/taskSnapshotProtocol';
 import {
   buildDashboardTaskAllocation,
+  formatDashboardDuration as formatClockDuration,
   largestRemainderPercentages,
   type DashboardTaskAllocation,
 } from '@shared/dashboardPresentation';
@@ -18,7 +19,6 @@ import {
   type MobileStatsRange,
   type MobileTimelineTaskDetail,
 } from './dashboardModel';
-import { formatClockDuration } from './runtimeModel';
 import { SessionLedger } from './SessionLedger';
 
 const RANGE_OPTIONS: ReadonlyArray<{ value: MobileStatsRange; label: string }> = [
@@ -482,7 +482,7 @@ function DayLedgerTimeline({
       ? '尚未形成观察区间'
       : `${formatClock(ledger.observationStartedAt)}–${formatClock(ledger.observationEndedAt)}`;
   const timelineLabel = ledger
-    ? `${ledger.date} 全天时间轴，07:00 至 22:00 为默认有效日；${ledger.intervals.map(intervalLabel).join('；') || observation}`
+    ? `${ledger.date} 全天时间轴，00:00 至 24:00 完整统计；${ledger.intervals.map(intervalLabel).join('；') || observation}`
     : '尚无共享日账本数据';
   const hourTicks = Array.from({ length: 25 }, (_, hour) => hour);
   const nowPosition = ledger?.isToday
@@ -616,7 +616,7 @@ function DayLedgerTimeline({
             <span className="legend-focus">专注</span>
             <span className="legend-pause">暂停</span>
             <span className="legend-gap">空档</span>
-            <span className="legend-sleep">非统计</span>
+            <span className="legend-sleep">夜间时段</span>
           </div>
         </div>
       ) : (

@@ -14,7 +14,17 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { logger } from './logger.js';
-import { initDatabase, closeDatabase, listSegments, getSetting, setSetting } from './db/index.js';
+import {
+  initDatabase,
+  closeDatabase,
+  listSegments,
+  getSetting,
+  setSetting,
+  getActiveSession,
+  getMeta,
+  getDb,
+  insertSession,
+} from './db/index.js';
 import { TimerManager } from './timer/manager.js';
 import { FocusTimerController } from './timer/focusTimerController.js';
 import { createTray, destroyTray } from './tray.js';
@@ -867,7 +877,97 @@ function toggleMainWindow(): void {
   }
 }
 
-/** 把 snapshot 推送到所有渲染窗口 - 计时数字实时刷新的关键 */
+/**
+ * 预热计时命令的读取路径。
+ *
+ * 实测结论（2026-09-11）：会话内第一次 `timer:toggle` 在主进程侧耗时约 43ms，
+ * 之后 6ms。逐段归因后，这笔成本的绝大部分是**首次创建小窗**（21.33ms，已由启动预热
+ * 消除），其余是首次走完 start() 那条路径本身的成本。
+ *
+ * 因此这里做两件事：
+ *  1. 只读触碰：活动会话 / 元数据 / 设置；
+ *  2. 写路径预热：把一次真实的 `insertSession` 包在事务里执行、随后强制回滚。
+ *     代码路径被跑热（V8 编译 + better-sqlite3 准备语句），但**不留下任何数据**——
+ *     异常在事务内抛出即触发 ROLLBACK，这是 better-sqlite3 的语义。
+ */
+function warmTimerCommandPath(): void {
+  try {
+    const started = process.hrtime.bigint();
+    getActiveSession();
+    getMeta('timer.lastTick');
+    getMeta('timer.lastState');
+    getMeta('timer.lastSegment');
+    getSettings();
+    const readMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    const w0 = process.hrtime.bigint();
+    warmTimerWritePath();
+    const writeMs = Number(process.hrtime.bigint() - w0) / 1e6;
+
+    logger.info('main', 'timer command path warmed', {
+      readMs: Number(readMs.toFixed(2)),
+      writeMs: Number(writeMs.toFixed(2)),
+    });
+  } catch (error) {
+    // 预热失败绝不能影响启动：真正的命令路径仍然会在用户点击时自行初始化。
+    logger.warn('main', 'timer warmup skipped', { error: String(error) });
+  }
+}
+
+/**
+ * 写路径预热：在事务里执行一次真实的会话写入，然后强制回滚。
+ * 目的是让「第一次 insertSession」的编译与准备成本发生在启动时而不是用户点击时。
+ * @returns 是否确认回滚成功（未真正落库）。
+ */
+function warmTimerWritePath(): boolean {
+  const db = getDb();
+  const now = Date.now();
+  let rolledBack = false;
+  const tx = db.transaction(() => {
+    insertSession({
+      id: '__warmup__',
+      title: null,
+      status: 'active',
+      startedAt: now,
+      endedAt: null,
+      activeElapsedMs: 0,
+      pauseElapsedMs: 0,
+      wallElapsedMs: 0,
+      defaultTaskId: null,
+      defaultTaskSource: null,
+      defaultTaskTitle: null,
+      note: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    // 抛出即回滚；better-sqlite3 会把异常原样抛出，这里在下层捕获。
+    throw new Error('__focuslink_warmup_rollback__');
+  });
+  try {
+    tx();
+  } catch (error) {
+    rolledBack = String(error).includes('__focuslink_warmup_rollback__');
+    if (!rolledBack) throw error;
+  }
+  // 兜底校验：预热绝不能留下记录。
+  const leftover = db
+    .prepare('SELECT COUNT(*) AS n FROM focus_sessions WHERE id = ?')
+    .get('__warmup__') as { n: number } | undefined;
+  if (leftover && leftover.n > 0) {
+    db.prepare('DELETE FROM focus_sessions WHERE id = ?').run('__warmup__');
+    logger.warn('main', 'warmup row unexpectedly persisted; deleted');
+    return false;
+  }
+  return rolledBack;
+}
+
+/**
+ * 把 snapshot 推送到所有渲染窗口 - 计时数字实时刷新的关键。
+ *
+ * 这里曾加过分段计时（2026-09-12），结论已固定在上面的小窗预热注释里：
+ * 广播本身（主窗/小窗各一次 `webContents.send`）合计仅 0.03ms，
+ * 曾经的 ~21ms 全部来自「首次惰性创建小窗」，已由启动预热消除。
+ */
 function pushSnapshot(snap: TimerSnapshot): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('tick', snap);
@@ -1085,6 +1185,7 @@ app.whenReady().then(() => {
 
   initDatabase();
   migrateLegacyLoopbackAccountConnection();
+  warmTimerCommandPath();
 
   let settings = getSettings();
   const didaSourceMigrationKey = 'migration.taskSourceDidaV060';
@@ -1120,6 +1221,35 @@ app.whenReady().then(() => {
   foxlinkBusinessApi = startFoxlinkBusinessApi(timer);
 
   mainWindow = createMainWindow();
+
+  /* 预热小窗：**不要把「第一次创建小窗」的成本留给用户点击那一刻。**
+     实测（2026-09-12）：点「开始专注」会触发 autoShowOnFocusStart，而小窗此前是惰性创建，
+     首次 showMiniWindow 耗时 21.33ms（`lazilyCreated: true`），之后每次只有 1.5ms。
+     这 21ms 正好落在用户点击后那一帧上，也是长期被感受为「点开始会卡一下」的成因之一。
+     这里在启动时把它建好并保持隐藏；真正显示时只走 show/setAlwaysOnTop（约 1.5ms）。
+     构造函数本身不做显示，所以对用户不可见、不改变任何既有交互。 */
+  try {
+    const warmStarted = process.hrtime.bigint();
+    // 必须把结果赋给模块级 miniWindow，否则 showMiniWindow 仍会认为「还没建」而再建一次
+    // （第一次实测就是这样：建了但没接上，lazilyCreated 依然是 true）。
+    miniWindow = createMiniWindow();
+    if (miniWindow.isVisible()) {
+      miniWindow.hide();
+      logger.warn('main', 'pre-warmed mini window was visible; hidden again');
+    }
+    const warmMs = Number(process.hrtime.bigint() - warmStarted) / 1e6;
+    logger.info('main', 'mini window pre-warmed at startup', { ms: Number(warmMs.toFixed(2)) });
+
+    /* 这里曾再往前一步：启动时用 `showInactive()` 真的显示一次小窗、`did-finish-load` 后
+       立刻隐藏，把「首次显示」的 106ms 也挪到启动。**已回退**，理由如下：
+         · 收益只有 6.9ms（首次 start 往返 25.3 → 21.8ms），
+         · 代价是预热期间小窗要真实可见 106ms，若 `did-finish-load` 触发偏晚就会闪一下；
+         · 而且预热用的 mini 页面启动后会一直留在目标列表里（窗口 hidden，但渲染进程常驻）。
+       宁可保留一个 6.9ms 的首次显示成本，也不接受「可能闪现一个小窗」的风险。 */
+  } catch (error) {
+    miniWindow = null;
+    logger.warn('main', 'mini window pre-warm skipped', { error: String(error) });
+  }
 
   // 设置 IPC，传入按域分流的 onSettingsChanged 回调
   registerIpc(timer, mainWindow, (domains, s) => {

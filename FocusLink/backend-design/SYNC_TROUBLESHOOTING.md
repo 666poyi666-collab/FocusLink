@@ -83,6 +83,8 @@ v0.12.71 起，Electron 从 `fl2` token 解析与 authority 一致的 `deviceId`
 
 ## FL-SYNC-006：云端恢复后仍显示“跨设备同步失败” / `conflict_present`
 
+2026-09-08 移动展示补充：首次账本同步没有 lastSyncAt 时也必须优先呈现 partial/conflict/rejected 的“有记录待处理”；缺少历史确认时间不能覆盖当前终态。首次 transport 请求失败使用“首次同步未完成”，不推进确认时间。检查 `presentMobileLedgerFreshness` 的分支顺序及其首次同步测试，不要通过伪造 checkpoint 消除提示。
+
 ### 事故证据
 
 v0.12.78 的一次已安装实例先在日志中真实记录 canonical Sync v2 `network_error` 与 liveFocus 重试；稍后 DNS、TCP 443 和 HTTPS 已恢复，canonical adapter 的 `GET /healthz` 连续返回 200，无凭据 `GET /sync/v2/status` 返回 401。此时 Electron 状态仍可能返回 `lastError=conflict_present`，设置页却显示 danger/“跨设备同步失败”。早先网络失败、当前服务恢复和本机仍有未解决冲突是三个可以同时成立的事实。
@@ -182,6 +184,8 @@ v0.12.80 在小米 `D68P65855TPBHYWS` 与华为 `f8630574` 上反复失败。两
 
 2026-08-30 补充实证：设置页显示 223 条待上传并连续两次 `uploaded=0/failed=223`；桥身份 probe 已连接，当前时间临时记录上传确认成功。脱敏日期聚合确认 223 条全部超过 7 天，属于永久不可投递历史，不是桥或番茄钟整体失败。v0.12.105 验收补修后，超过窗口的记录继续保留在本机 PCRecord，但不再计入“待上传”或后台重试；界面显示“历史已停止重试”。禁止批量改成今天来换取成功，也禁止把停止重试写成已上传。
 
+2026-09-08 源码诊断补充（修复中）：历史页没有消费后台 `phone-pending`，共享 IPC 类型也缺少该值。诊断时必须同时检查 durable intent 的原因、当前学科与外部记录是否一致，以及上传/手机通道的独立确认；当前 durable segment ID 列表不能证明待处理项仅是手机投递。不要因 marker 存在就清队列，也不要用旧 `isSynced=1` 确认尚未写入的新学科。此发现尚未完成真实番茄客户端验收。
+
 ## FL-SYNC-010：8 位设备配对码无效或过期
 
 数字码在 10 分钟内有效。输入时只移除空格/换行，不改写其他字符；非 8 位数字在本机直接拒绝。同一 installation 重复提交同一码会幂等返回同一凭据，不应显示“已使用”；不存在、过期或已被另一 installation 占用才返回 `pairing_expired`。
@@ -265,6 +269,35 @@ v0.12.105 的开始时间与结构化循环仍使用 task snapshot v1 envelope�
 ### 验证
 
 自动化覆盖插件晚注入、超时、AbortSignal、startup generation 复用、显式账号操作抢占、配对持久写入等待和退出持久清除等待。真机使用正式 applicationId APK执行原位 `adb install -r`，不清数据；启动时记录上述三个脱敏布尔，确认自动恢复实时连接、任务 revision 与账本，再执行一次前后台切换。只有界面与 native deviceId/lease 收敛且无需重新配对，才可关闭本条。
+
+## FL-SYNC-015：番茄 To-do「等待同步确认」为何不能显示具体原因
+
+### 含义
+
+历史页与设置页的 `confirmation-pending` 状态只表示「本机保留了一个待处理操作，尚未获得完整确认」。它刻意不写具体原因（记录写入 / 分类更新 / 手机投递），因为当前数据结构无法可靠区分这三者。
+
+### 数据结构审计（2026-09-10，只读）
+
+durable 队列是单个 settings 键 `tomatodo.pendingSegmentIdsV060`，值是一个扁平的 `string[]`（仅 segment ID，无原因字段）。三类意图都会往同一个列表里追加同一个 segment ID：
+
+- **记录写入**：新 segment 需要写一条 PCRecord；
+- **分类更新**：手动改学科后重新上传；
+- **手机投递**：云上传已成功但手机 `syncRecord` 尚未确认。
+
+这三者不是独立的 durable 条目，而是复用同一个 segment ID。因此在「不改 SQLite 表结构、不做迁移」的前提下，**不能**可靠区分原因，根因有两点：
+
+1. 同一个 segment ID 可以同时因多个原因处于 pending（例如一条新记录既没写入、手机也没投递）。
+2. `cloudSynced=true`（旧 marker）不能用来反推「仅在等手机」：一条 pending 的学科更新可能也带着旧 subject 的 `cloudSynced=1`（正是 FL-SYNC-009 强调的「不要用旧 isSynced=1 确认尚未写入的新学科」）。若按 `cloudSynced` 推导，会把「新学科待上传」误报成「手机投递待确认」。
+
+在读数时靠 `recordState.exists / cloudSynced` 反推只是部分且易错的启发式，会编出不存在的原因，违反「不为好看硬造语义」的纪律。故本轮保持诚实措辞：显示「等待同步确认」，title 说明「可能涉及记录写入、分类更新或手机投递」，不编造具体原因。
+
+### 需要动数据结构的方案（本轮不做）
+
+要让原因可解释，必须让 durable 队列携带每项的意图原因，例如把值从 `string[]` 改为 `Array<{ id: string; reasons: Array<'record-write'|'subject-update'|'phone-delivery'> }>`，或按原因拆成多个 durable 键。这涉及 settings 值的形状迁移，本轮按约束不实施、不动 SQLite 表结构、不做迁移。待该结构落地后，历史页才可按原因显示，且旧 `string[]` 值需做兼容读取。
+
+### 验证
+
+`tests/tomatodoSyncService.test.ts` 与 `tests/historyTimelineRenderer.test.ts` 锁住以下不变量：状态读取不清 durable 队列、不写外部记录；旧的云端确认不得被新的待处理学科借用（`cloudSynced` 在仍有 durable pending 时回落为 `confirmation-pending`）；超 7 天的未确认历史保持 `expired-history` 且不计入重试；渲染层只显示诚实的「等待同步确认」，不声称「等待手机」或「已上传」。所有用例均用真实 fixture，不使用伪造 checkpoint、不改 `isSynced` 来让提示消失。
 
 ## 日志位置与收集方式
 

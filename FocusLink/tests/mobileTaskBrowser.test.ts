@@ -2,6 +2,18 @@ import fs from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+
+/**
+ * 空白归一化后再比对。
+ *
+ * 这类「源码契约」测试按字面匹配组件源码，但缩进会随 `prettier --write` 变化——
+ * 曾经就是精确匹配 `onSelect={(task) => {\n              ...` 的缩进，
+ * 结果一次格式化就让测试误报（格式化本身是仓库门禁要求的）。
+ * 契约关心的是「这段 JSX 结构还在」，不是它缩进几格，所以比对前统一把连续空白压成单空格。
+ */
+const normalize = (s: string) => s.replace(/\s+/g, ' ');
+const containsNormalized = (source: string, snippet: string) =>
+  normalize(source).includes(normalize(snippet));
 import type { SyncedTask, SyncedTaskProject } from '../shared/sync/taskSnapshotProtocol';
 import {
   ALL_PROJECTS,
@@ -295,14 +307,24 @@ describe('mobile task browser model', () => {
       new URL('../src/mobile/MobileApp.tsx', import.meta.url),
       'utf8',
     );
-    expect(appSource).toContain(`onSelect={(task) => {
+    expect(
+      containsNormalized(
+        appSource,
+        `onSelect={(task) => {
                   setSelectedTaskId(task.id);
                   setTitleDraft(task.title);
-                }}`);
-    expect(appSource).toContain(`onStart={(task) => {
+                }}`,
+      ),
+    ).toBe(true);
+    expect(
+      containsNormalized(
+        appSource,
+        `onStart={(task) => {
                   setSelectedTaskId(task.id);
                   setTitleDraft(task.title);
-                  setActiveView('focus');`);
+                  setActiveView('focus');`,
+      ),
+    ).toBe(true);
   });
 
   it('uses one FocusLink task disclosure instead of the old select plus browse row', () => {

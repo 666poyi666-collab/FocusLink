@@ -8,6 +8,7 @@ import {
   publishDeviceTaskSnapshot,
   readDeviceTaskSnapshot,
 } from '../sync/deviceSyncService.js';
+import { assembleTaskTree } from '@shared/taskTreeUtils';
 import { getSettings } from '../settingsStore.js';
 
 export async function setTaskCompleted(task: Task, completed: boolean): Promise<Task> {
@@ -82,17 +83,18 @@ export async function refreshTaskWorkspace(
       const tasks = localTasks.filter(
         (task) => !selectedProjectId || task.projectId === selectedProjectId,
       );
+      const treeTasks = assembleTaskTree(tasks);
       const refreshedAt = Date.now();
       const result = {
         ok: true,
         data: {
           provider: 'focuslink-local',
           projects,
-          tasks,
+          tasks: treeTasks,
           refreshedAt,
         },
       } satisfies IpcResult<TaskWorkspaceRefreshData>;
-      await publishTaskWorkspace(projects, tasks, refreshedAt, options.force === true);
+      await publishTaskWorkspace(projects, treeTasks, refreshedAt, options.force === true);
       return result;
     }
 

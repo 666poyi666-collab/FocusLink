@@ -100,7 +100,7 @@ describe('desktop device-sync Settings presentation', () => {
       1_700_000_060_000,
     );
     expect(overview.connection).toMatchObject({
-      value: '已确认',
+      value: '实时连接',
       detail: '专注中 · revision 12',
       tone: 'success',
     });
@@ -120,7 +120,7 @@ describe('desktop device-sync Settings presentation', () => {
       }),
       1_700_000_060_000,
     );
-    expect(overview.connection).toMatchObject({ value: '当前未在线', tone: 'warning' });
+    expect(overview.connection).toMatchObject({ value: '未连接', tone: 'neutral' });
     expect(overview.freshness).toMatchObject({ value: '新鲜', tone: 'success' });
     expect(overview.latestSuccess.value).toBe('1 分钟前');
   });
@@ -133,7 +133,7 @@ describe('desktop device-sync Settings presentation', () => {
       }),
       1_700_000_000_000 + SETTINGS_LEDGER_FRESH_AFTER_MS + 1,
     );
-    expect(overview.connection).toMatchObject({ value: '已确认', tone: 'success' });
+    expect(overview.connection).toMatchObject({ value: '实时连接', tone: 'success' });
     expect(overview.freshness).toMatchObject({ value: '待刷新', tone: 'warning' });
     expect(overview.latestSuccess.tone).toBe('warning');
   });
@@ -200,12 +200,12 @@ describe('desktop device-sync Settings presentation', () => {
       },
       expiredHistory: {
         label: '过期历史',
-        value: '223 条过期历史已停止重试',
+        value: '223 条历史已停止重试',
         detail: '全部超过 7 天上传窗口；日期未改、记录仍保留在本机',
         tone: 'neutral',
       },
     });
-    expect(presentTomatodoQueue(2, 223, null).queue.value).toBe('2 条可上传');
+    expect(presentTomatodoQueue(2, 223, null).queue.value).toBe('等待同步确认');
     expect(presentTomatodoQueue(0, 0, null).expiredHistory).toBeNull();
   });
 

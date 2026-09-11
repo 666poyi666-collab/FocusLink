@@ -122,11 +122,11 @@ describe('mobile live runtime model', () => {
 
   it('uses exact state wording and stable clock slots', () => {
     expect(liveConnectionCopy('offline', true)).toEqual({
-      title: '当前离线 · 本机专注可用',
+      title: '未连接 · 本机专注可用',
       detail: '云端状态仅供参考；可新建独立本机会话，结束后联网补传',
     });
     expect(liveConnectionCopy('error', true, '登录凭据已失效，请重新登录')).toEqual({
-      title: '实时连接中断',
+      title: '未连接',
       detail: '登录凭据已失效，请重新登录',
     });
     expect(formatClockDuration(65_001)).toBe('01:05');

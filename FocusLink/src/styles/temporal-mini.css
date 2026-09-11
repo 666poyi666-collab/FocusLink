@@ -178,20 +178,26 @@
   font-size: 17px;
 }
 
+/* 秒轨：与桌面时间之带同源的画法。
+   之前这里是「每秒一条竖纹」的密集条纹，在 10px 高度上读起来像条形码/噪声，
+   而不是刻度。现在改成两级刻度：1 秒一条极淡的线，5 秒一条稍显的线；
+   填充改用主题强调色（与界面强调色一致，而不是写死绿色），顶部一道受光棱，
+   前沿补一个亮点——小窗作为桌面时间之带的缩略形态，应该一眼看出是同一件东西。 */
 .mini-second-rail {
   position: absolute;
   overflow: visible;
-  border-top: 1px solid rgb(var(--app-border-strong) / 0.72);
-  border-bottom: 1px solid rgb(var(--app-border) / 0.72);
-  background:
-    repeating-linear-gradient(
-      90deg,
-      transparent 0,
-      transparent calc(1.6667% - 1px),
-      rgb(var(--app-grid) / 0.26) calc(1.6667% - 1px),
-      rgb(var(--app-grid) / 0.26) 1.6667%
-    ),
-    rgb(var(--app-ink) / 0.055);
+  /* 轨道本体透明，只由上下发丝线界定；刻度线就是全部内容。 */
+  border-top: 1px solid rgb(var(--app-border) / 0.62);
+  border-bottom: 1px solid rgb(var(--app-border-strong) / 0.78);
+  /* 只有每 5 秒一根刻度线。每秒一根在这个尺度上就是一把梳子——
+     上一版正是这样，读起来像条形码而不是刻度。 */
+  background: repeating-linear-gradient(
+    90deg,
+    rgb(var(--app-grid) / 0.4) 0,
+    rgb(var(--app-grid) / 0.4) 1px,
+    transparent 1px,
+    transparent 8.3333%
+  );
   -webkit-app-region: drag;
 }
 
@@ -213,49 +219,42 @@
   overflow: visible;
 }
 
+/* 已流逝的部分：实心材料 + 顶端受光棱；刻度只留每 10 秒一道细分隔。 */
+/* 填充必须不透明：半透明时轨道刻度会透上来，整条读成一把梳子。
+   实色底 + 每 10 秒一条提亮分隔（screen 混合），只有「材料 + 一道刻度」两件事。 */
 .mini-second-rail-fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--mini-progress);
   overflow: hidden;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      transparent 0,
-      transparent calc(1.6667% - 1px),
-      rgb(var(--app-surface) / 0.42) calc(1.6667% - 1px),
-      rgb(var(--app-surface) / 0.42) 1.6667%
-    ),
-    rgb(var(--app-success));
+  /* 纯实心材料，内部一行刻度线都不留：材料本身就是「已流逝」。 */
+  background: linear-gradient(180deg, rgb(var(--app-accent) / 0.88), rgb(var(--app-accent)));
+  box-shadow: inset 0 1px 0 rgb(var(--app-surface) / 0.34);
 }
 
 .mini-second-rail.is-paused .mini-second-rail-fill {
-  background: rgb(var(--app-pause));
+  background: linear-gradient(180deg, rgb(var(--app-pause) / 0.88), rgb(var(--app-pause)));
 }
 
+/* 前沿：正在生长的那一头。1px 亮线 + 柔光，与桌面「现在」指针同一语义。 */
 .mini-second-front {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
+  top: -3px;
+  bottom: -3px;
   left: var(--mini-progress);
   width: 1px;
-  background: rgb(var(--app-success));
-  box-shadow: 0 0 0 1px rgb(var(--app-success) / 0.12);
+  background: rgb(var(--app-accent));
+  box-shadow:
+    0 0 0 1px rgb(var(--app-accent) / 0.14),
+    0 0 5px 1px rgb(var(--app-accent) / 0.26);
   transform: translateX(-0.5px);
 }
 
 .mini-second-rail.is-paused .mini-second-front {
   background: rgb(var(--app-pause));
-  box-shadow: 0 0 0 1px rgb(var(--app-pause) / 0.16);
-}
-
-/* 暂停引线与粒子：同源 Canvas 渲染，不使用 CSS 无限动画伪造粒子。 */
-.mini-fuse-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+  box-shadow:
+    0 0 0 1px rgb(var(--app-pause) / 0.16),
+    0 0 5px 1px rgb(var(--app-pause) / 0.24);
 }
 
 /* ─── 展开态：70px 外框；20px 上栏 + 48px 四象限控制台 ─── */

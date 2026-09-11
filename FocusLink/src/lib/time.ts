@@ -42,6 +42,20 @@ export function formatClock(ms: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/**
+ * epoch ms -> "HH:MM:SS"。
+ * 用 getHours/getMinutes/getSeconds 手工拼装，而不是 toLocaleTimeString：
+ * zh-CN 走 h24 循环时午夜会输出 `24:00:00`，与同一组件里 `wallClockTickLabel` 的
+ * `00:00` 刻度标签自相矛盾；locale 输出也随 ICU 版本漂移，不适合做产品字段。
+ */
+export function formatClockSeconds(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(
+    2,
+    '0',
+  )}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
 /** epoch ms -> "MM-DD HH:MM" */
 export function formatDateTime(ms: number): string {
   const d = new Date(ms);

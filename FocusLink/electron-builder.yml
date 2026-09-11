@@ -1,13 +1,32 @@
 appId: com.focuslink.app
 productName: FocusLink
 directories:
-  output: ../release-v130
+  # 必须是去点的 `release-v136` 形式（仓库约定：0.2.10 → release-v0210）。
+  # 曾试过写 `../release-v${version}` 想让它自动跟随 package.json——**不行**：
+  # electron-builder 的 ${version} 就是 package.json 的字面量，会展开成
+  # `release-v1.3.6`（带点），与 gen-version.js 的 `release-v${version.replace(/\./g,'')}`
+  # 以及仓库「只保留最新三个 release-v*」的约定都不一致。
+  # 因此这里与 shared/version.ts 的 APP_RELEASE_DIR 一样是**手工同步点**：
+  # 升版本时必须同时改这两处，并确认 `npm run dist:win` 的 appOutDir 落在正确目录。
+  output: ../release-v137
   buildResources: build
 files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
   - '!**/*.{map,ts}'
+  # 不要在安装包里携带 Capacitor 的 Gradle 构建产物。
+  # 实测（2026-09-11）已安装的 1.3.4/1.3.5：`resources/app.asar.unpacked/node_modules/@capacitor`
+  # 下有 186 个位于 `build/` 之下的文件（Gradle 的 .transforms、intermediates、outputs、tmp），
+  # 是 `npx cap sync` 的生成物，可再生、运行期完全用不到；深层嵌套路径还会踩到
+  # Windows 260 字符上限（清理这些中间产物时实测报 PathTooLong）。
+  # 用 `@capacitor/**/build/**` 一条覆盖全部形态——该模式经**磁盘真实路径**回测：
+  # 命中 186/186 需排除文件，误伤 0/68 必保留文件。
+  # 两点必须守住：① 前缀必须限定在 `@capacitor/` 命名空间内，否则会连
+  # better-sqlite3 的 `build/Release/*.node` 一起误伤（那是运行期必需的原生模块）；
+  # ② 不要按 `*/android/build` 之类的层数去写，实测层级不统一（app 与 android 两包的
+  # 嵌套深度不同），按层数写必然漏。
+  - '!**/node_modules/@capacitor/**/build/**'
 asar: true
 # better-sqlite3 13 ships N-API prebuilds. Rebuilding its compatibility binding with node-gyp
 # would incorrectly require a local MSVC toolchain and would throw away the cross-runtime benefit.

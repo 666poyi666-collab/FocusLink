@@ -1,5 +1,5 @@
 import {
-  buildDayLedger,
+  buildCalendarDayLedger,
   type DayLedgerAnalytics,
   type DayLedgerInterval,
   type DayLedgerTask,
@@ -95,7 +95,9 @@ export function buildMobileDashboardInRange(
     ),
     pauses: records.flatMap((record) => record.bundle.pauses),
   };
-  const dayLedgers = localDayStarts(bounds).map((day) => buildDayLedger({ day, now }, source));
+  const dayLedgers = localDayStarts(bounds).map((day) =>
+    buildCalendarDayLedger({ day, now }, source),
+  );
   const totals = dayLedgers.reduce<MobileDashboardTotals>(
     (result, ledger) => ({
       focusMs: result.focusMs + ledger.totals.focusMs,

@@ -1,6 +1,5 @@
-// 任务树纯模型与筛选策略。
-// 规则：父任务默认折叠；搜索命中任意后代时临时展开完整路径；清空搜索后恢复用户原状态。
 import type { Task } from '@shared/types';
+import { assembleTaskTree } from '@shared/taskTreeUtils';
 
 export type TaskSortMode = 'smart' | 'due' | 'title' | 'completed';
 
@@ -22,6 +21,7 @@ export interface FilteredTaskTree {
 /** 生成默认折叠状态：所有有 children 的父任务 collapsed[id] = true
  *  用于初始化或任务列表变化时设置默认折叠 */
 export function createDefaultCollapsedState(tasks: Task[]): Record<string, boolean> {
+  const tree = assembleTaskTree(tasks);
   const out: Record<string, boolean> = {};
   const walk = (list: Task[]) => {
     for (const t of list) {
@@ -31,7 +31,7 @@ export function createDefaultCollapsedState(tasks: Task[]): Record<string, boole
       }
     }
   };
-  walk(tasks);
+  walk(tree);
   return out;
 }
 
@@ -42,6 +42,7 @@ export function initNewParentsCollapsed(
   prev: Record<string, boolean>,
   tasks: Task[],
 ): Record<string, boolean> {
+  const tree = assembleTaskTree(tasks);
   const next = { ...prev };
   let changed = false;
   const walk = (list: Task[]) => {
@@ -55,7 +56,7 @@ export function initNewParentsCollapsed(
       }
     }
   };
-  walk(tasks);
+  walk(tree);
   return changed ? next : prev;
 }
 
@@ -68,6 +69,7 @@ export function expandMatchingParents(
 ): Record<string, boolean> {
   const q = query.trim().toLowerCase();
   if (!q) return prev;
+  const tree = assembleTaskTree(tasks);
   const next = { ...prev };
   const walk = (list: Task[]): boolean => {
     let hasMatch = false;
@@ -85,7 +87,7 @@ export function expandMatchingParents(
     }
     return hasMatch;
   };
-  walk(tasks);
+  walk(tree);
   return next;
 }
 
@@ -100,10 +102,11 @@ export function filterTaskTree(
   const query = options.query?.trim().toLowerCase() ?? '';
   const projectId = options.projectId ?? '';
   const showCompleted = options.showCompleted ?? false;
+  const assembledTasks = assembleTaskTree(sourceTasks);
   const byProject =
     projectId && !(query && options.ignoreProjectWhenSearching)
-      ? filterTaskTreeByProject(sourceTasks, projectId)
-      : sourceTasks;
+      ? filterTaskTreeByProject(assembledTasks, projectId)
+      : assembledTasks;
   let completedHidden = 0;
 
   const filter = (tasks: Task[]): Task[] => {

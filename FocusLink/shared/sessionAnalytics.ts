@@ -1,5 +1,5 @@
 import type { FocusSegment, FocusSession, PauseEvent } from './types';
-import { buildDayLedger } from './dayLedgerAnalytics';
+import { buildCalendarDayLedger } from './dayLedgerAnalytics';
 import type {
   SessionAnalyticsDaily,
   SessionAnalyticsHourly,
@@ -529,7 +529,7 @@ export function buildSessionAnalytics(
         );
 
   const dayLedgers = enumerateDays(range.start, range.end).map((day) =>
-    buildDayLedger(
+    buildCalendarDayLedger(
       { day, now: referenceNow },
       {
         sessions,

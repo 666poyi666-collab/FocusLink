@@ -205,7 +205,7 @@ export function presentDeviceSyncOverview(
     syncAge === null
       ? {
           label: '账本新鲜度',
-          value: '未知',
+          value: '尚未确认',
           detail: status?.signedIn ? '等待第一次云端账本确认' : '配对后才会检查账本新鲜度',
           tone: 'neutral',
         }
@@ -253,7 +253,7 @@ export function presentDeviceSyncOverview(
     return {
       connection: {
         label: '当前实时连接',
-        value: '未配对',
+        value: '尚未配对',
         detail: '输入另一台设备的 8 位本机码即可加入同步',
         tone: 'neutral',
       },
@@ -281,7 +281,7 @@ export function presentDeviceSyncOverview(
         label: '当前实时连接',
         value: '实时控制未启用',
         detail: status.running ? '账本同步正在执行' : '账本同步仍可单独执行',
-        tone: status.running ? 'warning' : 'neutral',
+        tone: 'neutral',
       },
       freshness,
       latestSuccess,
@@ -292,9 +292,9 @@ export function presentDeviceSyncOverview(
     return {
       connection: {
         label: '当前实时连接',
-        value: status.running ? '正在重新检查' : '当前未在线',
+        value: '未连接',
         detail: '实时链路尚未确认；本机计时可继续使用',
-        tone: 'warning',
+        tone: 'neutral',
       },
       freshness,
       latestSuccess,
@@ -311,8 +311,8 @@ export function presentDeviceSyncOverview(
           : '状态待确认';
   return {
     connection: {
-      label: '当前实时连接',
-      value: '已确认',
+      label: '实时连接',
+      value: '实时连接',
       detail: `${liveStateLabel} · revision ${status.liveRevision ?? 0}`,
       tone: 'success',
     },
@@ -332,7 +332,7 @@ export function presentTomatodoQueue(
     safeExpired > 0
       ? {
           label: '过期历史',
-          value: `${safeExpired} 条过期历史已停止重试`,
+          value: `${safeExpired} 条历史已停止重试`,
           detail: '全部超过 7 天上传窗口；日期未改、记录仍保留在本机',
           tone: 'neutral',
         }
@@ -353,8 +353,8 @@ export function presentTomatodoQueue(
     return {
       queue: {
         label: '上传队列',
-        value: `${safeUploadable} 条可上传`,
-        detail: '记录已留在本机；只有收到上传确认后才会移出队列',
+        value: '等待同步确认',
+        detail: `${safeUploadable} 条待处理记录已留在本机；只有收到上传确认后才会移出队列`,
         tone: 'warning',
       },
       expiredHistory,

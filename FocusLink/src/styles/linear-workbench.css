@@ -1873,30 +1873,96 @@ textarea:disabled {
   flex-wrap: wrap;
   gap: 4px;
 }
-.task-inspector-children h3 {
+.task-inspector-children {
+  margin-top: 14px;
+}
+.task-inspector-children-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.task-inspector-children-head h3 {
   font-size: 11.5px;
   font-weight: 600;
   color: rgb(var(--app-muted));
+  margin: 0;
 }
-.task-inspector-children ul {
-  margin: 8px 0 0;
+.task-inspector-progress-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(var(--app-accent));
+}
+.task-child-chip.has-progress {
+  color: rgb(var(--app-accent));
+}
+.task-child-chip.all-done {
+  color: rgb(var(--app-success));
+}
+.task-inspector-subtask-list {
+  margin: 0;
   padding: 0;
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
 }
-.task-inspector-children li {
-  padding: 6px 0;
+.task-inspector-subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
   border-bottom: 1px solid rgb(var(--app-border));
-  font-size: 12px;
-  overflow-wrap: anywhere;
+  transition: background 0.12s ease;
 }
-.task-inspector-children li.done {
+.task-inspector-subtask-item:last-child {
+  border-bottom: none;
+}
+.task-inspector-subtask-item:hover {
+  background: rgb(var(--app-surface-2));
+}
+.task-subtask-checkbox {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: var(--radius-xs);
+  border: 1.5px solid rgb(var(--app-border-strong));
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: rgb(var(--app-accent-fg));
+  transition: all 0.12s ease;
+}
+.task-subtask-checkbox.checked {
+  background: rgb(var(--app-accent));
+  border-color: rgb(var(--app-accent));
+}
+.task-subtask-check-icon {
+  width: 12px;
+  height: 12px;
+}
+.task-subtask-title {
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  transition: color 0.12s ease;
+}
+.task-inspector-subtask-item.is-pending .task-subtask-title {
+  font-weight: 600;
+  color: rgb(var(--app-text));
+}
+.task-inspector-subtask-item.is-done .task-subtask-title {
+  font-weight: 400;
   color: rgb(var(--app-subtle));
   text-decoration: line-through;
-}
-.task-inspector-children p {
-  margin-top: 7px;
-  color: rgb(var(--app-subtle));
-  font-size: 10.5px;
 }
 .task-inspector-actions {
   display: flex;
@@ -1914,13 +1980,15 @@ textarea:disabled {
   box-shadow: inset -2px 0 0 rgb(var(--app-accent) / 0.6);
 }
 
-/* 1200 以下收起详情栏（必须排在 .task-inspector 基础规则之后才能覆盖 display） */
+/* 1200 以下自适应三栏宽度，详情栏始终保持展示 */
 @media (max-width: 1199px) {
   .task-workspace-shell {
-    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-columns: 196px minmax(0, 1fr) 280px;
   }
-  .task-inspector {
-    display: none;
+}
+@media (max-width: 860px) {
+  .task-workspace-shell {
+    grid-template-columns: 176px minmax(0, 1fr) 260px;
   }
 }
 .task-view-list button,
@@ -2783,7 +2851,7 @@ textarea:disabled {
   gap: 5px;
 }
 
-.stats-primary-readout span,
+.stats-primary-readout > span,
 .stats-panel-head > div > span,
 .stats-metric > span,
 .stats-pause-cost span {
@@ -3168,6 +3236,15 @@ button.stats-ledger-block:focus-visible {
 .stats-ledger-legend .gap::before {
   border: 1px dashed rgb(var(--app-muted) / 0.6);
   background: transparent;
+}
+
+.stats-ledger-legend .no-record::before {
+  border: 1px dotted rgb(var(--app-muted) / 0.5);
+  background: repeating-linear-gradient(
+    45deg,
+    rgb(var(--app-ledger-night)) 0 2px,
+    transparent 2px 4px
+  );
 }
 
 .stats-time-axis {
@@ -4526,3 +4603,8 @@ button.stats-ledger-block:focus-visible {
 .window-blurred .stats-primary-readout strong {
   filter: saturate(0.8);
 }
+
+/* 2026-09-10 记录（未改动代码）：`.temporal-ribbon` 在待机态**本来就会绘制 60 秒刻度轨**
+   （近景视图，见对照截图 light-timer.png）；曾尝试用 background-image 再补一条刻度，
+   实测在桌面形成重复的第二套刻度，已撤销。若某端待机时看不到刻度，应先检查该端当时的
+   视野模式（远景在零记录时无可绘制内容），而不是改样式。 */

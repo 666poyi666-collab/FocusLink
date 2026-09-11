@@ -10,6 +10,9 @@ import './focuslink-2-mobile.css';
 import './mobile-instruments.css';
 import './mobile-confirm.css';
 import './mobile-1-3.css';
+// 移动端 2.0 视觉延伸层：最后 import，承载前沿动效与空态重做；所有选择器以
+// html[data-runtime="mobile-focus"] 为前缀，绝不命中冻结的 watch shell。
+import './mobile-2-0.css';
 
 // 手表（OPPO OWW221，378×496 物理像素）跑的是同一个 APK；按视口分流到专用壳层。
 // OWW221 的 WebView 实测会报告 189×248，也有固件报告 320×420；viewportPolicy

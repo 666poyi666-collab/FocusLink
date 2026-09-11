@@ -66,16 +66,18 @@ describe('mobile dashboard model', () => {
     const record = makeRecord();
     const result = buildMobileDashboard([record], 'today', now);
     expect(result.dayLedgers).toHaveLength(1);
+    // 自然日账本把观察终点收束到最后一条真实记录末点（本 fixture：09:00–09:30）。
+    // focus 25m + pause 5m + gap 0 = observation 30m，夜间/无记录区不再算空档。
     expect(result.dayLedgers[0].totals).toMatchObject({
       focusMs: 25 * 60_000,
       pauseMs: 5 * 60_000,
-      gapMs: 150 * 60_000,
-      observationMs: 3 * 60 * 60_000,
+      gapMs: 0,
+      observationMs: 30 * 60_000,
     });
     expect(result.totals).toMatchObject({
       focusMs: 25 * 60_000,
       pauseMs: 5 * 60_000,
-      gapMs: 150 * 60_000,
+      gapMs: 0,
     });
     expect(result.tasks).toEqual([
       {
@@ -140,13 +142,13 @@ describe('mobile dashboard model', () => {
     expect(markup).toContain('上个 30 天');
     expect(markup).toContain('自定义');
     expect(markup).toContain('24 小时时间轴');
-    expect(markup).toContain('07:00 至 22:00 为默认有效日');
+    expect(markup).toContain('00:00 至 24:00 完整统计');
     expect(markup).toContain('精确空档');
     expect(markup).toContain('任务投入');
     expect(markup).toContain('任务专注时间构成，函数复习 100%');
     expect(markup).toContain('专注、暂停与空档时间守恒');
-    expect(markup).toContain('专注 14%，暂停 3%，空档 83%');
-    expect(markup).toContain('09:30 至 12:00，空档 02:30:00');
+    expect(markup).toContain('专注 83%，暂停 17%，空档 0%');
+    expect(markup).toContain('观察区间内没有空档');
     expect(markup).toContain('class="mobile-day-map-scroll" tabindex="0"');
     expect(markup).toContain('横向查看 24 小时');
     expect(markup.match(/class="mobile-day-periods"/g)).toHaveLength(1);
@@ -157,7 +159,8 @@ describe('mobile dashboard model', () => {
     expect(markup.match(/class="mobile-day-lane-label"/g)).toHaveLength(3);
     expect(markup).toContain('<small>25m</small>');
     expect(markup).toContain('<small>5m</small>');
-    expect(markup).toContain('<small>2.5h</small>');
+    // 收束后当日没有空档区间，空档轨道图例显示 0m（旧口径整段有效日曾显示 2.5h）。
+    expect(markup).toContain('<small>0m</small>');
     expect(markup).toContain('函数复习');
     expect(markup).toContain('任务待办');
     expect(markup).toContain('aria-pressed="false"');

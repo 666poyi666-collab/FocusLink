@@ -354,8 +354,15 @@ export function MiniWindow() {
   const compactTime = useMemo(() => formatDurationPadded(displayPrimaryMs), [displayPrimaryMs]);
   // 进入小时档（"H:MM:SS"）后数字串变长，两态都换用紧凑字号防止 184px 溢出
   const isLongTime = compactTime.length > 5;
-  // 消逝轨不是“专注率进度条”，只表达当前这一分钟已经流走了多少秒。
-  const minuteProgress = Math.max(0, Math.min(100, ((displayPrimaryMs / 1000) % 60) * (100 / 60)));
+  // 消逝轨不是「专注率进度条」，只表达当前这一分钟已经流走了多少秒。
+  //
+  // 暂停时进度必须冻结：主读数在暂停态显示的是「本段暂停」时长，它会随暂停时长
+  // 不断增长，取模 60 秒之后仍是一个很大的毫秒值（实测 669597px 的填充宽度，
+  // 前沿被推到视口外，轨道看起来直接消失）。暂停本来也不该继续推进——
+  // 冻结在暂停发生的那一刻才是它该有的语义。
+  const railMs = isPaused ? currentFocusMs : displayPrimaryMs;
+  const minuteProgress = Math.max(0, Math.min(100, ((railMs / 1000) % 60) * (100 / 60)));
+  const railSecond = Math.floor((railMs / 1000) % 60);
 
   const handleToggle = useCallback(
     async (event: React.MouseEvent) => {
@@ -430,9 +437,9 @@ export function MiniWindow() {
           >
             <MiniSecondRail
               progress={minuteProgress}
-              second={Math.floor((displayPrimaryMs / 1000) % 60)}
+              second={railSecond}
               paused={isPaused}
-              elapsedMs={displayPrimaryMs}
+              elapsedMs={railMs}
               reducedMotion={Boolean(reduceMotion)}
               compact
             />
@@ -505,9 +512,9 @@ export function MiniWindow() {
                 </div>
                 <MiniSecondRail
                   progress={minuteProgress}
-                  second={Math.floor((displayPrimaryMs / 1000) % 60)}
+                  second={railSecond}
                   paused={isPaused}
-                  elapsedMs={displayPrimaryMs}
+                  elapsedMs={railMs}
                   reducedMotion={Boolean(reduceMotion)}
                 />
               </div>

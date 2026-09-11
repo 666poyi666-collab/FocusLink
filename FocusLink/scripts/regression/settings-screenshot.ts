@@ -188,7 +188,7 @@ app
         await openDeviceRosterGroups(mainWindow);
         await assertSettingsText(mainWindow, [
           '当前实时连接',
-          '已确认',
+          '实时连接',
           '最后成功同步',
           '实时连接已确认',
           '最近活动 6 分钟前',
@@ -218,8 +218,8 @@ app
       throw new Error(`Unexpected TomaToDo status facts: ${JSON.stringify(tomatodoFacts)}`);
     }
     await assertSettingsText(mainWindow, [
-      '2 条可上传',
-      '223 条过期历史已停止重试',
+      '等待同步确认',
+      '223 条历史已停止重试',
       '最近连接失败',
       '保留本机',
       '连接并上传',
@@ -233,7 +233,7 @@ app
     await sleep(220);
     await openDeviceRosterGroups(mainWindow);
     await assertSettingsText(mainWindow, [
-      '当前未在线',
+      '未连接',
       '待刷新',
       '最后成功同步',
       '最近一次同步尝试未完成',

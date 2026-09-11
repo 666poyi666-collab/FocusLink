@@ -782,9 +782,7 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 12px 0 0;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface);
+  /* 圆角/底色/边框由连续工作面收敛（I2/I3）。 */
 }
 
 .dashboard-metric {
@@ -807,10 +805,7 @@ body {
 .dashboard-pause-cost,
 .session-ledger {
   margin-top: 12px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface);
-  box-shadow: none;
+  /* 面板边框/圆角/底色统一由 L1881 连续工作面段落与 mobile-2-0.css 接管（I2/I3）。 */
 }
 
 .dashboard-analysis-grid {

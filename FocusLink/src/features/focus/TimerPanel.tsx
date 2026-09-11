@@ -6,7 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import '../../styles/focus-motion.css';
 import { Icon } from '../../ui/Icon';
 import { useStore } from '../../app/store';
-import { formatDuration } from '../../lib/time';
+import { formatClock, formatDurationPadded } from '../../lib/time';
 import {
   getMainDisplayMs,
   getCumulativeActiveMs,
@@ -20,13 +20,16 @@ import { SegmentTimeline } from './SegmentTimeline';
 import { TemporalRibbon } from './TemporalRibbon';
 import { TimerDial } from './TimerDial';
 
+/**
+ * 绝对时刻统一走共享 `formatClock`（确定性 `HH:MM`）。
+ *
+ * 这里原先是本文件私有的 `toLocaleTimeString('zh-CN')`：zh-CN 走 h24 循环时把午夜
+ * 渲染成 `24:00`，而时间之带、SegmentTimeline、账本都用手工拼装的 `00:00`，
+ * 同一屏两个字段会对不上；locale 输出还会随 ICU 版本漂移。
+ * 只保留 `null` 语义（没有时间锚点时整段不渲染），格式交给共享函数。
+ */
 function formatClockTime(timestamp: number | null | undefined): string | null {
-  if (!timestamp) return null;
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return timestamp ? formatClock(timestamp) : null;
 }
 
 function useDisplayValues(snapshot: TimerSnapshot | null) {
@@ -390,7 +393,8 @@ export function TimerPanel() {
           <span className="meta-state paused">已暂停</span>
           {stateMoment && <span>暂停于 {stateMoment}</span>}
           <span>
-            有效专注 <b className="timer-digit">{formatDuration(cumulativeActiveMs)}</b> 已冻结
+            有效专注 <b className="timer-digit">{formatDurationPadded(cumulativeActiveMs)}</b>{' '}
+            已冻结
           </span>
         </>
       ) : state === 'running' ? (
@@ -442,7 +446,7 @@ export function TimerPanel() {
       <div className="timer-total tone-focus">
         <span className="timer-total-label">累计专注</span>
         <StatValue
-          value={formatDuration(cumulativeActiveMs)}
+          value={formatDurationPadded(cumulativeActiveMs)}
           className="timer-total-value timer-digit tone-focus"
         />
         <span className="timer-total-meter" aria-hidden="true">
@@ -452,7 +456,7 @@ export function TimerPanel() {
       <div className="timer-total tone-pause">
         <span className="timer-total-label">累计暂停</span>
         <StatValue
-          value={formatDuration(cumulativePauseMs)}
+          value={formatDurationPadded(cumulativePauseMs)}
           className="timer-total-value timer-digit tone-pause"
         />
         <span className="timer-total-meter" aria-hidden="true">
@@ -461,7 +465,7 @@ export function TimerPanel() {
       </div>
       <div className="timer-total tone-wall">
         <span className="timer-total-label">总历时</span>
-        <StatValue value={formatDuration(wallMs)} className="timer-total-value timer-digit" />
+        <StatValue value={formatDurationPadded(wallMs)} className="timer-total-value timer-digit" />
         <span className="timer-total-meter" aria-hidden="true">
           <i className="fill-wall" style={{ width: wallMs > 0 ? '100%' : '0%' }} />
         </span>
@@ -486,7 +490,12 @@ export function TimerPanel() {
         </div>
         <div className="console-readout">
           <span className="focus-seg-no timer-digit">
-            {isRunning ? `片段 ${String(segmentOrdinal).padStart(2, '0')}` : ''}
+            {/* 结束后保留片段号：点结束 → 状态变 finished 时，这里原本会在同一帧被清空，
+                而读数、材料、账本都还在，只有「片段 01」突然消失——用户感觉到的「卡顿」
+                有一部分正来自这种单点跳变。冻结展示期间它应该继续在。 */}
+            {state !== 'idle' && (snapshot?.segments.length ?? 0) > 0
+              ? `片段 ${String(segmentOrdinal).padStart(2, '0')}`
+              : ''}
           </span>
         </div>
         <div className="focus-header-actions console-actions">

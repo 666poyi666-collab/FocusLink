@@ -156,6 +156,7 @@ async function inspectState(expectedState) {
         ribbonState: ribbon?.dataset.state || null,
         ribbonMotion: ribbon?.dataset.motion || null,
         ribbonDissolve: ribbon?.dataset.dissolve || null,
+        ribbonSurge: ribbon?.dataset.surge || null,
         hasRibbonCanvas: Boolean(ribbonCanvas),
         ribbonCanvasSize: ribbonCanvas ? [ribbonCanvas.width, ribbonCanvas.height] : null,
         ambientGone: !document.querySelector('.ambient-field'),
@@ -908,6 +909,14 @@ async function main() {
     [
       results.running.ribbonMotion === 'continuous-material',
       'running temporal band exposes continuous focus material',
+    ],
+    [
+      results.running.ribbonSurge === 'start-frontier',
+      'running temporal band declares the start-frontier dissipation mode',
+    ],
+    [
+      results.idle.ribbonSurge === 'none' && results.paused.ribbonSurge === 'none',
+      'start-frontier dissipation is scoped to running only',
     ],
     [
       results.running.ribbonCanvasSize?.[0] > 0 && results.running.ribbonCanvasSize?.[1] > 0,

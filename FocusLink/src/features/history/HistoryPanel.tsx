@@ -587,7 +587,7 @@ export function HistoryPanel() {
         return {
           title: '删除专注记录',
           description: session
-            ? `${formatClock(session.startedAt)} 开始 · 有效专注 ${formatDuration(session.activeElapsedMs)}\n\n将永久删除 FocusLink 本地记录，并删除已同步到滴答清单的对应专注记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。`
+            ? `${formatClock(session.startedAt)} 开始 · 专注 ${formatDuration(session.activeElapsedMs)}\n\n将永久删除 FocusLink 本地记录，并删除已同步到滴答清单的对应专注记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。`
             : '将永久删除 FocusLink 本地记录，并删除已同步到滴答清单的对应专注记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。',
           confirmLabel: '永久删除',
         };

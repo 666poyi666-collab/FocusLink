@@ -1,5 +1,183 @@
 # FocusLink 实施日志
 
+## 2026-09-11（第九轮）· 补齐发布前门禁：format:check 发现 10 个文件、修掉一个脆弱契约测试（1.3.7，Windows 已装）
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。主题是「把 AGENTS.md 要求的发布前门禁真正跑完」。
+- **① 我此前漏跑了两道门禁**：前几轮只跑了 `npm run typecheck`（后来换成 `npm test`），**从未跑过 `npm run format:check`，也没跑过全量 `npm run lint`**。本轮补跑：
+  - `format:check` **失败**，报 10 个文件不符合 Prettier 风格：`TemporalRibbon.tsx`、`TimerPanel.tsx`、`temporal-mini.css`、`mobile-2-0.css`、`MobileApp.tsx`、`electron/main.ts`、`shared/version.ts`、`tests/timeFormat.test.ts`、`scripts/review/visual-review.cjs`、`scripts/smoke/ui-state-smoke.cjs`。已用仓库自己的 Prettier 修正，复跑通过。
+  - `typecheck`（含 `typecheck:cloudflare`）、`lint`、`test`、`build` 均第一遍就通过。
+- **② 格式化暴露出一个脆弱测试（真问题）**：`prettier --write` 之后 `npm test` 挂了 1 项——`tests/mobileTaskBrowser.test.ts` 的「keeps selection on the task page while start alone returns to focus」按**精确字符**匹配组件源码里的缩进（`onSelect={(task) => {\n              ...`）。该测试已被判为「契约」而非「格式」，因此改为**空白归一化**后比对（`replace(/\s+/g, ' ')`），并写明理由：契约关心的是这段 JSX 结构还在，不是缩进几格。修完 24 项全过、全量 1048 项全过。
+- **③ 发现并处理了产物与源不一致**：1.3.6 的安装包构建于格式化**之前**，而格式化改动了源码；继续宣称 1.3.6 已收尾，等于交付一个与通过门禁的源不一致的二进制。按「每次迭代以实际安装收尾」重新构建并以 **1.3.7** 覆盖安装。功能上 1.3.7 与 1.3.6 等价，差异仅为代码格式。
+- **本轮验证（全部门禁实测）**：`format:check` 通过；`typecheck` 通过（含 Cloudflare Worker）；`lint` 通过；`npm test` **131 files / 1048 tests** 通过；`npm run build` 通过；`npm run dist:win` 通过。`release-v137` 收敛为四文件并计算 SHA256（installer `ADD96F5A…F9EB`、portable `1347DFCD…8CB5`）；Windows 静默覆盖安装 exit 0，注册表 `1.3.7`、安装 EXE `1.3.7`、启动日志 `FocusLink version: 1.3.7 {"releaseDir":"release-v137"}` 三处一致，`timer command path warmed {"readMs":0.31,"writeMs":0.39}` 与 `mini window pre-warmed at startup {"ms":19.63}` 均在真实安装版出现。
+- **未闭合**：三端同版矩阵只有 Windows（华为不在线）；`smoke:ui`/`smoke:mini` 需一次干净提交；覆盖安装不清理旧版本遗留文件（未改 `installer.nsh`）；根目录 24 个 release 目录未收敛。
+- **工作区边界**：未 git commit；未删除任何被跟踪文件；本轮改动为 `tests/mobileTaskBrowser.test.ts`、10 个文件的格式化、版本号同步与本节日志。
+
+## 2026-09-11（第八轮）· 打包瘦身 22MB 闭环验证；并发现「覆盖安装不清理旧文件」（1.3.6，Windows 已装）
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。本轮把上一轮留下的缺口（排除项未经真实打包验证）闭环，并把两处只存在于源码的改动一并打包。
+- **① 22MB 排除项已闭环验证**：`electron-builder.yml` 加 `- '!**/node_modules/@capacitor/**/build/**'` 后真实打包，实测：
+  - 干净安装到全新目录的 `app.asar.unpacked` = **26.03MB / 66 文件**（只剩 `better-sqlite3`），而 1.3.5 时代为 **48.4MB / 781 文件**；差 **22.4MB / 715 文件**；
+  - `@capacitor` 下 `build` 目录数 = **0**；
+  - 安装器本体 **209.7MB → 204.6MB**。
+- **② 发现升级语义问题：覆盖安装不清理旧版本遗留文件**。首次装完 1.3.6 后，已安装目录的 `app.asar.unpacked` 仍是 48.4MB / 781 文件。用时间戳定位根因：`app.asar` 为 **17:01:28（新版）**，而 `@capacitor/android/capacitor/build` 与 `@capacitor/app/android/build` 均为 **16:38:28（1.3.5 时代）**——新版本体已替换，旧版本的额外文件被留下。**全新安装验证不含这些文件**（26.03MB / 66 文件），因此确认是 NSIS 覆盖安装的语义，而非打包配置问题。本轮记录，未改动 `build/installer.nsh`。
+- **③ 打包目录漂移隐患：尝试自动化后回退**。`gen-version.js` 用 `release-v${APP_VERSION.replace(/\./g,'')}` 推导目录（去点），而 `electron-builder.yml` 的 `output` 是手写字面量，两者是必须手动同步的漂移点。尝试改用 `output: ../release-v${version}` 自动跟随，结果 builder 把它展开成 **`release-v1.3.6`（带点）**——`${version}` 就是 `package.json` 的字面量，不可能产出 `v136` 形式，与仓库约定（0.2.10 → release-v0210）冲突。已回退为字面量并在 yml 注释里写明「这是必须与 `shared/version.ts` 同步的手工点」。误建出来的 `release-v1.3.6` 目录已用长路径前缀删除。
+- **本轮验证**：`tsc --noEmit` 退出 0；全量 **131 files / 1048 tests** 通过；`release-v136` 收敛为四文件并计算 SHA256（installer `D7856BCE…2B77`、portable `6290056A…9587`）；Windows 静默覆盖安装 exit 0，注册表 `1.3.6`、安装 EXE `1.3.6`、启动日志 `FocusLink version: 1.3.6 {"releaseDir":"release-v136"}` 三处一致，且 `timer command path warmed {"readMs":0.28,"writeMs":0.32}` 与 `mini window pre-warmed at startup {"ms":9.88}` 均在真实安装版里出现。
+- **本轮同时打包了前两轮只存在于源码的改动**：`TimerManager` 写路径预热（事务内插入后强制回滚）与小窗创建预热。
+- **未闭合**：三端同版矩阵只有 Windows（华为不在线）；`smoke:ui`/`smoke:mini` 需一次干净提交；根目录 24 个 release 目录（8.26GB）未清理；升级遗留文件问题未修。
+- **工作区边界**：未 git commit；未删除任何被跟踪文件；`.tmp/release-v136-intermediates` 保留了本轮 `win-unpacked` 以备复查。
+
+## 2026-09-11（第七轮）· 打包卫生：安装包里混入 17MB Gradle 产物；释放 1.4GB 可再生产物（源码，未打包）
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮，主题为「安装包里到底装了什么」。
+- **① 清掉 1.4GB 我自己制造的可再生产物**：`.tmp` 曾达 **4027.6MB / 16452 文件**，其中 `release-v13{3,4,5}-intermediates` 各 511.8MB 是我在收敛 release 目录时移出的 `win-unpacked`（可从 `npm run dist:win` 再生）。首次删除失败，报 **`PathTooLong`**——深层嵌套 `@capacitor/android/capacitor/build/.transforms/<hash>/transformed/bundleLibRuntimeToDirDebug/...` 超过 Windows 260 字符上限；改用 `\\?\` 长路径前缀后删除成功，`.tmp` 降到 2492.4MB。
+- **② 发现并修掉打包卫生问题：安装包里混入了 17MB Gradle 构建产物**。用 `electron-builder.yml` 的 `files` 排除项清理：`- '!**/node_modules/@capacitor/**/build/**'`。依据是**用磁盘真实路径回测**的结果——实测已安装的 `resources/app.asar.unpacked/node_modules/@capacitor` 下，有 **74 个文件 / 16.99MB** 位于 `build/`（Gradle 的 `.transforms`、`intermediates`、`outputs`、`tmp`），而真正的运行期文件只有 **27 个 / 0.08MB**。这些是 `npx cap sync` 的生成物，可再生、运行期完全用不到。
+- **③ 两次方法错误（都发生在同一个验证脚本里，记录以免重犯）**：
+  - `walk()` 递归时把相对路径写成 `it.name` 而**没有累积父目录**，导致只统计到根级文件，得出「`@capacitor` 只有 20 个文件 / 0.03MB」的**假象**，并据此差点判定「Gradle 产物已不在包里」；
+  - glob→RegExp 转换把 `**/` 写成 `.*` 而不是 `(?:.*/)?`，**要求必须存在前导目录**，于是又产生一批假 FAIL。
+  两次都是**先怀疑模式、后怀疑自己**的顺序错了；改成「用磁盘真实路径枚举候选模式」后一次就选对：`**/node_modules/@capacitor/**/build/**` 命中 186/186 需排除、误伤 0/68 必保留，而按层数写的 `*/android/build`、`*/android/*/build`、`*/capacitor/build` **全部 FAIL**（实测两个包的嵌套深度不统一，按层数写必然漏）。
+- **④ 必须守住的两条约束**：前缀必须限定在 `@capacitor/` 命名空间内，否则会连 `better-sqlite3/build/Release/*.node` 一起误伤（那是运行期必需的原生模块，且 `asarUnpack` 明确要解包它）；不要按 `*/android/build` 之类的层数去写。两条都已写进 `electron-builder.yml` 注释。
+- **本轮验证**：`tsc --noEmit` 退出 0；全量 **131 files / 1048 tests** 通过；排除模式经磁盘真实路径回测通过（保留项 3/3、排除项 2/2）；`.tmp` 从 4027.6MB 降到 2492.4MB。
+- **未做**：排除项**尚未经过一次真实打包验证**（需要重建安装器才能确认 unpacked 目录真的小掉 17MB）。本轮选择先做静态回测而非为 17MB 跑一次完整构建——如需闭环，下次打包时一并核对 `app.asar.unpacked` 体积。
+- **未闭合**：三端同版矩阵只有 Windows（华为不在线）；`smoke:ui`/`smoke:mini` 需一次干净提交；根目录 24 个 release 目录（8.26GB，多为 git 跟踪 + LFS 对象）未清理。
+- **工作区边界**：未 git commit；未删除任何被跟踪文件；本轮只改 `electron-builder.yml`、本节日志，并删除 `.tmp` 下我自己制造的可再生产物。
+
+## 2026-09-11（第六轮）· Android 签名材料纳入忽略、投递重试突发核实（源码，未打包）
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。
+- **① 修掉一个真实的密钥泄漏风险（并顺带解開验收门禁的一部分阻塞）**：`FocusLink/android/keystore.properties`（含 `storeFile` / `storePassword` / `keyAlias` / `keyPassword`）与 `FocusLink/android/keystore/`（签名库本体 `focuslink-release.jks`）此前**没有被任何 `.gitignore` 覆盖**——`android/.gitignore` 里模板自带的 `#*.jks` / `#*.keystore` 是注释掉的，等于默认跟踪密钥库。已在 `android/.gitignore` 显式加入 `keystore.properties`、`keystore/`、`*.jks`、`*.keystore`，并在注释里写明依据：`app/build.gradle` 用 `focuslinkHasStableKeystore = keystore.properties.exists()` 判断，缺文件时降级到模板 debug 签名，因此忽略不会破坏构建。验证：三个路径 `git check-ignore` 全部命中，且已从 `git status` 消失。
+- **② 「FocusLink 子树永远 dirty」的两个原因都已消除**：本轮之前 `FocusLink/` 里有 3 个不可提交的未跟踪项（两个 keystore + `.workbuddy/`）；现在 `git status -- FocusLink` 的未跟踪项只剩 4 个**正常源码/测试文件**（`shared/taskTreeUtils.ts`、`src/mobile/mobile-2-0.css`、`tests/taskTreeUtils.test.ts`、`tests/timeFormat.test.ts`）。也就是说，`gen-version.js` 报 `-dirty` 的原因现在**只剩下 68 个已修改文件**这一项，不再是「工作区含秘密」。是否做这次提交由用户决定。
+- **③ `tomatodo_cloud_pending` 告警突发：核实为预期行为，非缺陷**：日志中 `remoteWriteback ... provider delivery deferred` 单日 670 条、启动时以约 120ms 间隔连续出现，一度怀疑是紧凑重试（会白烧 CPU 并制造启动卡顿）。核实 `electron/sync/remoteWritebackStore.ts`：存在 `RETRY_BASE_MS = 30_000` 与 `RETRY_MAX_MS = 30 * 60_000` 的退避设计，且每条告警都带 `leaseReleased: true`——即每个积压会话各自尝试一次、失败后把下次重试推到 30 秒后。670 条是**启动时一次性排空 20+ 个积压会话**的逐条耗时，符合同步规范。**不视为缺陷、不做改动**，仅记录以免下次重复怀疑。
+- **本轮验证**：`tsc --noEmit` 退出 0；全量 **131 files / 1048 tests** 通过；`release-v135` 与安装版身份未变（1.3.5）。
+- **未闭合**：三端同版矩阵只有 Windows（华为不在线）；`smoke:ui`/`smoke:mini` 需一次干净提交（已可用，待用户决定）；根目录 24 个 release 目录（8.26GB）因多为 git 跟踪 + LFS 对象未清理。
+- **工作区边界**：未 git commit；未删除任何被跟踪文件；本轮只改 `FocusLink/android/.gitignore` 与本节日志。
+
+## 2026-09-11（第五轮）· 首帧成本再探：写路径预热无效、首次显示预热因副作用回退（源码，未打包）
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。继续压缩「点开始专注」的首次成本，本轮产出以**负结果**为主，但两条都带读数，避免以后重复试。
+- **① 写路径预热：做了，但对点击无改善（保留，成本 0.4ms）**：把 `start()` 会用到的 `insertSession` 包在事务里执行一次、随后强制回滚（异常在事务内抛出即触发 ROLLBACK，better-sqlite3 语义），让「第一次写库」的编译与准备成本发生在启动时。实测启动时 `writeMs=0.4ms`，**但首次 `toggle` 往返仍为 25.3ms**（之后 12ms）——说明首次命令的瓶颈**不在数据库写入路径**（读 0.24ms / 写 0.4ms 都便宜）。保留它只为一致性，不宣称提速。数据残留已核验：预热后 `state=running, segs=1`，无 `__warmup__` 行。
+- **② 首次显示预热：实现后**因副作用**回退**：即使小窗已建好，首次 `showMiniWindow` 仍需 6.9ms（之后 1.5ms），因为第一次显示才走完原生 show + setAlwaysOnTop + 渲染进程上屏。于是尝试在启动时用 `showInactive()` 真显示一次、`did-finish-load` 后立即隐藏：首次往返 **25.3 → 21.8ms**，但代价是
+  - 预热期间小窗要**真实可见 106ms**（实测 `first-show pre-warmed {"ms":106.43}`），`did-finish-load` 触发偏晚就会闪一下；
+  - 预热用的 mini 页面启动后**一直留在 CDP 目标列表里**（窗口 hidden，渲染进程常驻）。
+  收益 6.9ms 对「可能闪现小窗」的风险，判断为**不划算**，已回退。回退后日志只剩 `mini window pre-warmed at startup {"ms":10.37}`，无 `first-show` 条目。
+- **③ 本轮结论**：首帧成本已收敛到「创建小窗 10ms（启动时）＋ 首次显示 6.9ms（点击时）」。剩余 6.9ms 是原生显示路径的一次性成本，若要消除必须接受上面的副作用，故**主动放弃**并记录原因。
+- **本轮验证**：`tsc --noEmit` 退出 0、`eslint` 干净、全量 **131 files / 1048 tests** 通过；首次 `toggle` 往返实测 21.8ms，第 2/3 轮 11.5/12.6ms。
+- **状态**：本轮改动只在源码与 `dist/`，**未打包、未安装**（安装版仍为 1.3.5）。是否为此单独发 1.3.6 待用户验收 1.3.5 后决定——写路径预热对用户无可感知收益，不值得单独发版。
+- **未闭合**：三端同版矩阵只有 Windows（1.3.5）；`smoke:ui`/`smoke:mini` 被「需干净提交」门禁阻塞，且工作区含不得提交的 Android 签名密钥文件；根目录 24 个 release 目录（8.26GB）因多为 git 跟踪 + LFS 对象而未清理。
+
+## 2026-09-11（第四轮）· 发布卫生：LFS 覆盖文件清除、版本一致性；并确认提交门禁被敏感文件阻塞
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮；本轮不新增产品功能，只做**发布卫生与真实阻塞的核实**。
+- **① 清除了一个违反硬规则的 LFS 覆盖文件**：`FocusLink/.git/info/attributes` 存在一个**未提交**的本地覆盖（`release-v*/FocusLink-*-x64*.exe -filter -diff -merge -text`），把发布可执行文件的 LFS 过滤器关掉了。AGENTS.md 的 Git LFS 磁盘安全节明确写着「本地 `.git/info/attributes` 覆盖可以用来安抚 GUI watcher，但**绝不能提交**」，而它对 `gen-version.js` 也并非必需——生成脚本自身已带 `-c filter.lfs.process= -c filter.lfs.required=false`。已删除该文件并验证：`git check-attr filter diff -- release-v135/FocusLink-1.3.5-x64.exe` 恢复为 `filter: lfs` / `diff: lfs`；随后执行完整 `git status --porcelain` 耗时 0.03s、`.git/lfs/tmp` 为 **0 文件**、无 `git-lfs` 进程，证明删除不会引发 LFS 水化（历史事故是 tmp 被写到数百 GB）。另：`.git/lfs/objects` 为 6.5 GB，属已提交的 release 二进制，未触碰。
+- **② 修掉版本不一致**：`package.json` / `shared/version.ts` / 两份设计规范已是 1.3.5，但 `backend-design/BACKEND_SPEC.md` 仍写「当前候选 v1.3.2（实施中）」、根 `README.md` 仍写「当前开发候选：v1.3.2」。已同步为 1.3.5，并在根 README 明确「v1.3.3–v1.3.5 只完成 Windows 实装，小米与华为未回读，按门禁不算已发布」。
+- **③ 提交门禁的真实阻塞（本轮核实，不是推测）**：`npm run smoke:ui` / `smoke:mini` 要求 `shared/version.generated.ts` 里的 commit **不带 `-dirty`**。而 `gen-version.js` 的 dirty 判定扫的是**整个仓库根**（`git status --porcelain --untracked-files=normal -- .`，只排除 `release-v*/FocusLink-*-x64*.exe` 与 `version.generated.ts` 自身），实测会命中 69 个已修改文件 + 未跟踪项，因此当前工作区**必然**生成 `2007ee2-dirty`，smoke 会在入口直接抛错。要放行必须先做一次干净提交。
+- **④ 为什么不提交（安全边界，需用户决定）**：`git status` 里有两类**绝不能进版本库**的未跟踪项——`FocusLink/android/keystore.properties` 与 `FocusLink/android/keystore/`（Android 签名密钥配置与密钥库本体）；另有 `node_modules/`、`.workbuddy/`、7 个未跟踪的 `release-v13x/` 目录。提交是不可逆动作，本轮**不代为决定**，已如实上报。
+- **⑤ 旧 release 目录清理未执行（发现跟踪关系后主动放弃）**：根目录现有 **24 个** `release-v*` 目录、合计 **8.26 GB**，违反「只保留最新三个」。但核实发现 `release-v01294`/`v01296`/`v01298`/`v012102`/`v012104`/`v012105`/`v130` 等**是被 git 跟踪的历史发布记录**，且其 `FocusLink-*.exe` 是 **LFS 对象**；删除它们是 `git rm` 级的仓库改写，并会产生数十 GB 级 LFS 变更。AGENTS.md 要求「保留最近三个」是在**已提交**状态下收敛，当前多数目录根本未提交，因此本轮只记录不执行。
+- **未闭合**：三端同版矩阵仍只有 Windows（1.3.5）；`smoke:ui`/`smoke:mini` 仍被上面的提交门禁阻塞；首次 `start` 余约 22ms；根目录 release 目录未收敛。
+- **工作区边界**：未 git commit；未删除任何被跟踪文件；未触碰 `.git/lfs/objects`；本轮仅改了 `BACKEND_SPEC.md`、根 `README.md` 与本节日志，并删除了那个未提交的 `.git/info/attributes`。
+
+## 2026-09-11（第三轮）· 点「开始专注」首帧卡顿的最终归因：首次惰性创建小窗（1.3.5，Windows 已装，移动端未闭合）
+
+- **需求 ID**：用户反复反馈的「点开始专注有卡顿」。前两轮已排除帧率（160Hz 满帧）与状态跳变（已加退场淡出），本轮把主进程那一侧的一次性成本挖到具体语句。
+- **定位手段与读数（全部来自主进程日志，不是推断）**：在 `pushSnapshot`、`handleTimerStateTransition`、`showMiniWindow`、`TimerManager.start()` 的 emit/snapshot 上分别计时。结果：
+  - 广播本身极便宜：`mainSend=0.03ms`、`miniSend=0.01ms`；
+  - `start()` 末尾的 `getSnapshot()` 仅 `0.13–0.21ms`；
+  - 首次 `emit` = **10.33ms**，之后 4.6ms；首次 `showMiniWindow` = **21.33ms**（`lazilyCreated: true`），之后 1.5ms。
+  **结论：长期被感受为「点开会卡一下」的那笔成本，是「第一次创建小窗」**——`autoShowOnFocusStart` 在主窗未聚焦时触发显示，而小窗此前是惰性创建，BrowserWindow 的进程内构造 + 页面加载 + show + setAlwaysOnTop 全落在用户点击后那一帧上。
+- **处置**：应用启动时预热小窗（`miniWindow = createMiniWindow()` 并确认不可见，必要时再 hide 一次），把一次性成本从「用户点击那一刻」移到启动。**第一次改错了**：只调用 `createMiniWindow()` 而没有赋给模块级 `miniWindow`，于是 `showMiniWindow` 仍认为「还没建」而再建一次（实测 `lazilyCreated` 依然为 true、总耗时 17.68ms）；补上赋值后 `lazilyCreated=false`，总耗时降到 7.30ms。
+- **实测改善（同一口径对照）**：命令往返 **25–45ms → 11–14ms**（首次 21–23ms）；点「开始专注」最大帧间隔 **31.2ms → 24.9ms**，第 2/3 轮恢复满帧 6.5ms；启动预热为一次性成本约 10–14ms（安装版启动日志确认 `mini window pre-warmed at startup {"ms":10.69}`）。
+- **诊断埋点已全部移除**，只保留预热本身；`grep start-timing|broadcast-timing|临时诊断` 计数为 0。
+- **本轮验证**：`tsc --noEmit` 退出 0、`eslint` 干净、全量 **131 files / 1048 tests** 通过；`release-v135` 收敛为四文件并计算 SHA256（installer `9F336A95…96D2`、portable `FF7E8038…D955`）；Windows 静默覆盖安装 exit 0，注册表 `1.3.5`、安装 EXE `1.3.5`、启动日志 `FocusLink version: 1.3.5 {"releaseDir":"release-v135"}` 三处一致且含预热条目。
+- **未闭合**：三端同版矩阵仍只有 Windows（小米在线未装本轮 APK，华为不在线）；`smoke:ui`/`smoke:mini` 未运行；首次 `start` 仍余约 22ms（其中首次显示已预热小窗 6.9ms）未继续深挖；根目录 release 目录未收敛为最近三个。
+- **工作区边界**：未 git commit；未回滚既有未提交改动；本轮诊断脚本与中间产物已清理或移入 `.tmp/`。
+
+## 2026-09-11（第二轮）· 小窗秒轨重做、时间字段真正同步与 1.3.2 改动丢失的发现（1.3.4，Windows 已装，移动端未闭合）
+
+- **需求 ID**：用户最早列的第 3 项（小窗 UI 打磨）与第 4 项（开始专注的时间字段同步），加「你自己核对，迭代」的自查要求。
+- **小窗秒轨（第 3 项）**：DOM 体检确认两处确定性缺陷。① 轨道是 `60 条每秒竖纹`，在 **10px 高 × 256px 宽**尺度上必然读成条形码/噪声；② 填充是半透明的（`--app-surface/0.22` 叠加），**轨道刻度会透过填充**，于是「已流逝」段是双重条纹；③ 填充写死 `--app-success`，与界面的 `--app-accent` 主题色不一致。处置：只保留每 5 秒一根刻度、填充改纯实心并改用 `--app-accent`、前沿补 1px 亮线与柔光、暂停转 `--app-pause`。中途试过「保留每秒细线 + 提亮分隔」两版，实拍仍是一把梳子，最终确认**这个尺度容不下每秒一根线**。
+- **顺带修掉一个真 bug（暂停时秒轨消失）**：暂停态主读数取 `getCurrentPauseDisplayMs`，它随暂停时长持续增长；取模 60 秒后仍是很小的值，但 `--mini-progress` 被算成巨额百分比，实测填充宽度 **669597px / 3013187px**，前沿被推出视口，轨道在暂停时看起来直接消失。修法：暂停时该轨冻结在暂停发生那一刻（用当前片段时长）。已验证 `--mini-progress` 恢复为 `13.47%` 正常量级。
+- **时间字段同步（第 4 项）的真实范围**：核对发现 **`TimerPanel.tsx` 除一处片段号修复外与 HEAD 完全一致**——1.3.2 日志里记录的「主工作台 4 处改用 `formatDurationPadded`」在文件里**并不存在**（该文件在早前的基线对比中被 `git checkout` 恢复为旧版本，那批改动丢失；`src/lib/time.ts` 的 `formatClockSeconds` 仍在，说明当时确实做过）。因此改前状态是：工作台用 `formatDuration`（`0:08`）而仪表/时间之带用 `formatDurationPadded`（`00:08`），**同一屏两种写法**。本轮在 `TimerPanel` 重新实施：绝对时刻改走共享 `formatClock`、4 处时长改走 `formatDurationPadded`；时间之带侧把私有的 `formatElapsedSeconds` 与 `toLocaleTimeString('zh-CN')` 一并换成共享 `formatDurationPadded` / `formatClockSeconds` 并删除私有实现。
+- **实测证据（同屏字段）**：专注中「工作台 `00:09 / 00:00 / 00:09`、仪表 `00:09`、时间之带 `16:21:25`」；暂停中「工作台 `00:09 / 00:02 / 00:11`、仪表 `00:02`、时间之带 `损耗 00:02 · 16:21:28`」。**所有时长字段格式种类只有 `MM:SS` 一种。**
+- **新增 4 项源码契约测试锁住字段不再分叉**：时间之带不得再出现 `toLocaleTimeString` 调用、不得自带时长实现，`TimerPanel` 与 `TemporalRibbon` 都必须引用共享 `formatDurationPadded`，且都不得再出现非补零的 `formatDuration(`。测试同时断言分工：工作台绝对时刻到分钟用 `formatClock`、时间之带实时时钟到秒用 `formatClockSeconds`。
+- **两次自查方法错误（记录以免重犯）**：① 用**源码标识符**（`drawFrontierEvaporation` / `dissolveIons` / `railMs`）去搜**压缩后的构建产物**，得到一批假 MISSING——esbuild 会改名，应该搜界面文案或读运行时值；② 把中文特征串做了双重编码转换再比对字节，必然匹配失败。两次都已改用「读运行时值 / 字节级 UTF-8 比对」纠正。经字节级复核，1.3.3 包内确实含有断口蒸发（`{frontierX:…,fadePx:18}`）、`destination-out` 擦除与 `exitIdleSince` 退场逻辑。
+- **本轮验证**：`tsc --noEmit` 退出 0；`eslint` 干净；全量 **131 files / 1048 tests** 通过（较上轮 +4 契约测试）；`release-v134` 已收敛为**四文件**并计算 SHA256（installer `AF6AC766…29DD`、portable `C0F1AFFC…9482`）；Windows 实际静默覆盖安装 exit 0，注册表 `1.3.4`、安装 EXE `1.3.4`、启动日志 `FocusLink version: 1.3.4 {"releaseDir":"release-v134","isDev":false}` 三处一致。
+- **未闭合与未做**：三端同版安装矩阵仍只有 Windows（**小米在线 `192.168.1.5:5555` 但未安装本轮 APK，华为不在线**），按 AGENTS.md 该门禁为 FAIL；`smoke:ui` / `smoke:mini` 需干净提交元数据未运行；主进程广播路径一次性约 37ms 仍未定位；根目录历史遗留的 `release-v131` 等目录未按「只留最新三个」收敛。
+- **环境阻塞**：`web_search` 返回 HTTP 402 余额不足，本轮仍无外部设计参考。
+- **工作区边界**：未 git commit；未回滚既有未提交改动；本轮探针脚本与输出目录除 `.tmp/deliverable-133/`、`.tmp/mini-final/`、`.tmp/timefield1/` 外已清理。
+
+## 2026-09-11 · 桌面时间之带视觉收口与「改动从未进入安装版」的根因（1.3.3，Windows 已装，移动端未闭合）
+
+- **需求 ID**：用户对桌面端时间之带的四轮反馈——①第 1 项「左右两条阴影栏」；②暂停颜色不够红、材质不够高级；③「还是有点掉帧」；④暂停的粒子消散效果不满意；并明确要求「时间之带材料保持原样，不要另出方案」。
+- **先行根因（本轮最重要的发现，前几轮全部误判在此）**：用户机器上实际运行的安装版长期停留在 **1.3.2（`app.asar` 时间戳 20:41）**，而本轮所有改动都只在源码与 `dist/`。逐轮 README 式的「已修复」对用户不可见，导致连续多轮「还是没解决」。处置：同步版本到 **1.3.3**（`package.json`/`package-lock.json`/`shared/version.ts`/`electron-builder.yml`→`release-v133`/`android` versionCode 1309 与 versionName/`FocusLinkConfigTest`/两份设计规范），`npm run dist:win` 构建，`/S` 静默覆盖安装并回读：注册表 `DisplayVersion=1.3.3`、安装 EXE `FileVersion=1.3.3`、启动日志 `FocusLink version: 1.3.3 {"releaseDir":"release-v133","isDev":false}`。
+- **① 左右两栏不是阴影**：DOM 实测 `focus-meter-rail` 与 `session-ledger-pane` 用 `--app-bg`（`246 247 248`），中间 `.focus-monument` 用 `--app-surface`（`255 255 254`）；三栏等高、只隔 1px 边框，那圈浅灰被读成「U 形阴影」。**已把三栏统一到 `--app-surface`**，实测三者均为 `rgb(255,255,254)`，分隔只由发丝线承担。
+- **② 暂停不红的真实根因**：`src/styles/focuslink-2.css` 第 14 行把 `--app-pause` 覆盖为 **`211 102 55`（色相 18° 陶土橙）**，而 `temporal-foundation.css` 写的是 `210 67 57`（色相 4°）。运行时取前者，因此前几轮调透明度/调渐变全都调在一个色相本来就不是红的颜色上。改其用法前先审计影响面：该 token 只用于 4 处背景规则（暂停按钮/暂停读数/账本暂停条/时间之带），无一处当错误色使用；且对比度从 3.56:1 提升到 4.5:1。**改回 `210 67 57`，深色主题同步 `244 112 103`。**
+- **② 材质不高级的真实缺陷（可量化）**：旧画法用「混白色」做明度层次（`mixRgb(base, light, k)`），混白会**同时降低饱和度**——暂停红饱和 89% 混 0.46 白后只剩 42%，在白底上必然读成砖红。新增 `toneAtLightness(color, k, satBoost)`：**在 HSL 里只动 L、不动 S**，暂停另加 12% 饱和。实测暂停材料色相 **4/4/4/4/4°**、饱和 61–70%，本体像素 `rgb(211,58,47)`/`rgb(214,65,56)`。另加四笔提升体积感：顶部内阴影 5px（材料嵌进凹槽）、内棱 1px、前缘上段受光角（只亮上 1/3，避免读成发光棒）、上下棱各 1px。全部零模糊、每笔一次填充。
+- **③「还是有点掉帧」与帧率无关（用户自己点出的关键线索）**：实测结束过渡 `p50 6.2–6.3ms / max 12.4–18.8ms / >20ms 帧 0 个`（160Hz 满帧），但逐帧记录状态与片段数据发现两处**硬跳变**：点结束后 **12ms 内「片段 01」被清空**；**3019ms 时 `state` 转 idle 且 `moments` 变空数组**——主进程在 finished→idle 时把片段一起清掉，于是材料、账本行、读数**同一帧被硬拔**。处置：渲染层用 `exitRef` 留住最后一笔已结束会话，idle 后继续绘制并在 **320ms** 内淡出（判据必须是「进入 idle 之后过了多久」，不能用 `moment.endedAt`，因为那一帧起区间已不存在）；片段号在冻结展示期间保留。实测 idle 后材料像素 `107→107→…→106→105→105` 平滑下降。
+- **④ 粒子的病根是起点错了**：前几版粒子从「现在」指针附近或断口外侧发射，起点落在空档里，因此和材料无关，读起来只是灰尘。新增 `shared/focus/bandMath.ts` 的 `dissolveIons()`：起点严格落在断口的蒸发区内（`frontierX - evaporatePx*(1-originRatioX)`），细颗粒（1.1–2.2px，末段收成 0.35px）、长寿命（2600ms）、颜色随寿命从材料色褪向灰烬色；配合 `drawFrontierEvaporation()` 的 18px `destination-out` 擦除，材料自己在断口化掉。实测断口 30px 内 67 像素、60px 外仅 21 像素。发射窗口 3s，之后只让尾离子散尽，长暂停不会一直冒灰。
+- **用户明确否决的方案（不得重提）**：中途曾把「窄带 / 满高半透明 / 上下分区」三种材料画法做成可切换面板让用户挑选，用户明确表示「肯定是保持原样」「不要拿方案选择题烦我」。**材料形状定稿为：铺满整个刻度高度（`channelTop+1` → `channelBottom-1`）的满高实心磨砂材料。** 切换面板、`variantOf()` 与相关临时代码已全部删除。
+- **本轮验证**：`tsc --noEmit`（含 Cloudflare）退出 0；`eslint` 干净；全量 `131 files / 1044 tests` 通过；桌面契约测试（`bandMath` / `desktopInstrumentRegression` / `timeFormat`）63 项通过；自查脚本对已安装的 1.3.3 实测四项全部成立（三栏同面 / 暂停色相 3–7° 饱和 61–70% / 退场平滑 / 粒子聚在断口）。
+- **未闭合与未做**：三端同版安装矩阵只完成 **Windows**（1.3.3 已装）；**小米与华为本轮未安装、未回读**，按 AGENTS.md 该门禁为 FAIL，不得标记迭代完成；`smoke:ui` / `smoke:mini` 需干净提交元数据，当前工作区仍为 dirty 未运行；release-v133 仍含 `win-unpacked`/`builder-debug.yml`/blockmap 等中间产物，四文件收敛与 SHA256 未做；用户最早列的第 3、4 项（**小窗 UI 打磨**、**开始专注的时间字段同步**）本轮未动；主进程命令返回后广播路径的一次性 ~37ms 仍未定位到具体语句。
+- **环境阻塞**：`web_search` 工具返回 **HTTP 402 余额不足**（DeepSeek 搜索端点），本轮无法取得外部设计参考，全部判断出自本地实测。
+- **工作区边界**：未 git commit；未回滚任何既有未提交改动；本轮自建的 47 个探针输出目录与实验脚本已删除，仅保留 `.tmp/installed133/`（安装版 1.3.3 取舍图证据）。
+
+## 2026-09-10（第二轮）· 时间之带开始消散、材料渲染性能与字段统一（1.3.2 候选，三端安装未闭合）
+
+- **需求 ID**：用户电脑端五项反馈——时间之带展开动画帧率与模糊、开始/暂停/结束的点击卡顿、小窗时间之带 UI、开始专注的时间字段未同步、以及开始与暂停的「离子/时间消散」效果。
+- **本轮前置**：按 AGENTS.md 硬门禁读完 `TEST_AND_RELEASE.md` 全文、`IMPLEMENTATION_LOG.md` 当前版本段。写任何样式补丁前先用探针取真实渲染，不凭缩略图下判断。
+- **新增「开始消散」（用户第 5 项）**：`shared/focus/bandMath.ts` 新增 `START_SURGE_MS = 900`；`TemporalRibbon.tsx` 把原 `drawPauseDissipation` 泛化为 `drawFrontierDissipation(tone)`，暂停（红）与开始（强调色）共用同一套剥离/上浮/缩小逻辑，只换色调；`renderBand` 在暂停块之后新增开始脉冲块，前缘在窗口内持续生长、羽流跟着走。返回值加入 `surgeAlive` 以在 idle/finished 下把尾粒子演完。新增 `data-surge`（running = `start-frontier`）供断言。**约束守住**：发射窗口固定、粒子数由 `PAUSE_LOSS_MAX_LIFE_MS` 封顶，内核「渲染成本与时长无关」成立；reduced-motion 下完全不发射（UI smoke 要求 reduced-motion 无持续位移）。
+- **第 4 项「时间字段未同步」的真实范围（比表面更大）**：① `TimerPanel.tsx` 私有 `formatClockTime` 与 `TemporalRibbon.tsx` 的实时时钟各自调用 `toLocaleTimeString('zh-CN')`，zh-CN 的 h24 循环把午夜渲染成 `24:00`，而同一组件的刻度标签用 `00:00`；② 时长存在两套写法——仪表读数与时间之带损耗是补零的 `00:08`，而主工作台四项累计与小窗三项累计是不补零的 `0:08`。处置：`src/lib/time.ts` 新增 `formatClockSeconds`（手工拼装），两处绝对时刻统一；`TimerPanel` 4 处与 `MiniWindow` 3 处时长统一改用 `formatDurationPadded`。新增 `tests/timeFormat.test.ts`（7 项）锁定午夜行为与两函数一致性。
+- **第 1、2 项（帧率、模糊、点击卡顿）的实测与归因**：自建 `.tmp/probe-v2.cjs` / `.tmp/probe-desktop-motion.cjs`——自带静态服务把**已构建的 dist/** 提供在 5174（未打包时应用走 `devUrl()`），再以 CDP 驱动真实主进程，采集 rAF 帧间隔、Long Tasks 归因、过渡期动画/变换清单，并经 IPC 打开小窗。结论：① **画布模糊不是 DPR 上限所致**——本机 3840×2160 / 150% 缩放 → `devicePixelRatio = 1.5`，低于内核 `Math.min(2, dpr)` 的上限，后备位图 1745×209 = 1163×1.5，原生分辨率；② 变焦期间 `renderBand` 的 `needsNextFrame` 分支确实保持连续出帧，p50 = 6.3ms（约 165Hz），变焦本身不慢；③ 页面切换（任务 → 专注）最大帧间隔 12.5ms，本就不卡；④ 过渡期命中的 `filter: saturate(0.8)` 来自 `.window-blurred`（窗口失焦灰化），是探针窗口未获焦点造成的假象，**不是缺陷**；⑤ 三处 `backdrop-filter: blur()` 都落在统计页的小元素（98px 甜甜圈、标签片），不属 UI smoke 禁止的「大面积」。
+- **据此定位到的真问题**：`drawFrostedFocusRibbon` 里雾层叠加了每帧执行的 `ctx.filter = blur(bodyHeight * 0.11)`，且雾矩形向两侧各外扩 8px；生长中的前缘高光是 18px 宽、峰值 0.48 白的一段渐变。放大 4 倍看真实像素，材料右端因此读成一片糊光。处置：去掉雾层滤镜（雾本身是线性渐变，模糊收益接近零）、雾矩形收回材料内、前缘高光收成 8px / 0.34。**实测改善**：页面切换最大帧间隔 12.5ms → 6.5ms（零掉帧）；点「开始专注」最大帧间隔 75ms → 62.5ms。剩余 62.5ms 的成因尚未定位（Long Tasks API 为空，不属于 JS 主线程长任务，疑与首次会话创建 + 首帧合成有关），如实保留。
+- **第 3 项（小窗）**：`.mini-action-hold` 原为 `rgb(var(--app-text))` 实底——浅色主题下就是一块纯黑按钮，是全站唯一的逆反差元素（与移动端 B2 同型缺陷），改为暂停色系软底 + 描边；秒轨由 60 条等宽竖纹改为两级刻度并去掉整块灰底（改为上下发丝线界定轨道），与桌面「透明轨道 + 基线」的语言一致；填充去掉密集白纹，只在每 10 秒留细分隔；前沿补光晕；指标补等宽数字与行分隔。两态尺寸 184×44 / 256×70 与 `shared/miniWindowLayout.ts` 未动。
+- **本轮验证**：`npm run typecheck`（含 Cloudflare）退出 0；`eslint` 干净；全量 `131 files / 1044 tests` 通过（含新增 `tests/timeFormat.test.ts`）；真实渲染经 4 倍像素放大复核（材料边缘为 1–2px 衰减的清晰边界）；小窗经 IPC 打开并截图复核。**未执行**：三端同版安装（华为 `192.168.1.12:5555` 持续 offline）、`smoke:ui` 与 `smoke:mini`（二者要求干净的提交元数据，当前工作区为 `2007ee2-dirty`，按设计拒绝运行）、正式安装器打包。
+- **工作区边界**：本轮未 git commit、未回滚既有未提交改动；探针、像素脚本与一次性补丁脚本全部只放在 `FocusLink/.tmp/`，不入源码树。
+
+## 2026-09-10 · 统计口径收束、词表统一、移动端波 1/波 2 与独立设计评审（1.3.1 候选，三端安装未闭合）
+
+- **需求 ID**：用户四项反馈（统计不显示 `02:55:16`；同步逻辑与状态呈现；番茄 To-do 状态；移动端 UI 与前沿设计），加 AGENTS.md 三端同版安装门禁。
+- **统计口径收束（本轮新增，产品语义变更）**：`shared/dayLedgerAnalytics.ts` 新增 `capObservationAtLastRecord`，`buildCalendarDayLedger` 启用后把观察区间收束为「当日首条真实记录起点 → 当日末条真实记录终点」（今天封顶 now，历史日封顶次日零点）。空档因此只反映**记录区间内部的空闲**，不再把睡眠与未记录时段算成空档。不变量 `focus + pause + gap = observation` 在收束后仍成立。参数化内核 `buildDayLedger` 默认 `false`，保留日间分析能力。
+- **收束的可见后果（已实测，非推测）**：2026-09-09 那条 00:00–02:55 的夜间记录现在显示「今日有效专注 02:55:16 / 观察空档 00:00:00 / 时间利用率 100%」。这修掉了此前「空档 88% / 利用率 12%」的失真，但**该 KPI 的信息量下降**（单会话日恒为 0）。若要恢复「这一天有多少时间没在专注」的可见性，需要新增以有效时段为分母的独立指标，不得把空档口径改回整日。
+- **统计尾巴清理**：三处测试期望值按收束口径复算后更新——`tests/mobileDashboardModel.test.ts` 两处（`gapMs 150min→0`、`observationMs 180min→30min`、`<small>2.5h</small>→<small>0m</small>`）与 `tests/historyInsightsRenderer.test.ts` 三行（`空档 14 小时→0 分钟`、`专注 6%，暂停 1%，空档 93%→83%/17%/0%`、移除已不存在的 gap block 断言）。全部由 fixture 数字手算推导，未放宽断言。
+- **三端状态词表（唯一契约）**：本地任务关联=`已关联/未关联`（禁止用于云同步）；云同步队列=`已同步/未同步/同步失败`（禁止「可同步」）；设备实时通道=`实时连接/未连接`；云端账本确认时间=`账本新鲜度`（未确认写 `尚未确认`）；番茄上传确认=`上传已确认`；番茄待处理=`等待同步确认`（禁止说成手机离线）；番茄超 7 天=`N 条历史已停止重试`；未配对=`尚未配对`。颜色三层：`danger` 仅真实失败（凭据失效/请求失败/契约不符），`warning` 有待处理或需用户动作，`neutral` 待定态。桌面 `deviceSyncStatusPresentation.ts` 与移动 `runtimeModel.ts`、`settingsStatusPresentation.ts`、`MobileApp.tsx` 已全部对齐；`未配对`→`尚未配对`、`当前在线`→`实时连接`、`设备离线`/`实时链路离线`/`实时连接中断`→`未连接`。
+- **番茄 durable 原因不可区分（审计结论，未硬造）**：`tomatodo.pendingSegmentIdsV060` 是单个 settings 键、值为扁平 `string[]`，只存 segment ID，无原因字段；同一 ID 可同时因记录写入/分类更新/手机投递处于 pending，且 `cloudSynced=1` 无法反推「仅在等手机」。因此接口层保持诚实的「等待同步确认」，原因可解释性需一次 settings 值形状迁移（改为带 `reasons` 数组），本轮不做，方案记于 `SYNC_TROUBLESHOOTING.md` 的 FL-SYNC-015。
+- **移动端视觉（波 1 + 波 2）**：新建 `src/mobile/mobile-2-0.css` 作为最后 import 的视觉延伸层（全部选择器以 `html[data-runtime='mobile-focus']` 为前缀，不命中冻结的 watch shell），涵盖底部导航液态玻璃与选中态微交互、顶栏同步条、页面切换与面板动效（spring/320–360ms）、专注页首屏优先级、统计页空态与区段入场、容器语言统一、sheet 关闭控件、主读数与甜甜圈比例、字体样张按自身 family 渲染、每日柱状图最小可读柱、平板与横屏布局。修复的确定性缺陷：B1（时间之带视野开关空槽，固定三列网格→等宽）、B2（任务状态开关选中态逆反差黑底白字→翡翠软色底家族）、CTA 压住底部导航（写死 60px→`--mobile-nav-height` 令牌 + 14px）、I5（620–1039px 导航标签折行）、I7（平板甜甜圈档位）、I6、M4、M9、I4。
+- **I5 根因（DOM 实测，非推测）**：`mobile.css:5325` 的 `@media (min-width:620px)` 给 `.app-navigation button` 设了竖向轨道专用内部网格 `grid-template-columns: 14px 22px`，而 `focuslink-2-mobile.css:1358` 的 620–1039px 块只还原了导航容器、未还原按钮内部网格，标签被限死在 22px 列内（实测 span 宽 22、scrollHeight 31 vs clientHeight 16）。修复置于 `mobile-2-0.css` 第 10 节并限定该区间。
+- **独立设计评审**：由独立评审同事基于改动前基线出具三档清单（3 个阻断项、7 个重要项、若干次要项），判定「当前未达前沿水准」，主要依据为 CSS 内同属性三次覆盖导致的「卡片化 vs flat」拉锯、三种互不兼容的选中态语言、动效缺少 spring 与材料化过渡、以及三端在容器语言/主读数颜色/连接状态权重上的可观察差异。复评尚未进行。
+- **明确未完成项**：（1）**B3 横屏时间之带不在首屏**——根因是旧横屏块引用的 `.mobile-temporal-ribbon` 为死选择器（TSX 无此类），真实类名 `.temporal-ribbon` 从未取得 `grid-area`；把 ribbon 提到首行后几何门禁报 `focus actions overlap timeline`，因为 412px 高度预算为 nav 78 + readout 155 + ribbon ~200 + actions 80 ≈ 513px，物理塞不下。需先决定横屏是否提供压缩版时间之带（涉及共享 `TemporalRibbon` 的移动端瘦身），在此之前不得再改横屏网格。（2）I2/I3 的容器语言统一仅部分完成，`focuslink-2-mobile.css` 同属性覆盖债仍在。（3）时间之带在待机态渲染为空白区域，未确认是否为既有行为。（4）移动端顶部连接条在真实失败态仍用 danger 红，按词表判定属于「真实失败」故保留，待评审复核。
+- **本轮验证**：Node 22.22.2 下 `tsc --noEmit` 退出 0；全量 `130 files / 1037 tests` 通过；移动五视口 × 明暗 × 四页 `responsive acceptance done` 无失败（无横向溢出、触控目标 ≥44px）；桌面 `npm run build` + 截图门禁 `all typography and layout assertions passed`（含 `02:55:16` 精确读数与字号断言）。未执行三端同版安装。
+- **环境阻塞（重要，后续必读）**：平台对**子代理默认模型路由**下达 429 限流（三个队友在唤醒后 1 秒被拒，重置时间 19:34），而主会话与其他模型路由不受影响；被限流的队友**无法通过唤醒恢复**，只能以新代理 + `model: "reasoning"` 路由重新派发。另：`ELECTRON_RUN_AS_NODE=1` 被注入 shell，`npx electron` 会退化为 Node 模式；`npm run build` 与 `build:web` 均会被 safe-delete 拦截（需先把 `dist` / `dist-mobile` **移走**而非删除）。以上均非产品缺陷。
+- **工作区边界**：本轮未 git commit、未回滚任何既有未提交改动、未删除任务树遗留文件；任务树那批 09-06 改动经独立审计判定为「自洽的只读呈现，缺子任务写链路」，建议单独切版本，不并入 1.3.1。
+
+## 2026-09-08 · 统计、同步与移动视觉修复（1.3.1 候选验收中）
+
+- **2026-09-09 Windows 实际候选安装**：初次 `/S` exit 2；只读核查发现 HKCU 登记仍为 0.12.103、主程序为 1.3.0，登记指向的 `Uninstall FocusLink.exe` 已缺失。账本及三个配置文件备份到 `%LOCALAPPDATA%/FocusLinkBackups/pre-1.3.1-20260909`，另导出失效登记；临时移开该登记后以 `/S /currentuser /D=<原安装目录>` 原位安装 exit 0。回读注册表 1.3.1、EXE 1.3.1 / 1.3.1.0，卸载器存在，重新启动；SQLite 安装前后均为 117 条 finished，无活动会话。成功后移除临时旧登记键，导出备份保留。不是反复盲重试或清除用户数据。
+- **候选资产边界**：`.tmp/release-v131-install-candidate` 内 installer SHA256 `26382B9A935F3EE61C8EFC6DF23168AD7EE98DFD0DA693CF59D990BA81D215DC`、portable `A7317435626F8F067D9CFFA541E7BA047343BBC5617560E7E191F4FB5AD6F419`；portable 启动与 shell/nav/console 断言通过，身份为 `1.3.1 / 2007ee2-dirty`，仅为安装候选，不能冒充干净提交正式包。构建后 LFS tmp 仍 0 文件 / 0 B。Windows 与小米安装候选均为 1.3.1；华为未连接、完整 UI 与跨设备同步验收及最终交付尚未通过。
+
+- **2026-09-09 05:17 补验**：Node 22.22.2 / npm 10.9.7 下 format、typecheck（含 Cloudflare）、lint、全量 130 files / 1029 tests、production build 与 Electron 隔离回归通过；回归覆盖三时间、任务关联、三表导入幂等/回滚和运行/暂停崩溃恢复。首次 gen-version 写入出现 UNKNOWN，磁盘约 170 GB 可用、LFS tmp 0 文件；有界重试成功，尚无持续故障或确定根因证据。实际 Windows SQLite 只读汇总为 117 个 finished 会话，无活动会话。小米 .5 在线，华为仍缺失；正在忽略目录构建安装候选，非干净提交正式包。
+
+- **1.3.1 候选实际分发更正**：本轮进入 `1.3.1/1307` 安装验收，源码版本、lock、Android、两份规范及 README/CHANGELOG/release-v131 notes 已同步；以下“尚未分发/未安装”描述保留为早期阶段事实。Windows/华为同版门禁仍未闭合，候选不作为正式发行。
+- **Android 构建与实际安装**：中文工作区首轮 JVM 8 个测试类 ClassNotFoundException；类文件已生成，按历史已知 ASCII subst 路径重跑后 41 项 JVM 测试、lintDebug、assembleDebug 全部通过。临时 F: 已解除。小米现状是 `app.focuslink.mobile.v130`，回读此前 `1.3.0/1306`，而非早先日志的 v012104；按真实包名以同源码候选覆盖 `adb install -r` Success，回读 `1.3.1/1307` 并启动，未卸载/清数据。并行包 identity 测试现在要求显式独立 `focuslinkExpectedApplicationId`，默认仍锁定正式包；未指定预期值的并行构建失败记录保留。
+- **APK 备份**：正式包 `.tmp/android-apk-backups/FocusLink-1.3.1-1307-formal-candidate.apk` SHA256 `0CA020A24576835DB7B3AD6A2506792EAEF7AB223E500612E31BD5E08F8131C0`；小米 v130 包 SHA256 `F48CF7B87F87729CEA2E17166BE1BD975E6FD192DA5AEF796CF033FC589F960A`。均为候选，非最终干净提交产物。
+- **小米初始界面回读**：已安装进程的 WebView `https://localhost`、标题 FocusLink 多端专注、横屏宽度 894 且 scrollWidth=894，四导航与可选标题区存在。顶部当前为“本机”，尚未证明配对/连接恢复；不以版本安装成功冒充同步成功。华为缺失，Windows 尚未安装 1.3.1。
+
+- **用户反馈**：Dashboard 已有记录但未显示 `02:55:16`；同时要求修正同步逻辑/状态、番茄 To-do 状态并提升手机和平板 UI，统一三端设计。全部需求仍属本轮范围，未完成项不以历史 1.3 验收代替。
+- **统计证据与根因**：当前 `HistoryInsights` 的读数初始为 0，依赖 IntersectionObserver 与 RAF 才显示事实值；格式只显示取整分钟。另一个确定性漏算是 desktop `buildSessionAnalytics` 和 mobile `buildMobileDashboardInRange` 使用默认 07:00–22:00 日窗口，导致凌晨或深夜已有记录时 KPI 为零。旧跨午夜 renderer 测试甚至要求显示 0 和“没有真实 focus 起点”，只能证明旧口径，不能证明完整记录统计正确。
+- **已实现**：Dashboard 直接渲染 `HH:MM:SS` 事实值，桌面/移动共用纯格式化函数；产品统计统一调用共享 `buildCalendarDayLedger`，覆盖本地自然日 00:00–24:00。有效日参数化内核保留，避免把日间分析策略与完整记录统计混为一谈。空档仍从首个真实专注起点开始，空记录不生成全天空档；跨午夜按各自然日裁切。
+- **阶段验证**：Node `24.19.0` 下统计定向 `5 files / 41 tests`、全量 `130 files / 1027 tests` 与 `tsc --noEmit` 通过。测试覆盖 `02:55:16` 凌晨记录、跨午夜两日各一小时、精确秒显示和超过 24 小时累计。此为开发证据，尚未执行 Node 22 发布门禁、真实截图或新包安装，不宣称最终验收通过。
+- **同步待处理证据**：`tomatodoSyncService` 返回 `phone-pending`，但 `shared/ipc/api.ts` 和历史 renderer 的类型未声明该状态，历史行只按 cloudSynced/writtenLocally 显示。durable 队列同时承载学科更新与手机投递，不能简单把所有 durable pending 都称为等待手机，须在后续修复中分清事实。
+- **安装与工作区**：本轮初始 ADB 仅小米 `192.168.1.4:5555` 在线，华为未在线；未安装新包。任务树相关既有未提交修改和未跟踪 1.3 EXE 保留，本轮未覆盖、删除或提交它们。下一次实际分发必须升补丁版本并完成 Windows/小米/华为同版回读。
+- **番茄状态修复**：共享 IPC 补齐单次上传结果的 `phoneSynced/phone-pending`；历史 status 不再把仅含 segment ID 的 durable queue 推断成手机离线，改为 `confirmation-pending` 并实际显示"等待同步确认"。未获确认且超 7 天的历史显示 `expired-history/历史已停止重试`；已确认的旧历史仍保留上传确认，待修改的新学科不能借用旧 isSynced。状态读取不清队列、不写外部记录。新增过期/旧确认/待修改组合测试。
+- **番茄同步状态命名债收口（2026-09-10）**：`TomatodoSyncSegmentResult.syncState`（单次上传结果枚举）原保留 `phone-pending`，与 `TomatodoSegmentStatus.state` 的 `confirmation-pending` 并存，属于同一业务概念两套命名。现已在 `shared/ipc/api.ts` 与 `tomatodoSyncService.ts` 把 `phone-pending` 标为 `@deprecated` 并保留做 IPC 兼容，单次结果实际改发 `confirmation-pending`；云/手机差异仍由 `cloudSynced`/`phoneSynced` 布尔承载。第一步只读审计确认：durable 队列 `tomatodo.pendingSegmentIdsV060` 是扁平 `string[]`、无原因字段，三类意图（记录写入/分类更新/手机投递）复用同一 segment ID，且 `cloudSynced=true` 不能反推「仅在等手机」（旧 isSynced 可能属于旧学科），故本轮不可靠区分原因，历史页保持诚实的「等待同步确认」措辞，不编造具体原因；需动数据结构的方案（durable 值携带每项原因）写入 `SYNC_TROUBLESHOOTING.md` 的 `FL-SYNC-015`，本轮不实施、不动表结构、不做迁移。补强测试：状态读取不清队列/不写外部记录、旧确认不被新学科借用、超 7 天历史保持 `expired-history`、渲染不声称「等待手机/已上传」。
+- **移动视觉阶段**：手机/平板 shell 直接继承桌面画布、文字、分隔、暂停和危险 token，移除顶栏无意义 blur，统一任务/标题输入边界并提高辅助说明可读性，冻结 watch shell 不受该局部覆盖影响。生产 Web 构建通过；改前五视口明暗四页基线通过，改后视口复验进行中。尚不把这一步局部排版修正称为完整移动界面重做。
+- **Node 22 补验**：已找到项目忽略目录 `.tmp/tools/node-v22.22.2-win-x64` 的既有运行时；Node `22.22.2` 全量 `130 files / 1028 tests` 通过。类型/Cloudflare/lint 与改后截图门禁继续执行，真实服务、版本同步及三端安装仍未完成。
+- **14:36 阶段回读**：Node 22 format/typecheck（含 Cloudflare）/lint 全部 exit 0；改后移动五视口明暗四页、字体和仪表几何验收 exit 0，触控目标至少 44px、无外层横向溢出。人工复看 360px 专注截图确认文字/颜色修改已生效，但当前首屏仍偏表单化，完整视觉重构继续进行，不能以几何门禁通过冒充设计目标完成。
+- **移动专注层级与状态可读性**：专注标题改为 native details/summary 选填区，默认自由专注保留显式任务选择；展开可编辑、收起仍显示已填标题，不影响标题草稿或开始动作。窄屏同步按钮不再隐藏文字成为孤立圆点，显示实时状态并保留完整无障碍说明。截图 driver 新增实际展开标题区与输入框高度检查。Node 22 全量 1028 tests、生产 Web 构建及五视口明暗/四页/九仪表复验通过；360px 人工截图已复看。
+- **真实番茄验证**：`smoke:tomatodo:bridge` exit 0，标准安装按需启动并通过身份验证；`smoke:tomatodo:real` exit 0，localMarkerWrittenAndVerified、cloudUploadConfirmed、markerIdempotent、localCleanupSucceeded 均 true。cloudRecordReadbackSupported、remoteDeleteSupported、remoteCleanupVerified 均 false；不宣称手机收到或远端清理。此次临时数据不涉及用户原有记录。
+- **设备新探测**：后续 `adb devices -l` 和 mDNS 确认指定小米从旧 `.4` 漂移到 `192.168.1.5:5555` 在线；华为未发现在线，emulator-5554 不能代替华为实际安装。保留早先 `.4` 在线事实，不把地址变化解释为配对数据损坏。
+- **统计真实页面反证与补修**：隔离 desktop screenshot 新增昨天 00:00 起的 `02:55:16` 精确 session/segment fixture；首轮截图确认读数虽有文字但被 `.stats-primary-readout span` 当作标签缩为 11px。已移除数值嵌套 span、把标签选择器收紧为直接子项，并以读数自身容器宽度自适应字号。明暗 DOM 回读锁定精确 `02:55:16` 且字号 ≥24px；截图人工确认大读数完整可见。夜间图例改为“夜间时段”，观察范围终点使用 24:00，修正旧“非统计”误导文案。测试窗口显式 `backgroundThrottling:false` 对齐产品，避免隐藏截图时淡入动画停在透明帧。
+- **首次同步状态**：移动设置页原先先检查 lastSyncAt，导致首次 partial/conflict/rejected 被“尚未确认”覆盖；现优先显示“有记录待处理”，首次请求失败显示“首次同步未完成”，未配对仍显示未启用。Node 22 全量 `130 files / 1029 tests`、cross-device `6 files / 71 tests` 与 production build 通过；桌面明暗与最小窗口截图脚本通过。账号 bootstrap 探测返回 `deployed-login-required/200`，不作为当前设备凭据有效或全部链路已同步证据。
+- **截图时序更正**：backgroundThrottling false 后，新选择日期仍可能在淡入首帧被截图；不是仅靠该配置就证明动画完成。driver 现仅对统计 `.hm-fade-in` 装饰性有限动画提交终帧后拍摄，不触碰业务数据或计时动画；该截图用于稳定布局证据，不能作为真实入场动效完整验收。
+
+
 ## 2026-08-31 · v1.3 移动端审计（实施中）
 
 ### 最终候选更正（2026-08-31）

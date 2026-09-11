@@ -298,7 +298,16 @@ export interface TomatodoSyncSegmentResult {
   synced: boolean;
   localWritten: boolean;
   cloudSynced: boolean;
-  syncState: 'skipped' | 'local-pending' | 'cloud-pending' | 'cloud-synced' | 'failed';
+  phoneSynced: boolean;
+  syncState:
+    | 'skipped'
+    | 'local-pending'
+    | 'cloud-pending'
+    /** @deprecated use 'confirmation-pending'; kept for IPC consumers that still expect the old name */
+    | 'phone-pending'
+    | 'confirmation-pending'
+    | 'cloud-synced'
+    | 'failed';
   subject: TomatodoSubject;
   minutes: number;
   recordId?: number;
@@ -329,7 +338,8 @@ export interface TomatodoSegmentStatus {
   synced: boolean;
   writtenLocally: boolean;
   cloudSynced: boolean;
-  state: 'not-written' | 'local-pending' | 'cloud-synced';
+  state:
+    'not-written' | 'local-pending' | 'confirmation-pending' | 'expired-history' | 'cloud-synced';
   subject: TomatodoSubject;
   source: 'manual' | 'auto' | 'fallback';
 }

@@ -177,8 +177,82 @@ describe('tomatodo sync service bridge safety and state', () => {
       segmentId: 'segment-1',
       writtenLocally: true,
       cloudSynced: false,
-      state: 'phone-pending',
+      state: 'confirmation-pending',
       subject: '数学',
+    });
+  });
+
+  it('distinguishes expired unconfirmed history from previously confirmed uploads', () => {
+    harness.segment = {
+      ...makeSegment(),
+      startedAt: Date.now() - TOMATODO_CLOUD_UPLOAD_WINDOW_MS - 60_000,
+    };
+    harness.recordStates.set('segment-1', { exists: true, cloudSynced: false });
+    expect(getTomatodoSyncStatus('session-1').segments[0]).toMatchObject({
+      state: 'expired-history',
+      writtenLocally: true,
+      cloudSynced: false,
+    });
+    harness.recordStates.set('segment-1', { exists: true, cloudSynced: true });
+    expect(getTomatodoSyncStatus('session-1').segments[0]).toMatchObject({
+      state: 'cloud-synced',
+      cloudSynced: true,
+    });
+    harness.settings.set('tomatodo.pendingSegmentIdsV060', JSON.stringify(['segment-1']));
+    expect(getTomatodoSyncStatus('session-1').segments[0]).toMatchObject({
+      state: 'expired-history',
+      cloudSynced: false,
+    });
+    expect(JSON.parse(harness.settings.get('tomatodo.pendingSegmentIdsV060')!)).toEqual([
+      'segment-1',
+    ]);
+  });
+
+  it('reads status without mutating the durable queue or writing external records', () => {
+    harness.recordStates.set('segment-1', { exists: true, cloudSynced: false });
+    harness.settings.set('tomatodo.pendingSegmentIdsV060', JSON.stringify(['segment-1']));
+    const before = harness.settings.get('tomatodo.pendingSegmentIdsV060');
+
+    const status = getTomatodoSyncStatus('session-1');
+
+    expect(status.segments[0]).toMatchObject({ state: 'confirmation-pending' });
+    // The read path must not clear the durable marker nor write any external record.
+    expect(harness.settings.get('tomatodo.pendingSegmentIdsV060')).toBe(before);
+    expect(harness.addRecord).not.toHaveBeenCalled();
+    expect(harness.updateBridge).not.toHaveBeenCalled();
+  });
+
+  it('does not let a pending new subject borrow an old cloud confirmation', () => {
+    harness.recordStates.set('segment-1', { exists: true, cloudSynced: true });
+    harness.settings.set('tomatodo.pendingSegmentIdsV060', JSON.stringify(['segment-1']));
+
+    const status = getTomatodoSyncStatus('session-1');
+
+    // A newer intent (here a subject change) is still durable-pending, so the previously
+    // confirmed isSynced=1 for the OLD subject must not be presented as current.
+    expect(status.segments[0]).toMatchObject({
+      segmentId: 'segment-1',
+      writtenLocally: true,
+      cloudSynced: false,
+      synced: false,
+      state: 'confirmation-pending',
+    });
+  });
+
+  it('keeps expired history honest even when a durable marker lingers', () => {
+    harness.segment = {
+      ...makeSegment(),
+      startedAt: Date.now() - TOMATODO_CLOUD_UPLOAD_WINDOW_MS - 60_000,
+    };
+    harness.recordStates.set('segment-1', { exists: true, cloudSynced: false });
+    harness.settings.set('tomatodo.pendingSegmentIdsV060', JSON.stringify(['segment-1']));
+
+    const status = getTomatodoSyncStatus('session-1');
+
+    expect(status.segments[0]).toMatchObject({
+      state: 'expired-history',
+      cloudSynced: false,
+      synced: false,
     });
   });
 
@@ -317,11 +391,13 @@ describe('tomatodo sync service bridge safety and state', () => {
 
     const result = await syncSegmentToTomatodo('segment-1');
 
+    // The single-result state now uses the canonical 'confirmation-pending' name; the
+    // cloud-vs-phone distinction is preserved via the cloudSynced / phoneSynced booleans.
     expect(result).toMatchObject({
       ok: true,
       cloudSynced: true,
       phoneSynced: false,
-      syncState: 'phone-pending',
+      syncState: 'confirmation-pending',
       error: 'tomatodo_phone_not_connected',
     });
     expect(JSON.parse(harness.settings.get('tomatodo.pendingSegmentIdsV060') ?? '[]')).toEqual([

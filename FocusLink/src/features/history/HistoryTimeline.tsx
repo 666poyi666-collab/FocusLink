@@ -7,13 +7,14 @@ import { NOT_SYNCED_STATE, type SessionSyncState } from './syncPresentation';
 import { inferTomatodoSubject, resolveSegmentSubject } from '@shared/tomatodoPolicy';
 import { TomatodoSubjectChips } from './TomatodoSubjectChips';
 import type { FocusSegment, PauseEvent, TomatodoSubject } from '@shared/types';
+import type { TomatodoSegmentStatus as SharedTomatodoSegmentStatus } from '@shared/ipc/api';
 
 export interface TomatodoSegmentStatus {
   subject: TomatodoSubject;
   synced: boolean;
   writtenLocally: boolean;
   cloudSynced: boolean;
-  state: 'not-written' | 'local-pending' | 'cloud-synced';
+  state: SharedTomatodoSegmentStatus['state'];
   source: 'manual' | 'auto' | 'fallback';
 }
 
@@ -228,6 +229,7 @@ function HistoryFocusTimelineRow({
             resolvedSubject={resolvedSubject}
             resolvedSubjectSource={resolvedSubjectSource}
             writtenLocally={tomatodoStatus?.writtenLocally === true}
+            syncState={tomatodoStatus?.state}
             cloudSynced={tomatodoStatus?.cloudSynced === true || tomatodoStatus?.synced === true}
             disabled={linking}
             onSetSubject={onSetSubject}
@@ -282,6 +284,7 @@ function TomatodoSubjectControl({
   resolvedSubject,
   resolvedSubjectSource,
   writtenLocally,
+  syncState,
   cloudSynced,
   disabled,
   onSetSubject,
@@ -291,6 +294,7 @@ function TomatodoSubjectControl({
   resolvedSubject?: TomatodoSubject;
   resolvedSubjectSource?: TomatodoSegmentStatus['source'];
   writtenLocally: boolean;
+  syncState?: SharedTomatodoSegmentStatus['state'];
   cloudSynced: boolean;
   disabled: boolean;
   onSetSubject: (subject: TomatodoSubject | null) => void;
@@ -328,6 +332,20 @@ function TomatodoSubjectControl({
             title="番茄 Todo 客户端已确认上传；FocusLink 不做独立云端回读"
           >
             上传已确认
+          </span>
+        ) : syncState === 'expired-history' ? (
+          <span
+            className="text-[10px] text-fg-muted"
+            title="超过 7 天上传窗口，原始日期和本机记录保留，未标记为上传成功"
+          >
+            历史已停止重试
+          </span>
+        ) : syncState === 'confirmation-pending' ? (
+          <span
+            className="text-[10px] text-warning"
+            title="本机保留了待处理操作，可能涉及记录写入、分类更新或手机投递；尚未获得完整确认"
+          >
+            等待同步确认
           </span>
         ) : writtenLocally ? (
           <>

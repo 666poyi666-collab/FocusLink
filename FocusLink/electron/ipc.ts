@@ -129,10 +129,7 @@ export function registerIpc(
   ipcMain.handle('timer:toggle', () => timer.toggle());
   ipcMain.handle('timer:pause', () => timer.pause());
   ipcMain.handle('timer:resume', () => timer.resume());
-  ipcMain.handle('timer:stop', () => {
-    const snap = timer.stop();
-    return snap;
-  });
+  ipcMain.handle('timer:stop', () => timer.stop());
   ipcMain.handle('timer:reset', () => timer.reset());
 
   // 带任务原子启动：开始专注时同时写入 Session 默认任务 + 第一个 Segment 任务

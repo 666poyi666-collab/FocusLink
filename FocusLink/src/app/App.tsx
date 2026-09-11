@@ -23,26 +23,41 @@ import {
 
 type View = 'timer' | 'tasks' | 'history' | 'settings';
 
+/**
+ * 页面切换过渡。
+ *
+ * 之前这里是「0.36s 淡入 + 8–14px 位移 + scale(0.996)」：整页缩放意味着
+ * 浏览器要在缩放后的尺寸上重新栅格化整页文字，过渡期间文字被重采样，读起来就是
+ * 「有点糊」；而且中途两层都接近全不透明（0.49 / 0.81），看不出是一次翻页。
+ *
+ * 现在只做两件事，都是为了在 160Hz 上也不掉帧：
+ *  · 位移放大到 18px 并去掉 scale —— 位移只走合成层，文字始终以原生尺寸栅格化，
+ *    过渡全程保持清晰；
+ *  · 交叉淡化时间轴错开：旧页 0–200ms 退完，新页 60–280ms 才起来。两层不再同时
+ *    逼近全不透明，观感是「旧的一页让开，新的一页落定」，而不是两页互相叠着抖。
+ *    错开量按「两层不透明度之和始终 ≥ 0.9」定：再往后挪旧页就已经退干净了，
+ *    中间会闪出一帧空背景。
+ */
 const PAGE_ENTER = {
-  duration: 0.36,
+  duration: 0.22,
+  delay: 0.06,
   ease: [0.16, 1, 0.3, 1] as const,
 };
 const PAGE_EXIT = {
-  duration: 0.24,
+  duration: 0.2,
   ease: [0.4, 0, 0.2, 1] as const,
 };
+const PAGE_SHIFT_PX = 18;
 const PAGE_VARIANTS = {
-  initial: (direction: number) => ({ opacity: 0, x: direction * 14, scale: 0.996 }),
+  initial: (direction: number) => ({ opacity: 0, x: direction * PAGE_SHIFT_PX }),
   animate: {
     opacity: 1,
     x: 0,
-    scale: 1,
     transition: PAGE_ENTER,
   },
   exit: (direction: number) => ({
     opacity: 0,
-    x: direction * -8,
-    scale: 0.998,
+    x: direction * -PAGE_SHIFT_PX * 0.6,
     transition: PAGE_EXIT,
   }),
 };

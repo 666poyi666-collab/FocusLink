@@ -85,7 +85,7 @@ describe('desktop FocusLink account settings', () => {
   it('separates TomaToDo local, bridge, upload and phone-delivery facts', () => {
     expect(source).toContain("label: '本机写入'");
     expect(presentationSource).toContain("label: '上传队列'");
-    expect(presentationSource).toContain('`${safeExpired} 条过期历史已停止重试`');
+    expect(presentationSource).toContain('`${safeExpired} 条历史已停止重试`');
     expect(source).toContain("label: '手机端显示'");
     expect(source).toContain('presentTomatodoBridgeStatus(tomatodoBridge)');
     expect(source).toContain('presentTomatodoQueue(');

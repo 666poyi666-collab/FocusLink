@@ -91,8 +91,8 @@ describe('buildSessionAnalytics', () => {
       totals: {
         focusMs: 45 * 60 * 1000,
         pauseMs: 15 * 60 * 1000,
-        gapMs: 12 * 60 * 60 * 1000,
-        observationMs: 13 * 60 * 60 * 1000,
+        gapMs: 0,
+        observationMs: 60 * 60 * 1000,
         estimatedFocusMs: 0,
         estimatedPauseMs: 0,
       },

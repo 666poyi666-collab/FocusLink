@@ -3,7 +3,7 @@
 // 强调色贯穿全部界面与专注状态；暂停保持红色。
 // - 开关统一 42×24px，关闭态有清楚边界，disabled 可识别；
 // - 语义标签：已同步/未同步/同步失败仅用于同步队列；dida 描述为「同步到滴答清单」；
-//   番茄 To-do 使用「已写入本地/待上传/上传已确认」。
+//   番茄 To-do 使用「已写入本地/等待同步确认/上传已确认/历史已停止重试」。
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/store';
 import { ipcErrorMessage } from '../../app/ipcError';

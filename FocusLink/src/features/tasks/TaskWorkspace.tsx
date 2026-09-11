@@ -17,6 +17,7 @@ import {
   isFocusLinkInboxProject,
   TASK_PROJECT_COLOR_PALETTE,
 } from '@shared/taskProjectPolicy';
+import { assembleTaskTree, getSubtaskProgress } from '@shared/taskTreeUtils';
 import '../../styles/tasks-motion.css';
 
 type TaskFilter = 'open' | 'completed';
@@ -103,11 +104,12 @@ export function TaskWorkspace() {
         });
         if (requestId !== requestIdRef.current) return;
         if (!result.ok) throw new Error(result.error);
-        setTasks(result.data.tasks);
+        const assembled = assembleTaskTree(result.data.tasks);
+        setTasks(assembled);
         setProjects(result.data.projects);
         setLastRefresh(result.data.refreshedAt);
         setCompletedLoaded(includeCompleted);
-        setTicktickTasks(result.data.tasks);
+        setTicktickTasks(assembled);
         setTicktickProjects(result.data.projects);
       } catch (error) {
         if (requestId !== requestIdRef.current) return;
@@ -127,6 +129,12 @@ export function TaskWorkspace() {
   useEffect(() => {
     void refresh(false);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!selectedTaskId && tasks.length > 0) {
+      setSelectedTaskId(tasks[0].id);
+    }
+  }, [selectedTaskId, tasks]);
 
   useEffect(() => {
     if (filter === 'completed') void refresh(true, false, completedDays);
@@ -181,13 +189,16 @@ export function TaskWorkspace() {
   // 已完成/未完成分组切换淡入：reduced-motion 时仅保留 140ms 透明度过渡。
   const reduceMotion = useReducedMotion();
 
-  // 详情栏解析：优先取显式选中的任务；没有选中时回落到正在专注的当前任务。
+  // 详情栏解析：优先取显式选中的任务；没有选中时回落到正在专注的当前任务；兜底到首项任务。
   const selectedTask = useMemo(() => {
     const explicit = selectedTaskId ? findTaskById(tasks, selectedTaskId) : null;
     if (explicit) return explicit;
     const currentId = snapshot?.currentTaskId;
-    if (!currentId) return null;
-    return findTaskById(tasks, currentId);
+    if (currentId) {
+      const currentTask = findTaskById(tasks, currentId);
+      if (currentTask) return currentTask;
+    }
+    return tasks.length > 0 ? tasks[0] : null;
   }, [selectedTaskId, snapshot?.currentTaskId, tasks]);
   const selectedParentTitle = useMemo(
     () => (selectedTask ? findParentTitle(tasks, selectedTask.id) : null),
@@ -752,8 +763,10 @@ export function TaskWorkspace() {
               }
               timerState={snapshot?.state ?? 'idle'}
               mutating={mutatingTaskIds.has(selectedTask.id)}
+              mutatingChildIds={mutatingTaskIds}
               onFocus={() => focusTask(selectedTask)}
               onToggleCompleted={() => toggleCompleted(selectedTask)}
+              onToggleChildCompleted={(child) => toggleCompleted(child)}
               onMove={(projectId) => moveLocalTask(selectedTask, projectId)}
             />
           ) : (
@@ -885,11 +898,20 @@ function WorkbenchTaskRow({
               {timerState === 'running' ? '专注中' : timerState === 'paused' ? '已暂停' : '已关联'}
             </span>
           )}
-          {hasChildren && (
-            <span className="task-child-chip" title={`${childCount} 个直接子任务`}>
-              {childCount} 项
-            </span>
-          )}
+          {hasChildren &&
+            (() => {
+              const progress = getSubtaskProgress(task);
+              return (
+                <span
+                  className={`task-child-chip ${progress.completed > 0 ? 'has-progress' : ''} ${progress.completed === progress.total && progress.total > 0 ? 'all-done' : ''}`}
+                  title={`${progress.completed}/${progress.total} 项子任务已完成`}
+                >
+                  {progress.completed > 0
+                    ? `${progress.completed}/${progress.total}`
+                    : `${childCount} 项`}
+                </span>
+              );
+            })()}
           {(task.priority ?? 0) > 0 && (
             <span
               className={`task-priority-mark priority-${priorityTone(task.priority)}`}
@@ -1032,8 +1054,10 @@ function TaskInspector({
   isCurrent,
   timerState,
   mutating,
+  mutatingChildIds,
   onFocus,
   onToggleCompleted,
+  onToggleChildCompleted,
   onMove,
 }: {
   task: Task;
@@ -1043,13 +1067,14 @@ function TaskInspector({
   isCurrent: boolean;
   timerState: TimerState;
   mutating: boolean;
+  mutatingChildIds?: Set<string>;
   onFocus: () => void;
   onToggleCompleted: () => void;
+  onToggleChildCompleted?: (child: Task) => void;
   onMove: (projectId: string) => void;
 }) {
   const timerActive = timerState === 'running' || timerState === 'paused';
-  const childPreview = task.children?.slice(0, 5) ?? [];
-  const hiddenChildren = (task.children?.length ?? 0) - childPreview.length;
+  const children = task.children ?? [];
   const overdue = !!task.dueDate && task.dueDate < Date.now() && !task.isCompleted;
   return (
     <div className="task-inspector-sheet" key={task.id}>
@@ -1129,17 +1154,75 @@ function TaskInspector({
         )}
       </dl>
 
-      {childPreview.length > 0 && (
-        <section className="task-inspector-children">
-          <h3>子任务 · {task.children?.length ?? 0} 项</h3>
-          <ul>
-            {childPreview.map((child) => (
-              <li key={child.id} className={child.isCompleted ? 'done' : ''}>
-                {child.title}
-              </li>
-            ))}
+      {children.length > 0 && (
+        <section className="task-inspector-children" aria-label="子任务清单">
+          <div className="task-inspector-children-head">
+            <h3>子任务 · {children.length} 项</h3>
+            {(() => {
+              const p = getSubtaskProgress(task);
+              return p.completed > 0 ? (
+                <span className="task-inspector-progress-badge">
+                  已完成 {p.completed}/{p.total}
+                </span>
+              ) : null;
+            })()}
+          </div>
+          <ul className="task-inspector-subtask-list">
+            {children.map((child) => {
+              const isChildMutating = mutatingChildIds?.has(child.id);
+              return (
+                <li
+                  key={child.id}
+                  className={`task-inspector-subtask-item ${child.isCompleted ? 'is-done' : 'is-pending'}`}
+                  onClick={() => {
+                    if (!isChildMutating && onToggleChildCompleted) {
+                      onToggleChildCompleted(child);
+                    }
+                  }}
+                >
+                  <button
+                    type="button"
+                    className={`task-subtask-checkbox ${child.isCompleted ? 'checked' : ''}`}
+                    role="checkbox"
+                    aria-checked={child.isCompleted === true}
+                    aria-label={
+                      child.isCompleted ? `取消完成 ${child.title}` : `标记完成 ${child.title}`
+                    }
+                    disabled={isChildMutating}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onToggleChildCompleted) {
+                        onToggleChildCompleted(child);
+                      }
+                    }}
+                  >
+                    {isChildMutating ? (
+                      <Spinner size="xs" />
+                    ) : child.isCompleted ? (
+                      <svg
+                        className="task-subtask-check-icon"
+                        viewBox="0 0 14 14"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path
+                          d="M2.5 7.2l3.2 3.3 5.8-6.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : null}
+                  </button>
+                  <span className="task-subtask-title" title={child.title}>
+                    {child.title}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-          {hiddenChildren > 0 && <p>还有 {hiddenChildren} 项子任务，在列表中展开查看。</p>}
         </section>
       )}
 
@@ -1409,11 +1492,12 @@ function TaskEmpty({
   );
 }
 
-function retainOpenTree(tasks: Task[], graceIds: Set<string>): Task[] {
+function retainOpenTree(tasks: Task[], graceIds: Set<string>, inOpenParent = false): Task[] {
   const result: Task[] = [];
   for (const task of tasks) {
-    const children = task.children ? retainOpenTree(task.children, graceIds) : [];
-    if (!task.isCompleted || graceIds.has(task.id) || children.length > 0) {
+    const isThisOpen = !task.isCompleted || graceIds.has(task.id);
+    const children = task.children ? retainOpenTree(task.children, graceIds, isThisOpen) : [];
+    if (isThisOpen || inOpenParent || children.length > 0) {
       result.push({ ...task, children: children.length > 0 ? children : undefined });
     }
   }

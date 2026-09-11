@@ -421,6 +421,7 @@ async function captureRibbonStates(session) {
   const checks = [
     [running.present && running.changed, 'running material remains alive between frames'],
     [running.motion === 'continuous-material', 'running ribbon declares continuous material'],
+    [running.surge === 'start-frontier', 'running ribbon declares start-frontier dissipation'],
     [running.greenMaterialPixels > 600, 'running near view contains a readable green material'],
     [running.greenMaterialSpan > 70, 'green material visibly records the full focused interval'],
     [pausedEarly.present && pausedEarly.changed, 'early pause loss particles move between frames'],

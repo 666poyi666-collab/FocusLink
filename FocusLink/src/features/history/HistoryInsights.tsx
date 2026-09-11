@@ -1,7 +1,6 @@
 // 统计工作台 v3：结论 → 指标 → 时间节律 → 任务去向/暂停损耗。
 // 会话明细只保留下方唯一账本，不在 Dashboard 内重复一份表格。
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useInView, useReducedMotion } from 'framer-motion';
+import { useMemo, type CSSProperties } from 'react';
 import type { SessionAnalyticsResult } from '@shared/ipc/api';
 import type {
   DayLedgerAnalytics,
@@ -10,6 +9,7 @@ import type {
 } from '@shared/dayLedgerAnalytics';
 import {
   buildDashboardTaskAllocation,
+  formatDashboardDuration,
   largestRemainderPercentages,
 } from '@shared/dashboardPresentation';
 import { formatClock, formatMinutes } from '../../lib/time';
@@ -54,36 +54,9 @@ function percentage(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0;
 }
 
-/** KPI 数字 count-up：首次进入视口时从 0 平滑递增到目标值（≤600ms，expo-out）。
-    只播放一次；此后目标值变化直接显示终值，避免反复跳动。
-    prefers-reduced-motion 时始终直接显示终值。 */
-function CountUp({ value, format }: { value: number; format: (current: number) => string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true });
-  const reduceMotion = useReducedMotion();
-  const hasPlayedRef = useRef(false);
-  const [display, setDisplay] = useState(() => (typeof window === 'undefined' ? value : 0));
-  useEffect(() => {
-    if (!inView) return;
-    if (reduceMotion || hasPlayedRef.current) {
-      setDisplay(value);
-      return;
-    }
-    hasPlayedRef.current = true;
-    const target = value;
-    const durationMs = 560;
-    const startedAt = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - startedAt) / durationMs);
-      const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-      setDisplay(target * eased);
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [inView, reduceMotion, value]);
-  return <span ref={ref}>{format(display)}</span>;
+/** Recorded values must remain visible even when viewport observation or animation is suspended. */
+function StatValue({ value, format }: { value: number; format: (current: number) => string }) {
+  return <>{format(value)}</>;
 }
 
 export function HistoryInsights({
@@ -247,7 +220,7 @@ export function HistoryInsights({
         <div className="stats-primary-readout">
           <span>{singleDay ? (isToday ? '今日有效专注' : '当日有效专注') : '范围内有效专注'}</span>
           <strong>
-            <CountUp value={dashboardFocus} format={duration} />
+            <StatValue value={dashboardFocus} format={formatDashboardDuration} />
           </strong>
         </div>
         <div className="stats-brief-copy">
@@ -392,7 +365,7 @@ function TimeBudgetDonut({
 function Metric({
   label,
   value,
-  format = duration,
+  format = formatDashboardDuration,
   note,
   tone = 'neutral',
 }: {
@@ -406,7 +379,7 @@ function Metric({
     <div className={`stats-metric tone-${tone}`}>
       <span>{label}</span>
       <strong>
-        <CountUp value={value} format={format} />
+        <StatValue value={value} format={format} />
       </strong>
       <small>{note}</small>
     </div>
@@ -423,7 +396,7 @@ function DayActivityTimeline({
   const span = ledger ? Math.max(1, ledger.dayEndedAt - ledger.dayStartedAt) : DAY_MS;
   const observationLabel =
     ledger?.observationStartedAt !== null && ledger?.observationStartedAt !== undefined
-      ? `${formatClock(ledger.observationStartedAt)}–${formatClock(ledger.observationEndedAt)}`
+      ? `${formatClock(ledger.observationStartedAt)}–${ledger.observationEndedAt === ledger.dayEndedAt ? '24:00' : formatClock(ledger.observationEndedAt)}`
       : '尚未形成观察区间';
   const hourTicks = Array.from({ length: 25 }, (_, hour) => hour);
   const nowPosition = ledger?.isToday
@@ -448,7 +421,7 @@ function DayActivityTimeline({
           className="stats-ledger-chart hm-fade-in"
           style={{ '--hm-delay': '80ms' } as CSSProperties}
           role="group"
-          aria-label={`${ledger.date} 全天时间轴；07:00 至 22:00 为默认有效日`}
+          aria-label={`${ledger.date} 全天时间轴；00:00 至 24:00 完整统计`}
         >
           <div className="stats-day-map-scroll" aria-label="完整 24 小时时间地图">
             <div className="stats-day-map">
@@ -522,7 +495,7 @@ function DayActivityTimeline({
             <span className="focus">专注</span>
             <span className="pause">暂停</span>
             <span className="gap">空档</span>
-            <span className="sleep">睡眠 / 非统计</span>
+            <span className="sleep">夜间时段</span>
           </div>
         </div>
       ) : (
@@ -531,7 +504,8 @@ function DayActivityTimeline({
         </div>
       )}
       <p className="stats-caption">
-        每一格代表 1 小时，三条轨道共用同一 00:00–24:00 比例；深色时段是非统计夜间，不伪造为空档。
+        每一格代表 1 小时，三条轨道共用同一 00:00–24:00
+        比例；夜间记录同样计入统计，空档从首段专注开始计算。
       </p>
     </article>
   );
@@ -765,7 +739,7 @@ function DailyActivityChart({ daily }: { daily: DayLedgerAnalytics[] }) {
         ))}
       </div>
       <p className="stats-caption">
-        每根柱子的总高度是当天有效日已分类时间；强调色为专注、红色为暂停、灰色为空档。旧边界只计入
+        每根柱子的总高度是当天已分类时间；强调色为专注、红色为暂停、灰色为空档。旧边界只计入
         estimated，悬停或键盘聚焦可读精确值。
       </p>
     </article>
@@ -853,19 +827,19 @@ function PauseCost({
       <div>
         <span>暂停损耗</span>
         <strong>
-          <CountUp value={pauseMs} format={duration} />
+          <StatValue value={pauseMs} format={duration} />
         </strong>
       </div>
       <div>
         <span>每轮平均专注</span>
         <strong>
-          <CountUp value={average} format={duration} />
+          <StatValue value={average} format={duration} />
         </strong>
       </div>
       <div>
         <span>时间利用</span>
         <strong>
-          <CountUp value={focusRate} format={(current) => `${Math.round(current)}%`} />
+          <StatValue value={focusRate} format={(current) => `${Math.round(current)}%`} />
         </strong>
       </div>
       <div

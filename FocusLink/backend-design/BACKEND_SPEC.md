@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前实现 v1.3.0（实施中）
+> 状态：v1.x 后端单一真相；当前候选 v1.3.5（Windows 已装，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -132,6 +132,8 @@ Provider 的稳定能力应包括：
 - 设置更新采用局部对象并与完整设置递归合并；缺失字段表示不修改。
 - 慢请求使用 request id 或版本防止旧响应覆盖新状态。
 - `sessions.analytics(range)` 是严格只读、范围有界的统计接口。数据库必须选择与范围相交的会话，而不是只按 `started_at` 落点筛选；共享聚合器按自然日裁切 Session、Segment 与 PauseEvent，跨午夜/跨月/跨年数据不得整段归到开始日。该接口不得修改计时、同步队列或外部服务状态。
+- 2026-09-10 观察区间收束（覆盖上一条的整日观察口径，但保留「整日累加不裁夜」）：`buildCalendarDayLedger` 现额外启用 `capObservationAtLastRecord`，观察区间 = 当日首条真实记录起点 → 当日末条真实记录终点（今天封顶 now，历史日封顶次日零点）。空档因此只反映**记录区间内部的空闲**，睡眠与未记录时段不再计入空档；`focus + pause + gap = observation` 不变量在收束后的区间内成立。产品统计的逐日总量仍按完整自然日累加（凌晨与深夜一律计入）。参数化 `buildDayLedger` 保持默认 `false` 以保留显式日间分析能力。实测后果：单会话日显示「空档 00:00:00 / 时间利用率 100%」；若需呈现「这一天有多少时间没在专注」，必须新增以有效时段为分母的独立指标，禁止回退整日空档口径。
+- 2026-09-08 产品统计修正优先于下述旧默认有效日口径：desktop/mobile 均调用共享 `buildCalendarDayLedger`，显式窗口为本地 00:00–24:00，今天截至 now，包含凌晨与深夜。参数化 `buildDayLedger` 仍允许显式日间分析，但产品 Dashboard 不使用其 07:00–22:00 默认值。首个真实 focus 才建立观察起点，空白日不制造空档，estimated 不混入精确三分类。
 - `shared/dayLedgerAnalytics.ts` 是有效日与空档分析的唯一纯函数真值，结果通过 `SessionAnalyticsResult.dayLedgers` 暴露给桌面与移动 renderer。默认有效日为 07:00–22:00；观察起点只认真实 segment 边界，pause 以真实 `PauseEvent` 为准并在重叠时优先分类，gap 只在内存中由观察区间内 focus/pause 并集的补集推导，禁止新增 gap 表或同步实体。三类精确时长必须满足 `focus + pause + gap = observation`。
 - `DayLedgerAnalytics.tasks` 必须从同一批已裁切、pause 优先的 focus 区间聚合，任务总量与有效专注 KPI 使用同一窗口；缺少可定位 segment 的旧记录只能作为 `estimated` legacy 余量展示，不能把自然日整段时长重新混入任务分配。
 - `DayLedgerAnalytics.sessionFocus` 提供同一有效日窗口内的逐会话 focus，供“最长一轮”等 KPI 跨日合并；精确行来自已分区 focus，旧会话只保留按有效窗口裁切的 estimated share。estimated 不得与精确 gap 相加后伪装成同一观察区间或三分类柱高。

@@ -143,7 +143,7 @@ export function liveConnectionCopy(
   }
   if (connection === 'offline') {
     return withNotice({
-      title: '当前离线 · 本机专注可用',
+      title: '未连接 · 本机专注可用',
       detail: hasSnapshot
         ? '云端状态仅供参考；可新建独立本机会话，结束后联网补传'
         : '可立即开始本机专注，结束后联网补传',
@@ -151,7 +151,7 @@ export function liveConnectionCopy(
   }
   if (connection === 'error') {
     return withNotice({
-      title: '实时连接中断',
+      title: '未连接',
       detail: hasSnapshot
         ? '保留最后确认状态；可新建独立本机会话，不会覆盖云端'
         : '可先使用本机专注，连接恢复后自动补传',

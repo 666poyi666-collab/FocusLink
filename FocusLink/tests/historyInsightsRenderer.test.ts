@@ -67,11 +67,11 @@ describe('desktop history insights presentation', () => {
     );
     expect(markup).toContain('当日有效专注');
     expect(markup).toContain('这一天的时间，花在了哪里');
-    expect(markup).toContain('0 分钟');
+    expect(markup).toContain('00:20:00');
     expect(markup).toContain('完成 1 轮');
     expect(markup).toContain('24 小时时间轴');
-    expect(markup).toContain('当日没有真实 focus 起点');
-    expect(markup).not.toContain('跨午夜复习 · 20 分钟');
+    expect(markup).not.toContain('当日没有真实 focus 起点');
+    expect(markup).toContain('跨午夜复习');
     expect(markup).not.toContain('这段时间还没有专注记录');
   });
 
@@ -162,18 +162,20 @@ describe('desktop history insights presentation', () => {
     const axisEnd = markup.indexOf('</div>', axisStart);
     const axisMarkup = markup.slice(axisStart, axisEnd);
 
-    expect(markup).toContain('精确观察时间构成：专注 50 分钟，暂停 10 分钟，空档 12 小时');
-    expect(markup).toContain('07:00 至 22:00 为默认有效日');
+    // 收束后观察区间 = 09:00–10:00（首条专注起点 → 末条真实记录终点），夜间/无记录区不计空档。
+    expect(markup).toContain('精确观察时间构成：专注 50 分钟，暂停 10 分钟，空档 0 分钟');
+    expect(markup).toContain('00:00 至 24:00 完整统计');
     expect(markup).toContain('class="stats-day-map-scroll" aria-label="完整 24 小时时间地图"');
     expect(markup).toContain('class="stats-day-lane focus"');
     expect(markup).toContain('class="stats-day-lane pause"');
     expect(markup).toContain('class="stats-day-lane gap"');
     expect(axisMarkup.match(/<span/g)).toHaveLength(25);
-    expect(markup).toContain('stats-ledger-block gap');
+    expect(markup).toContain('stats-ledger-block focus');
+    expect(markup).not.toContain('stats-ledger-block gap');
     expect(markup).toContain('10:00');
-    expect(markup).toContain('22:00');
+    expect(markup).toContain('24:00');
     expect(markup).toContain('精确空档');
-    expect(markup).toContain('精确观察时间：专注 7%，暂停 1%，空档 92%');
+    expect(markup).toContain('精确观察时间：专注 83%，暂停 17%，空档 0%');
     expect(markup).toContain('旧记录（无片段归类）');
     expect(markup).toContain('另有 estimated 旧记录，不进入三分类');
     expect(analytics.dayLedgers[0].sessionFocus).toEqual([
@@ -349,7 +351,7 @@ describe('desktop history insights presentation', () => {
     expect(markup.match(/class="stats-day-column"/g)).toHaveLength(2);
     expect(markup.match(/role="img" tabindex="0"/g)).toHaveLength(2);
     expect(markup.match(/class="gap-bar"/g)).toHaveLength(2);
-    expect(markup).toContain('空档 12 小时');
-    expect(markup).toContain('空档 11 小时');
+    expect(markup).toContain('空档 0 分钟');
+    expect(markup).toContain('空档 0 分钟');
   });
 });

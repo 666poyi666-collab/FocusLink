@@ -56,7 +56,14 @@ export interface TomatodoSyncSegmentResult {
   /** 电脑版已把记录交给在线手机同步通道。 */
   phoneSynced: boolean;
   syncState:
-    'skipped' | 'local-pending' | 'cloud-pending' | 'phone-pending' | 'cloud-synced' | 'failed';
+    | 'skipped'
+    | 'local-pending'
+    | 'cloud-pending'
+    /** @deprecated use 'confirmation-pending'; kept for IPC consumers that still expect the old name */
+    | 'phone-pending'
+    | 'confirmation-pending'
+    | 'cloud-synced'
+    | 'failed';
   subject: TomatodoSubject;
   minutes: number;
   recordId?: number;
@@ -293,7 +300,7 @@ async function syncSegmentToTomatodoUnlocked(
         ? bridge.uploadConfirmed
           ? phoneSyncConfirmed
             ? 'cloud-synced'
-            : 'phone-pending'
+            : 'confirmation-pending'
           : 'cloud-pending'
         : 'failed',
       subject,
@@ -421,7 +428,7 @@ async function syncSessionToTomatodoUnlocked(
           ? item.uploadConfirmed
             ? (item.phoneSyncConfirmed ?? true)
               ? 'cloud-synced'
-              : 'phone-pending'
+              : 'confirmation-pending'
             : 'cloud-pending'
           : 'failed',
         subject,
@@ -717,7 +724,8 @@ export function getTomatodoSyncStatus(sessionId: string): {
     synced: boolean;
     writtenLocally: boolean;
     cloudSynced: boolean;
-    state: 'not-written' | 'local-pending' | 'phone-pending' | 'cloud-synced';
+    state:
+      'not-written' | 'local-pending' | 'confirmation-pending' | 'expired-history' | 'cloud-synced';
     subject: TomatodoSubject;
     source: TomatodoSubjectSource;
   }>;
@@ -743,13 +751,16 @@ export function getTomatodoSyncStatus(sessionId: string): {
         synced: cloudSynced,
         writtenLocally: recordState.exists,
         cloudSynced,
-        state: durablePendingIds.has(s.id)
-          ? ('phone-pending' as const)
-          : cloudSynced
-            ? ('cloud-synced' as const)
-            : recordState.exists
-              ? ('local-pending' as const)
-              : ('not-written' as const),
+        state: cloudSynced
+          ? ('cloud-synced' as const)
+          : !isTomatodoCloudUploadEligible(s.startedAt) &&
+              (recordState.exists || durablePendingIds.has(s.id))
+            ? ('expired-history' as const)
+            : durablePendingIds.has(s.id)
+              ? ('confirmation-pending' as const)
+              : recordState.exists
+                ? ('local-pending' as const)
+                : ('not-written' as const),
         subject: resolution.subject,
         source: resolution.source,
       };

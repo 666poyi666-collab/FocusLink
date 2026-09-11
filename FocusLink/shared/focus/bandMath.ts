@@ -738,6 +738,107 @@ export function zoomProgress(animStartMs: number, nowMs: number, durationMs: num
   return clamp01((nowMs - animStartMs) / durationMs);
 }
 
+/* ─── 时间消散：从材料断口的蒸发区升起的细离子 ─────────────────────
+ *
+ * 与上面 `pauseFrontierDissolveParticles`（碎屑：薄片/颗粒/火花）的分工：
+ * 那套是「材料被剥落」，颗粒大、寿命短；本函数是「材料在蒸发成离子」，
+ * 颗粒细、寿命长，起点严格落在断口的蒸发区内，因此读起来是
+ * **材料本身在化掉**，而不是空档里飘的灰尘。
+ */
+
+export type DissolveIon = {
+  id: string;
+  /** 出生点在蒸发区内的位置比例（0 = 断口最内侧，1 = 材料完好那一侧） */
+  originRatioX: number;
+  /** 出生点的纵向位置比例（0 = 材料顶，1 = 材料底） */
+  originRatioY: number;
+  /** 已走过的寿命比例 0..1 */
+  progress: number;
+  /** 位移（px，相对出生点） */
+  travelX: number;
+  travelY: number;
+  /** 尺寸（px） */
+  size: number;
+  alpha: number;
+  /** 1 = 刚离开材料（亮），0 = 已成灰烬 */
+  temperature: number;
+};
+
+/** 离子最长寿命：比碎屑长得多，才有「慢慢散掉」而不是「一闪就没」。 */
+export const DISSOLVE_ION_MAX_LIFE_MS = 2_600;
+
+/** 蒸发区内同时活跃的离子数量上限（渲染成本与暂停时长无关）。 */
+export const DISSOLVE_ION_SAMPLE_COUNT = 26;
+
+/**
+ * 断口蒸发离子。
+ *
+ * @param emissiveStartMs 开始发射的时刻（暂停开始时刻）
+ * @param evaporatePx     蒸发区宽度（px，与材料那侧的擦除渐变同宽）
+ * @param windowMs        发射窗口：只在暂停刚发生的一段时间内发射，之后只让尾离子散尽
+ */
+export function dissolveIons(
+  nowMs: number,
+  emissiveStartMs: number,
+  evaporatePx: number,
+  windowMs: number,
+  reducedMotion: boolean,
+  maxLifeMs = DISSOLVE_ION_MAX_LIFE_MS,
+): DissolveIon[] {
+  if (reducedMotion || evaporatePx <= 0 || maxLifeMs <= 0) return [];
+  const elapsed = nowMs - emissiveStartMs;
+  if (elapsed < 0) return [];
+  const emissionEnd = Math.min(nowMs, emissiveStartMs + windowMs);
+  const lifeSec = maxLifeMs / 1000;
+  const ions: DissolveIon[] = [];
+  // 一秒一批，回看寿命覆盖的批次数（上限固定，所以同屏数量恒定）。
+  const batchCount = Math.max(1, Math.min(4, Math.ceil(lifeSec)));
+  const currentBatch = Math.floor(Math.max(0, emissionEnd - emissiveStartMs) / 1000);
+  const count = DISSOLVE_ION_SAMPLE_COUNT;
+
+  for (let batch = currentBatch - batchCount + 1; batch <= currentBatch; batch += 1) {
+    for (let index = 0; index < count; index += 1) {
+      const seed = batch * 91.7 + index * 47.3;
+      const releaseSec = batch + (index / count) * 0.98 + hash01(seed + 1.3) * 0.02;
+      const ageSec = elapsed / 1000 - releaseSec;
+      const lifespan = lifeSec * (0.7 + hash01(seed + 4.1) * 0.3);
+      if (ageSec < 0 || ageSec >= lifespan) continue;
+
+      const progress = clamp01(ageSec / lifespan);
+      const eased = progress * progress * (3 - 2 * progress);
+      // 出生点：横向严格落在蒸发区内（越靠断口越先离开材料），纵向散布整个材料高度。
+      const originRatioX = Math.pow(hash01(seed + 2.9), 0.8);
+      const originRatioY = hash01(seed + 6.1);
+      // 运动：向上飘为主，横向继续往断口外侧（左）走一点，像被带走。
+      const rise = 22 + hash01(seed + 8.3) * 34;
+      const drift = 8 + hash01(seed + 9.7) * 16;
+      const sway = (hash01(seed + 11.1) - 0.5) * 2;
+      const travelY = -eased * rise + Math.sin(seed + progress * 7) * 2.2 * progress;
+      const travelX = -eased * drift + sway * 3 * progress;
+      // 尺寸：细。出生 1.1–2.2px，末段收成 0.35px 以下。
+      const sizeBase = 1.1 + hash01(seed + 13.5) * 1.1;
+      const terminal = clamp01((progress - 0.55) / 0.45);
+      const size = Math.max(0.35, sizeBase * (1 - terminal * terminal * 0.82));
+      const fadeOut = clamp01((progress - 0.42) / 0.58);
+      const alpha = (0.5 + hash01(seed + 17.7) * 0.3) * (1 - fadeOut * fadeOut * 0.95);
+
+      ions.push({
+        id: `${batch}-${index}`,
+        originRatioX,
+        originRatioY,
+        progress,
+        travelX,
+        travelY,
+        size,
+        alpha,
+        temperature: 1 - Math.pow(progress, 0.55),
+      });
+    }
+  }
+
+  return ions;
+}
+
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }

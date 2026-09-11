@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDashboardTaskAllocation,
+  formatDashboardDuration,
   largestRemainderPercentages,
 } from '@shared/dashboardPresentation';
 import type { SessionAnalyticsTask } from '@shared/ipc/api';
 
 describe('dashboard presentation model', () => {
+  it('preserves seconds and hours without wrapping at a day', () => {
+    expect(formatDashboardDuration(10_516_000)).toBe('02:55:16');
+    expect(formatDashboardDuration(25 * 3_600_000)).toBe('25:00:00');
+    expect(formatDashboardDuration(100 * 3_600_000 + 59_000)).toBe('100:00:59');
+    expect(formatDashboardDuration(Number.NaN)).toBe('00:00:00');
+    expect(formatDashboardDuration(-1)).toBe('00:00:00');
+  });
   it('uses largest-remainder rounding with a stable 100 percent total', () => {
     expect(largestRemainderPercentages([1, 1, 1])).toEqual([34, 33, 33]);
     expect(largestRemainderPercentages([0, Number.NaN, -5])).toEqual([0, 0, 0]);

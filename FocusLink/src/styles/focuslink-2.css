@@ -11,8 +11,12 @@
   --app-subtle: 120 132 137;
   --app-border: 220 226 227;
   --app-border-strong: 190 201 203;
-  --app-pause: 211 102 55;
-  --app-pause-soft: 251 237 228;
+  /* 暂停色必须是红。这里曾写成 211 102 55（色相 18°，陶土橙），比底层
+     temporal-foundation.css 的 210 67 57（色相 4°）偏橙，运行时的值来自这一层，
+     于是暂停按钮、暂停读数、账本暂停条和时间之带的暂停材料全都读成砖红/锈橙，
+     对白底对比度也从 4.5:1 掉到 3.56:1。改回与底层同族的红。 */
+  --app-pause: 210 67 57;
+  --app-pause-soft: 251 235 233;
   --app-warning: 164 112 42;
   --app-danger: 170 63 54;
   --app-ink: 29 35 39;
@@ -133,7 +137,12 @@
 .focus-meter-rail {
   padding: 24px 24px;
   border-right-color: rgb(var(--app-border));
-  background: rgb(var(--app-bg));
+  /* 与中间主工作台同面。
+     这一栏和右侧账本原本用画布色 --app-bg（246 247 248），而中间纪念碑用
+     --app-surface（白）；三栏等高、只隔 1px 边框，于是左右那圈浅灰被读成
+     「一条 U 形阴影」，用户直接反馈「这样设计不太好吧」。三栏统一成同一个面之后，
+     分隔只由 1px 发丝线承担——这是仪表台的读法，不是卡片套卡片。 */
+  background: rgb(var(--app-surface));
 }
 .meter-rail-foot {
   color: rgb(var(--app-subtle));
@@ -155,7 +164,8 @@
 }
 .session-ledger-pane {
   border-left-color: rgb(var(--app-border));
-  background: rgb(var(--app-bg));
+  /* 同 focus-meter-rail：与主工作台同面，去掉那圈「U 形阴影」。 */
+  background: rgb(var(--app-surface));
 }
 .ledger-header {
   min-height: 68px;
@@ -429,10 +439,7 @@
 
 @media (max-width: 1199px) {
   .task-workspace-shell {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-  .task-inspector {
-    display: none;
+    grid-template-columns: 196px minmax(0, 1fr) 280px;
   }
 }
 @media (max-width: 820px) {
@@ -472,8 +479,8 @@ html.dark {
   --app-border-strong: 84 98 99;
   --app-accent: 83 185 202;
   --app-accent-fg: 14 32 35;
-  --app-pause: 232 137 94;
-  --app-pause-soft: 75 45 34;
+  --app-pause: 244 112 103;
+  --app-pause-soft: 75 40 38;
 }
 
 /* v0.12.99 · explicit 24-hour map ---------------------------------------- */
@@ -865,7 +872,7 @@ html.dark {
   );
 }
 
-.stats-primary-readout span {
+.stats-primary-readout > span {
   color: rgb(var(--app-accent));
   font-weight: 720;
   letter-spacing: 0.08em;
@@ -873,8 +880,13 @@ html.dark {
 }
 
 .stats-primary-readout strong {
-  font-size: clamp(42px, 4.4vw, 66px);
-  letter-spacing: -0.035em;
+  font-size: clamp(24px, 18cqi, 66px);
+  letter-spacing: 0;
+}
+
+.stats-primary-readout {
+  min-width: 0;
+  container-type: inline-size;
 }
 
 .stats-brief-copy h2 {
@@ -1494,6 +1506,15 @@ html.dark {
 .stats-ledger-legend .gap::before {
   border-color: rgb(var(--app-ledger-gap));
   background: rgb(var(--app-ledger-gap) / 0.18);
+}
+
+.stats-ledger-legend .no-record::before {
+  border-color: rgb(var(--app-ledger-gap) / 0.5);
+  background: repeating-linear-gradient(
+    45deg,
+    rgb(var(--app-ledger-night)) 0 2px,
+    transparent 2px 4px
+  );
 }
 
 @keyframes stats-ledger-reveal {

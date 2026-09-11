@@ -153,13 +153,21 @@ export function filterSyncedTaskForest(
   statusFilter: TaskStatusFilter = 'open',
 ): SyncedTaskTreeNode[] {
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN');
-  const filter = (nodes: readonly SyncedTaskTreeNode[]): SyncedTaskTreeNode[] => {
+  const filter = (
+    nodes: readonly SyncedTaskTreeNode[],
+    inOpenParent = false,
+  ): SyncedTaskTreeNode[] => {
     const result: SyncedTaskTreeNode[] = [];
     for (const node of nodes) {
-      const children = filter(node.children);
+      const isNodeOpen = !node.isCompleted;
+      const children = filter(node.children, isNodeOpen && statusFilter === 'open');
       // A parent outside the selected status must not hide a matching descendant. Promote the
       // surviving children while preserving the hidden path title for both open and completed views.
       if (node.isCompleted !== (statusFilter === 'completed')) {
+        if (inOpenParent && statusFilter === 'open') {
+          result.push({ ...node, children });
+          continue;
+        }
         result.push(
           ...children.map((child) => ({
             ...child,

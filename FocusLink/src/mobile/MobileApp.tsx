@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { App as CapacitorApp, type URLOpenListenerEvent } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { APP_VERSION } from '@shared/version';
@@ -226,6 +226,8 @@ export function MobileApp() {
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [nativeReadinessEpoch, setNativeReadinessEpoch] = useState(0);
   const [activeView, setActiveView] = useState<MobileView>('focus');
+  // 页面切换动效的 reduced-motion 降级：开启时入场/退出均为瞬时，信息不损失。
+  const reduceMotion = useReducedMotion();
   const [liveSnapshotSource, setLiveSnapshotSource] = useState<LiveSnapshotSource>('none');
   const [offlineRuntime, setOfflineRuntime] = useState<OfflineFocusRuntime | null>(null);
   const [authorityMode, setAuthorityMode] = useState<MobileAuthorityMode>('cloud-live');
@@ -2158,94 +2160,117 @@ export function MobileApp() {
       <div className="app-frame">
         <AppNavigation activeView={activeView} onChange={setActiveView} />
         <main className="mobile-main">
-          <div className="mobile-workspace" key={activeView}>
-            {activeView === 'focus' && (
-              <FocusConsole
-                snapshot={liveSnapshot}
-                connection={liveConnection}
-                connectionNotice={liveConnectionNotice}
-                titleDraft={titleDraft}
-                pendingCommand={pendingCommand}
-                commandNotice={commandNotice}
-                localDeviceId={deviceId}
-                tasks={taskSnapshot?.snapshot?.tasks ?? []}
-                selectedTaskId={selectedTaskId}
-                onTaskChange={(taskId) => {
-                  setSelectedTaskId(taskId);
-                  const task = taskSnapshot?.snapshot?.tasks.find((item) => item.id === taskId);
-                  if (task) setTitleDraft(task.title);
-                }}
-                onTitleChange={setTitleDraft}
-                onCommand={(command) => void handleCommand(command)}
-                onOpenConnection={() => setConfigOpen(true)}
-                onOpenTasks={() => setActiveView('tasks')}
-                snapshotSource={liveSnapshotSource}
-                nativeSystemControls={nativeSystemControls}
-                onToggleImmersiveSystemBars={() => void handleToggleImmersiveSystemBars()}
-                onEnterPictureInPicture={() => void handleEnterPictureInPicture()}
-                localOfflineMode={offlineRuntime !== null}
-                authorityMode={authorityMode}
-                allowOfflineStart={offlineRuntime === null && liveConnection !== 'live'}
-                timerStyle={appearance.timerStyle}
-              />
-            )}
-            {activeView === 'tasks' && (
-              <TaskBrowser
-                tasks={taskSnapshot?.snapshot?.tasks ?? []}
-                projects={taskSnapshot?.snapshot?.projects ?? []}
-                publishedAt={taskSnapshot?.snapshot?.publishedAt ?? null}
-                revision={taskSnapshot?.revision ?? 0}
-                selectedTaskId={selectedTaskId}
-                canStart={
-                  pendingCommand === null &&
-                  offlineRuntime === null &&
-                  (liveConnection !== 'live' || (liveSnapshot?.state ?? 'idle') === 'idle')
-                }
-                onSelect={(task) => {
-                  setSelectedTaskId(task.id);
-                  setTitleDraft(task.title);
-                }}
-                onStart={(task) => {
-                  setSelectedTaskId(task.id);
-                  setTitleDraft(task.title);
-                  setActiveView('focus');
-                  void handleCommand('start', task, task.title);
-                }}
-                onCreate={createCloudTask}
-                onCreateProject={createCloudProject}
-                onUpdateProject={updateCloudProject}
-                onDeleteProject={deleteCloudProject}
-                onMoveTask={moveCloudTask}
-                onToggleComplete={toggleCloudTaskComplete}
-              />
-            )}
-            {activeView === 'history' && (
-              <DashboardView
-                records={cache.bundles}
-                ready={cacheReady}
-                configured={configured}
-                lastSyncAt={cache.lastSyncAt}
-                cursor={cache.cursor}
-                tasks={taskSnapshot?.snapshot?.tasks ?? null}
-              />
-            )}
-            {activeView === 'settings' && (
-              <SettingsView
-                connection={liveConnection}
-                online={online}
-                accountLabel={accountProfile?.accountLabel ?? null}
-                authenticated={configured}
-                lastSyncAt={cache.lastSyncAt}
-                pullState={pullState}
-                taskCount={taskSnapshot?.snapshot?.tasks.length ?? 0}
-                taskRevision={taskSnapshot?.revision ?? 0}
-                ledgerCount={cache.bundles.length}
-                onOpenAccount={() => setConfigOpen(true)}
-                appearance={appearance}
-                onAppearanceChange={setAppearance}
-              />
-            )}
-          </div>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              className="mobile-workspace"
+              key={activeView}
+              variants={
+                reduceMotion
+                  ? { initial: { opacity: 1 }, enter: { opacity: 1 }, exit: { opacity: 1 } }
+                  : {
+                      initial: { opacity: 0, y: 8 },
+                      // 页面交接 320ms（规范 4.2：页面/面板 320–420ms），入场用 expo-out 前置曲线，
+                      // 截图驱动等待约 80ms 时已完成绝大部分位移；退出近乎瞬时，保证新视图立即挂载。
+                      enter: {
+                        opacity: 1,
+                        y: 0,
+                        transition: { duration: 0.32, ease: [0.16, 1, 0.3, 1] },
+                      },
+                      exit: { opacity: 0, transition: { duration: 0.01 } },
+                    }
+              }
+              initial="initial"
+              animate="enter"
+              exit="exit"
+            >
+              {activeView === 'focus' && (
+                <FocusConsole
+                  snapshot={liveSnapshot}
+                  connection={liveConnection}
+                  connectionNotice={liveConnectionNotice}
+                  titleDraft={titleDraft}
+                  pendingCommand={pendingCommand}
+                  commandNotice={commandNotice}
+                  localDeviceId={deviceId}
+                  tasks={taskSnapshot?.snapshot?.tasks ?? []}
+                  selectedTaskId={selectedTaskId}
+                  onTaskChange={(taskId) => {
+                    setSelectedTaskId(taskId);
+                    const task = taskSnapshot?.snapshot?.tasks.find((item) => item.id === taskId);
+                    if (task) setTitleDraft(task.title);
+                  }}
+                  onTitleChange={setTitleDraft}
+                  onCommand={(command) => void handleCommand(command)}
+                  onOpenConnection={() => setConfigOpen(true)}
+                  onOpenTasks={() => setActiveView('tasks')}
+                  snapshotSource={liveSnapshotSource}
+                  nativeSystemControls={nativeSystemControls}
+                  onToggleImmersiveSystemBars={() => void handleToggleImmersiveSystemBars()}
+                  onEnterPictureInPicture={() => void handleEnterPictureInPicture()}
+                  localOfflineMode={offlineRuntime !== null}
+                  authorityMode={authorityMode}
+                  allowOfflineStart={offlineRuntime === null && liveConnection !== 'live'}
+                  timerStyle={appearance.timerStyle}
+                />
+              )}
+              {activeView === 'tasks' && (
+                <TaskBrowser
+                  tasks={taskSnapshot?.snapshot?.tasks ?? []}
+                  projects={taskSnapshot?.snapshot?.projects ?? []}
+                  publishedAt={taskSnapshot?.snapshot?.publishedAt ?? null}
+                  revision={taskSnapshot?.revision ?? 0}
+                  selectedTaskId={selectedTaskId}
+                  canStart={
+                    pendingCommand === null &&
+                    offlineRuntime === null &&
+                    (liveConnection !== 'live' || (liveSnapshot?.state ?? 'idle') === 'idle')
+                  }
+                  onSelect={(task) => {
+                    setSelectedTaskId(task.id);
+                    setTitleDraft(task.title);
+                  }}
+                  onStart={(task) => {
+                    setSelectedTaskId(task.id);
+                    setTitleDraft(task.title);
+                    setActiveView('focus');
+                    void handleCommand('start', task, task.title);
+                  }}
+                  onCreate={createCloudTask}
+                  onCreateProject={createCloudProject}
+                  onUpdateProject={updateCloudProject}
+                  onDeleteProject={deleteCloudProject}
+                  onMoveTask={moveCloudTask}
+                  onToggleComplete={toggleCloudTaskComplete}
+                />
+              )}
+              {activeView === 'history' && (
+                <DashboardView
+                  records={cache.bundles}
+                  ready={cacheReady}
+                  configured={configured}
+                  lastSyncAt={cache.lastSyncAt}
+                  cursor={cache.cursor}
+                  tasks={taskSnapshot?.snapshot?.tasks ?? null}
+                />
+              )}
+              {activeView === 'settings' && (
+                <SettingsView
+                  connection={liveConnection}
+                  online={online}
+                  accountLabel={accountProfile?.accountLabel ?? null}
+                  authenticated={configured}
+                  lastSyncAt={cache.lastSyncAt}
+                  pullState={pullState}
+                  taskCount={taskSnapshot?.snapshot?.tasks.length ?? 0}
+                  taskRevision={taskSnapshot?.revision ?? 0}
+                  ledgerCount={cache.bundles.length}
+                  onOpenAccount={() => setConfigOpen(true)}
+                  appearance={appearance}
+                  onAppearanceChange={setAppearance}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 
@@ -2401,8 +2426,8 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
 function connectionTitle(state: LiveConnectionState): string {
   if (state === 'live') return '实时状态已连接';
   if (state === 'connecting') return '正在连接多端状态';
-  if (state === 'offline') return '当前离线 · 本机专注可用';
-  if (state === 'error') return '实时连接中断';
+  if (state === 'offline') return '未连接 · 本机专注可用';
+  if (state === 'error') return '未连接';
   return '尚未配对设备';
 }
 

@@ -1,4 +1,8 @@
 /FocusLink/node_modules/
+# 根级 node_modules 也必须忽略。此前只写了 `/FocusLink/node_modules/`，
+# 于是仓库根的 `node_modules/.vite/` 会出现在 `git status` 里并被误暂存
+# （本轮实测：`git add -A` 把它带进了暂存区）。
+/node_modules/
 /FocusLink/dist/
 /FocusLink/dist-electron/
 /FocusLink/dist-selftest/
@@ -16,6 +20,12 @@ release/
 /release-v*/win-unpacked/
 /release-v*/builder-debug.yml
 /release-v*/*.blockmap
+# Unpacked Electron runtimes left behind by interrupted or renamed builds.
+# 这三条覆盖 `win-unpacked.tmp` 之类的临时解包目录（实测 release-v131、
+# release-v131-win、release-v131b 下各有一份，共 700+ 个 Electron 运行时文件）。
+# 此前只忽略 `/release-v*/win-unpacked/`，因此它们会出现在 `git status` 里被误提交。
+/release-v*/*-unpacked*/
+/release-v*/*.tmp/
 /visual-unpacked-v*/
 *.log
 .env
@@ -27,6 +37,9 @@ focuslink-data/
 /FocusLink/*-result.json
 .DS_Store
 design-pack/
+
+# 本地工具的记忆/工作目录，不属于产品源码。
+/.workbuddy/
 
 # design workshop assets
 /test-data/

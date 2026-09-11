@@ -69,4 +69,25 @@ describe('task tree sorting', () => {
     expect(sorted[0].children?.map((item) => item.title)).toEqual(['甲', '乙']);
     expect(source[0].children?.map((item) => item.title)).toEqual(['乙', '甲']);
   });
+
+  it('assembles a flat list of tasks with parentId into a nested tree', () => {
+    const flat = [
+      task('chapter-1', { title: '第一章第一节', parentId: null }),
+      task('cycle-1', { title: '循环1', parentId: 'chapter-1', isCompleted: true }),
+      task('cycle-2', { title: '循环2', parentId: 'chapter-1', isCompleted: false }),
+    ];
+
+    const result = filterTaskTree(flat, { showCompleted: true });
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0].id).toBe('chapter-1');
+    expect(result.tasks[0].children).toHaveLength(2);
+    expect(result.tasks[0].children?.map((c) => c.id)).toEqual(['cycle-1', 'cycle-2']);
+  });
+
+  it('handles cycle dependencies defensively and avoids infinite recursion', () => {
+    const cyclic = [task('task-a', { parentId: 'task-b' }), task('task-b', { parentId: 'task-a' })];
+    const result = filterTaskTree(cyclic, { showCompleted: true });
+    expect(result.tasks.length).toBeGreaterThan(0);
+    // Neither should cause a stack overflow
+  });
 });
