@@ -53,7 +53,8 @@ export function detectSettingsChangedDomains(
     prev.accentColor !== next.accentColor ||
     prev.fontProfile !== next.fontProfile ||
     prev.focusColor !== next.focusColor ||
-    prev.timerStyle !== next.timerStyle
+    prev.timerStyle !== next.timerStyle ||
+    JSON.stringify(prev.taskWorkspaceAppearance) !== JSON.stringify(next.taskWorkspaceAppearance)
   ) {
     domains.push('theme');
   }

@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Project, Task, TaskRecurrenceDefinition } from '@shared/types';
+import {
+  resolveTaskWorkspaceAppearance,
+  type Project,
+  type Task,
+  type TaskRecurrenceDefinition,
+  type TaskWorkspaceAppearance,
+} from '@shared/types';
 import { assembleTaskTree } from '@shared/taskTreeUtils';
 import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
@@ -115,6 +121,17 @@ function getAudioCtx(): AudioContext | null {
   return audioCtx;
 }
 
+let audioWarmed = false;
+
+// new AudioContext() 首次创建实测约 110ms 主线程长任务。若放在勾选那一刻，它会正好砸在
+// 勾选动画的帧上，用户看到的就是「第一下打勾卡一下」。所以提前到空闲/首次指针悬停时预热，
+// 之后每次勾选只需要 createOscillator。context 本身仍是全模块单例。
+function warmUpAudio(): void {
+  if (audioWarmed || typeof window === 'undefined') return;
+  audioWarmed = true;
+  getAudioCtx();
+}
+
 function playCheckChime(isDone: boolean, soundEnabled: boolean) {
   if (!soundEnabled) return;
   try {
@@ -150,46 +167,77 @@ function playCheckChime(isDone: boolean, soundEnabled: boolean) {
   } catch {}
 }
 
-function fireConfettiSparks(x: number, y: number) {
-  if (typeof document === 'undefined') return;
-  const count = 12;
+const CONFETTI_SPARK_COUNT = 12;
+
+type ConfettiPool = {
+  layer: HTMLDivElement;
+  sparks: HTMLDivElement[];
+  animations: Animation[];
+};
+
+let confettiPool: ConfettiPool | null = null;
+
+function readConfettiColors(): string[] {
   const colorStr =
     window.getComputedStyle(document.documentElement).getPropertyValue('--confetti-colors') || '';
   const cleaned = colorStr.replace(/["']/g, '').trim();
-  const colors = cleaned ? cleaned.split(',') : ['#2563EB', '#3B82F6', '#60A5FA', '#93C5FD'];
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement('div');
+  return cleaned ? cleaned.split(',') : ['#2563EB', '#3B82F6', '#60A5FA', '#93C5FD'];
+}
+
+// 粒子节点池：只在首次勾选时向 body 挂一个 contain:strict 的固定层和 12 个常驻粒子，
+// 之后每次勾选只改内联样式并重启动画，不再 append/remove。
+// 原来每次勾选都要往 body 插 12 个 position:fixed 节点、380ms 后再 removeChild：
+// 实测 removeChild 自耗 111ms，勾选批次主线程多出 0.8s。
+function getConfettiPool(): ConfettiPool | null {
+  if (typeof document === 'undefined') return null;
+  if (confettiPool && confettiPool.layer.isConnected) return confettiPool;
+  const layer = document.createElement('div');
+  layer.className = 'confetti-layer';
+  const sparks: HTMLDivElement[] = [];
+  for (let i = 0; i < CONFETTI_SPARK_COUNT; i += 1) {
+    const spark = document.createElement('div');
+    spark.className = 'confetti-spark';
+    layer.appendChild(spark);
+    sparks.push(spark);
+  }
+  document.body.appendChild(layer);
+  confettiPool = { layer, sparks, animations: [] };
+  return confettiPool;
+}
+
+function fireConfettiSparks(x: number, y: number): void {
+  if (typeof document === 'undefined') return;
+  const pool = getConfettiPool();
+  if (!pool) return;
+  for (const animation of pool.animations) animation.cancel();
+  pool.animations.length = 0;
+  const colors = readConfettiColors();
+  const count = pool.sparks.length;
+  for (let i = 0; i < count; i += 1) {
+    const p = pool.sparks[i];
     const size = 3.5 + Math.random() * 3.5;
     const angle = (i / count) * 2 * Math.PI + (Math.random() - 0.5) * 0.4;
     const dist = 24 + Math.random() * 26;
     const tx = Math.cos(angle) * dist;
     const ty = Math.sin(angle) * dist;
-
-    p.style.position = 'fixed';
     p.style.left = `${x}px`;
     p.style.top = `${y}px`;
     p.style.width = `${size}px`;
     p.style.height = `${size}px`;
-    p.style.borderRadius = '50%';
     p.style.backgroundColor = colors[i % colors.length];
-    p.style.pointerEvents = 'none';
-    p.style.zIndex = '9999';
-    document.body.appendChild(p);
-
-    p.animate(
-      [
-        { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-        { transform: `translate(${tx}px, ${ty}px) scale(0)`, opacity: 0 },
-      ],
-      {
-        duration: 360,
-        easing: 'cubic-bezier(0, .7, .1, 1)',
-        fill: 'forwards',
-      },
+    pool.animations.push(
+      p.animate(
+        [
+          { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+          { transform: `translate(${tx}px, ${ty}px) scale(0)`, opacity: 0 },
+        ],
+        {
+          duration: 360,
+          easing: 'cubic-bezier(0, .7, .1, 1)',
+          fill: 'forwards',
+        },
+      ),
     );
-    setTimeout(() => {
-      if (p.parentNode) p.parentNode.removeChild(p);
-    }, 380);
   }
 }
 
@@ -274,7 +322,7 @@ interface SchedulerDraft {
 }
 
 export function TaskWorkspace() {
-  const { setSnapshot, addToast } = useStore();
+  const { setSnapshot, addToast, settings } = useStore();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<
@@ -287,6 +335,10 @@ export function TaskWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [quickInput, setQuickInput] = useState('');
+  // 勾选弹跳 / 恢复闪烁：动画类只由这两个 state 挂上，animationend 时摘掉。
+  const [springPopTaskId, setSpringPopTaskId] = useState<string | null>(null);
+  const [springPopSubtaskId, setSpringPopSubtaskId] = useState<string | null>(null);
+  const [restoredTaskId, setRestoredTaskId] = useState<string | null>(null);
   const [customSmartViews, setCustomSmartViews] = useState<CustomSmartView[]>(() => {
     try {
       const saved = localStorage.getItem('focuslink_custom_smart_views');
@@ -296,14 +348,24 @@ export function TaskWorkspace() {
     }
   });
 
-  // App Theme & Palette & Sound state
-  const [palette, setPalette] = useState<'linear' | 'rose' | 'contrast'>(() => {
-    try {
-      const saved = localStorage.getItem('focuslink_task_pal');
-      if (saved === 'rose' || saved === 'contrast' || saved === 'linear') return saved;
-    } catch {}
-    return 'linear';
-  });
+  // 任务页外观来自设置：与全局主题解耦，重启后保持。
+  const taskAppearance = resolveTaskWorkspaceAppearance(settings?.taskWorkspaceAppearance);
+  const updateTaskAppearance = useCallback(
+    async (patch: Partial<TaskWorkspaceAppearance>) => {
+      const next = { ...taskAppearance, ...patch };
+      const current = useStore.getState().settings;
+      if (current) {
+        useStore.getState().setSettings({ ...current, taskWorkspaceAppearance: next });
+      }
+      try {
+        const saved = await window.focuslink.settings.set({ taskWorkspaceAppearance: next });
+        useStore.getState().setSettings(saved);
+      } catch {
+        addToast('任务界面外观保存失败，请重试', 'error');
+      }
+    },
+    [taskAppearance, addToast],
+  );
 
   const [sound, setSound] = useState<boolean>(() => {
     try {
@@ -321,11 +383,6 @@ export function TaskWorkspace() {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-pal', palette);
-    localStorage.setItem('focuslink_task_pal', palette);
-  }, [palette]);
-
-  useEffect(() => {
     document.documentElement.setAttribute('data-theme', themeMode);
     document.documentElement.classList.toggle('dark', themeMode === 'dark');
     document.documentElement.classList.toggle('light', themeMode === 'light');
@@ -333,6 +390,33 @@ export function TaskWorkspace() {
 
   useEffect(() => {
     localStorage.setItem('focuslink_task_sound', String(sound));
+  }, [sound]);
+
+  // 首次空闲（或首次指针悬停/键盘操作）就预热 AudioContext，避免首次勾选砸出 110ms 长任务。
+  useEffect(() => {
+    if (!sound) return undefined;
+    const warm = () => warmUpAudio();
+    const idleWindow = window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const idleId =
+      typeof idleWindow.requestIdleCallback === 'function'
+        ? idleWindow.requestIdleCallback(warm, { timeout: 2500 })
+        : window.setTimeout(warm, 1200);
+    window.addEventListener('pointerover', warm, { capture: true, once: true });
+    window.addEventListener('pointerdown', warm, { capture: true, once: true });
+    window.addEventListener('keydown', warm, { capture: true, once: true });
+    return () => {
+      if (typeof idleWindow.requestIdleCallback === 'function' && idleWindow.cancelIdleCallback) {
+        idleWindow.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId);
+      }
+      window.removeEventListener('pointerover', warm, { capture: true });
+      window.removeEventListener('pointerdown', warm, { capture: true });
+      window.removeEventListener('keydown', warm, { capture: true });
+    };
   }, [sound]);
 
   // Inline editing state
@@ -618,6 +702,10 @@ export function TaskWorkspace() {
     const nextDone = !task.isCompleted;
     playCheckChime(nextDone, sound);
 
+    // 勾选弹跳 / 恢复闪烁：只挂类，摘类交给 onAnimationEnd（不用固定 setTimeout）。
+    if (nextDone) setSpringPopTaskId(task.id);
+    else setRestoredTaskId(task.id);
+
     // Optimistic UI update
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, isCompleted: nextDone } : t)));
 
@@ -693,6 +781,7 @@ export function TaskWorkspace() {
   const handleToggleSubtask = async (subtask: Task, parentTask: Task) => {
     const nextDone = !subtask.isCompleted;
     playCheckChime(nextDone, sound);
+    if (nextDone) setSpringPopSubtaskId(subtask.id);
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== parentTask.id) return t;
@@ -1053,7 +1142,9 @@ export function TaskWorkspace() {
   return (
     <div
       className={`task-workspace-root app-window ${themeMode === 'dark' ? 'dark' : ''}`}
-      data-pal={palette}
+      data-pal={taskAppearance.palette}
+      data-task-font={taskAppearance.font}
+      data-density={taskAppearance.density}
       data-theme={themeMode}
     >
       {/* 标题栏 */}
@@ -1261,7 +1352,7 @@ export function TaskWorkspace() {
             <div className="list-title-group">
               <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                 {activeIcon}
-                <h2 style={{ fontSize: '16px', fontWeight: 600 }}>{activeTitle}</h2>
+                <h2>{activeTitle}</h2>
               </div>
               <span className="list-stats-text">
                 {viewId === 'done'
@@ -1561,10 +1652,15 @@ export function TaskWorkspace() {
                     return (
                       <div key={sub.id} className="subtask-item">
                         <button
-                          className="subtask-check"
+                          className={`subtask-check ${springPopSubtaskId === sub.id ? 'spring-pop' : ''}`}
                           role="checkbox"
                           aria-checked={sub.isCompleted}
                           onClick={() => handleToggleSubtask(sub, currentTask)}
+                          onAnimationEnd={(e) => {
+                            if (e.animationName === 'checkPopPulse') {
+                              setSpringPopSubtaskId((cur) => (cur === sub.id ? null : cur));
+                            }
+                          }}
                         >
                           <span dangerouslySetInnerHTML={{ __html: ICONS.checkMark }} />
                         </button>
@@ -2705,20 +2801,20 @@ export function TaskWorkspace() {
         <span className="hud-label">色彩基调</span>
         <div className="hud-btn-group">
           <button
-            className={`hud-btn ${palette === 'linear' ? 'active' : ''}`}
-            onClick={() => setPalette('linear')}
+            className={`hud-btn ${taskAppearance.palette === 'linear' ? 'active' : ''}`}
+            onClick={() => void updateTaskAppearance({ palette: 'linear' })}
           >
             Linear 纯净白
           </button>
           <button
-            className={`hud-btn ${palette === 'rose' ? 'active' : ''}`}
-            onClick={() => setPalette('rose')}
+            className={`hud-btn ${taskAppearance.palette === 'rose' ? 'active' : ''}`}
+            onClick={() => void updateTaskAppearance({ palette: 'rose' })}
           >
             高级粉调高对比
           </button>
           <button
-            className={`hud-btn ${palette === 'contrast' ? 'active' : ''}`}
-            onClick={() => setPalette('contrast')}
+            className={`hud-btn ${taskAppearance.palette === 'contrast' ? 'active' : ''}`}
+            onClick={() => void updateTaskAppearance({ palette: 'contrast' })}
           >
             锐利黑白对比
           </button>
@@ -2748,9 +2844,14 @@ export function TaskWorkspace() {
     return (
       <div
         key={t.id}
-        className={`task-entry ${t.isCompleted ? 'is-done' : ''}`}
+        className={`task-entry ${t.isCompleted ? 'is-done' : ''} ${restoredTaskId === t.id ? 'just-restored' : ''}`}
         data-task-id={t.id}
         aria-selected={isSelected}
+        onAnimationEnd={(e) => {
+          if (e.animationName === 'restoreFlash') {
+            setRestoredTaskId((cur) => (cur === t.id ? null : cur));
+          }
+        }}
         onClick={() => {
           setSelectedTaskId(t.id);
         }}
@@ -2767,11 +2868,16 @@ export function TaskWorkspace() {
       >
         {/* 打勾圆圈 */}
         <button
-          className="task-check-circle"
+          className={`task-check-circle ${springPopTaskId === t.id ? 'spring-pop' : ''}`}
           role="checkbox"
           aria-checked={t.isCompleted}
           title={t.isCompleted ? '恢复为未完成' : '标记为已完成'}
           onClick={(e) => handleToggleTaskDone(t, e)}
+          onAnimationEnd={(e) => {
+            if (e.animationName === 'checkPopPulse') {
+              setSpringPopTaskId((cur) => (cur === t.id ? null : cur));
+            }
+          }}
         >
           <span dangerouslySetInnerHTML={{ __html: ICONS.checkMark }} />
         </button>

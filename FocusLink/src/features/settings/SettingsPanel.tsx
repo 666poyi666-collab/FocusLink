@@ -7,7 +7,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/store';
 import { ipcErrorMessage } from '../../app/ipcError';
-import type { AppSettings } from '@shared/types';
+import {
+  resolveTaskWorkspaceAppearance,
+  type AppSettings,
+  type TaskWorkspaceAppearance,
+} from '@shared/types';
 import type {
   DeviceSyncManagedDevice,
   DeviceSyncStatus,
@@ -75,6 +79,15 @@ const FOCUS_COLOR_OPTIONS = [
   { id: 'amber', label: '琥珀', color: '#bb7718' },
   { id: 'graphite', label: '石墨', color: '#434c58' },
 ] as const;
+
+const TASK_WORKSPACE_PALETTE_OPTIONS: ReadonlyArray<{
+  id: TaskWorkspaceAppearance['palette'];
+  label: string;
+}> = [
+  { id: 'linear', label: '纯净白 · 蓝' },
+  { id: 'rose', label: '高级粉 · 高对比' },
+  { id: 'contrast', label: '锐利黑白' },
+];
 
 const FONT_PROFILE_OPTIONS = [
   {
@@ -589,6 +602,12 @@ export function SettingsPanel() {
     }
   };
 
+  // 任务页外观：只写任务页分支，整对象提交避免乐观合并丢字段。
+  const taskAppearance = resolveTaskWorkspaceAppearance(settings.taskWorkspaceAppearance);
+  const updateTaskAppearance = (patch: Partial<TaskWorkspaceAppearance>) => {
+    void update({ taskWorkspaceAppearance: { ...taskAppearance, ...patch } });
+  };
+
   const updateDebounced = (partial: Partial<AppSettings>) => {
     const current = useStore.getState().settings ?? settings;
     const optimistic = { ...current, ...partial };
@@ -835,6 +854,81 @@ export function SettingsPanel() {
               <span className="interface">操作 · 当前强调色</span>
               <span className="focus">专注 · 当前强调色</span>
               <span className="pause">暂停 · 红</span>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'task-workspace-appearance',
+      tab: 'appearance',
+      title: '任务界面',
+      desc: '只作用于任务页，与全局主题和全局界面字体解耦；切换立即生效并在重启后保持。',
+      keywords:
+        '任务页 任务界面 外观 调色板 配色 纯净白 高级粉 锐利黑白 衬线 无衬线 密度 紧凑 标准 宽松 task workspace palette font density',
+      render: () => (
+        <div className="settings-visual-groups">
+          <div className="settings-choice-group settings-choice-group-inline">
+            <div className="settings-choice-heading">
+              <strong>调色板</strong>
+              <span>只改任务工作台配色，全局主题不受影响。</span>
+            </div>
+            <div className="settings-theme-choices" aria-label="任务页调色板">
+              {TASK_WORKSPACE_PALETTE_OPTIONS.map((option) => (
+                <ChoiceBtn
+                  key={option.id}
+                  active={taskAppearance.palette === option.id}
+                  onClick={() => updateTaskAppearance({ palette: option.id })}
+                >
+                  {option.label}
+                </ChoiceBtn>
+              ))}
+            </div>
+          </div>
+          <div className="settings-choice-group settings-choice-group-inline">
+            <div className="settings-choice-heading">
+              <strong>任务页字体</strong>
+              <span>只影响任务页正文；全局「界面字体」保持不变。</span>
+            </div>
+            <div className="settings-theme-choices" aria-label="任务页字体">
+              <ChoiceBtn
+                active={taskAppearance.font === 'sans'}
+                onClick={() => updateTaskAppearance({ font: 'sans' })}
+              >
+                无衬线
+              </ChoiceBtn>
+              <ChoiceBtn
+                active={taskAppearance.font === 'serif'}
+                onClick={() => updateTaskAppearance({ font: 'serif' })}
+              >
+                衬线
+              </ChoiceBtn>
+            </div>
+          </div>
+          <div className="settings-choice-group settings-choice-group-inline">
+            <div className="settings-choice-heading">
+              <strong>信息密度</strong>
+              <span>任务行高与左右留白，只作用于任务页。</span>
+            </div>
+            <div className="settings-theme-choices" aria-label="任务页信息密度">
+              <ChoiceBtn
+                active={taskAppearance.density === 'compact'}
+                onClick={() => updateTaskAppearance({ density: 'compact' })}
+              >
+                紧凑
+              </ChoiceBtn>
+              <ChoiceBtn
+                active={taskAppearance.density === 'default'}
+                onClick={() => updateTaskAppearance({ density: 'default' })}
+              >
+                标准
+              </ChoiceBtn>
+              <ChoiceBtn
+                active={taskAppearance.density === 'relaxed'}
+                onClick={() => updateTaskAppearance({ density: 'relaxed' })}
+              >
+                宽松
+              </ChoiceBtn>
             </div>
           </div>
         </div>

@@ -298,6 +298,49 @@ export interface FocusRecord {
   note?: string | null;
 }
 
+/** 任务页专属外观：与全局主题解耦，只作用于任务工作台。 */
+export const TASK_WORKSPACE_PALETTES = ['linear', 'rose', 'contrast'] as const;
+export const TASK_WORKSPACE_FONTS = ['sans', 'serif'] as const;
+export const TASK_WORKSPACE_DENSITIES = ['compact', 'default', 'relaxed'] as const;
+
+export type TaskWorkspacePalette = (typeof TASK_WORKSPACE_PALETTES)[number];
+export type TaskWorkspaceFont = (typeof TASK_WORKSPACE_FONTS)[number];
+export type TaskWorkspaceDensity = (typeof TASK_WORKSPACE_DENSITIES)[number];
+
+export interface TaskWorkspaceAppearance {
+  /** 任务页调色板：linear 纯净白/蓝、rose 高级粉、contrast 锐利黑白。 */
+  palette: TaskWorkspacePalette;
+  /** 任务页专属字体；与全局 fontProfile 八套界面字体互不影响。 */
+  font: TaskWorkspaceFont;
+  /** 任务页信息密度。 */
+  density: TaskWorkspaceDensity;
+}
+
+export const DEFAULT_TASK_WORKSPACE_APPEARANCE: TaskWorkspaceAppearance = {
+  palette: 'linear',
+  font: 'sans',
+  density: 'default',
+};
+
+/**
+ * 任务页外观兼容归一：缺字段补默认，非法值回落默认；null / 非对象输入也安全。
+ * 只归一任务页分支，不触碰任何全局主题字段。
+ */
+export function resolveTaskWorkspaceAppearance(value: unknown): TaskWorkspaceAppearance {
+  const source =
+    value && typeof value === 'object' ? (value as Partial<Record<string, unknown>>) : {};
+  const palette = TASK_WORKSPACE_PALETTES.includes(source.palette as TaskWorkspacePalette)
+    ? (source.palette as TaskWorkspacePalette)
+    : DEFAULT_TASK_WORKSPACE_APPEARANCE.palette;
+  const font = TASK_WORKSPACE_FONTS.includes(source.font as TaskWorkspaceFont)
+    ? (source.font as TaskWorkspaceFont)
+    : DEFAULT_TASK_WORKSPACE_APPEARANCE.font;
+  const density = TASK_WORKSPACE_DENSITIES.includes(source.density as TaskWorkspaceDensity)
+    ? (source.density as TaskWorkspaceDensity)
+    : DEFAULT_TASK_WORKSPACE_APPEARANCE.density;
+  return { palette, font, density };
+}
+
 /** 应用设置 */
 export interface AppSettings {
   hotkeys: {
@@ -339,6 +382,8 @@ export interface AppSettings {
   miniWindow: MiniWindowConfig;
   /** 主界面布局配置 */
   layout: LayoutConfig;
+  /** 任务页专属外观；与全局 theme / fontProfile 解耦，重启后保持。 */
+  taskWorkspaceAppearance: TaskWorkspaceAppearance;
   ticktick: {
     connected: boolean;
     clientId: string;
@@ -497,6 +542,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   layout: {
     leftPaneWidth: null,
   },
+  taskWorkspaceAppearance: { ...DEFAULT_TASK_WORKSPACE_APPEARANCE },
   ticktick: {
     connected: false,
     clientId: '',

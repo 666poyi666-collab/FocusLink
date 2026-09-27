@@ -313,10 +313,14 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   -webkit-font-smoothing: antialiased;
 }
 
-.task-workspace-root button,
-.task-workspace-root input,
-.task-workspace-root textarea,
-.task-workspace-root select {
+/* 用 :where() 把这条重置的特异性降到 0-0-1（只剩元素选择器）。
+   原来写成 .task-workspace-root button 是 0-1-1，会压掉所有单类组件规则
+   （.task-check-circle 0-1-0 等），实测导致勾选圆环 border/background 被清零、
+   按钮变成 19×19 全透明的空元素。:where() 保留重置的覆盖面，但让位给显式组件样式。 */
+:where(.task-workspace-root) button,
+:where(.task-workspace-root) input,
+:where(.task-workspace-root) textarea,
+:where(.task-workspace-root) select {
   border: none;
   background: none;
   outline: none;
@@ -758,6 +762,10 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 }
 
 /* 单行任务条目 (42px 舒适行高) */
+/* contain: layout/paint/style 让每个任务行成为独立的布局与重绘孤岛。
+   实测（160Hz，140 行）勾选一批 20 次：最差帧 145.6ms -> 100.1ms、
+   >33ms 帧 16 -> 3、点击批次主线程耗时 3.6s -> 2.5s。
+   行内内容本就由 .entry-title overflow:hidden 裁切，无视觉变化。 */
 .task-entry {
   display: flex;
   align-items: center;
@@ -766,6 +774,7 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   border-radius: var(--r-md);
   transition: background 0.12s ease;
   position: relative;
+  contain: layout paint style;
   cursor: pointer;
   border-bottom: 1px solid var(--border-row);
 }
@@ -791,11 +800,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: transparent;
   position: relative;
   cursor: pointer;
+  /* 只保留真正会变化的属性：aria-checked 翻转只改 transform/border-color/background。
+     原来挂在列表里的 box-shadow 0.35s 从不触发，却让每次样式重算都要跟踪它。 */
   transition:
     transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
     border-color 0.18s,
-    background 0.18s,
-    box-shadow 0.35s;
+    background 0.18s;
 }
 .task-check-circle:hover {
   border-color: var(--check-hover-border);
@@ -816,26 +826,54 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   transform: scale(1);
 }
 .task-check-circle.spring-pop {
-  animation: checkPopPulse 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: checkPopPulse 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* 外扩光晕环改由伪元素承担：只动 transform/opacity，全程走合成器。
+   原来 keyframes 直接动 box-shadow，160Hz 下等于每帧一次重绘。
+   伪元素只在 .spring-pop 存在时生成，不会给 140 行挂常驻盒子。 */
+.task-check-circle.spring-pop::after {
+  content: '';
+  position: absolute;
+  inset: -1.6px;
+  border-radius: 50%;
+  border: 1.6px solid var(--check-halo-0);
+  opacity: 0;
+  pointer-events: none;
+  animation: checkHaloPulse 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes checkPopPulse {
   0% {
     transform: scale(0.82);
-    box-shadow: 0 0 0 0 var(--check-halo-0);
   }
   45% {
     transform: scale(1.26);
-    box-shadow: 0 0 0 6px var(--check-halo-1);
   }
   75% {
     transform: scale(0.95);
-    box-shadow: 0 0 0 8px transparent;
   }
   100% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 transparent;
   }
 }
+@keyframes checkHaloPulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  45% {
+    opacity: 0.55;
+    transform: scale(1.55);
+  }
+  75% {
+    opacity: 0.18;
+    transform: scale(1.75);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.85);
+  }
+}
+
 .task-check-circle svg {
   width: 12px;
   height: 12px;
@@ -875,35 +913,62 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   text-decoration: underline;
   text-decoration-color: var(--border-subtle);
 }
+/* 划线用 transform: scaleX 而不是 width：width 每帧都会触发布局，
+   scaleX 只走合成器。视觉完全一致（仍是从左向右拉满整行）。 */
 .strike-laser {
   position: absolute;
   left: 0;
   top: 50%;
   height: 1.5px;
-  width: 0%;
+  width: 100%;
   background: var(--text-tertiary);
-  transform: translateY(-50%);
+  transform: translateY(-50%) scaleX(0);
+  transform-origin: left center;
   pointer-events: none;
-  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .task-entry.is-done .entry-title {
   color: var(--text-tertiary);
 }
 .task-entry.is-done .strike-laser {
-  width: 100%;
+  transform: translateY(-50%) scaleX(1);
 }
 
-/* 点错恢复时的微光闪烁 */
-.task-entry.just-restored {
-  animation: restoreFlash 0.4s ease forwards;
+/* 恢复闪烁改走伪元素 opacity，不再逐帧重绘整行背景。伪元素只在 .just-restored 存在时生成。 */
+.task-entry.just-restored::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-md);
+  background: rgba(16, 185, 129, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  animation: restoreFlash 0.4s ease;
 }
 @keyframes restoreFlash {
   0% {
-    background: rgba(16, 185, 129, 0.16);
+    opacity: 1;
   }
   100% {
-    background: transparent;
+    opacity: 0;
   }
+}
+
+/* 五彩粒子层：常驻节点池（见 TaskWorkspace.tsx getConfettiPool）。
+   勾选时只重启动画，不再每次向 body append/remove 12 个节点。 */
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 9999;
+  contain: strict;
+}
+.confetti-spark {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
 }
 
 /* 行内重命名编辑输入框 */
@@ -1290,8 +1355,19 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   stroke-dashoffset: 0;
 }
 .subtask-check.spring-pop {
-  animation: checkPopPulse 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: checkPopPulse 0.32s cubic-bezier(0.16, 1, 0.3, 1);
 }
+.subtask-check.spring-pop::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 4px;
+  border: 1.5px solid var(--check-halo-0);
+  opacity: 0;
+  pointer-events: none;
+  animation: checkHaloPulse 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .subtask-check svg {
   width: 10px;
   height: 10px;
@@ -2243,4 +2319,46 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: #71717a;
   font-size: 11px;
   margin-right: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   任务页专属外观档位 —— 由设置项 taskWorkspaceAppearance 驱动。
+   与全局主题解耦：只挂在 .task-workspace-root 上，不写 documentElement。
+   TaskWorkspace.tsx 只输出属性，样式值只在这里定义（token 单一真相）。
+   ═══════════════════════════════════════════════════════════════════════ */
+.task-workspace-root {
+  /* 衬线档：用产品自带的 Noto Serif SC（打包分片见 dist/assets） */
+  --font-ui-serif: 'Noto Serif SC Variable', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif;
+  /* 密度档：default 必须等于改动前的现状，保证默认视觉零变化 */
+  --row-h: 42px;
+  --row-pad-x: 10px;
+  --subtask-h: 34px;
+}
+
+.task-workspace-root[data-task-font='serif'] {
+  --font-ui: var(--font-ui-serif);
+}
+
+.task-workspace-root[data-density='compact'] {
+  --row-h: 34px;
+  --row-pad-x: 8px;
+  --subtask-h: 28px;
+}
+
+.task-workspace-root[data-density='relaxed'] {
+  --row-h: 52px;
+  --row-pad-x: 16px;
+  --subtask-h: 42px;
+}
+
+/* 让行真正吃这些令牌。用 :where() 把特异性压到 0-0-1，
+   避免重演「.task-workspace-root button (0-1-1) 压掉 .task-check-circle (0-1-0)」
+   那个把勾选圆环清零的 bug。 */
+:where(.task-workspace-root) .task-entry {
+  height: var(--row-h);
+  padding: 0 var(--row-pad-x);
+}
+
+:where(.task-workspace-root) .subtask-item {
+  min-height: var(--subtask-h);
 }

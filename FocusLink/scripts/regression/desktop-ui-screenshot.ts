@@ -22,27 +22,37 @@ import { FocusTimerController } from '../../electron/timer/focusTimerController.
 import { registerIpc } from '../../electron/ipc.js';
 import { MAIN_WINDOW_DEFAULT_SIZE } from '@shared/mainWindowLayout';
 
+// 150% 缩放下 1px 会被算成 0.667px，截图与边框断言必须钉死 dsf=1，
+// 否则会造出一堆假边框差异（diff-auditor 踩过）。
+app.commandLine.appendSwitch('force-device-scale-factor', '1');
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
 const outputDir = path.resolve(projectRoot, 'test-data', 'desktop-ui-screenshots');
 
 const PAGES = [
   { id: 'timer', label: '专注', anchor: '.timer-dial' },
-  { id: 'tasks', label: '任务', anchor: '.task-workspace-page' },
+  { id: 'tasks', label: '任务', anchor: '.task-workspace-root' },
   { id: 'history', label: '统计', anchor: '.history-page' },
   { id: 'settings', label: '设置', anchor: '.settings-page' },
 ] as const;
 
+// 单实例锁按 userData 路径区分：必须先切到隔离目录再抢锁。
+// 否则用户桌面上正在运行的 FocusLink 会让本 harness 拿不到锁并静默 exit 0，
+// 看起来像「通过」，实际上一个断言都没跑。
+configureIsolatedUserData('desktop-ui-screenshot', true);
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
+  console.error(
+    '[ui] another isolated UI regression instance owns the lock; refusing to report a pass',
+  );
   app.quit();
-  process.exit(0);
+  process.exit(2);
 }
 
 app
   .whenReady()
   .then(async () => {
-    configureIsolatedUserData('desktop-ui-screenshot', true);
     fs.mkdirSync(outputDir, { recursive: true });
     initDatabase();
 
@@ -152,30 +162,53 @@ app
     }
     console.log('[ui] section heading:', JSON.stringify(heading));
 
-    // font-mono 必须真的落到等宽字体上，否则 CLI 命令与路径全用界面字体显示。
+    // 设置面已按 FL-REQ-20260927-DIDA-L1 退役滴答/CLI/OAuth：
+    // 这里断言「设置面不再提供任何第三方任务适配器」，与 tests/settingsAccountUi.test.ts 的新契约一致。
     await mainWindow.webContents.executeJavaScript(`(() => {
       const groups = [...document.querySelectorAll('.settings-nav-list .settings-tab')];
       groups[3]?.click();
     })()`);
     await sleep(320);
-    const providerReveal = await mainWindow.webContents.executeJavaScript(`(() => {
-      const external = document.querySelector('.settings-external-task-disclosure');
-      if (!(external instanceof HTMLDetailsElement)) return false;
-      external.open = true;
-      const provider = [...external.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('滴答 CLI')
-      );
-      provider?.click();
-      return Boolean(provider);
+    const adapterAudit = await mainWindow.webContents.executeJavaScript(`(() => {
+      const text = document.querySelector('.settings-page')?.textContent ?? document.body.textContent ?? '';
+      const forbiddenText = ['外部任务导入', '滴答', 'TickTick', '任务来源'].filter((needle) => text.includes(needle));
+      const forbiddenNodes = [
+        '.settings-external-task-disclosure',
+        '.settings-provider-advanced',
+        '[data-settings-section="dida-connection"]',
+        '[data-settings-section="dida-sync"]',
+        '[data-settings-section="dida-oauth"]',
+      ].filter((selector) => document.querySelector(selector));
+      return {
+        forbiddenText,
+        forbiddenNodes,
+        tomatodoPresent: text.includes('番茄'),
+        tabs: [...document.querySelectorAll('.settings-nav-list .settings-tab')].map(
+          (tab) => tab.textContent?.trim() ?? '',
+        ),
+      };
     })()`);
-    if (!providerReveal) throw new Error('Explicit external task import control is unavailable');
-    await sleep(320);
+    if (!adapterAudit.tomatodoPresent) {
+      throw new Error(
+        `TomaToDo section disappeared from settings: ${JSON.stringify(adapterAudit)}`,
+      );
+    }
+    if (adapterAudit.forbiddenText.length > 0 || adapterAudit.forbiddenNodes.length > 0) {
+      throw new Error(
+        `Retired third-party task adapters are still visible: ${JSON.stringify(adapterAudit)}`,
+      );
+    }
+    console.log('[ui] no third-party task adapter in settings:', JSON.stringify(adapterAudit));
+
+    // TomaToDo 高级区的数据库路径输入框仍是等宽字体，用它验证 font-mono 真的解析。
     await mainWindow.webContents.executeJavaScript(`
-      document.querySelector('.settings-provider-advanced')?.setAttribute('open', '')
+      document.querySelector('.settings-tomatodo-advanced')?.setAttribute('open', '')
     `);
     await sleep(220);
     const monoFamily = await mainWindow.webContents.executeJavaScript(`(() => {
-      const el = document.querySelector('.settings-provider-advanced .font-mono');
+      const el =
+        document.querySelector('.settings-tomatodo-advanced .font-mono') ??
+        document.querySelector('.settings-page .font-mono');
       return el ? getComputedStyle(el).fontFamily : null;
     })()`);
     if (!monoFamily || !/mono/i.test(String(monoFamily))) {
@@ -212,40 +245,31 @@ app
       throw new Error('Could not seed independent FocusLink task projects');
     }
 
-    // ── 子任务折叠：对真实滴答数据验证 ──────────────────────
-    // 滴答的子任务有两种形态：任务内嵌的 checklist items，以及带 parentId、
-    // 与父任务平级返回的独立任务。后者曾在解析阶段丢掉 parentId，于是既没有
-    // 折叠箭头、又和主任务并排列在清单里。单元测试用的是构造数据，这里用本机
-    // 真实清单再确认一次。没有 CLI 的机器上跳过，不让视觉回归因环境变红。
+    // ── 任务页真实锚点与关键控件 ──────────────────────────────
+    // 旧门禁用的是已不存在的 `.task-workbench-*` 类名，子任务折叠永远 skipped，
+    // 等于对任务页没有任何覆盖。这里改用真实类名，并钉住「勾选圆环必须有可见描边」——
+    // 正是那个被 0-1-1 reset 通杀后静默消失的控件。
     mainWindow.webContents.send('navigate', 'tasks');
-    await waitForSelector(mainWindow, '.app-stage');
+    await waitForSelector(mainWindow, '.task-workspace-root');
     await settle(mainWindow, 'tasks');
-    const collapse = await mainWindow.webContents.executeJavaScript(`(() => {
-      const toggles = [...document.querySelectorAll('.task-workbench-chevron')];
-      if (toggles.length === 0) return { skipped: true };
-      const rowsBefore = document.querySelectorAll('.task-workbench-row').length;
-      const expanded = toggles.filter((t) => t.classList.contains('expanded')).length;
-      toggles[0].click();
-      return { skipped: false, parents: toggles.length, rowsBefore, expanded };
+    const taskPage = await mainWindow.webContents.executeJavaScript(`(() => {
+      const circle = document.querySelector('.task-check-circle');
+      const style = circle ? getComputedStyle(circle) : null;
+      return {
+        rows: document.querySelectorAll('.task-entry').length,
+        circles: document.querySelectorAll('.task-check-circle').length,
+        borderWidth: style ? style.borderTopWidth : null,
+        borderStyle: style ? style.borderTopStyle : null,
+      };
     })()`);
-    if (collapse.skipped) {
-      console.log('[ui] subtask collapse: skipped (no parent rows in this environment)');
-    } else {
-      await sleep(700);
-      const rowsAfter = await mainWindow.webContents.executeJavaScript(
-        `document.querySelectorAll('.task-workbench-row').length`,
-      );
-      if (rowsAfter === collapse.rowsBefore) {
-        throw new Error(
-          `Subtask toggle changed nothing: ${JSON.stringify({ ...collapse, rowsAfter })}`,
-        );
-      }
-      console.log(
-        `[ui] subtask collapse works: ${collapse.parents} parents, ` +
-          `${collapse.rowsBefore} → ${rowsAfter} rows`,
-      );
-      await capture('tasks-subtree-collapsed', mainWindow);
+    if (taskPage.rows < 1 || taskPage.circles < 1) {
+      throw new Error(`Task page did not render task rows: ${JSON.stringify(taskPage)}`);
     }
+    if (Number.parseFloat(String(taskPage.borderWidth)) <= 0 || taskPage.borderStyle === 'none') {
+      throw new Error(`Task check circle lost its visible ring: ${JSON.stringify(taskPage)}`);
+    }
+    console.log('[ui] task page check circle ring:', JSON.stringify(taskPage));
+    await capture('tasks-seeded', mainWindow);
 
     // ── 逐页截图（明 / 暗）+ 溢出检查 ────────────────────────
     for (const theme of ['light', 'dark'] as const) {
@@ -260,7 +284,7 @@ app
         await settle(mainWindow, page.id);
         if (page.id === 'tasks') {
           await mainWindow.webContents.executeJavaScript(`(() => {
-            const row = document.querySelector('.task-workbench-row');
+            const row = document.querySelector('.task-entry');
             if (row instanceof HTMLElement) row.click();
           })()`);
           await sleep(120);
@@ -315,14 +339,41 @@ app
         }
         await capture(`${theme}-${page.id}`, mainWindow);
         if (theme === 'light' && page.id === 'tasks') {
+          // 清单颜色编辑器：右键清单行 → 「更换图标与颜色」→ .iconpop。
+          // 旧门禁用的是已不存在的 `.task-project-edit`。
           const editorOpened = await mainWindow.webContents.executeJavaScript(`(() => {
-            const button = document.querySelector('.task-project-edit');
-            if (!(button instanceof HTMLButtonElement)) return false;
-            button.click();
+            const row = [...document.querySelectorAll('.sidebar .side-item')].find((item) =>
+              item.textContent?.includes('学习计划')
+            );
+            if (!(row instanceof HTMLElement)) return false;
+            const rect = row.getBoundingClientRect();
+            row.dispatchEvent(
+              new MouseEvent('contextmenu', {
+                bubbles: true,
+                cancelable: true,
+                clientX: rect.left + 8,
+                clientY: rect.top + 8,
+              })
+            );
             return true;
           })()`);
-          if (!editorOpened) throw new Error('Desktop project color editor is unavailable');
-          await sleep(120);
+          if (!editorOpened)
+            throw new Error('Desktop project row for the color editor is unavailable');
+          await sleep(160);
+          const pickerOpened = await mainWindow.webContents.executeJavaScript(`(() => {
+            const item = [...document.querySelectorAll('.ctx-menu.active .ctx-menu-item')].find(
+              (node) => node.textContent?.includes('更换图标与颜色')
+            );
+            if (!(item instanceof HTMLElement)) return false;
+            item.click();
+            return true;
+          })()`);
+          if (!pickerOpened) throw new Error('Desktop project color editor entry is unavailable');
+          await sleep(160);
+          const pickerVisible = await mainWindow.webContents.executeJavaScript(
+            `Boolean(document.querySelector('.iconpop.active'))`,
+          );
+          if (!pickerVisible) throw new Error('Desktop project color editor did not open');
           await capture('light-task-project-editor', mainWindow);
         }
       }

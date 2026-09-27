@@ -1,5 +1,100 @@
 # FocusLink 实施日志
 
+## 2026-09-28 · `FL-PERF-20260928-TASKS-CHECK`：任务页勾选卡顿实测归因与修复（先测后改）
+
+- **需求与背景**：用户反馈 PC 任务页「整体感觉有些卡顿」，但此前没有任何实测数字；b50b858 加入的勾选弹跳 / 激光划线 / 五彩粒子 / Web Audio 被怀疑是来源。本轮先建可复现测量台，再决定改什么。
+- **实测环境**：`npm run build` 后静态服务 `dist/` + `VITE_DEV_SERVER_URL` 起 Electron 43；每次启动前 `Remove-Item Env:ELECTRON_RUN_AS_NODE`；`--remote-debugging-port=<随机高位端口>` + 独立 `--user-data-dir=<临时目录>`（用户桌面正在运行的实例全程未被影响）；种子 140 条任务；CDP 注入 rAF 采样 + `PerformanceObserver(longtask)` + `Performance.getMetrics` + `Profiler`；勾选批次用 `Input.dispatchMouseEvent` 真实鼠标事件。**本机显示器 160Hz（空闲帧间隔 p50 = 6.2ms），一帧预算只有 6.2ms 而非 16.7ms。**
+- **主要瓶颈（逐个变量独立进程实测，11 组对比）**：
+  1. **`.task-entry` 完全没有 `contain`**（最大单点）。加 `contain: layout paint style` 后：最差帧 145.6→100.1ms、>33ms 帧 16→3、点击批次 TaskDuration 3.6→2.5s，且视觉零变化。
+  2. **首次勾选 110ms longtask = `new AudioContext()`**（关音效组 longtask 归零）。
+  3. **每次勾选向 `document.body` 插 12 个 `position:fixed` 节点、380ms 后再 `removeChild`**：Profiler 里 `removeChild` 自耗 111ms；抑制后 >33ms 帧 10–16→4、TaskDuration 3.3–3.6→2.8s。
+  4. `.strike-laser` 用 `width` 过渡（每帧触发布局，关掉后最差帧 145.6→109.2ms、longtask 197→113ms）；`checkPopPulse` 动 `box-shadow`（每帧重绘）。
+  5. 勾选动效整体（圆圈 border/bg、`check-path` stroke-dashoffset、`entry-title` color、划线）合计 TaskDuration 3.6→2.4s，分散在 4 处、无单一主导。
+- **另一项产品级 Bug（静默失效）**：`.task-check-circle.spring-pop` / `.subtask-check.spring-pop`（`checkPopPulse`）与 `.task-entry.just-restored`（`restoreFlash`）在 `TaskWorkspace.tsx` 里**从未被应用**（全文件搜不到 `spring-pop` / `just-restored`）。即 v1.3.9 宣称的「勾选弹跳回弹」「误触恢复闪烁」整整一个版本没有运行，用户反馈的「打勾效果可以更好」「点错恢复的效果需要优化」即源于此。已接上（`animationend` 摘类，不用固定 `setTimeout`）。
+- **修复**（3 个文件）：
+  - `src/styles/task-workbench.css`：`.task-entry` 加 `contain: layout paint style`；`.strike-laser` 由 `width` 过渡改 `transform: scaleX()`；`.task-check-circle` 过渡列表删掉从不触发的 `box-shadow 0.35s`；`checkPopPulse` 光晕环从 `box-shadow` 改伪元素 `transform/opacity`；`restoreFlash` 从 `background` 改伪元素 `opacity`；新增 `.confetti-layer` / `.confetti-spark` 节点池样式。
+  - `src/features/tasks/TaskWorkspace.tsx`：新增 `warmUpAudio()`，空闲（`requestIdleCallback`）/首次 `pointerover` 预热 AudioContext；五彩粒子改**节点池**（首次建 1 个 `contain:strict` 固定层 + 12 个常驻粒子，之后只改内联样式并重启动画，不再 append/remove）；接上 `spring-pop` / `just-restored`。
+  - `tests/taskCheckMotionContract.test.ts`（新增 8 条断言）：钉住「CSS 里挂动画的类必须在 TSX 里真的被应用」「keyframes 只能动 transform/opacity」「划线不许再动 width」「任务行必须 contain」「粒子不许每次重建节点」「动效不许用 `forwards` 留残影」。**已做反向验证**：删掉 TSX 里的应用点，测试确实 FAIL；还原后 PASS。
+- **改前 / 改后实测（20 次真实点击打勾，140 行）**：
+
+  | 指标 | 改前（2 次，~156Hz，空闲 p50 6.2ms） | 改后（7 次，~131Hz，空闲 p50 7.6ms） |
+  |---|---|---|
+  | 帧 >33ms | 10–16 | **0** |
+  | 帧 >50ms | 2–4 | **0** |
+  | longtask | 1–2 个 / 146–197ms | **0** |
+  | 点击期间帧间隔 p95 | 37.4–43.8ms | **9.8–14.7ms** |
+  | 点击期间最差帧 | 168.7–168.8ms | **15.3–22.3ms** |
+  | 最差帧 / 该次运行帧预算 | **27.2×** | **2.0–2.9×** |
+  | LayoutCount | 99–103 | **81** |
+  | RecalcStyleCount | 657–678 | **574–581** |
+  | LayoutDuration | 0.3–0.4s | **0.1s** |
+  | 点击批次 TaskDuration | 3.28–3.64s | **1.33–1.44s** |
+  | 视图切换 timer→tasks | 82.3–84.6ms | **36.8–45.5ms** |
+  | 每次勾选向 body 插/删节点 | 12 插 + 12 删 | **0** |
+  | 取消勾选 settle p95 | 未测 | **4.8–5.9ms** |
+  | 空闲 / 滚动 / 搜索逐字 p95 | 6.4 / 6.4 / 6.4ms | 8.1 / 8.2 / 8.2ms（= 该次运行的帧间隔本身，零掉帧） |
+
+- **刷新率口径（必须保留）**：改前跑在 ~156Hz、改后跑在 ~131Hz，**绝对毫秒不能直接横比**，因此上表同时给出「最差帧 / 该次运行自身的空闲帧间隔」的倍数归一（27.2× → 2.0–2.9×）。**改后是在更慢的合成器上测的，改善幅度是保守估计。**
+- **动效确实在跑的实测证据**（CDP 注入 `animationstart`/`animationend` + MutationObserver 采样）：`springPopSeen=true`、`justRestoredSeen=true`；`animStart = { checkPopPulse: 16, checkHaloPulse: 16, restoreFlash: 3 }`（16 次勾选触发弹跳+光晕、3 次取消勾选触发恢复闪烁）；`animEnd = { checkPopPulse: 1, checkHaloPulse: 1 }` —— 其余 15 个是被下一次勾选摘类打断（`animationcancel`），符合预期。另：`animationend` 实测发生在点击后 +374ms，确认摘类时机正确。
+- **未达标项（如实记录，不美化）**：Lead 提出的「click→DOM 稳定 p95 < 40ms」**未达成**，实测 **61–73ms，7/7 次复现**。
+  - **单变量归因**：临时注释掉 TSX 中 `setSpringPopTaskId` / `setRestoredTaskId` 两行、其余完全不变、重新 build 跑 2 次 → settle 最差 **11.6 / 11.0ms**；恢复后 **61.2 / 73.2 / 72.7 / 61.2ms**。因果明确：这 ~60ms 尾巴就是勾选动效的类名状态更新本身（每次勾选多一次 React 提交，className 属性变更落在 +60ms 处）。
+  - **为什么不能简单去掉**：任务行勾选后会在「未完成区」与「已完成区」两个不同父容器之间移动，React 只能卸载旧节点 + 挂载新节点，类名必须由 React 渲染才能落到新节点上。实测去掉状态后 `checkPopPulse` 触发次数为 **0**，即动效完全不跑 —— 正是本轮刚抓出的「CSS 写了但 TSX 从不应用」静默失效类型。
+  - **但它不是卡顿**：该窗口内最差帧仅 15–22ms，>33ms 帧为 0。用户可感知的判据（掉帧、longtask）已全部清零。
+  - **Lead 裁决（2026-09-28）**：**接受现状，settle 指标不作为门禁**。<40ms 是拍脑袋的代理指标而非用户需求；用户原话「整体感觉有些卡顿」的可感知判据是掉帧与 longtask，两项已清零。用已知更严重的缺陷（动效静默失效）去换代理指标方向错误。
+  - **后续可选路径（本轮不做，记录在案）**：正确方向不是命令式改类，而是**消除重挂载** —— 把「未完成区/已完成区」改为同一容器内用稳定 key + 分区标记渲染，React 会移动 DOM 节点而非重建，届时 `classList.add` 可在事件处理器里同步执行且不丢失。属结构性改动，收益为这 60ms，成本不小。
+- **门禁与验证**：`npm run format:check` PASS；`npm run typecheck` PASS（含 cloudflare worker）；`npm run lint` PASS；`npm test` PASS（**133 个测试文件 / 1071 项测试**）；`npm run build` PASS。
+- **可复现性**：测量台 `.tmp/perf/`（`probe2.cjs` + `lib.cjs` + `runner*.cjs`），原始数据 `.tmp/perf/result-*.json`。另记录两个环境坑：① CDP `/json/list` 里会先出现 `devtools://` 目标，必须按 `http://127.0.0.1:<devServerPort>` 前缀筛选应用页，否则会连到 DevTools 页导致 `Runtime.evaluate` 永久挂起；② `window.focuslink.tasks` 没有 `list()`，取任务数要用 `tasks.refresh()` 读 `res.data.tasks`。
+
+## 2026-09-28 · v1.3.9 任务页「原型 ↔ 客户端」UI 差异实测表（b50b858「1:1 完全对齐」核验）
+
+- **结论先行：b50b858 提交信息里的「1:1 完全对齐网页原型」不成立。**
+  实测证据：客户端 `dist/assets/main-5fcHRHH9.css`（SHA256 `D6C00446…`）里确实写入了原型数值（`.task-check-circle{border:1.6px solid var(--border-subtle)}`、`.detail-heading{font-size:17px}`、`.list-title-group h2{font-size:18px;font-weight:700}`、`.btn-action-focus{background:#18181b}`），但**同一份 bundle 里另有一套更高特异性的 reset / 组件规则把它全部覆盖掉了**，再加上一处 inline style，导致用户实际看到的界面与原型不一致。属于「数值抄了、但没生效」。
+- **实测环境（两侧都是计算值实测，不是读源码）**：
+  - 原型侧：`C:\Users\16408\Desktop\FocusLink-任务页-预览\任务页原型.html`（325,906 bytes，LastWriteTime 2026-09-27 20:02:49），全新 Edge headless 实例（独立 profile + 空闲端口 9377）经 CDP 打开，`Emulation.setDeviceMetricsOverride` 固定 1240×800 / dsf=1。**装载校验**：DOM 必须含 `.focus-horizontal-card` 且含 `--check-halo-0` 令牌（v17 标记）。
+  - 客户端侧：`git archive b50b858` 导出到临时 worktree（不改工作区）→ `vite build` → 静态服务 → Electron 43 启动，`--user-data-dir=<临时目录>`（从 `%APPDATA%\focuslink` 复制真实 `focuslink.db`，只读复制，不碰原库）+ `--force-device-scale-factor=1` + `--remote-debugging-port=9622`；启动前必须 `Remove-Item Env:ELECTRON_RUN_AS_NODE`。**装载校验**：`document.styleSheets` = `assets/ErrorBoundary-B3c2IftN.css` + `assets/main-5fcHRHH9.css`；`.app-shell.view-tasks` 存在，`.task-entry` 8 行。
+  - 像素证据：`Page.captureScreenshot` 1240×800 后逐像素采样。
+- **必须先说的两个「假阴性」坑（本任务踩过）**：
+  1. 机器上残留了多个上一轮会话启动的 headless Edge 实例，其中 PID 52664 仍占着 `--remote-debugging-port=9333`，它加载的是 **20:02:49 改文件之前**的旧 DOM（详情栏是 `.focus-insight-card` 竖柱图、没有 `--check-halo-0`）。如果连到它，会得出「原型没有横向时序卡」的错误结论。**必须用空闲端口 + 独立 profile 新起浏览器，并先校验 DOM 里有没有 v17 标记。**
+  2. 客户端同理：如果复用旧 Electron 实例（`--remote-debugging-port` 已被占用、新实例 bind 失败），量到的仍是旧页面。**每次测量前先确认端口是新起的，并校验 `document.styleSheets` 指向的 CSS 文件名。**
+- **差异表（原型实测值 / 客户端实测值，均为 `getComputedStyle`+`getBoundingClientRect`+像素采样）**：
+
+| # | 维度 | 原型实测 | 客户端实测 | 差异 | 建议以哪边为准 + 理由 |
+|---|---|---|---|---|---|
+| 1 | 三栏骨架 | `grid-template-columns: 220px 640px 380px`（根元素 x=0，整宽 1240） | `220px 563px 380px`（根元素 x=77，整宽 1163） | 客户端多出 76px 左侧 `.edge-dock` 竖排导航（`[0,0,76,800]`，bg `rgb(255,255,254)`，border-right `1px solid rgb(220,226,227)`），工作区整体右移 77px，**中间栏窄 77px** | **原型为准**。这是「打开客户端就不一样」的最大结构性来源；但 edge-dock 是产品既有导航，需 Lead 决策是并入侧栏/顶栏还是保留并接受中间栏变窄 |
+| 2 | 整页底色 | `.app-window` 无独立底色；titlebar/sidebar `#F7F8FA`、中栏 `#FFFFFF`、详情 `#FAFAFC` | 多一层 `.app-shell` bg `rgb(246,247,248)`；titlebar/sidebar/中栏/详情与原型一致 | 最外层底色不同（`#F7F8FA` vs `#F6F7F8`），并多出 76px 灰边 | **原型为准**（差 1 级灰，肉眼可辨） |
+| 3 | 顶部标题栏 | 高 42px，padding `0 16px`，bg `#F7F8FA`，下边框 `1px solid rgba(0,0,0,.08)`，**无窗口按钮** | 高 42px，padding/bg/边框一致；右侧多出 `.window-controls` `[1131,0,109,30]`（最小化/最大化/关闭 3 个 36×29 按钮） | 客户端多 3 个窗口按钮（原型 v17 已按用户要求「红绿灯完全清除」） | **原型为准**；Electron `frame:false` 必须保留系统控制，建议改悬浮/自动隐藏或仅 hover 显示（Lead 决策） |
+| 4 | 侧栏 | 宽 220px，padding `12px 8px 10px`，bg `#F7F8FA`，border-right `1px solid rgba(0,0,0,.06)` | 完全一致 | 无 | — |
+| 5 | 详情栏 | 宽 380px，padding `20px 20px 80px`，bg `#FAFAFC`，border-left `1px solid rgba(0,0,0,.06)` | 完全一致 | 无 | — |
+| 6 | 列表工具条 | padding `18px 26px 12px`，下边框 `1px solid rgba(0,0,0,.06)` | 完全一致 | 无 | — |
+| 7 | 视图标题 `h2` | **18px / 700** | **16px / 600** | 字号 −2px、字重 −100 | **原型为准**。根因：客户端 JSX 给该 `h2` 挂了内联 `style="font-size:16px;font-weight:600"`，压过 `.list-title-group h2{font-size:18px;font-weight:700}`。删掉内联样式即可 |
+| 8 | 任务行 `.task-entry` | 高 42px，padding `0 10px`，radius 8px，行下边框 `1px solid rgba(0,0,0,.043)`，选中 bg `#EBF3FF` | 完全一致 | 无 | — |
+| 9 | 任务标题 | 13.5px / 400 / `#18181B` / lh 20.25px；已完成 `#8C8C8C` | 完全一致 | 无 | — |
+| 10 | 已完成删除线 | `.strike-laser` 高 1.5px、bg `#8C8C8C`、top 10.125px | 完全一致 | 无 | — |
+| 11 | 勾选控件几何 | 19×19、radius 50%、svg 12×12 / viewBox 20 / stroke 2.4、path `M4.5 10.5 L8.2 14.2 L15.5 6.5`、勾选底 `#2563EB`、勾 `#FFFFFF` | 完全一致 | 无 | — |
+| 12 | **勾选控件未勾选态描边** ★★★ | `border: 1px solid rgba(0,0,0,.06)`，空心圆环可见（像素：x=254 与 x=272 为 `rgb(220,220,220)`） | `border-width: 0px; border-style: none`，**整个圆圈不可见**（像素：x=331…349 全为行底色 `rgb(255,255,255)`） | 未勾选任务只剩 19px 空白，勾选控件「消失」 | **原型为准**。根因：客户端 reset `.task-workspace-root button, input, textarea, select { border-style: none; background-color: initial; font-size: inherit; color: inherit }`（特异性 0,1,1）压过 `.task-check-circle{border:1.6px solid var(--border-subtle)}`（0,1,0）。修法：给组件规则提权或用 `:where()` 降 reset 特异性 |
+| 13 | 子任务勾选控件 | 15×15、radius 4px、`border: 1.5px solid var(--border-subtle)` | 15×15、radius 4px、**border 0px** | 同 #12，子任务方框不可见 | **原型为准**，同一根因 |
+| 14 | 详情栏主标题 `.detail-heading` | 17px / 700（lh 22.95px） | 13px / 700（lh 17.55px） | 字号 −4px | **原型为准**。根因：`.task-workspace-root textarea{font-size:inherit}`（0,1,1）压过 `.detail-heading{font-size:17px}`（0,1,0），实际继承根元素 13px |
+| 15 | **详情底部主按钮「开始专注 (25m)」** ★★★ | 197×34、radius 6px、bg `#18181B`、color `#FFFFFF`、12.5px/600 | 195×34、radius 6px、**bg 透明**、color `#18181B`、13px/600 | 主 CTA 变成纯文字（像素：y=700 x=881–929 为详情栏底色 `rgb(250,250,252)`，无按钮填充） | **原型为准**。根因：reset `.task-workspace-root button{background-color:initial}`（0,1,1）压过 `.btn-action-focus{background:#18181b}`（0,1,0） |
+| 16 | 详情底部次按钮 / 删除按钮 | 「重新开启」92×34、bg `#FFFFFF`、border `1px solid rgba(0,0,0,.06)`、12px/500；删除 34×34 同款 | 94×34、**bg 透明、border 0px**、13px/500；删除 34×34 同样透明无边框 | 次按钮与删除按钮失去「按钮」外观 | **原型为准**，同一 reset 根因（`background-color:initial` + `border-style:none`） |
+| 17 | 属性区 `.linear-props-table` | padding `8px 12px`、radius 8px、border `1px solid rgba(0,0,0,.06)`、gap 2px、高 152px | **padding `0px`**、其余一致、高 136px | 少 8px/12px 内边距，内容贴边 | **原型为准** |
+| 18 | 属性行 `.prop-table-row` | 高 32px、padding `0 4px`、radius 6px | 高 32px、**padding `0 10px`、radius 0px** | 左右多 6px、圆角丢失 | **原型为准** |
+| 19 | 属性胶囊 `.prop-action-pill` | bg `rgba(0,0,0,.05)`、border `1px solid rgba(0,0,0,.06)`、color `#52525B`、radius 4px、12px/500 | **bg 透明、border 0px**、color `#18181B`、radius 4px、13px/500 | 胶囊变纯文字、颜色更深、字号 +1px | **原型为准**，同一 reset 根因 |
+| 20 | 子任务快速添加行 | `border-bottom: 1px dashed rgba(0,0,0,.06)`、radius 6px | 无虚线、radius 0px | 虚线框丢失 | **原型为准** |
+| 21 | 横向专注时序卡（v17 新组件） | 卡 339×114.5、padding `13px 15px`、radius 8px、border `1px solid rgba(0,0,0,.06)`、gap 10px；`.f-horiz-track` 18px/radius 6/padding 2/gap 3；`.f-segment` radius 4/bg `#2563EB`；`.f-node-chip` padding `2px 7px`/radius 4/border 1px；`.f-total-time` 16px/700 主题色；`.f-session-tag` 11px | 数值全部一致（宽随中间栏 339→334） | 无 | — （这一块确实做到了 1:1） |
+| 22 | 侧栏智能视图项 | 高 32px、padding `0 10px`、radius 6px、gap 10px、icon 16×16、名称 13px `#52525B`、计数 11.5px `#8C8C8C`；选中 bg `#EBF3FF` + `::before` 3px 主题色 | 高 32px、padding `0 10px`、radius 6px、**gap 9px**、icon 16×16、名称 13px **`#18181B`**、计数一致；选中一致 | 未选中项名称颜色更深（`#52525B`→`#18181B`）、图标间距 9 vs 10 | **原型为准** |
+| 23 | 侧栏清单项 | `.project-color-dot` 8×8 / radius 50%，颜色走 `--p-color` | 8×8 / radius 50%，颜色走内联 `background-color` | 无（实现方式不同，视觉一致）。注意客户端默认清单是「收件箱」青绿 `rgb(22,137,159)`，原型是「工作任务」蓝 `#2563EB`——数据差异，非样式差异 | — |
+| 24 | 字体族 | `-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC Variable", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif` + `"JetBrains Mono", ui-monospace, …` | 完全一致 | 无 | — |
+| 25 | 字号阶梯 | 9.5 / 10 / 10.5 / 11 / 11.5 / 12 / 13 / 14 / 16 / **17** / **18** px | 9.5 / 10 / 11 / 11.5 / 12 / 13 / **13.5** / 14 / 16 px | 客户端缺 10.5 / 17 / 18，多 13.5 | **原型为准**；修完 #7 #14 后自然收敛 |
+| 26 | 三档调色板令牌（`getComputedStyle` 实测） | linear：`--check-bg #2563EB`、`--check-border #2563EB`、`--check-fg #FFFFFF`、`--check-ghost rgba(37,99,235,.45)`、`--check-halo-0 rgba(37,99,235,.65)`、`--accent #2563EB`、`--accent-soft rgba(37,99,235,.1)`、`--border-subtle rgba(0,0,0,.06)`、`--bg-card #FFFFFF`、`--bg-hover rgba(0,0,0,.045)`、`--r-md 8px`；rose：`#E11D48` 系列（`--border-subtle rgba(225,29,72,.08)`、`--bg-hover rgba(225,29,72,.045)`）；contrast：`#000000` 系列（`--border-subtle rgba(0,0,0,.15)`、`--bg-hover rgba(0,0,0,.05)`） | 同名同值（仅大小写与 `.06` / `0.06` 写法差异，渲染值相同）；客户端另有 `--bg-base` / `--danger` / `--success` / `--radius-md:10px` / `--radius-lg:14px` | 令牌值一致 ✓；但客户端 `--radius-md:10px` / `--radius-lg:14px` 与实测半径（4 / 6 / 8px）对不上，说明组件仍硬编码、没走令牌 | 令牌以原型为准（已一致）；建议 Lead 顺手把 `--radius-md/lg` 与实测半径对齐，否则令牌是「死令牌」 |
+| 27 | 调色板渲染效果 | 勾选底 linear `rgb(37,99,235)` / rose `rgb(225,29,72)` / contrast `rgb(0,0,0)`；选中项底 `#EBF3FF` / `#FFE4E6` / `#F0F1F4` | 同上，逐项一致 | 无 | — |
+
+- **根因归纳（Lead 可以直接照着修）**：
+  1. **客户端 bundle 里存在两套同名样式**：一套是原型移植版（约 `509k–531k` 偏移），一套是后写的 reset/组件版（`~531k` 起）。后者里 `.task-workspace-root button, .task-workspace-root input, .task-workspace-root textarea, .task-workspace-root select { background-color: initial; border-style: none; font-size: inherit; color: inherit }` 特异性为 (0,1,1)，**通杀**所有 (0,1,0) 的组件类，直接造成 #12 #13 #14 #15 #16 #19 六项可见缺陷。
+  2. 一处 inline style（列表 `h2` 的 `font-size:16px;font-weight:600`）造成 #7。
+  3. 结构性差异（76px `.edge-dock`、109×30 `.window-controls`）造成 #1 #2 #3。
+- **验收 / 复现方式**：按上文环境重跑 `measure2.js`（本表 1–25 行）与 `probe3.js`（勾选子树 / 横向卡子树），全部数值可 1:1 复现；像素证据可重跑 `Page.captureScreenshot` 后采样 `x=254/272`（原型圆环）与 `x=331..349`（客户端无圆环）、`y=700 x=881..929`（原型主按钮填充 / 客户端无填充）。
+- **本条目只做差异审计，未改动任何源码或 CSS**（写入范围仅本文件）。
+
 ## 2026-09-27 · v1.3.9 任务页 1:1 像素级完全还原网页端设计原型、消除全量差异与Bug、三端同版构建安装
 
 - **需求与背景**：针对用户反馈“怎么跟我实际看到的不一样？我们在网页上确定的。第二，bug 贼多。我跟网页端看到的不一样，那我就很不满意，完全不接受”，彻底排查并定位到用户此前在桌面浏览器验收通过的完整规范文件 `FocusLink-任务页-预览/任务页原型.html`。全面移植其 100% 完整的三栏进深设计系统、小日历日程看板、就地就位改名、主题自适应打勾动效、横向专注时序流、清单图标分类弹窗、任务/清单右键菜单及底部 HUD，消除一切视觉与功能差异，升级版本至 `1.3.9`。

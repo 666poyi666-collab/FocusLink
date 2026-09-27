@@ -2,8 +2,8 @@
 // token 不存 localStorage；OAuth token 通过独立凭证存储（CredentialsStore）
 import { JsonStore } from './jsonStore.js';
 import { getSetting, setSetting, resetFailedSyncItems, getDb } from './db/index.js';
-import { DEFAULT_SETTINGS } from '@shared/types';
-import type { AppSettings } from '@shared/types';
+import { DEFAULT_SETTINGS, resolveTaskWorkspaceAppearance } from '@shared/types';
+import type { AppSettings, TaskWorkspaceAppearance } from '@shared/types';
 import { mergeSettings } from '@shared/settingsPolicy';
 import { resolveFocusColor, resolveFontProfile, resolveTimerStyle } from '@shared/theme';
 import { getExpandedMiniWindowSize } from '@shared/miniWindowLayout';
@@ -84,6 +84,7 @@ export function getSettings(): AppSettings {
   applyFocusLinkTasksV01294Migration(settings);
   normalizeSegmentBehavior(settings);
   normalizeAppearanceSettings(settings);
+  normalizeTaskWorkspaceAppearance(settings);
   normalizeTomatodoFallback(settings);
   normalizeMiniWindowSize(settings);
   return settings;
@@ -134,6 +135,24 @@ function normalizeAppearanceSettings(settings: AppSettings): void {
   settings.timerStyle = timerStyle;
   settings.fontProfile = fontProfile;
   settings.focusColor = focusColor;
+  store.store = settings;
+  setSetting(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/** 任务页外观兼容归一：缺字段补默认，非法值回落默认；只作用于任务页分支。 */
+function normalizeTaskWorkspaceAppearance(settings: AppSettings): void {
+  const resolved = resolveTaskWorkspaceAppearance(settings.taskWorkspaceAppearance);
+  const current = settings.taskWorkspaceAppearance as TaskWorkspaceAppearance | undefined;
+  if (
+    current &&
+    current.palette === resolved.palette &&
+    current.font === resolved.font &&
+    current.density === resolved.density
+  ) {
+    return;
+  }
+  logger.info('settings', 'normalize task workspace appearance', { from: current, to: resolved });
+  settings.taskWorkspaceAppearance = resolved;
   store.store = settings;
   setSetting(SETTINGS_KEY, JSON.stringify(settings));
 }
@@ -527,6 +546,9 @@ function applyDeviceSyncPortV01221Migration(settings: AppSettings): void {
 
 export function saveSettings(settings: AppSettings): AppSettings {
   settings.tomatodo.defaultSubject = '学习';
+  settings.taskWorkspaceAppearance = resolveTaskWorkspaceAppearance(
+    settings.taskWorkspaceAppearance,
+  );
   store.store = settings;
   setSetting(SETTINGS_KEY, JSON.stringify(settings));
   logger.info('settings', 'saved', { theme: settings.theme, syncMode: settings.syncMode });

@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.3.10 - 2026-09-28（Windows 已安装 1.3.9；本轮安装门禁未闭合：华为平板离线）
+
+### 对 v1.3.9 的更正
+
+- **v1.3.9 声称的「网页端原型 1:1 像素级复刻」不成立，本轮实测证伪。** 干净构建（`git archive b50b858` → 临时 worktree → 构建）产出的 CSS 里确实写入了原型数值，但同 bundle 里另有一条 reset 规则 `.task-workspace-root button/input/textarea/select { border: none; background: none; ... }`，特异性 **0-1-1**，把所有权重为 **0-1-0** 的组件类规则通杀。
+- 直接后果（用户可见）：**勾选圆圈整个不可见**（`border-width: 0px`、背景透明，退化成 19×19 空元素）、**详情栏主按钮「开始专注」无填充**（透明底 + 黑字）、次按钮与删除按钮丢失底色与边框。
+- 另有 `.spring-pop` / `.just-restored` 的 keyframes 在 CSS 里写好，但 `TaskWorkspace.tsx` **从未应用这两个类名** —— v1.3.9 宣称的「勾选弹跳回弹」「误触恢复闪烁」整整一个版本没有运行。用户此前两次反馈「打勾效果可以更好」「点错恢复的效果需要优化」即源于此。
+- 还有一处 inline `style={{ fontSize: '16px' }}` 压在列表标题上，覆盖了样式表的 18px/700。
+
+### 修复
+
+- **勾选控件可见性（根因修复）**：把 reset 改为 `:where(.task-workspace-root) button/input/textarea/select`，特异性降到 **0-0-1**，保留重置覆盖面但让位给显式组件样式。一处修复连带解决勾选圆圈、主按钮、次/删除按钮三个症状。
+- **勾选卡顿（先测后改，逐变量归因）**：实测确认卡顿**只发生在点击打勾这一个动作**（空闲/滚动/搜索逐字输入均为零掉帧）。20 次真实点击实测：
+  - 最差帧间隔 **168.8ms（27.2× 帧预算）→ 15.3–22.3ms（2.0–2.9×）**
+  - 帧 >33ms 数量 **16 → 0**（7/7 次复现）；longtask（>50ms）**2 个 146–197ms → 0**
+  - 主线程 TaskDuration **3.64s → 1.33–1.44s**；LayoutCount **103 → 81**
+  - 每次勾选向 body 插/删 DOM 节点 **12 插 + 12 删 → 0**（改节点池）
+  - 根因：`.task-entry` 缺 `contain`（最大单点，加上后最差帧 145.6→100.1ms，视觉零变化）、`AudioContext` 首次创建 ~110ms、粒子 `removeChild` 自耗 111ms、`.strike-laser` 用 `width` 过渡每帧触发布局
+  - 口径说明：改前跑在 ~156Hz、改后 ~131Hz，绝对毫秒不可直接横比；归一化后为 27.2× → 2.0–2.9×，且改后跑在更慢的合成器上，**改善是保守估计**
+  - **未达标项（如实记录）**：click→DOM 稳定 p95 为 61–73ms，未达内部设定的 <40ms。单变量归因确认这 60ms 来自动效类名的那次 React commit；该窗口内帧间隔仅 15–22ms、零帧 >33ms，**不阻塞任何帧**，故接受现状。
+- **打勾弹跳与恢复闪烁接回**：`.spring-pop` / `.just-restored` 现由 TSX 真实应用（`animationend` 摘类，不用固定定时器）；光晕环从 `box-shadow` 改为伪元素 `transform/opacity`（走合成器，不触发 paint）。实测 `checkPopPulse` 触发 16 次、`restoreFlash` 3 次。
+- **任务页外观独立设置（新增）**：`AppSettings.taskWorkspaceAppearance = { palette, font, density }`，默认 `linear/sans/default`（= 改动前现状，默认零视觉变化）。调色板三档（纯净白·蓝 / 高级粉·高对比 / 锐利黑白）、字体两档（无衬线 / 衬线）、密度三档（紧凑 34px / 标准 42px / 宽松 52px）。设置页新增「任务界面」分区。
+- **任务页外观与全局主题解耦**：`data-pal` 从 `documentElement` 移到任务页根 div。此前写 `documentElement` 会污染全局主题。实测切换后重启保持，且 `documentElement` 无 `data-pal`。
+- **列表标题 inline style 覆盖**已移除。
+
+### 新增门禁（防「静默失效」回归）
+
+- `npm run smoke:task-style`：78 条**真实 `getComputedStyle` 计算值**断言，覆盖勾选圆圈（未勾/已勾 + `stroke-dashoffset`）、子任务方框、主/次/删除按钮（含对比度）、删除线（钉死 `transition-property=transform`）、列表标题、详情标题、属性区/属性行/属性胶囊、侧栏文字色；另含 48 个自定义属性的「未定义 `var()`」解析断言与动效真跑的行为断言。**反向验证 2 次**（把 reset 改回 0-1-1 → 19 条 FAIL；删掉 `spring-pop` 应用点 → 2 条 FAIL），证明它真的会失败。
+- `desktop-ui-screenshot` 修回可用：此前它**跑不到任务页**（死在设置页重构后失效的断言，且任务页 anchor 用了已不存在的 `.task-workspace-page`）。顺带修掉一个**门禁假通过**隐患——原 harness 在切隔离 userData 之前就抢单实例锁，用户桌面实例在跑时会静默 `exit 0`（看起来通过、实际零断言）。现改为锁冲突 `exit 2` + stderr 报错。
+
+### 其它修复
+
+- `FocusLinkConfigTest.java` 的版本断言停在 `1.3.7`（上一个版本升 `build.gradle` 时未同步），该 Android 交付门禁实际失效；已对齐。
+- `scripts/regression/desktop-ui-screenshot.ts` 的任务页覆盖从「永远 skipped」改为真实断言（含勾选圆环 `border-width=1px`/`solid`）。
+
+### 验证
+
+- `npm run format:check` / `npm run typecheck` / `npm run lint` PASS
+- `npm test` PASS：**133 个测试文件 / 1071 项测试**（含新增 `taskWorkspaceAppearance.test.ts` 6 例、`taskCheckMotionContract.test.ts` 8 例）
+- `npm run build` PASS；`npm run smoke:task-style` PASS（78 条）；`desktop-ui-screenshot` PASS（14 张截图，四页 × 明暗 + 980×660 溢出检查）
+- `.git/lfs/tmp` = 0
+
+### 三设备同版安装门禁：**未闭合（FAIL）**
+
+- `adb devices -l` 实测：小米 `192.168.1.5:5555` = `device`；华为 `192.168.1.12:5555` = **`offline`**（连续多轮不在线）。
+- Windows 本机仍为已安装的 `1.3.9`；静默覆盖安装会关闭用户正在运行的实例，未执行。
+- 按规则如实记录为未闭合，**不伪造任何安装结果**。
+
 ## v1.3.9 - 2026-09-27（Windows、小米均已安装；华为未在线）
 
 - **网页端原型 1:1 像素级复刻与统一交互体系**：
