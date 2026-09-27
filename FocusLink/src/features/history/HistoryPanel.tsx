@@ -17,25 +17,13 @@ import {
   toDateInput,
   type RangePreset,
 } from './historyStats';
-import {
-  buildSessionSyncStateMap,
-  NOT_SYNCED_STATE,
-  queueItemToSessionSyncState,
-  type SessionSyncState,
-} from './syncPresentation';
-import type {
-  FocusSession,
-  FocusSegment,
-  SyncQueueItem,
-  Task,
-  TomatodoSubject,
-} from '@shared/types';
+
+import type { FocusSession, FocusSegment, Task, TomatodoSubject } from '@shared/types';
 import type { SessionAnalyticsResult } from '@shared/ipc/api';
 import { TaskPicker } from '../tasks/TaskPicker';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import {
   HistoryTimelineList,
-  SyncBadge,
   type TomatodoSegmentStatus,
   type SegmentFilter,
 } from './HistoryTimeline';
@@ -48,25 +36,6 @@ import {
 import { HistoryInsights } from './HistoryInsights';
 import { createRequestGate } from './requestGate';
 
-function buildSegmentSyncStateMap(queue: SyncQueueItem[]): Record<string, SessionSyncState> {
-  const latest = new Map<string, SyncQueueItem>();
-  for (const item of queue) {
-    try {
-      const payload = JSON.parse(item.payload) as { segmentId?: string };
-      if (!payload.segmentId) continue;
-      const previous = latest.get(payload.segmentId);
-      if (!previous || item.updatedAt >= previous.updatedAt) latest.set(payload.segmentId, item);
-    } catch {
-      // 无效队列项不应影响历史账本。
-    }
-  }
-  return Object.fromEntries(
-    Array.from(latest, ([segmentId, item]) => [segmentId, queueItemToSessionSyncState(item)]),
-  );
-}
-
-const SessionSyncBadge = SyncBadge;
-
 /** TaskPicker 弹窗目标类型 */
 type PickerTarget =
   | { kind: 'segment'; segmentId: string; title: string }
@@ -77,8 +46,7 @@ type PickerTarget =
 /** ConfirmDialog 确认目标类型：替代原生 confirm() 的三处确认流 */
 type ConfirmTarget =
   | { kind: 'delete-session'; sessionId: string }
-  | { kind: 'batch-all'; sessionId: string; task: Task }
-  | { kind: 'resync-segment'; segment: FocusSegment };
+  | { kind: 'batch-all'; sessionId: string; task: Task };
 
 const RANGE_PRESETS: Array<{ id: RangePreset; label: string }> = [
   { id: 'today', label: '单日' },
@@ -100,8 +68,7 @@ export function HistoryPanel() {
   const settings = useStore((state) => state.settings);
   const addToast = useStore((state) => state.addToast);
   const setSnapshot = useStore((state) => state.setSnapshot);
-  const syncQueue = useStore((state) => state.syncQueue);
-  const setSyncQueue = useStore((state) => state.setSyncQueue);
+
   const [analytics, setAnalytics] = useState<SessionAnalyticsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyticsRefreshing, setAnalyticsRefreshing] = useState(false);
@@ -120,9 +87,8 @@ export function HistoryPanel() {
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
   const [linking, setLinking] = useState(false);
   const [syncingSessionId, setSyncingSessionId] = useState<string | null>(null);
-  const [syncingKind, setSyncingKind] = useState<'dida' | 'tomatodo' | null>(null);
+  const [syncingKind, setSyncingKind] = useState<'tomatodo' | null>(null);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(() => new Set());
-  const [sessionSyncMeta, setSessionSyncMeta] = useState<Record<string, SessionSyncState>>({});
   const [sessionSegmentsById, setSessionSegmentsById] = useState<Record<string, FocusSegment[]>>(
     {},
   );
@@ -154,8 +120,6 @@ export function HistoryPanel() {
     () => summarizeAnalyticsRange(analytics?.daily ?? [], filteredSessions.length),
     [analytics?.daily, filteredSessions.length],
   );
-  const persistedSyncStates = useMemo(() => buildSessionSyncStateMap(syncQueue), [syncQueue]);
-  const segmentSyncStates = useMemo(() => buildSegmentSyncStateMap(syncQueue), [syncQueue]);
 
   // 时间线按自然日分组（保持原有倒序，最新的一天在最上面）。
   const sessionGroups = useMemo(() => {
@@ -204,9 +168,6 @@ export function HistoryPanel() {
     return map;
   }, [sessionGroups]);
 
-  const getDisplayedSyncState = (sessionId: string) =>
-    sessionSyncMeta[sessionId] ?? persistedSyncStates[sessionId] ?? NOT_SYNCED_STATE;
-
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const dayCursorIsToday = isSameLocalDay(dayCursor, Date.now());
@@ -245,20 +206,15 @@ export function HistoryPanel() {
       // 混合时间轴窗口：单日视图跟随 dayCursor；多天/自定义范围锚定范围最后一天
       // （近 7/15/30 天的范围末日即今天），保证时间轴始终展示一个有意义的自然日。
       const timelineRange = getDayRange(rangePreset === 'today' ? dayCursor : range.end);
-      const [nextAnalytics, queue] = await Promise.all([
-        window.focuslink.sessions.analytics({
-          start: range.start,
-          end: range.end,
-          timelineStart: timelineRange.start,
-          timelineEnd: timelineRange.end,
-        }),
-        window.focuslink.sync.list(),
-      ]);
+      const nextAnalytics = await window.focuslink.sessions.analytics({
+        start: range.start,
+        end: range.end,
+        timelineStart: timelineRange.start,
+        timelineEnd: timelineRange.end,
+      });
       if (!analyticsRequestGate.isCurrent(requestId)) return;
       setAnalytics(nextAnalytics);
       hasAnalyticsRef.current = true;
-      setSyncQueue(queue as SyncQueueItem[]);
-      setSessionSyncMeta({});
       setSessionSegmentsById({});
     } catch (err) {
       if (!analyticsRequestGate.isCurrent(requestId)) return;
@@ -269,7 +225,7 @@ export function HistoryPanel() {
         setAnalyticsRefreshing(false);
       }
     }
-  }, [dayCursor, rangePreset, range.end, range.start, setSyncQueue, analyticsRequestGate]);
+  }, [dayCursor, rangePreset, range.end, range.start, analyticsRequestGate]);
 
   useEffect(() => {
     void load();
@@ -334,18 +290,6 @@ export function HistoryPanel() {
     }
   };
 
-  const refreshSyncQueue = async () => {
-    const queue = (await window.focuslink.sync.list()) as SyncQueueItem[];
-    setSyncQueue(queue);
-    return queue;
-  };
-
-  const applyPersistedSessionSyncState = (sessionId: string, queue: SyncQueueItem[]) => {
-    const state = buildSessionSyncStateMap(queue)[sessionId] ?? NOT_SYNCED_STATE;
-    setSessionSyncMeta((prev) => ({ ...prev, [sessionId]: state }));
-    return state;
-  };
-
   const getSessionSegmentsForEdit = (sessionId: string) =>
     (detail?.session.id === sessionId ? detail.segments : sessionSegmentsById[sessionId]) ?? [];
 
@@ -405,7 +349,7 @@ export function HistoryPanel() {
         setDetailLoadingId(null);
         setDetailLoadError(null);
       }
-      addToast('已删除本地记录；已同步的滴答记录已清理，番茄 To-do 仅清理本机记录', 'success');
+      addToast('已删除本地记录；番茄 To-do 仅清理本机记录', 'success');
     } catch (e) {
       addToast('删除失败：' + (e as Error).message, 'error');
     }
@@ -435,11 +379,8 @@ export function HistoryPanel() {
     if (!task || !target) return;
     setLinking(true);
     try {
-      let linkedSessionId: string | null = null;
       if (target.kind === 'segment') {
         await window.focuslink.timer.linkTask(target.segmentId, task.id, task.source, task.title);
-        linkedSessionId =
-          detail?.segments.find((seg) => seg.id === target.segmentId)?.sessionId ?? expanded;
         addToast(`已关联：${task.title}`, 'success');
       } else if (target.kind === 'session-default') {
         await window.focuslink.timer.linkSessionTask(
@@ -448,7 +389,6 @@ export function HistoryPanel() {
           task.source,
           task.title,
         );
-        linkedSessionId = target.sessionId;
         addToast(`已设为默认任务：${task.title}`, 'success');
       } else if (target.kind === 'batch-unlinked') {
         const count = await window.focuslink.timer.linkSegmentsBatch(
@@ -458,7 +398,6 @@ export function HistoryPanel() {
           task.title,
           true,
         );
-        linkedSessionId = target.sessionId;
         addToast(`已批量关联 ${count} 个未关联片段到：${task.title}`, 'success');
       } else if (target.kind === 'batch-all') {
         // 覆盖已关联片段属于破坏性操作，先经 ConfirmDialog 确认再执行
@@ -466,9 +405,6 @@ export function HistoryPanel() {
         return;
       }
       if (expanded) await reloadDetail(expanded);
-      if (task.source === 'ticktick' && linkedSessionId) {
-        void autoSyncLinkedSession(linkedSessionId);
-      }
     } catch (e) {
       addToast('关联失败：' + (e as Error).message, 'error');
     } finally {
@@ -489,9 +425,6 @@ export function HistoryPanel() {
       );
       addToast(`已把全部 ${count} 个片段关联到：${task.title}`, 'success');
       if (expanded) await reloadDetail(expanded);
-      if (task.source === 'ticktick') {
-        void autoSyncLinkedSession(sessionId);
-      }
     } catch (e) {
       addToast('关联失败：' + (e as Error).message, 'error');
     } finally {
@@ -550,35 +483,7 @@ export function HistoryPanel() {
     }
   };
 
-  const handleResyncSegment = (seg: FocusSegment) => {
-    if (!seg.taskId || seg.taskSource !== 'ticktick') {
-      addToast('该片段未关联滴答任务，无法重新同步', 'error');
-      return;
-    }
-    setConfirmTarget({ kind: 'resync-segment', segment: seg });
-  };
-
-  const performResyncSegment = async (seg: FocusSegment) => {
-    setLinking(true);
-    try {
-      const result = await window.focuslink.sync.resyncSegment(seg.id);
-      if (result.ok) {
-        addToast('已删除云端记录并重新同步', 'success');
-      } else if (result.queued) {
-        addToast(result.error ?? '旧云端记录已删除，重新同步已排队', 'info');
-      } else {
-        addToast('重新同步失败：' + (result.error ?? '未知错误'), 'error');
-      }
-      if (expanded) await reloadDetail(expanded);
-      await refreshSyncQueue();
-    } catch (e) {
-      addToast('重新同步失败：' + (e as Error).message, 'error');
-    } finally {
-      setLinking(false);
-    }
-  };
-
-  /** ConfirmDialog 文案：保留操作语义，并明确本地、滴答与番茄 To-do 的不同后果。 */
+  /** ConfirmDialog 文案：明确本地记录与番茄 To-do 的不同后果。 */
   const confirmCopy = (() => {
     if (!confirmTarget) return null;
     switch (confirmTarget.kind) {
@@ -587,8 +492,8 @@ export function HistoryPanel() {
         return {
           title: '删除专注记录',
           description: session
-            ? `${formatClock(session.startedAt)} 开始 · 专注 ${formatDuration(session.activeElapsedMs)}\n\n将永久删除 FocusLink 本地记录，并删除已同步到滴答清单的对应专注记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。`
-            : '将永久删除 FocusLink 本地记录，并删除已同步到滴答清单的对应专注记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。',
+            ? `${formatClock(session.startedAt)} 开始 · 专注 ${formatDuration(session.activeElapsedMs)}\n\n将永久删除 FocusLink 本地记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。`
+            : '将永久删除 FocusLink 本地记录。番茄 To-do 只清理本机记录，当前无法验证远端删除。',
           confirmLabel: '永久删除',
         };
       }
@@ -597,13 +502,6 @@ export function HistoryPanel() {
           title: '批量改关联',
           description: '确认把本次所有专注片段（含已关联）都改为同一任务？',
           confirmLabel: '全部改关联',
-        };
-      case 'resync-segment':
-        return {
-          title: '重新同步到滴答清单',
-          description:
-            '确认删除该片段已同步到滴答云端的专注记录，并重新同步？\n\n这会先删除云端记录，再以当前关联的任务重新上传。\n本地数据保留不变。',
-          confirmLabel: '重新同步',
         };
     }
   })();
@@ -616,117 +514,6 @@ export function HistoryPanel() {
       void performDeleteSession(target.sessionId);
     } else if (target.kind === 'batch-all') {
       void performBatchLinkAll(target.sessionId, target.task);
-    } else {
-      void performResyncSegment(target.segment);
-    }
-  };
-
-  const autoSyncLinkedSession = async (sessionId: string) => {
-    if (syncingSessionId) return;
-    setSyncingSessionId(sessionId);
-    setSyncingKind('dida');
-    setSessionSyncMeta((prev) => ({
-      ...prev,
-      [sessionId]: {
-        label: '同步中',
-        tone: 'warn',
-        title: '已关联滴答任务，正在同步到滴答清单',
-      },
-    }));
-    try {
-      await window.focuslink.sync.enqueueSession(sessionId);
-      await window.focuslink.sync.runPending();
-      const queue = await refreshSyncQueue();
-      const state = applyPersistedSessionSyncState(sessionId, queue);
-      if (expanded) await reloadDetail(expanded);
-      if (state.tone === 'error') {
-        addToast('任务已关联，但自动同步失败；可在同步队列重试。', 'error');
-        return;
-      }
-      if (state.tone === 'ok') {
-        addToast('已自动同步全部专注记录到滴答清单', 'success');
-      } else {
-        addToast('同步仍在队列中，将在冷却结束后继续', 'info');
-      }
-    } catch (e) {
-      await refreshSyncQueue().catch(() => undefined);
-      setSessionSyncMeta((prev) => ({
-        ...prev,
-        [sessionId]: {
-          label: '同步失败',
-          tone: 'error',
-          title: (e as Error).message,
-        },
-      }));
-      addToast('自动同步失败：' + (e as Error).message, 'error');
-    } finally {
-      setSyncingSessionId(null);
-      setSyncingKind(null);
-    }
-  };
-
-  const handleSyncSession = async (sessionId: string) => {
-    if (syncingSessionId) return;
-    setSyncingSessionId(sessionId);
-    setSyncingKind('dida');
-    try {
-      const detailForSync: SessionDetail | null =
-        detail?.session.id === sessionId ? detail : await window.focuslink.sessions.get(sessionId);
-      const ticktickSegments =
-        detailForSync?.segments.filter(
-          (seg) => seg.taskId && seg.taskSource === 'ticktick' && seg.endedAt,
-        ) ?? [];
-      const runningSegments =
-        detailForSync?.segments.filter(
-          (seg) => seg.taskId && seg.taskSource === 'ticktick' && !seg.endedAt,
-        ) ?? [];
-
-      if (ticktickSegments.length === 0 && runningSegments.length === 0) {
-        setSessionSyncMeta((prev) => ({
-          ...prev,
-          [sessionId]: {
-            label: '未同步',
-            tone: 'warn',
-            title: '先把片段关联到滴答任务后再同步',
-          },
-        }));
-        addToast('没有已关联滴答任务的片段；先把片段关联到滴答任务。', 'info');
-        return;
-      }
-
-      if (ticktickSegments.length === 0 && runningSegments.length > 0) {
-        addToast('专注仍在进行中，请先结束后再同步', 'info');
-        return;
-      }
-
-      await window.focuslink.sync.enqueueSession(sessionId);
-      const result = await window.focuslink.sync.runPending();
-      const queue = await refreshSyncQueue();
-      const state = applyPersistedSessionSyncState(sessionId, queue);
-      if (state.tone === 'error') {
-        addToast(
-          `同步完成 ${result.succeeded} 条，失败 ${result.failed} 条；请检查同步队列。`,
-          'error',
-        );
-      } else if (state.tone === 'ok') {
-        addToast('该会话的全部专注记录已同步到滴答清单', 'success');
-      } else {
-        addToast('仍有记录在同步队列中，将在冷却结束后继续', 'info');
-      }
-    } catch (e) {
-      await refreshSyncQueue().catch(() => undefined);
-      setSessionSyncMeta((prev) => ({
-        ...prev,
-        [sessionId]: {
-          label: '同步失败',
-          tone: 'error',
-          title: (e as Error).message,
-        },
-      }));
-      addToast('同步失败：' + (e as Error).message, 'error');
-    } finally {
-      setSyncingSessionId(null);
-      setSyncingKind(null);
     }
   };
 
@@ -965,16 +752,10 @@ export function HistoryPanel() {
                   </header>
                   <div className="history-day-sessions">
                     {group.sessions.map((session) => {
-                      const syncState = getDisplayedSyncState(session.id);
                       const rowSegments =
                         detail?.session.id === session.id
                           ? detail.segments
                           : sessionSegmentsById[session.id];
-                      const hasTicktickSegments = rowSegments
-                        ? rowSegments.some(
-                            (segment) => segment.taskId && segment.taskSource === 'ticktick',
-                          )
-                        : (session.ticktickLinkedSegmentCount ?? 0) > 0;
                       const measuredMs = Math.max(
                         1,
                         session.wallElapsedMs,
@@ -1031,14 +812,7 @@ export function HistoryPanel() {
                               )}
                               <div className="history-session-badges">
                                 <SessionLinkPreview session={session} segments={rowSegments} />
-                                {hasTicktickSegments && settings?.syncMode !== 'local-only' && (
-                                  <SessionSyncBadge state={syncState} />
-                                )}
-                                {hasTicktickSegments && settings?.syncMode === 'local-only' && (
-                                  <span className="status-chip border-border/60 bg-bg-subtle/60 text-fg-subtle">
-                                    仅本地
-                                  </span>
-                                )}
+
                                 {session.pauseElapsedMs > 0 && (
                                   <span className="history-session-pause">
                                     暂停 {formatDuration(session.pauseElapsedMs)}
@@ -1109,12 +883,7 @@ export function HistoryPanel() {
                                 className="history-session-detail"
                               >
                                 <div className="history-session-detail-body">
-                                  <SessionDetailHeader
-                                    detail={detail}
-                                    syncState={syncState}
-                                    syncing={syncingSessionId === session.id}
-                                    syncMode={settings?.syncMode ?? 'local-only'}
-                                  />
+                                  <SessionDetailHeader detail={detail} />
                                   <HistoryTimelineList
                                     sessionId={session.id}
                                     segments={detail.segments}
@@ -1131,11 +900,8 @@ export function HistoryPanel() {
                                     }
                                     onClear={handleClearSegment}
                                     onComplete={handleCompleteTask}
-                                    onResync={handleResyncSegment}
                                     onSetSubject={handleSetSubject}
                                     tomatodoStatus={tomatodoStatusBySession[session.id] ?? {}}
-                                    syncStates={segmentSyncStates}
-                                    syncMode={settings?.syncMode ?? 'local-only'}
                                     tomatodoEnabled={settings?.tomatodo.enabled === true}
                                     completedTaskIds={completedTaskIds}
                                   />
@@ -1192,27 +958,6 @@ export function HistoryPanel() {
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 pt-2.5">
-                                    {settings?.syncMode !== 'local-only' && (
-                                      <button
-                                        className="btn-primary motion-press !min-h-[30px] !px-3 !py-1.5 !text-[12px]"
-                                        disabled={linking || syncingSessionId === session.id}
-                                        onClick={() => handleSyncSession(session.id)}
-                                        title="把本次已关联滴答任务的专注时间同步到滴答清单"
-                                      >
-                                        <Icon.Refresh
-                                          size="xs"
-                                          className={
-                                            syncingSessionId === session.id &&
-                                            syncingKind === 'dida'
-                                              ? 'animate-spin'
-                                              : ''
-                                          }
-                                        />
-                                        {syncingSessionId === session.id && syncingKind === 'dida'
-                                          ? '同步中'
-                                          : '同步到滴答清单'}
-                                      </button>
-                                    )}
                                     {settings?.tomatodo.enabled && (
                                       <button
                                         className="btn-outline motion-press !min-h-[30px] !px-3 !py-1.5 !text-[12px]"
@@ -1235,11 +980,7 @@ export function HistoryPanel() {
                                           : '补写入番茄 Todo'}
                                       </button>
                                     )}
-                                    {settings?.syncMode !== 'local-only' &&
-                                      detail.segments.some(
-                                        (segment) =>
-                                          segment.taskId && segment.taskSource === 'ticktick',
-                                      ) && <SessionSyncBadge state={syncState} />}
+
                                     <div className="ml-auto flex items-center gap-1.5">
                                       <details className="relative">
                                         <summary className="btn-ghost motion-press flex min-h-[28px] cursor-pointer list-none items-center gap-1 px-2 py-1 text-[11px]">

@@ -82,6 +82,8 @@ import type {
   Task,
   FocusSegment,
   TaskWorkspaceRefreshOptions,
+  TaskCreateOptions,
+  TaskUpdatePatch,
 } from '@shared/types';
 import type { SessionAnalyticsRange } from '@shared/ipc/api';
 import { DEFAULT_SETTINGS } from '@shared/types';
@@ -259,19 +261,29 @@ export function registerIpc(
   });
 
   // ============ Tasks ============
-  ipcMain.handle('tasks:create', async (_e, title: string, projectId?: string) => {
-    const task = LocalTaskProvider.create(title, projectId);
-    await refreshTaskWorkspace({ force: true });
-    return task;
-  });
-  ipcMain.handle('tasks:create-project', async (_e, name: string, color?: string | null) => {
-    const project = LocalTaskProvider.createProject(name, color);
-    await refreshTaskWorkspace({ force: true });
-    return project;
-  });
+  ipcMain.handle(
+    'tasks:create',
+    async (_e, title: string, projectId?: string, options?: TaskCreateOptions) => {
+      const task = LocalTaskProvider.create(title, projectId, options);
+      await refreshTaskWorkspace({ force: true });
+      return task;
+    },
+  );
+  ipcMain.handle(
+    'tasks:create-project',
+    async (_e, name: string, color?: string | null, icon?: string | null) => {
+      const project = LocalTaskProvider.createProject(name, color, icon);
+      await refreshTaskWorkspace({ force: true });
+      return project;
+    },
+  );
   ipcMain.handle(
     'tasks:update-project',
-    async (_e, projectId: string, input: { name?: string; color?: string | null }) => {
+    async (
+      _e,
+      projectId: string,
+      input: { name?: string; color?: string | null; icon?: string | null },
+    ) => {
       const project = LocalTaskProvider.updateProject(projectId, input);
       await refreshTaskWorkspace({ force: true });
       return project;
@@ -330,6 +342,25 @@ export function registerIpc(
     const task = LocalTaskProvider.moveTask(taskId, projectId);
     await refreshTaskWorkspace({ force: true });
     return task;
+  });
+  ipcMain.handle('tasks:update', async (_e, taskId: string, patch: TaskUpdatePatch) => {
+    const task = LocalTaskProvider.update(taskId, patch);
+    await refreshTaskWorkspace({ force: true });
+    return task;
+  });
+  ipcMain.handle('tasks:delete', async (_e, taskId: string) => {
+    const result = LocalTaskProvider.remove(taskId);
+    await refreshTaskWorkspace({ force: true });
+    return result;
+  });
+  ipcMain.handle('tasks:set-parent', async (_e, taskId: string, parentId: string | null) => {
+    const task = LocalTaskProvider.setParent(taskId, parentId);
+    await refreshTaskWorkspace({ force: true });
+    return task;
+  });
+  ipcMain.handle('tasks:reorder', async (_e, orderedIds: string[]) => {
+    LocalTaskProvider.reorder(orderedIds);
+    await refreshTaskWorkspace({ force: true });
   });
   ipcMain.handle('tasks:complete', async (_e, task: Task) => {
     const completed = await setTaskCompleted(task, true);

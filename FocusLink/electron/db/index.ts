@@ -77,6 +77,17 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks_cache ADD COLUMN recurrence TEXT');
     logger.info('database', 'migration: added tasks_cache.recurrence');
   }
+  // tasks_cache.sort_order：本地任务手动排序位（任务页重做 Phase A）。
+  // dida 任务的 sortOrder 走 raw_json，本地任务此前完全没有排序位，
+  // 导致 smart 排序一路落到标题比较器，新建任务会按拼音插进列表中间。
+  if (!hasCol('tasks_cache', 'sort_order')) {
+    database.exec('ALTER TABLE tasks_cache ADD COLUMN sort_order INTEGER');
+    logger.info('database', 'migration: added tasks_cache.sort_order');
+  }
+  if (!hasCol('task_projects', 'icon')) {
+    database.exec('ALTER TABLE task_projects ADD COLUMN icon TEXT');
+    logger.info('database', 'migration: added task_projects.icon');
+  }
   database.exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks_cache(parent_id)');
   const migratedSubjects = database
     .prepare("UPDATE focus_segments SET tomatodo_subject = '学习' WHERE tomatodo_subject = '杂'")
@@ -138,18 +149,21 @@ export function closeDatabase(): void {
 export function upsertLocalTaskProject(project: LocalTaskProject): void {
   getDb()
     .prepare(
-      `INSERT INTO task_projects (id, name, color, sort_order, created_at, updated_at)
-       VALUES (@id, @name, @color, @sortOrder, @createdAt, @updatedAt)
-       ON CONFLICT(id) DO UPDATE SET name=@name, color=@color,
+      `INSERT INTO task_projects (id, name, color, icon, sort_order, created_at, updated_at)
+       VALUES (@id, @name, @color, @icon, @sortOrder, @createdAt, @updatedAt)
+       ON CONFLICT(id) DO UPDATE SET name=@name, color=@color, icon=@icon,
        sort_order=@sortOrder, updated_at=@updatedAt`,
     )
-    .run(project);
+    .run({
+      ...project,
+      icon: project.icon ?? null,
+    });
 }
 
 export function listLocalTaskProjects(): LocalTaskProject[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, name, color, sort_order AS sortOrder, created_at AS createdAt,
+      `SELECT id, name, color, icon, sort_order AS sortOrder, created_at AS createdAt,
        updated_at AS updatedAt FROM task_projects ORDER BY sort_order, created_at`,
     )
     .all() as LocalTaskProject[];
@@ -617,16 +631,16 @@ export function listPausesInSessionRange(start: number, end: number): PauseEvent
 
 const UPSERT_TASK_CACHE_SQL = `INSERT INTO tasks_cache
       (id, source, external_id, project_id, parent_id, title, status, priority, start_date, due_date,
-       recurrence, tags, content, raw_json, last_synced_at, created_at, updated_at)
+       recurrence, tags, content, raw_json, last_synced_at, sort_order, created_at, updated_at)
      VALUES (@id, @source, @externalId, @projectId, @parentId, @title, @status, @priority, @startDate, @dueDate,
-       @recurrence, @tags, @content, @rawJson, @lastSyncedAt, @createdAt, @updatedAt)
+       @recurrence, @tags, @content, @rawJson, @lastSyncedAt, @sortOrder, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
        source = excluded.source, external_id = excluded.external_id,
        project_id = excluded.project_id, parent_id = excluded.parent_id, title = excluded.title, status = excluded.status,
        priority = excluded.priority, start_date = excluded.start_date, due_date = excluded.due_date,
        recurrence = excluded.recurrence, tags = excluded.tags,
        content = excluded.content, raw_json = excluded.raw_json,
-       last_synced_at = excluded.last_synced_at, updated_at = excluded.updated_at`;
+       last_synced_at = excluded.last_synced_at, sort_order = excluded.sort_order, updated_at = excluded.updated_at`;
 
 export function upsertTaskCache(task: TaskCache): void {
   const db = getDb();
@@ -635,6 +649,7 @@ export function upsertTaskCache(task: TaskCache): void {
     parentId: task.parentId ?? null,
     startDate: task.startDate ?? null,
     recurrence: task.recurrence ?? null,
+    sortOrder: task.sortOrder ?? null,
   });
 }
 
@@ -654,6 +669,7 @@ export function upsertTaskCaches(tasks: readonly TaskCache[]): void {
         parentId: task.parentId ?? null,
         startDate: task.startDate ?? null,
         recurrence: task.recurrence ?? null,
+        sortOrder: task.sortOrder ?? null,
       });
     }
   });
@@ -704,6 +720,35 @@ export function findTaskCache(taskId: string, source?: TaskSource): TaskCache | 
     .prepare(`SELECT * FROM tasks_cache WHERE id = ? ${sourceClause} LIMIT 1`)
     .get(...idParams) as TaskCacheRow | undefined;
   return idRow ? rowToTaskCache(idRow) : null;
+}
+/** 删除任务及其全部后代，返回删除行数。子任务随父任务一起消失是产品约定。 */
+export function deleteTaskCacheSubtree(rootId: string): number {
+  const db = getDb();
+  const result = db
+    .prepare(
+      `WITH RECURSIVE subtree(id) AS (
+         SELECT id FROM tasks_cache WHERE id = ?
+         UNION ALL
+         SELECT t.id FROM tasks_cache t JOIN subtree s ON t.parent_id = s.id
+       )
+       DELETE FROM tasks_cache WHERE id IN (SELECT id FROM subtree)`,
+    )
+    .run(rootId);
+  return result.changes;
+}
+
+/** 批量写入手动排序位（拖拽重排）。一次事务内完成，避免逐条进 SQLite。 */
+export function updateTaskSortOrders(rows: readonly { id: string; sortOrder: number }[]): void {
+  if (rows.length === 0) return;
+  const db = getDb();
+  const statement = db.prepare(
+    'UPDATE tasks_cache SET sort_order = ?, updated_at = ? WHERE id = ?',
+  );
+  const now = Date.now();
+  const writeAll = db.transaction((items: readonly { id: string; sortOrder: number }[]) => {
+    for (const item of items) statement.run(item.sortOrder, now, item.id);
+  });
+  writeAll(rows);
 }
 
 // ============ Sync queue ============
@@ -901,6 +946,7 @@ interface TaskCacheRow {
   content: string | null;
   raw_json: string | null;
   last_synced_at: number | null;
+  sort_order: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -921,6 +967,7 @@ function rowToTaskCache(r: TaskCacheRow): TaskCache {
     content: r.content,
     rawJson: r.raw_json,
     lastSyncedAt: r.last_synced_at,
+    sortOrder: r.sort_order,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

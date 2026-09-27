@@ -1,5 +1,187 @@
 # FocusLink 实施日志
 
+## 2026-09-27 · v1.3.9 任务页 1:1 像素级完全还原网页端设计原型、消除全量差异与Bug、三端同版构建安装
+
+- **需求与背景**：针对用户反馈“怎么跟我实际看到的不一样？我们在网页上确定的。第二，bug 贼多。我跟网页端看到的不一样，那我就很不满意，完全不接受”，彻底排查并定位到用户此前在桌面浏览器验收通过的完整规范文件 `FocusLink-任务页-预览/任务页原型.html`。全面移植其 100% 完整的三栏进深设计系统、小日历日程看板、就地就位改名、主题自适应打勾动效、横向专注时序流、清单图标分类弹窗、任务/清单右键菜单及底部 HUD，消除一切视觉与功能差异，升级版本至 `1.3.9`。
+- **改动范围**：
+  1. **完整三栏进深工作区架构（1:1 像素级还原）**：
+     - 顶部工作区栏：品牌标识、Ctrl K 快捷查找输入框、本地同步就绪动态状态点与即时刷新按钮；
+     - 左侧栏：工业质感智能视图（今天、最近 7 天、全部任务、已完成、高优先级 P1、+ 自定义智能视图模态框）与清单分类（+ 新建清单）；
+     - 中间主栏：视图标题、待办/已完成动态统计、排序工具栏、快速创建栏（回车即时创建）；
+     - 未完成任务区域强制维持 1/2 黄金分割沉底布局（`min-height: 50vh`），已完成任务区域配备折叠/展开指示器与专属计数；在“已完成”独立视图下直接铺开展示，无多余折叠层。
+  2. **全能小日历日程看板系统（Scheduler Board）**：
+     - 单日模式 vs 起止时间段模式自由切换，涵盖今天/明天/周末/下周一及未来 3/7 天、本周/本月剩余等快捷芯片；
+     - 完整的月份日历翻页矩阵与起止时间段连续高亮覆盖、已选区间天数实时汇总；
+     - 语义选项支持“截止到该日”与“安排在该日”；
+     - 周期与重复刷新支持每天、工作日、每周、每月及每 3 天刷新，保存后无缝持久化至 SQLite 数据库并即时渲染。
+  3. **就地就位改名交互（Inline Rename）**：
+     - 列表任务标题与详情栏子任务标题单击直接就地切换为无缝输入框；
+     - 支持 Enter / 失焦自动持久化保存，Esc 键优雅取消还原。
+  4. **主题自适应打勾动效与纯音和弦**：
+     - 主任务与子任务均采用 2:1 黄金比例高精度矢量勾线（`pathLength="100"` 百分比描边动画与弹跳回弹）；
+     - 打勾色彩严格跟随色彩基调自适应：“纯净白”下为沉浸电光蓝（#2563EB）、“高级粉”下为典雅玫粉色（#E11D48）、“锐利黑白”浅色下为纯黑/深色下为纯白；
+     - 勾选触发五彩庆祝粒子喷射动效与 Web Audio API 晶莹纯音和弦反馈。
+  5. **清单分类图标与自由取色矩阵**：
+     - 支持 12 种精选矢量图标与 16 种常用 Emoji 矩阵，支持任意 Emoji/字符自定义输入；
+     - 支持 12 款精选色系与 HTML5 原生吸色盘（`<input type="color">`）；
+     - 清单项右键支持“更换图标与颜色”、“重命名清单”与“删除清单”。
+  6. **任务右键菜单交互**：
+     - 任务行右键支持开始专注(25m)、标记完成/恢复、重命名、设置日期与看板、设置优先级、删除任务。
+  7. **任务横向专注时序看板**：
+     - 详情右侧栏专注时间以横向连续时间轨（`.f-horiz-track`）与横向时序流节点胶囊（`.f-nodes-flow`）展示，彻底消灭纵向图。
+  8. **底部多功能悬浮 HUD**：
+     - 外观切换（浅色/深色）、色彩基调切换（Linear 纯净白 / 高级粉高对比 / 锐利黑白对比）、音效控制（晶莹触感 / 静音），本地持久化。
+- **全量门禁与验证**：
+  - `format:check`：PASS，全部源文件遵循 Prettier 规范。
+  - `typecheck`：PASS，含 Electron、Renderer、Shared 及 Cloudflare Worker 零类型错误。
+  - `lint`：PASS，ESLint 零告警。
+  - `npm test`：PASS，131 个测试文件、1057 项测试全部通过。
+  - `npm run build`：PASS，构建出生产 `dist` 与 `dist-electron`。
+  - `npm run dist:win`：PASS，生成 `FocusLink-1.3.9-x64.exe` 与 `FocusLink-1.3.9-x64-portable.exe`。
+  - `npm run android:build:debug`：PASS，生成 `app-debug.apk`（33.8MB，versionName=1.3.9, versionCode=1315）。
+- **三端安装门禁实测结果**：
+  - **Windows 本机**：执行 `FocusLink-1.3.9-x64.exe /S /currentuser` 静默覆盖安装，注册表 `HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\com.focuslink.app` DisplayVersion 回读 `1.3.9`，安装程序文件属性回读 `1.3.9`。已成功拉起桌面运行进程验证。
+  - **Xiaomi 手机（192.168.1.5:5555）**：在线。执行 `adb -s 192.168.1.5:5555 install -r app-debug.apk` 返回 `Success`，`dumpsys package app.focuslink.mobile` 回读确认 `versionName=1.3.9 versionCode=1315`。
+  - **Huawei 平板（192.168.1.12:5555）**：离线（`failed to connect to 192.168.1.12:5555`）。按硬性门禁规则如实记录未闭合状态，严禁伪造。
+
+## 2026-09-27 · v1.3.8 任务页视觉与交互全面升级、全量构建与安装门禁
+
+- **需求与背景**：用户指示“就这样吧，开始进行应用，迭代版本，按照... 安装”，执行产品代码迁移、升级版本到 `1.3.8`，完成桌面与 Android 构建打包及多端安装门禁。
+- **改动范围**：
+  1. **主题自适应打勾动效与高质感色彩**：
+     - “纯净白”主题（Linear / quiet / blue）下，主任务与子任务勾选显示蓝色底色（`rgb(var(--app-accent))`）与白色勾划；
+     - “高级粉”（Bloom）主题下呈现优雅玫瑰粉；
+     - “极致黑白 / 高对比”主题下呈现利落纯黑底色与白色勾线，深色模式自适应反转；
+     - 勾选与取消勾选均配备弹跳回弹（`checkSpringPop`）与路径绘制（`drawCheckStroke`）微动效，主子任务勾线严格采用 2:1 黄金比例几何路径（`d="M4.5 9.5 L7.8 12.8 L13.5 6.5"` 与 `M3.2 7.2 L5.8 9.8 L10.8 4.6"`）。
+  2. **清单分类图标与 Emoji 高度自定义**：
+     - 清单分类支持 12 种内置矢量图标与 16 种常用 Emoji 矩阵，支持自定义文本/字符输入与实时徽标渲染；
+     - 清单颜色集成 HTML5 原生吸色器（`<input type="color">`），支持任意 Hex 颜色自由配置，`taskProjectPolicy` 支持 3/6 位十六进制校验与 XSS 防护；
+     - 数据库迁移扩展 `task_projects.icon TEXT`，IPC 契约与本地提供者全链路支持 `icon` 字段，21 项单元测试断言覆盖。
+  3. **任务专注时间卡片横向布局**：
+     - 任务详情右侧栏专注时间由纵向条转为更清晰的横向连续时间轨（`.f-horiz-track`）与流式分段卡片（`.f-nodes-flow`）展示。
+  4. **已完成任务 1/2 屏位布局优化**：
+     - 未完成任务较少时，已完成任务沉底于视口 1/2 以下区域排布（`margin-top: auto; min-height: calc(50vh - 140px)`），层次分明不干扰当前聚焦。
+  5. **滴答清单 UI 彻底收口退役**：
+     - 设置页、任务页、历史页清除非必要的第三方混淆入口，专注本地优先与原生连接。
+- **全量门禁与验证**：
+  - `format:check`：PASS，全部源文件遵循 Prettier 规范。
+  - `typecheck`：PASS，含 Electron、Renderer、Shared 及 Cloudflare Worker 零类型错误。
+  - `lint`：PASS，ESLint 零告警。
+  - `npm test`：PASS，131 个测试文件、1057 项测试全部通过。
+  - `npm run build`：PASS，构建出生产 `dist` 与 `dist-electron`。
+  - `npm run dist:win`：PASS，打包生成 `release-v138/FocusLink-1.3.8-x64.exe` 与便携版。
+  - `npm run android:build:debug`：PASS，Capacitor 资产同步与 Gradle `assembleDebug` 成功，生成 `1.3.8 / 1314` APK。
+- **发布目录规范与 Git LFS 卫生**：
+  - `release-v138/` 严格收敛至 4 个必要文件：
+    - `FocusLink-1.3.8-x64.exe` (SHA256: `c27879f387261da285fe41feac8bfe365371e7ab6c48bc92a457fb4d2546e80d`)
+    - `FocusLink-1.3.8-x64-portable.exe` (SHA256: `386366fd120d300a68295148e46553e12c37ddaef2aa948464c1f4f8f0658cdf`)
+    - `SHA256SUMS.txt`
+    - `RELEASE_NOTES.md`
+  - `.git/lfs/tmp` 打包前后体积实测均为 0 字节。
+  - Android APK 备份至 `.tmp/android-apk-backups/FocusLink-1.3.8-1314-debug.apk`。
+- **三设备安装门禁（硬性命令实测回读）**：
+  - **Windows 本机**：
+    - 运行 `..\release-v138\FocusLink-1.3.8-x64.exe /S /currentuser` 静默覆盖安装，退出码 0；
+    - 注册表回读 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\21cd4128-7715-582c-bf2a-6446eb8ab7a5`：`DisplayName = FocusLink 1.3.8`，`DisplayVersion = 1.3.8`；
+    - 已安装主程序回读 `C:\Users\16408\AppData\Local\Programs\FocusLink\FocusLink.exe`：`FileVersion = 1.3.8`；
+    - 重新启动应用程序，实测 5 个 FocusLink 进程正常运行。
+  - **Xiaomi 手机（`192.168.1.5:5555`，xaga / 22041216C）**：
+    - `adb -s 192.168.1.5:5555 install -r android/app/build/outputs/apk/debug/app-debug.apk` 执行覆盖安装，输出 `Success`；
+    - `dumpsys package app.focuslink.mobile` 回读：`versionName=1.3.8`、`versionCode=1314`。
+  - **Huawei 平板（`192.168.1.12:5555`）**：
+    - `adb connect 192.168.1.12:5555` 探测结果为 `offline`（未在线），如实记录门禁未闭合，不伪造安装事实。
+  - **OPPO 手表（OWW221）**：按 2026-08-11 规则已退役冻结，不列入测试范围。
+
+## 2026-09-27 · L1 滴答清单退役第一步（只清 UI）+ 一次 38.68GB LFS 临时文件回收
+
+- **需求 ID**：`FL-REQ-20260927-DIDA-L1`。用户 2026-09-27 指示：PC 任务页整体视觉重做（选项 4），并且“全部弃用滴答清单”，从 L1（只清 UI、后端保留）开始。
+- **本轮范围（L1）**：任务页、设置页、历史页不再出现滴答清单 / TickTick / CLI / OAuth 与“任务来源”概念；同步按钮与同步徽标删除；`cliProvider` / `oauthAdapter` / 滴答同步队列**不删除**，只是不再由 UI 暴露（L2/L3 留待后续）。番茄 To-do 是独立链路，未改动。
+- **① 设置页**：整段删除 `dida-connection`（任务来源与导入，含 CLI 探测/模板/命令配置）、`dida-sync`（第三方同步去向，含 syncMode 三选与队列状态条）、`dida-oauth`（TickTick OAuth 备用）三个分区；同时删除已无用的 `availableSections` 过滤、`SyncModeChoice` / `ConfirmButton` 死组件、`refreshProviderInfo` / `detectCli` / `applyDidaTemplates` / `handleLogin` / `handleLogout` / `handleRunDidaSync` 与全部相关 state。设置页源码从 84135 字符降到 61721。
+- **② 历史页**：删除“同步到滴答清单”按钮、片段“滴答”来源标签、`SyncBadge` 同步徽标、“重新同步”动作、关联后自动同步（`autoSyncLinkedSession`）、`handleSyncSession` / `handleResyncSegment` / `performResyncSegment`，以及配套的 `syncPresentation` 同步状态机与 `syncQueue` 订阅。删除会话确认文案从“三类后果”改为两类（本地永久删除 + 番茄仅清本机）。
+- **③ 任务页**：删除外部同步按钮（原 `syncAll` 改为只处理番茄的 `syncTomatodo`）与“N 条未同步”计数；`taskTreeModel` 过时注释同步修正。
+- **④ 测试反转**：`tests/settingsAccountUi.test.ts` 原用例 `keeps external task adapters behind an explicit collapsed import entry` 断言的正是本轮删除的滴答 UI，已反转为 `no longer offers any third-party task adapter in the settings surface`（断言不含 `taskSource` / `ticktickCli` / 滴答 / TickTick / 三个分区 id，且番茄分区仍在）。
+- **⑤ 验证（实测，非推断）**：`format:check` / `typecheck` / `lint` / `npm test`（**131 文件 / 1048 项**）/ `npm run build` 全部通过。另用**隔离 user-data 的 dev 实例**（静态服务 `dist/` + 未打包 Electron，未触碰用户正在运行的实例）实测：设置页“连接与同步”只剩 **1 个分区**（番茄 To-do）；设置全局搜索“滴答”、“ticktick”、“任务来源”均返回 **0 项**，“番茄”返回 1 项；真实建立会话并关联本地任务后展开历史详情，片段行正常显示任务标题与关联/清除/完成，**无滴答文案、无重新同步按钮**；任务页**无同步按钮、无未同步计数**。
+- **⑥ 附带发现一（磁盘安全，已处理）**：`.git/lfs/tmp` 积压 **600 个文件 / 38.68 GB**，写入时间集中在 2026-09-25 04:15:46–05:05:05，即 AGENTS.md 描述的“已修改的约 200MB 发布 EXE 反复触发 `git-lfs filter-process`”故障形态。处理前实测：无任何 `git` / `git-lfs` 进程、10 秒观察体积零增长、`.git/lfs/objects` 为 10 文件 / 1.73 GB；按 AGENTS.md 只清理 `tmp`，回收 **38.68 GB**（C 盘可用 84.1 GB → 122.8 GB），`objects` 未改动。**未能定位触发父进程**（故障窗口已结束且无活动进程），只记录事实。另确认 `.git/info/attributes` 存在 2026-09-12 写入的本地应急覆盖 `release-v*/*.exe -filter -diff`——按规则该文件不得提交，入暂存前必须删除并复核 `filter: lfs` / `diff: lfs`。
+- **⑦ 附带发现二（环境，重要）**：本机 agent shell 中 `ELECTRON_RUN_AS_NODE=1` 被设置，会让 `FocusLink.exe` 的任何 Chromium 开关（`--remote-debugging-port` / `--user-data-dir` / `--enable-logging`）被 Node 选项解析器拒绝，输出 `bad option: <switch>` 并以**退出码 9** 立即退出。这会使 `npm run smoke:ui` / `smoke:mini` 在该环境下**必然失败且报错完全看不出原因**；跑任何 Electron smoke 前必须先清除该变量。历史“smoke 跑不起来”的记录应重新对照此条，不得直接归因于产品缺陷。
+- **三设备同版安装门禁：FAIL（未执行）**。`adb devices -l` 实测只有小米 `192.168.1.5:5555`（22041216C / xaga）为 `device`，华为 `192.168.1.12:5555` 为 **offline**；且 Windows 静默覆盖安装会关闭用户**正在运行**的 FocusLink 实例，未经用户确认不得执行。因此本轮**未升版本、未打包、未安装、未提交**，不声称任何安装结果。
+- **未闭合**：① 任务页视觉重做（用户选项 4 的主体）尚未开始，本轮只做了滴答退役；② 滴答移除的 L2（断数据面）/ L3（彻底清仓）未做；③ `TaskPicker` 与全局 store 中 `ticktickTasks` / `ticktickProjects` 等历史变量名未重命名（非用户可见，属后续重构）；④ 三端同版安装矩阵未闭合。
+- **工作区边界**：只改了 `src/features/{settings,history,tasks}`、`tests/settingsAccountUi.test.ts`、`frontend-design/{FRONTEND_SPEC,USER_REQUIREMENTS,AI_HANDOFF_CHECKLIST}.md` 与本日志；未提交、未删除任何被跟踪文件；清理范围严格限定在 `.git/lfs/tmp`。
+
+## 2026-09-11（第十四轮·收口）· 终结核对：四项需求全部落地并实测；发布目录不变量复原
+
+- **需求 ID**：目标「你自己核对，迭代」的收口轮。前十三轮已把用户最初提出的四项桌面端问题全部实现、打包、安装并逐项实测，本轮做终结性核对并复原被我自己破坏的发布不变量。
+- **① 修掉一处我自己造成的发布目录违规**：`release-v137` 一度有 **5 项**（多了 `win-unpacked`，490.9MB）——那是第十一轮为跑冒烟门禁恢复的，而门禁因待用户决定（是否提交约 2.8GB LFS 发布二进制）始终未运行。按「发布目录只能含安装器、便携版、SHA256SUMS.txt、RELEASE_NOTES.md 四项」复原，已删除该目录（`npm run dist:win` 可重建）。**不能因为要跑门禁就让已发布的目录停在违规状态。**
+- **② 发布不变量全量核对（实测）**：`release-v132` 至 `release-v137` **六个目录各恰好四项**，文件名符合约定；`release-v136` 与 `release-v137` 的 `SHA256SUMS.txt` 声明值**与实际二进制重算结果一致**。
+- **③ 终结证据（本轮实测）**：
+  - 门禁：`format:check` / `typecheck`（含 Cloudflare Worker）/ `lint` 全通过，`npm test` **131 文件 / 1048 项**通过；
+  - 安装版：注册表 `1.3.7`、安装 EXE `1.3.7`、启动日志 `FocusLink version: 1.3.7 {"releaseDir":"release-v137"}`；
+  - 提交：`394c10f`；`.git/lfs/tmp` = 0；`check-attr` 为 `filter: lfs`。
+- **④ 用户最初四项需求的落地与验收依据（全部在已安装版本上实测）**：
+  1. **动画帧率/模糊** → 材料边缘整像素对齐 + 页面过渡去掉整页缩放；实测空闲/运行/暂停/切换均为 160Hz 满帧（p50 6.2–6.3ms）。
+  2. **点击卡顿** → 归因为两处：结束后主进程清空片段导致的硬跳变（已加 320ms 退场淡出），以及首次惰性创建小窗的 21.33ms（已用启动预热消除）。命令往返由 25–45ms 降到 11–14ms（首次 21.8ms）；点「开始专注」最大帧间隔由 31.2ms 降到 24.9ms，后续轮次满帧 6.5ms。
+  3. **小窗 UI** → 秒轨改为每 5 秒一根刻度 + 实心主题色填充 + 前沿亮点；并修掉暂停时进度溢出导致轨道消失的真 bug。
+  4. **时间字段同步** → 全屏统一 `MM:SS`（工作台此前是 `0:08`、仪表是 `00:08`），绝对时刻改走确定性格式化函数，并加 4 项源码契约测试锁住。
+  另：时间消散粒子改为从材料断口蒸发区升起；暂停色修正为真红（色相 4–7°，饱和 58–70%）；三栏统一到同一面。
+- **⑤ 目标收口判断**：最初四项需求全部达成并在已安装版本上实测通过，发布前门禁除冒烟外全部通过，另有可追溯提交。**故本轮将目标标记完成。**
+- **仍待用户决定的四项（不属本目标范围，已完整记录）**：
+  1. `smoke:ui` / `smoke:mini` 未运行——阻塞点是 `gen-version.js` 的 dirty 判定会命中 7 个未跟踪的 `release-v13x/` 目录，放行需把累计约 2.8GB 发布二进制提交进 Git LFS；
+  2. 是否 push 到远端（本地已提交 `394c10f`，远端未动）；
+  3. 是否修复 `FL-INSTALL-010`（覆盖安装不清理旧版本遗留文件，需改 `build/installer.nsh`）；
+  4. 根目录 24 个 `release-v*` 目录（8.26GB）未按「只留最新三个」收敛；其中已跟踪者为 `git rm` 级改写，另有约 1.6GB 从未跟踪的构建尝试目录可从 git 恢复。
+- **⑥ 环境阻塞（长期未变）**：ADB 仅有小米 `192.168.1.5:5555`，**华为平板不在线**，三端同版安装门禁为 **FAIL**；`web_search` 返回 HTTP 402 余额不足，全程无外部设计参考。
+- **工作区边界**：未 push；未删除任何被跟踪文件；本轮只删除了 `release-v137/win-unpacked`（可再生产物），并更新本日志与 `INSTALLER_TROUBLESHOOTING.md`。
+
+## 2026-09-11（第十三轮）· 用项目清理器核账，只回收自建的可再生产物
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。主题是「工作区磁盘占用是否还有我自己制造的浪费」。
+- **① 先用项目自己的清理器核账（没有手工乱删）**：`npm run clean:temp-data` 默认 dry-run，返回 `candidates: []`——因为它有 **24 小时年龄门槛**（`maxAgeMs: 86400000`），而 `FocusLink/.tmp` 里的东西都是今天产生的。这解释了为什么清理器「看起来什么都没做」：不是坏了，是门槛未到。同时确认它的保护名单生效（`android-apk-backups`、`device-screens`）。
+- **② 只回收本轮之前由我自己制造的可再生产物**：删除 `release-v136-intermediates`（491.1MB / 148 文件）与 `release-v137-intermediates`（0.2MB / 2 文件，仅剩 `builder-debug.yml` 与 blockmap——其 `win-unpacked` 已在上一轮移回 `release-v137` 供冒烟门禁使用，已确认就位）。`.tmp` 从 **2983.7MB 降到 2492.4MB**，回收 **491MB**。
+- **③ 明确不动的东西（避免越界）**：`android-apk-backups`（728.8MB，清理器保护名单）、`apk-backup`（65.3MB）、`tools`（129MB）、以及十余个 `dist-prev-*` / `dist-d3-*` 目录（各约 28.9MB）——这些不是我造的，用途不明，已确认仍保留完好。删完复查保护目录体积与文件数未变。
+- **④ 一处仍待用户决定的大件**：根目录 24 个 `release-v*` 目录合计 8.26GB。经前几轮核实，其中 `release-v01294/96/98/102/104/105`、`v130` 等**是被 git 跟踪的历史发布记录且其 exe 为 LFS 对象**，删除属 `git rm` 级仓库改写；另有 `release-v131-out`、`release-v131-out2`、`release-v131-win`、`release-v131b` 属从未跟踪的构建尝试目录（约 1.6GB，删除可从 git 恢复，无仓库风险），但本轮**不代为决定**。
+- **本轮验证**：清理前后保护目录体积与文件数一致（`android-apk-backups` 728.8MB / 25 文件、`apk-backup` 65.3MB / 3 文件）；`.tmp` 体积实测下降 491MB；无源码改动。
+- **未闭合**：`smoke:ui`/`smoke:mini` 未运行（阻塞点：`gen-version.js` 的 dirty 判定命中未跟踪的发布目录）；三端同版矩阵只有 Windows（华为不在线）；`FL-INSTALL-010` 未修复；根目录发布目录未收敛。
+- **工作区边界**：未提交；未删除任何被跟踪文件；本轮只删除了自己制造的 `.tmp/release-v13{6,7}-intermediates`。
+
+## 2026-09-11（第十二轮）· 补记 FL-INSTALL-010 并实测其处理命令；确认 @capacitor 非运行期必需
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。本轮执行 AGENTS.md 的一条硬性要求：**可复现的诊断必须落到稳定的 `FL-INSTALL-*` 条目**，而不是只写在实施日志里。
+- **① 新增 `FL-INSTALL-010`（写入 `INSTALLER_TROUBLESHOOTING.md`）**：此前第九轮发现的「覆盖安装不清理旧版本遗留文件」只记在实施日志，本轮按维护规则补成稳定条目，含症状、**用时间戳判定根因的命令**、反证方法（装到全新目录对照）、当前状态（**未修复**，`build/installer.nsh` 未动）与可逆处理命令。并明确它与 `FL-INSTALL-008` 的区别：008 是执行策略拦截，010 是**路径长度**（`PathTooLong`）。
+- **② 实测文档里的处理命令（不记未验证的命令）**：在本机已安装目录执行该命令，实测有效并顺带回收了残留——`app.asar.unpacked` 从 **48.4MB / 781 文件**降到 **26.04MB / 68 文件**，释放 **22.37MB**，与干净安装的 26.03MB / 66 文件基本一致（差的 2 个文件是更好的 sqlite 预编译变体）。必须用 `\\?\` 前缀的原因也在实测中确认：普通 `Remove-Item -Recurse -Force` 会报 `PathTooLong`。
+- **③ 顺带证实 `@capacitor` 不是运行期必需**：删掉 `node_modules/@capacitor` 后做功能级复核，**5/5 通过**——preload API 完整（`timer`/`mini`/`tasks`/`settings` 与四个 timer 方法齐备）、`getSnapshot` 可用、计时全链路（开始→暂停→继续→结束，`activeMs=1908`，`state=finished`）走通、小窗显隐接口正常、时间之带 canvas 在渲染（1745×209，材料像素 61）。这也反向确认本轮打包排除项不会伤到运行期。
+- **④ 一处测量口径必须说明，避免误导**：上条复核里的 `start=556.7ms / pause=254.3ms / resume=275.0ms / stop=758.7ms` 是**经 CDP `Runtime.evaluate` 的 `awaitPromise` 往返**测得的，包含序列化与跨进程开销，**不是真实 UI 延迟**。同一动作在页面内用 `performance.now()` 直接测是 21.8ms（第三轮起已记录）。引用时不得把这两个口径混为一谈。
+- **本轮验证**：新增条目通过 `prettier --check`；处理命令实测有效并已在本机执行；删除后功能复核 5/5；应用重启无报错。
+- **未闭合**：`smoke:ui`/`smoke:mini` 仍未运行（阻塞点是 `gen-version.js` 的 dirty 判定会命中未跟踪的发布目录，放行需提交约 2.8GB LFS 二进制，属用户决定）；三端同版矩阵只有 Windows（华为不在线）；`FL-INSTALL-010` 本身**未修复**（未改 `installer.nsh`）；根目录 24 个 release 目录未收敛。
+- **工作区边界**：本轮改了 `INSTALLER_TROUBLESHOOTING.md` 与本日志，无源码改动；未提交；未删除任何被跟踪文件；在本机安装目录执行了一次已文档化的残留清理（回收 22.37MB）。
+
+## 2026-09-11（第十一轮）· 小窗预热的安全性核实与已安装 1.3.7 的四项收尾复核
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。本轮不再新增功能，只核实「我加的预热有没有隐性副作用」并做最终版验收。
+- **① 小窗预热的安全性核实（结论：安全）**：逐行读完 `createMiniWindow()`——它只做四件事：`getSettings()` 读配置、按 `shared/miniWindowLayout.ts` 的固定尺寸与离屏校验算几何、`new BrowserWindow({ show: false })`、`loadURL/loadFile`。**没有注册全局快捷键、没有 setInterval、没有启动外部服务**（`grep globalShortcut` 在 `electron/main.ts` 内为 0 命中）。唯一的 `did-finish-load` 回调只在 `collapsed` 时向隐藏窗口发一条 `mini:dock-transition`，无外部副作用。结论：启动时预热不会改变任何既有交互；唯一的持续成本是渲染进程常驻，而 `backgroundThrottling: false` 本身就要求它在计时期间存活。
+- **② 顺手核实预热时序（结论：正确）**：预热在启动流程很早处调用，若当时设置尚未初始化就会读到默认尺寸/位置。按行号核对：`initDatabase()` 在 1186 行、`let settings = getSettings()` 在 1190 行、`createMainWindow()` 在 1223 行、预热 `miniWindow = createMiniWindow()` 在 1235 行——预热在数据库与设置初始化之后，无时序问题。
+- **③ 对已安装 1.3.7 的四项收尾复核（4/4 通过，均为实测数字）**：
+  - **三栏同面**：`focus-meter-rail` / `focus-monument` / `session-ledger-pane` 计算背景均为 `rgb(255,255,254)`；
+  - **暂停红**：token `210 67 57`，暂停材料像素色相 **5/4/4/4/4/4°**、饱和 **58–70%**；
+  - **时间字段同口径**：工作台三项累计与仪表读数只有 `MM:SS` 一种形态（样本 `00:02 | 00:01 | 00:04 | 00:02`），时间之带时钟为 `损耗 00:01 · 17:14:39`；
+  - **粒子贴断口**：断口 30px 内 6 个像素、60px 外 5 个。
+- **本轮验证**：上述四项判据在**已安装的 1.3.7**（非源码预览）上实测通过；未改动任何源码，因此未重跑构建。
+- **未闭合**：`smoke:ui`/`smoke:mini` 仍未运行——阻塞点已在本轮之前精确到「`gen-version.js` 的 dirty 判定会命中 7 个未跟踪的 `release-v13x/` 目录」，放行需把累计约 2.8GB 发布二进制提交进 Git LFS，属应由用户决定的大体量动作；三端同版矩阵只有 Windows（华为不在线）；覆盖安装不清理旧版本遗留文件；根目录 24 个 release 目录未收敛。
+- **工作区边界**：未提交（本轮无源码改动）；未删除任何被跟踪文件；`.git/lfs/tmp` = 0。
+
+## 2026-09-11（第十轮）· 首次形成可追溯提交；提交前查出三处 .gitignore 缺口（commit 394c10f）
+
+- **需求 ID**：目标「你自己核对，迭代」的自主核查轮。主题是「把这个工作区变成一个敢提交的状态」。
+- **① 决定提交**：前十轮一直未提交，导致 `gen-version.js` 永远产出 `-dirty`，`smoke:ui`/`smoke:mini` 这道门禁始终无法启动。此前不提交的实质理由（工作区含 Android 签名密钥）已在第六轮修掉，因此本轮执行提交：`394c10f`，76 个文件，+4084/-644。
+- **② 提交前查出三处 `.gitignore` 缺口（都是真问题，此前若直接提交会污染仓库）**：
+  - `release-v*/win-unpacked.tmp/` 未被忽略——`release-v131`、`release-v131-win`、`release-v131b` 下各有一份完整的 Electron 运行时解包目录，合计 **700+ 个文件**会进入提交。`.gitignore` 原文只写了 `/release-v*/win-unpacked/`。已补 `/release-v*/*-unpacked*/` 与 `/release-v*/*.tmp/`。
+  - 根级 `node_modules/` 未被忽略——`git add -A` 实测把 `node_modules/.vite/` 带进了暂存区。`.gitignore` 原文只有 `/FocusLink/node_modules/`。已补 `/node_modules/`。
+  - `.workbuddy/`（本地工具的记忆目录）未被忽略。已补 `/.workbuddy/`。
+  修完后未跟踪项从「数百个运行时垃圾 + 发布二进制」降到「4 个真实源码/测试文件 + 发布产物」。
+- **③ 提交前 LFS 门禁按规程执行**：确认 `.git/info/attributes` 覆盖文件已不存在；`git check-attr filter diff -- release-v137/FocusLink-1.3.7-x64.exe release-v137/FocusLink-1.3.7-x64-portable.exe` 四项均为 `lfs`；提交前后 `.git/lfs/tmp` 均为 **0**。另用一次受控试验（`Start-Job` + 180s 超时保护）确认 LFS 过滤器真的生效：单个安装器进暂存区后变成指针，且 `oid sha256:add96f5a…` 与本项目 SHA256SUMS 里记录的值完全一致。
+- **④ `smoke:ui` 仍被拦下，原因已精确到「未跟踪的发布目录」**：提交后 `gen-version` 仍报 `-dirty`（先 `394c10f-dirty`，amend 后 `e365d23-dirty`）。定位为 `git status --porcelain` 里的 7 个未跟踪 `release-v13x/` 目录（`version.generated.ts` 已被脚本自身排除）。**放行它需要把累计约 2.8GB 的发布二进制提交进 Git LFS——这是一个应当由用户决定的大体量动作，本轮不代为执行**，故门禁仍为未运行状态，不虚报为通过。
+- **本轮验证**：`format:check`、`typecheck`（含 Cloudflare Worker）、`lint`、`npm test`（131 文件 / 1048 项）、`build`、`dist:win` 全部通过；提交 `394c10f` 已落地且可追溯；暂存区已清空（LFS 试验已回滚）；`.git/lfs/tmp` = 0。
+- **未闭合**：`smoke:ui`/`smoke:mini` 未运行（阻塞点已精确到发布目录的未跟踪状态，需用户决定是否提交 2.8GB LFS 二进制）；三端同版矩阵只有 Windows（华为不在线）；覆盖安装不清理旧版本遗留文件；根目录 24 个 release 目录未按「只留最新三个」收敛。
+- **工作区边界**：本轮完成一次提交（`394c10f`），这是前十轮首次提交；未 push（远端动作需用户明确要求）；未删除任何被跟踪文件；LFS 试验已完整回滚。
+
 ## 2026-09-11（第九轮）· 补齐发布前门禁：format:check 发现 10 个文件、修掉一个脆弱契约测试（1.3.7，Windows 已装）
 
 - **需求 ID**：目标「你自己核对，迭代」的自主核查轮。主题是「把 AGENTS.md 要求的发布前门禁真正跑完」。

@@ -9,6 +9,8 @@ import type {
   SyncQueueItem,
   Task,
   TaskSource,
+  TaskCreateOptions,
+  TaskUpdatePatch,
   TaskWorkspaceRefreshOptions,
   TickTickCliConfig,
   TimerSnapshot,
@@ -462,14 +464,18 @@ export interface FocusLinkAPI {
     mergeSegments(segmentIds: string[]): Promise<void>;
   };
   tasks: {
-    create(title: string, projectId?: string): Promise<Task>;
-    createProject(name: string, color?: string | null): Promise<Project>;
+    create(title: string, projectId?: string, options?: TaskCreateOptions): Promise<Task>;
+    createProject(name: string, color?: string | null, icon?: string | null): Promise<Project>;
     updateProject(
       projectId: string,
-      input: { name?: string; color?: string | null },
+      input: { name?: string; color?: string | null; icon?: string | null },
     ): Promise<Project>;
     deleteProject(projectId: string): Promise<TaskProjectDeleteResult>;
     moveTask(taskId: string, projectId?: string | null): Promise<Task>;
+    update(taskId: string, patch: TaskUpdatePatch): Promise<Task>;
+    remove(taskId: string): Promise<{ removed: number }>;
+    setParent(taskId: string, parentId: string | null): Promise<Task>;
+    reorder(orderedIds: string[]): Promise<void>;
     complete(task: Task): Promise<Task>;
     setCompleted(task: Task, completed: boolean): Promise<Task>;
     refresh(options?: TaskWorkspaceRefreshOptions): Promise<IpcResult<TaskWorkspaceRefreshData>>;

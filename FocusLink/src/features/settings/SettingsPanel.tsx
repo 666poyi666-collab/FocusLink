@@ -2,7 +2,7 @@
 // FocusLink 只有一套视觉语言；外观只切换 light/dark/system。
 // 强调色贯穿全部界面与专注状态；暂停保持红色。
 // - 开关统一 42×24px，关闭态有清楚边界，disabled 可识别；
-// - 语义标签：已同步/未同步/同步失败仅用于同步队列；dida 描述为「同步到滴答清单」；
+// - 语义标签：已同步/未同步/同步失败仅用于同步队列；
 //   番茄 To-do 使用「已写入本地/等待同步确认/上传已确认/历史已停止重试」。
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/store';
@@ -42,7 +42,6 @@ const HOTKEY_LABELS: Record<keyof AppSettings['hotkeys'], string> = {
  * 分组按「用户此刻在想什么」划分，而不是按实现模块。
  *
  * 旧结构把外观、字体、小窗、快捷键、开机自启、关于全都堆进「界面与体验」，
- * 同时把滴答清单拆成两半——「怎么连」在连接页、「同步什么」在同步页，
  * 而这两件事用户是一起想的。
  */
 const TABS = [
@@ -56,7 +55,7 @@ const TABS = [
 
 type SettingsTabId = (typeof TABS)[number]['id'];
 
-/** 需要实时状态轮询的分组：滴答队列、番茄连接、跨设备状态都在这两页。 */
+/** 需要实时状态轮询的分组：番茄连接、跨设备状态都在这两页。 */
 const LIVE_STATUS_TABS: ReadonlySet<string> = new Set<SettingsTabId>(['integrations', 'devices']);
 
 type SettingsSection = {
@@ -162,7 +161,7 @@ type HotkeyBadgeState = {
 type DeviceSyncBusyAction = 'revoke' | 'logout' | 'pair-code' | 'redeem' | null;
 
 export function SettingsPanel() {
-  const { settings, setSettings, syncQueue, setSyncQueue, addToast } = useStore();
+  const { settings, setSettings, addToast } = useStore();
   const [capturing, setCapturing] = useState<keyof AppSettings['hotkeys'] | null>(null);
   // captureKey 清理函数 ref：组件卸载时若仍在捕获，需移除全局监听
   const captureCleanupRef = useRef<(() => void) | null>(null);
@@ -176,23 +175,6 @@ export function SettingsPanel() {
       }
     };
   }, []);
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
-  const [region, setRegion] = useState<'ticktick' | 'dida365'>('dida365');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [cliDetecting, setCliDetecting] = useState(false);
-  const [cliDetected, setCliDetected] = useState<{
-    found: boolean;
-    executable: string;
-    helpOutput?: string;
-  } | null>(null);
-  const [providerInfo, setProviderInfo] = useState<{
-    providerType: 'dida' | 'ticktick' | 'unknown';
-    executable: string;
-    executablePath: string;
-    hasStaleTicktickTemplates: boolean;
-  } | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTabId>('appearance');
   const [search, setSearch] = useState('');
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyRegistrationStatus | null>(null);
@@ -202,7 +184,6 @@ export function SettingsPanel() {
   const [tomatodoBridge, setTomatodoBridge] = useState<TomatodoBridgeStatus | null>(null);
   const [tomatodoUploading, setTomatodoUploading] = useState(false);
   const [tomatodoRefreshing, setTomatodoRefreshing] = useState(false);
-  const [didaSyncRunning, setDidaSyncRunning] = useState(false);
   const [deviceSyncStatus, setDeviceSyncStatus] = useState<DeviceSyncStatus | null>(null);
   const [deviceSyncBusyAction, setDeviceSyncBusyAction] = useState<DeviceSyncBusyAction>(null);
   const deviceSyncSaving = deviceSyncBusyAction !== null;
@@ -237,14 +218,6 @@ export function SettingsPanel() {
     return () => window.clearInterval(timer);
   }, [devicePairingOffer]);
   useEffect(() => {
-    window.focuslink.ticktick.status().then((s) => {
-      setConnected(s.connected);
-      setRegion(s.region as 'ticktick' | 'dida365');
-    });
-    window.focuslink.cli.detect().then((r) => {
-      setCliDetected(r);
-    });
-    refreshProviderInfo();
     refreshHotkeyStatus();
     refreshTomatodoPending();
     refreshTomatodoBridge();
@@ -269,15 +242,6 @@ export function SettingsPanel() {
     });
     return () => unsub();
   }, []);
-
-  const refreshProviderInfo = async () => {
-    try {
-      const r = await window.focuslink.cli.getCurrentProvider();
-      setProviderInfo(r);
-    } catch {
-      // ignore
-    }
-  };
 
   const refreshHotkeyStatus = async () => {
     try {
@@ -372,10 +336,6 @@ export function SettingsPanel() {
       refreshTomatodoPending(),
       refreshTomatodoBridge(),
       refreshDeviceSyncStatus(),
-      window.focuslink.sync
-        .list()
-        .then((items) => setSyncQueue(items))
-        .catch(() => undefined),
     ]);
   };
 
@@ -526,39 +486,6 @@ export function SettingsPanel() {
     }
   };
 
-  const handleRunDidaSync = async () => {
-    setDidaSyncRunning(true);
-    try {
-      // `runPending` 只处理 status=pending 的队列项。达到重试上限后，
-      // 项目会持久化为 failed；若只调用 runPending，点击“立即重试”
-      // 看起来就像没有任何反应（典型表现是几十条失败记录始终不变）。
-      // 每次手动重试前先读取主进程中的最新队列并逐项恢复失败项，
-      // 避免依赖可能已经过期的 React 状态快照。
-      const latestQueue = await window.focuslink.sync.list();
-      const failedItems = latestQueue.filter((item) => item.status === 'failed');
-      if (failedItems.length > 0) {
-        await Promise.all(failedItems.map((item) => window.focuslink.sync.retry(item.id)));
-      }
-      const result = await window.focuslink.sync.runPendingNow();
-      await refreshSyncState();
-      if (result.failed > 0) {
-        addToast(`${result.failed} 条同步失败，请检查连接页诊断`, 'error');
-      } else if (result.processed === 0 && failedItems.length > 0) {
-        // 例如仅本地模式或限流冷却：队列已经成功恢复为 pending，
-        // 但本轮暂未实际发起远端请求。明确告知用户而非显示“没有未同步记录”。
-        addToast(`已恢复 ${failedItems.length} 条失败记录，等待连接恢复后自动重试`, 'info');
-      } else if (result.succeeded > 0) {
-        addToast(`已同步 ${result.succeeded} 条记录到滴答清单`, 'success');
-      } else {
-        addToast('当前没有未同步的滴答记录', 'info');
-      }
-    } catch (error) {
-      addToast(`同步到滴答清单失败：${ipcErrorMessage(error)}`, 'error');
-    } finally {
-      setDidaSyncRunning(false);
-    }
-  };
-
   const handleUploadPending = async () => {
     setTomatodoUploading(true);
     try {
@@ -605,54 +532,6 @@ export function SettingsPanel() {
       addToast('上传失败：' + (e as Error).message, 'error');
     } finally {
       setTomatodoUploading(false);
-    }
-  };
-
-  const detectCli = async () => {
-    setCliDetecting(true);
-    try {
-      const r = await window.focuslink.cli.detect();
-      setCliDetected(r);
-      await refreshProviderInfo();
-      // 重新读取设置（detect 可能已自动迁移模板）
-      const s = await window.focuslink.settings.get();
-      setSettings(s);
-      if (r.found) {
-        if (providerInfo?.hasStaleTicktickTemplates) {
-          addToast(`探测到 CLI：${r.executable}，已自动迁移为 dida 模板`, 'success');
-        } else {
-          addToast(`探测到 CLI：${r.executable}`, 'success');
-        }
-      } else {
-        addToast('未探测到滴答清单 CLI，请手动配置可执行文件路径', 'info');
-      }
-    } catch (e) {
-      addToast('探测失败：' + (e as Error).message, 'error');
-    } finally {
-      setCliDetecting(false);
-    }
-  };
-
-  const applyDidaTemplates = async () => {
-    try {
-      const res = await window.focuslink.cli.applyDidaDefaults();
-      if (res.ok) {
-        const s = await window.focuslink.settings.get();
-        setSettings(s);
-        await refreshProviderInfo();
-        addToast('已应用 dida 默认模板，正在测试任务读取...', 'success');
-        // 立即测试任务读取
-        const testRes = await window.focuslink.cli.listTasks();
-        if (testRes.ok) {
-          addToast(`dida 任务读取成功：${testRes.data.length} 个任务`, 'success');
-        } else {
-          addToast('dida 任务读取失败：' + testRes.error, 'error');
-        }
-      } else {
-        addToast('应用失败：' + res.error, 'error');
-      }
-    } catch (e) {
-      addToast('应用异常：' + (e as Error).message, 'error');
     }
   };
 
@@ -790,125 +669,6 @@ export function SettingsPanel() {
     }
   };
 
-  const handleLogin = async () => {
-    if (!clientId.trim() || !clientSecret.trim()) {
-      addToast('请填写 Client ID 和 Secret', 'info');
-      return;
-    }
-    setLoginLoading(true);
-    try {
-      const next = await window.focuslink.ticktick.login(
-        clientId.trim(),
-        clientSecret.trim(),
-        region,
-      );
-      setSettings(next);
-      setConnected(true);
-      addToast('滴答清单已连接', 'success');
-    } catch (e) {
-      addToast('登录失败：' + (e as Error).message, 'error');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      const next = await window.focuslink.ticktick.logout();
-      setSettings(next);
-      setConnected(false);
-      addToast('已断开滴答清单', 'info');
-    } catch (e) {
-      addToast('失败：' + (e as Error).message, 'error');
-    }
-  };
-
-  // 三态：还没探测完 / 探测到了 / 确认没有。中性色专门留给「还不知道」。
-  const cliDetectTone =
-    cliDetected === null ? 'tone-neutral' : cliDetected.found ? 'tone-success' : 'tone-warning';
-
-  // 分区外框由注册表统一渲染，这里只提供内容。
-  const oauthConnectionBody = (
-    <>
-      <Row label="区域">
-        <div className="flex gap-2">
-          <ChoiceBtn active={region === 'dida365'} onClick={() => setRegion('dida365')}>
-            滴答清单（国内）
-          </ChoiceBtn>
-          <ChoiceBtn active={region === 'ticktick'} onClick={() => setRegion('ticktick')}>
-            TickTick（海外）
-          </ChoiceBtn>
-        </div>
-      </Row>
-      {!connected ? (
-        <details className="settings-disclosure mt-2.5">
-          <summary className="motion-press">配置 OAuth 凭据</summary>
-          <div className="space-y-3">
-            <Row label="Client ID">
-              <input
-                className="input"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="应用的 Client ID"
-              />
-            </Row>
-            <Row label="Client Secret">
-              <input
-                className="input"
-                type="password"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                placeholder="应用的 Client Secret"
-              />
-            </Row>
-            <button className="btn-accent" onClick={handleLogin} disabled={loginLoading}>
-              {loginLoading ? <Icon.Loader size="sm" spin /> : null}
-              连接滴答清单
-            </button>
-            <p className="text-diag">
-              回调地址：
-              <code className="rounded bg-bg-subtle px-1 py-0.5">
-                http://localhost:18321/callback
-              </code>
-            </p>
-          </div>
-        </details>
-      ) : (
-        <div className="settings-status-strip tone-success mt-2.5">
-          <span className="settings-status-strip-icon">
-            <Icon.CheckCircleFilled size="sm" />
-          </span>
-          <div className="settings-status-strip-copy">
-            <p className="settings-status-strip-title">
-              已连接
-              <span className="text-diag">{region}</span>
-            </p>
-            <p className="settings-status-strip-desc">开发者应用连接可用；日常仍推荐使用本机 CLI</p>
-          </div>
-          <ConfirmButton
-            label="断开"
-            confirmLabel="确认断开？"
-            onConfirm={handleLogout}
-            icon={<Icon.LogOut size="sm" />}
-          />
-        </div>
-      )}
-    </>
-  );
-
-  const didaPendingCount = syncQueue.filter((item) => item.status === 'pending').length;
-  const didaFailedCount = syncQueue.filter((item) => item.status === 'failed').length;
-  const didaNeedsAttention = didaPendingCount + didaFailedCount;
-  // 同步队列语义标签契约：已同步 / 未同步 / 同步失败
-  const didaQueueTitle =
-    didaNeedsAttention === 0
-      ? '全部已同步'
-      : [
-          didaPendingCount > 0 ? `${didaPendingCount} 条未同步` : null,
-          didaFailedCount > 0 ? `${didaFailedCount} 条同步失败` : null,
-        ]
-          .filter(Boolean)
-          .join(' · ');
   const deviceSyncError = presentDeviceSyncError(
     deviceSyncStatus?.lastError,
     deviceSyncStatus?.unresolvedConflicts,
@@ -1249,214 +1009,6 @@ export function SettingsPanel() {
     },
     // FocusLink is the task product. Provider adapters stay opt-in and out of the main workspace.
     {
-      id: 'dida-connection',
-      tab: 'integrations',
-      title: '任务来源与导入',
-      desc: '默认使用 FocusLink 自有任务库；需要时再从第三方导入。',
-      keywords:
-        '滴答 滴答清单 ticktick dida cli 命令行 探测 检测 自检 可执行文件 路径 模板 超时 ' +
-        '任务来源 provider executable',
-      render: () => (
-        <>
-          <div className="settings-provider-list">
-            <SyncModeChoice
-              active={settings.taskSource === 'local'}
-              onClick={() => update({ taskSource: 'local', syncMode: 'local-only' })}
-              icon={<Icon.ListChecks size="md" />}
-              title="FocusLink 任务库"
-              badge="默认"
-              desc="任务、清单和层级都保存在 FocusLink 中"
-            />
-          </div>
-
-          <details
-            className="settings-disclosure settings-external-task-disclosure"
-            open={settings.taskSource !== 'local'}
-          >
-            <summary className="motion-press">外部任务导入</summary>
-            <div className="settings-provider-list mt-3">
-              <SyncModeChoice
-                active={settings.taskSource === 'ticktick-cli'}
-                onClick={() => update({ taskSource: 'ticktick-cli' })}
-                icon={<Icon.Link size="md" />}
-                title="滴答 CLI"
-                desc="按需读取本机 CLI，导入后仍归 FocusLink 管理"
-              />
-              <SyncModeChoice
-                active={settings.taskSource === 'ticktick-oauth'}
-                onClick={() => update({ taskSource: 'ticktick-oauth' })}
-                icon={<Icon.Cloud size="md" />}
-                title="TickTick OAuth"
-                desc="仅在 CLI 不可用时使用开发者应用"
-              />
-            </div>
-          </details>
-
-          {settings.taskSource === 'ticktick-cli' && (
-            <div className="settings-provider-status">
-              <div className="settings-provider-status-head">
-                <div className="settings-provider-status-title">
-                  <span className={`settings-provider-status-icon ${cliDetectTone}`}>
-                    {cliDetected === null ? (
-                      <Icon.Loader size="sm" spin />
-                    ) : cliDetected.found ? (
-                      <Icon.CheckCircleFilled size="sm" />
-                    ) : (
-                      <Icon.AlertCircle size="sm" />
-                    )}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-[12.5px] font-semibold text-fg">
-                      滴答 CLI 连接
-                      <span className={`settings-status-badge ${cliDetectTone}`}>
-                        {cliDetected === null ? '检测中' : cliDetected.found ? '已连接' : '未连接'}
-                      </span>
-                    </p>
-                    <p className="mt-0.5 text-[11.5px] text-fg-subtle">
-                      {cliDetected === null
-                        ? '正在探测本机可用的 dida 命令'
-                        : cliDetected.found
-                          ? '已就绪，可读取任务与同步专注'
-                          : '尚未探测到可用命令'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  className="btn-outline text-[11px]"
-                  onClick={detectCli}
-                  disabled={cliDetecting}
-                >
-                  {cliDetecting ? <Icon.Loader size="xs" spin /> : <Icon.Search size="xs" />}
-                  重新探测
-                </button>
-              </div>
-              <details className="settings-provider-advanced">
-                <summary className="motion-press">
-                  <span>
-                    高级 CLI 配置
-                    <span className="ml-2 font-normal text-fg-subtle">仅在自动探测失败时调整</span>
-                  </span>
-                  <Icon.ChevronDown size="xs" tone="subtle" className="settings-provider-chevron" />
-                </summary>
-                <div className="space-y-2 border-t border-border/50 p-3">
-                  {providerInfo && (
-                    <div className="settings-diag-block text-diag">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span>CLI 类型</span>
-                        <strong className="font-medium text-success">
-                          {providerInfo.providerType === 'dida'
-                            ? 'dida'
-                            : providerInfo.providerType === 'ticktick'
-                              ? 'ticktick'
-                              : '未知'}
-                        </strong>
-                        <span>·</span>
-                        <code>{providerInfo.executable || '(未配置)'}</code>
-                      </div>
-                      {providerInfo.executablePath && (
-                        <div className="mt-1 truncate">{providerInfo.executablePath}</div>
-                      )}
-                      {providerInfo.hasStaleTicktickTemplates && (
-                        <div className="mt-1.5 rounded bg-danger/10 px-2 py-1 text-danger">
-                          当前模板与 dida 不一致，请应用默认模板。
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ConfirmButton
-                      label="应用 dida 默认模板"
-                      confirmLabel="确认覆盖模板？"
-                      onConfirm={applyDidaTemplates}
-                    />
-                    <span className="text-[11px] text-fg-subtle">
-                      点击后会覆盖当前命令模板为 dida 标准模板并立即测试
-                    </span>
-                  </div>
-                  <Row label="可执行文件路径">
-                    <input
-                      className="input min-w-[200px] font-mono text-xs"
-                      value={settings.ticktickCli.executable}
-                      onChange={(e) =>
-                        updateDebounced({
-                          ticktickCli: { ...settings.ticktickCli, executable: e.target.value },
-                        })
-                      }
-                      onBlur={() => void persistDebouncedSettings()}
-                      placeholder="留空则用自动探测结果"
-                    />
-                  </Row>
-                  <div className="mt-2 space-y-1.5">
-                    <Row label="列出任务命令">
-                      <input
-                        className="input min-w-[200px] font-mono text-xs"
-                        value={settings.ticktickCli.listTasksCommand}
-                        onChange={(e) =>
-                          updateDebounced({
-                            ticktickCli: {
-                              ...settings.ticktickCli,
-                              listTasksCommand: e.target.value,
-                            },
-                          })
-                        }
-                        onBlur={() => void persistDebouncedSettings()}
-                      />
-                    </Row>
-                    <Row label="搜索任务命令">
-                      <input
-                        className="input min-w-[200px] font-mono text-xs"
-                        value={settings.ticktickCli.searchTasksCommand}
-                        onChange={(e) =>
-                          updateDebounced({
-                            ticktickCli: {
-                              ...settings.ticktickCli,
-                              searchTasksCommand: e.target.value,
-                            },
-                          })
-                        }
-                        onBlur={() => void persistDebouncedSettings()}
-                      />
-                    </Row>
-                    <Row label="追加备注命令">
-                      <input
-                        className="input min-w-[200px] font-mono text-xs"
-                        value={settings.ticktickCli.appendNoteCommand}
-                        onChange={(e) =>
-                          updateDebounced({
-                            ticktickCli: {
-                              ...settings.ticktickCli,
-                              appendNoteCommand: e.target.value,
-                            },
-                          })
-                        }
-                        onBlur={() => void persistDebouncedSettings()}
-                      />
-                    </Row>
-                    <Row label="超时（毫秒）">
-                      <input
-                        type="number"
-                        min={1000}
-                        className="input w-24 text-xs"
-                        value={settings.ticktickCli.timeoutMs}
-                        onChange={(e) =>
-                          update({
-                            ticktickCli: {
-                              ...settings.ticktickCli,
-                              timeoutMs: Math.max(1000, Number(e.target.value) || 10000),
-                            },
-                          })
-                        }
-                      />
-                    </Row>
-                  </div>
-                </div>
-              </details>
-            </div>
-          )}
-        </>
-      ),
-    },
-    {
       id: 'device-sync',
       tab: 'devices',
       title: '设备配对与同步',
@@ -1673,90 +1225,6 @@ export function SettingsPanel() {
       ),
     },
     {
-      id: 'dida-sync',
-      tab: 'integrations',
-      title: '第三方同步去向',
-      desc: '仅在你主动启用第三方任务适配器后使用；未同步与失败记录保留在本机。',
-      keywords:
-        '同步 去向 队列 未同步 同步失败 重试 云端专注 专注统计 任务评论 备注 仅本机 本地 ' +
-        'sync mode comment focus-record local-only',
-      render: () => (
-        <>
-          <div className="settings-sync-grid">
-            <SyncModeChoice
-              active={settings.syncMode === 'focus-record'}
-              onClick={() => update({ syncMode: 'focus-record' })}
-              icon={<Icon.Cloud size="md" />}
-              title="云端专注"
-              badge="推荐"
-              desc="显示在滴答专注统计中"
-            />
-            <SyncModeChoice
-              active={settings.syncMode === 'comment'}
-              onClick={() => update({ syncMode: 'comment' })}
-              icon={<Icon.FileText size="md" />}
-              title="任务评论"
-              desc="写入关联任务评论，失败时回退正文"
-            />
-            <SyncModeChoice
-              active={settings.syncMode === 'local-only'}
-              onClick={() => update({ syncMode: 'local-only' })}
-              icon={<Icon.HardDrive size="md" />}
-              title="仅保存在本机"
-              desc="关闭滴答云端写入"
-            />
-          </div>
-          {settings.syncMode !== 'local-only' && (
-            <div
-              className={`settings-status-strip ${
-                didaFailedCount > 0
-                  ? 'tone-danger'
-                  : didaPendingCount > 0
-                    ? 'tone-warning'
-                    : 'tone-success'
-              }`}
-            >
-              <span className="settings-status-strip-icon">
-                {didaFailedCount > 0 ? (
-                  <Icon.AlertCircle size="sm" />
-                ) : (
-                  <Icon.CheckCircleFilled size="sm" />
-                )}
-              </span>
-              <div className="settings-status-strip-copy">
-                <p className="settings-status-strip-title">{didaQueueTitle}</p>
-                <p className="settings-status-strip-desc">
-                  {didaNeedsAttention === 0
-                    ? '专注记录已同步到滴答清单'
-                    : '记录保留在本机，不会丢失专注数据'}
-                </p>
-              </div>
-              {didaNeedsAttention > 0 && (
-                <button
-                  type="button"
-                  className="btn-outline shrink-0 text-[11px]"
-                  onClick={handleRunDidaSync}
-                  disabled={didaSyncRunning}
-                >
-                  {didaSyncRunning ? <Icon.Loader size="xs" spin /> : <Icon.Refresh size="xs" />}
-                  立即重试
-                </button>
-              )}
-            </div>
-          )}
-        </>
-      ),
-    },
-    {
-      id: 'dida-oauth',
-      tab: 'integrations',
-      title: 'TickTick OAuth（备用）',
-      desc: 'dida CLI 不可用时再使用开发者应用连接；日常使用无需配置。',
-      keywords:
-        'oauth 开发者应用 client id secret 凭据 区域 海外 国内 回调 登录 断开 ticktick dida365',
-      render: () => oauthConnectionBody,
-    },
-    {
       id: 'tomatodo',
       tab: 'integrations',
       title: '番茄 To-do 同步',
@@ -1920,17 +1388,12 @@ export function SettingsPanel() {
     },
   ];
 
-  const availableSections = sections.filter((section) => {
-    if (section.id === 'dida-sync') return settings.taskSource !== 'local';
-    if (section.id === 'dida-oauth') return settings.taskSource === 'ticktick-oauth';
-    return true;
-  });
   const query = search.trim().toLowerCase();
   const searching = query.length > 0;
   // 搜索横跨全部分组：设置项藏在哪个分组是我们的分类结果，不该要求用户先猜对。
   const visibleSections = searching
-    ? availableSections.filter((section) => sectionMatches(section, query))
-    : availableSections.filter((section) => section.tab === activeTab);
+    ? sections.filter((section) => sectionMatches(section, query))
+    : sections.filter((section) => section.tab === activeTab);
 
   return (
     <div className="settings-page">
@@ -2270,42 +1733,6 @@ function ChoiceBtn({
   );
 }
 
-function SyncModeChoice({
-  active,
-  onClick,
-  icon,
-  title,
-  desc,
-  badge,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  badge?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`settings-provider-choice motion-press ${active ? 'active' : ''}`}
-      aria-pressed={active}
-    >
-      <span className="settings-provider-radio" aria-hidden="true">
-        <i />
-      </span>
-      <span className="settings-provider-icon">{icon}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[12.5px] font-semibold text-fg">{title}</span>
-        <span className="mt-0.5 block text-[11px] leading-relaxed text-fg-subtle">{desc}</span>
-      </span>
-      {badge && <span className="settings-provider-badge">{badge}</span>}
-      <Icon.ChevronRight size="xs" className="settings-provider-arrow" />
-    </button>
-  );
-}
-
 /**
  * 42×24 开关：完全受控（checked 来自全局 settings，无本地状态），
  * 状态写入统一走 update() 乐观更新 + 服务端校正，因此不会出现
@@ -2335,62 +1762,6 @@ function Toggle({
       title={`${label}：${checked ? '已开启' : '已关闭'}`}
     >
       <span className="toggle-thumb" />
-    </button>
-  );
-}
-
-/**
- * 危险操作二次确认按钮：第一次点击进入待确认态（.btn-danger 深红实心），
- * 3.2s 内再次点击才真正执行，失焦或超时自动还原。
- */
-function ConfirmButton({
-  label,
-  confirmLabel,
-  onConfirm,
-  icon,
-}: {
-  label: string;
-  confirmLabel: string;
-  onConfirm: () => void | Promise<void>;
-  icon?: React.ReactNode;
-}) {
-  const [armed, setArmed] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const disarm = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    setArmed(false);
-  };
-
-  const handleClick = () => {
-    if (!armed) {
-      setArmed(true);
-      timerRef.current = setTimeout(() => setArmed(false), 3200);
-      return;
-    }
-    disarm();
-    void onConfirm();
-  };
-
-  return (
-    <button
-      type="button"
-      className={`${armed ? 'btn-danger' : 'btn-outline'} text-xs`}
-      aria-live="polite"
-      onClick={handleClick}
-      onBlur={disarm}
-    >
-      {icon}
-      {armed ? confirmLabel : label}
     </button>
   );
 }

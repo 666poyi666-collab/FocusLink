@@ -158,6 +158,13 @@ import {
   Power,
   Menu,
   PieChart,
+  Briefcase,
+  Book,
+  Code,
+  Heart,
+  Music,
+  Tag,
+  Folder,
 } from 'lucide-react';
 
 // 导出统一包装的图标集
@@ -270,6 +277,15 @@ export const Icon = {
   // 更多
   More: createIcon(MoreHorizontal),
   MoreVertical: createIcon(MoreVertical),
+
+  // 清单分类图标
+  Briefcase: createIcon(Briefcase),
+  Book: createIcon(Book),
+  Code: createIcon(Code),
+  Heart: createIcon(Heart),
+  Music: createIcon(Music),
+  Tag: createIcon(Tag),
+  Folder: createIcon(Folder),
 };
 
 // ── Spinner：加载旋转组件 ──

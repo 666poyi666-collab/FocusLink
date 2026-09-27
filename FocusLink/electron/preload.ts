@@ -1,7 +1,13 @@
 // Preload - 暴露类型安全的 IPC 接口给渲染进程
 // contextIsolation: true, nodeIntegration: false
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import type { Task, TaskWorkspaceRefreshOptions, TomatodoSubject } from '@shared/types';
+import type {
+  Task,
+  TaskCreateOptions,
+  TaskUpdatePatch,
+  TaskWorkspaceRefreshOptions,
+  TomatodoSubject,
+} from '@shared/types';
 import type { FocusLinkAPI, FocusLinkEventMap, HotkeyAction } from '@shared/ipc/api';
 
 const api = {
@@ -52,15 +58,23 @@ const api = {
       ipcRenderer.invoke('timer:merge-segments', { segmentIds }),
   },
   tasks: {
-    create: (title: string, projectId?: string) =>
-      ipcRenderer.invoke('tasks:create', title, projectId),
-    createProject: (name: string, color?: string | null) =>
-      ipcRenderer.invoke('tasks:create-project', name, color),
-    updateProject: (projectId: string, input: { name?: string; color?: string | null }) =>
-      ipcRenderer.invoke('tasks:update-project', projectId, input),
+    create: (title: string, projectId?: string, options?: TaskCreateOptions) =>
+      ipcRenderer.invoke('tasks:create', title, projectId, options),
+    createProject: (name: string, color?: string | null, icon?: string | null) =>
+      ipcRenderer.invoke('tasks:create-project', name, color, icon),
+    updateProject: (
+      projectId: string,
+      input: { name?: string; color?: string | null; icon?: string | null },
+    ) => ipcRenderer.invoke('tasks:update-project', projectId, input),
     deleteProject: (projectId: string) => ipcRenderer.invoke('tasks:delete-project', projectId),
     moveTask: (taskId: string, projectId?: string | null) =>
       ipcRenderer.invoke('tasks:move', taskId, projectId),
+    update: (taskId: string, patch: TaskUpdatePatch) =>
+      ipcRenderer.invoke('tasks:update', taskId, patch),
+    remove: (taskId: string) => ipcRenderer.invoke('tasks:delete', taskId),
+    setParent: (taskId: string, parentId: string | null) =>
+      ipcRenderer.invoke('tasks:set-parent', taskId, parentId),
+    reorder: (orderedIds: string[]) => ipcRenderer.invoke('tasks:reorder', orderedIds),
     complete: (task: Task) => ipcRenderer.invoke('tasks:complete', task),
     setCompleted: (task: Task, completed: boolean) =>
       ipcRenderer.invoke('tasks:set-completed', task, completed),

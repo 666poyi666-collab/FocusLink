@@ -25,6 +25,7 @@ import {
   mixRgb,
   overviewMajorStepSec,
   overviewScaleForSpan,
+  OVERVIEW_TICK_LADDER_SEC,
   overviewTickStepSec,
   particleAshColor,
   pointerBreathPulse,
@@ -523,7 +524,15 @@ function renderBand(
 
   let zooming = false;
   if (engine.zoom) {
-    const progress = Math.min(1, (performance.now() - engine.zoom.start) / engine.zoom.duration);
+    /* 变焦进度。
+       正常路径用 performance.now()；诊断/对比时可注入 `__flForceProgress`（0..1）
+       把画面精确钉在某个进度上，用于逐帧对比不同刻度过渡方案的真实渲染，
+       免得靠实时抓帧碰运气。生产环境该变量不存在，走的就是原来那条路径。 */
+    const forced = (globalThis as { __flForceProgress?: number | null }).__flForceProgress;
+    const progress =
+      typeof forced === 'number'
+        ? Math.min(1, Math.max(0, forced))
+        : Math.min(1, (performance.now() - engine.zoom.start) / engine.zoom.duration);
     engine.scale = interpolateZoomScale(engine.zoom.from, engine.zoom.to, easeInOutQuart(progress));
     zooming = progress < 1;
     if (!zooming) {
@@ -630,6 +639,21 @@ function renderBand(
   }
 
   // 4. 绝对墙钟刻度；边界与账本 HH:mm 完全一致。
+  /* 刻度过渡模式（诊断可切换）：
+       'ladder'     现状——步长直接从阶梯表里跳档，一帧内成批换位置
+       'crossfade'  旧步长淡出、新步长淡入，重叠一段时间
+       'continuous' 步长按对数连续映射，永不跳档（一档淡出时下一档已淡入）
+     生产默认 'ladder'；对比时由 __flTickMode 注入。 */
+  const tickMode =
+    (globalThis as { __flTickMode?: string }).__flTickMode === 'crossfade'
+      ? 'crossfade'
+      : (globalThis as { __flTickMode?: string }).__flTickMode === 'continuous'
+        ? 'continuous'
+        : 'ladder';
+  const zoomPrevStep = engine.zoom && zooming ? overviewTickStepSec(engine.zoom.from) : undefined;
+  const zoomProgress = engine.zoom
+    ? Math.min(1, Math.max(0, (performance.now() - engine.zoom.start) / engine.zoom.duration))
+    : 1;
   drawRulerTicks(ctx, geometry, colors, {
     cameraSeconds,
     nowSeconds: cameraMs / 1000,
@@ -641,6 +665,9 @@ function renderBand(
     farAlpha: macroTickAlpha(scale),
     fontNumber,
     fontSmallNumber,
+    tickMode,
+    zoomPrevStep,
+    zoomProgress,
   });
 
   // 4b. 材料压在刻度之上重画一遍。
@@ -1080,6 +1107,12 @@ function drawRulerTicks(
     farAlpha: number;
     fontNumber: string;
     fontSmallNumber: string;
+    /** 刻度过渡模式（见调用点说明）。 */
+    tickMode?: 'ladder' | 'crossfade' | 'continuous';
+    /** 变焦起点处的步长（仅过渡模式使用）。 */
+    zoomPrevStep?: number;
+    /** 变焦进度 0..1（仅过渡模式使用）。 */
+    zoomProgress?: number;
   },
 ): void {
   const { channelTop, channelBottom, width } = geo;
@@ -1098,6 +1131,23 @@ function drawRulerTicks(
   };
 
   if (input.nearAlpha > 0.02) {
+    /* 近景层按「屏幕间距」分阶段淡入，而不是一档全出。
+     *
+     * 实测（2026-09-11）这里是「震动感」的真正来源：nearAlpha 从 0 到 1 只覆盖
+     * scale 2.2→4.0，也就是 820ms 变焦里约 40ms。那 40ms 内近景层要一次画出
+     * **每秒一根**的刻度，而 scale 2.2~4.0 时每秒只占 2.5~4px——几十根线挤在几像素里，
+     * 阈值上根本不成像，于是画面读起来是「刻度整片消失」；等 scale 升到 8（每秒 8px）
+     * 时它们又在同一帧全部出现：实测逐帧刻度数 5→0→0→15，单帧涌出 15 根。
+     * 用户描述为「一直会有那种震动的感觉」。
+     *
+     * 修法：每根刻度按自己的屏幕间距决定可见度——
+     *   每秒线  间距 < 7px 时不画，7→11px 之间线性淡入
+     *   5 秒线  间距 < 3.5px 时不画（= 每 5 秒 17.5px 起）
+     * 于是密度是「一层一层长出来」的，任何时刻都不存在整片网格同时成像的帧。 */
+    const pxPerSecond = input.scale;
+    const perSecondVisibility = clamp01((pxPerSecond - 7) / 4);
+    const fiveSecondVisibility = clamp01((pxPerSecond * 5 - 17.5) / 6);
+
     for (
       let second = Math.max(0, Math.floor(input.visibleStartSec) - 1);
       second <= input.visibleEndSec + 1;
@@ -1116,9 +1166,12 @@ function drawRulerTicks(
         ctx.fillText(wallClockTickLabel(second), x, channelTop - 8);
       } else {
         const length = fiveSecond ? 9 : 4.5;
-        edgeTick(x, length, (future ? 0.16 : fiveSecond ? 0.4 : 0.24) * input.nearAlpha);
-        if (fiveSecond && input.nearAlpha > 0.55) {
-          ctx.fillStyle = rgba(colors.subtle, 0.78 * input.nearAlpha);
+        // 逐根刻度自己的可见度：秒线要等间距够宽才出现，5 秒线更早出现。
+        const ownAlpha = fiveSecond ? fiveSecondVisibility : perSecondVisibility;
+        const alpha = (future ? 0.16 : fiveSecond ? 0.4 : 0.24) * input.nearAlpha * ownAlpha;
+        if (alpha > 0.015) edgeTick(x, length, alpha);
+        if (fiveSecond && input.nearAlpha > 0.55 && fiveSecondVisibility > 0.6) {
+          ctx.fillStyle = rgba(colors.subtle, 0.78 * input.nearAlpha * fiveSecondVisibility);
           ctx.font = input.fontSmallNumber;
           ctx.fillText(
             `:${String(positiveMod(second, 60)).padStart(2, '0')}`,
@@ -1131,32 +1184,98 @@ function drawRulerTicks(
   }
 
   if (input.farAlpha > 0.02) {
-    // 总览尺度随会话长度变化，刻度步长必须跟着走，否则标签不是挤成一团就是一根不剩。
-    const step = overviewTickStepSec(input.scale);
-    const majorStep = overviewMajorStepSec(step);
-    const firstTick = Math.max(0, Math.floor(input.visibleStartSec / step) * step);
-    for (let second = firstTick; second <= input.visibleEndSec + step; second += step) {
-      const x = Math.round(input.toX(second * 1000));
-      if (x < -1 || x > width + 1) continue;
-      const future = second > input.nowSeconds;
-      const major = positiveMod(second, majorStep) === 0;
-      const tenMinute = positiveMod(second, step * 2) === 0;
+    /* 总览尺度随会话长度变化，刻度步长必须跟着走，否则标签不是挤成一团就是一根不剩。
+       但「直接从阶梯表里挑一档」在变焦过程中会让整层刻度成批跳位：
+       实测 820ms / 133 帧里跳 7 档，每档一次性换掉 8–14 根线的位置，
+       读起来就是用户说的「震动感」。下面三种模式处理这件事。 */
+    const mode = input.tickMode ?? 'ladder';
+    const minPx = 74;
+    const prevStep = input.zoomPrevStep;
 
-      if (major) {
-        majorTick(x, (future ? 0.1 : 0.2) * input.farAlpha);
-        ctx.fillStyle = rgba(colors.text, (future ? 0.45 : 0.86) * input.farAlpha);
-        ctx.font = input.fontNumber;
-        ctx.fillText(wallClockTickLabel(second), x, channelTop - 8);
+    /* 计算本帧要画哪些步长、各自多大权重。
+       返回 [步长, 权重] 列表；ladder 只有一个元素（现状）。 */
+    const grids: Array<[number, number]> = [];
+    if (mode === 'continuous') {
+      // 步长在对数尺度上连续映射：任一时刻最多两档同时存在，合计权重恒为 1。
+      // 一档的间隙为 0 时另一档恰好为 1，所以不会有「两根线间距异常」的中间态。
+      const ladder = OVERVIEW_TICK_LADDER_SEC;
+      let idx = ladder.length - 1;
+      for (let i = 0; i < ladder.length; i += 1) {
+        if (ladder[i] * input.scale >= minPx) {
+          idx = i;
+          break;
+        }
+      }
+      const lo = ladder[Math.max(0, idx - 1)];
+      const hi = ladder[idx];
+      const gap = Math.log(hi * input.scale) - Math.log(Math.max(1e-6, lo * input.scale));
+      const wHi =
+        gap > 1e-6
+          ? clamp01((Math.log(minPx) - Math.log(Math.max(1e-6, lo * input.scale))) / gap)
+          : 1;
+      if (lo !== hi && wHi < 1) {
+        grids.push([lo, 1 - wHi]);
+        grids.push([hi, wHi]);
       } else {
-        edgeTick(
-          x,
-          tenMinute ? 10 : 5.5,
-          (future ? 0.16 : tenMinute ? 0.4 : 0.24) * input.farAlpha,
-        );
-        if (tenMinute && input.farAlpha > 0.62) {
-          ctx.fillStyle = rgba(colors.subtle, 0.74 * input.farAlpha);
-          ctx.font = input.fontSmallNumber;
-          ctx.fillText(wallClockTickLabel(second), x, channelBottom + 13);
+        grids.push([hi, 1]);
+      }
+    } else if (
+      mode === 'crossfade' &&
+      prevStep !== undefined &&
+      prevStep !== overviewTickStepSec(input.scale)
+    ) {
+      // 旧步长淡出、新步长淡入。权重按「本档跨度内走过的对数距离」推进，
+      // 因此在整段变焦里平滑，而不是在全景 alpha 之外再引入一个硬切。
+      const cur = overviewTickStepSec(input.scale);
+      const ladder = OVERVIEW_TICK_LADDER_SEC;
+      let idx = ladder.length - 1;
+      for (let i = 0; i < ladder.length; i += 1) {
+        if (ladder[i] === cur) {
+          idx = i;
+          break;
+        }
+      }
+      const pre = ladder[Math.max(0, idx - 1)];
+      const gap = Math.log(cur * input.scale) - Math.log(Math.max(1e-6, pre * input.scale));
+      const w =
+        gap > 1e-6
+          ? clamp01((Math.log(minPx) - Math.log(Math.max(1e-6, pre * input.scale))) / gap)
+          : 1;
+      if (w < 1) {
+        grids.push([pre, 1 - w]);
+        grids.push([cur, w]);
+      } else {
+        grids.push([cur, 1]);
+      }
+    } else {
+      grids.push([overviewTickStepSec(input.scale), 1]);
+    }
+
+    for (const [step, weight] of grids) {
+      if (weight <= 0.02) continue;
+      const alpha = input.farAlpha * weight;
+      if (alpha <= 0.02) continue;
+      const majorStep = overviewMajorStepSec(step);
+      const firstTick = Math.max(0, Math.floor(input.visibleStartSec / step) * step);
+      for (let second = firstTick; second <= input.visibleEndSec + step; second += step) {
+        const x = Math.round(input.toX(second * 1000));
+        if (x < -1 || x > width + 1) continue;
+        const future = second > input.nowSeconds;
+        const major = positiveMod(second, majorStep) === 0;
+        const tenMinute = positiveMod(second, step * 2) === 0;
+
+        if (major) {
+          majorTick(x, (future ? 0.1 : 0.2) * alpha);
+          ctx.fillStyle = rgba(colors.text, (future ? 0.45 : 0.86) * alpha);
+          ctx.font = input.fontNumber;
+          ctx.fillText(wallClockTickLabel(second), x, channelTop - 8);
+        } else {
+          edgeTick(x, tenMinute ? 10 : 5.5, (future ? 0.16 : tenMinute ? 0.4 : 0.24) * alpha);
+          if (tenMinute && alpha > 0.62) {
+            ctx.fillStyle = rgba(colors.subtle, 0.74 * alpha);
+            ctx.font = input.fontSmallNumber;
+            ctx.fillText(wallClockTickLabel(second), x, channelBottom + 13);
+          }
         }
       }
     }

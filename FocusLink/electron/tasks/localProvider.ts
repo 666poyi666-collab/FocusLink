@@ -10,6 +10,8 @@ import {
   deleteLocalTaskProjectAndMoveTasks,
   restoreLocalTaskProjectDeletion,
   removeStaleLocalTaskSnapshotRows,
+  deleteTaskCacheSubtree,
+  updateTaskSortOrders,
 } from '../db/index.js';
 import { logger } from '../logger.js';
 import type { LocalTaskProject, Project, Task, TaskCache, TaskSource } from '@shared/types';
@@ -69,13 +71,14 @@ function cacheToTask(c: TaskCache): Task {
     content: c.content,
     isCompleted: c.status === 'completed',
     completedAt: c.status === 'completed' ? c.updatedAt : null,
+    sortOrder: c.sortOrder ?? null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   };
 }
 
 export const LocalTaskProvider = {
-  createProject(name: string, color?: string | null): Project {
+  createProject(name: string, color?: string | null, icon?: string | null): Project {
     const title = name.trim();
     if (!title) throw new Error('清单名称不能为空');
     ensureInbox();
@@ -87,17 +90,29 @@ export const LocalTaskProvider = {
           listLocalTaskProjects().filter((project) => !isFocusLinkInboxProject(project.id)).length +
             1,
         );
+    const projectIcon = icon && icon.trim() ? icon.trim() : null;
     upsertLocalTaskProject({
       id,
       name: title,
       color: projectColor,
+      icon: projectIcon,
       sortOrder: listLocalTaskProjects().length,
       createdAt: now,
       updatedAt: now,
     });
-    return { id, source: 'local', externalId: id, name: title, color: projectColor };
+    return {
+      id,
+      source: 'local',
+      externalId: id,
+      name: title,
+      color: projectColor,
+      icon: projectIcon,
+    };
   },
-  updateProject(projectId: string, input: { name?: string; color?: string | null }): Project {
+  updateProject(
+    projectId: string,
+    input: { name?: string; color?: string | null; icon?: string | null },
+  ): Project {
     ensureInbox();
     const project = listLocalTaskProjects().find((candidate) => candidate.id === projectId);
     if (!project) throw new Error('FocusLink 清单不存在');
@@ -108,10 +123,16 @@ export const LocalTaskProvider = {
     }
     const color =
       input.color === undefined ? project.color : normalizeTaskProjectColor(input.color);
+    const icon =
+      input.icon === undefined
+        ? project.icon
+        : input.icon && input.icon.trim()
+          ? input.icon.trim()
+          : null;
     const updatedAt = Date.now();
-    upsertLocalTaskProject({ ...project, name, color, updatedAt });
+    upsertLocalTaskProject({ ...project, name, color, icon, updatedAt });
     logger.info('tasks:local', `updated local project: ${projectId}`);
-    return { id: project.id, source: 'local', externalId: project.id, name, color };
+    return { id: project.id, source: 'local', externalId: project.id, name, color, icon };
   },
   deleteProject(projectId: string): LocalTaskProjectDeletion {
     ensureInbox();
@@ -156,7 +177,11 @@ export const LocalTaskProvider = {
     });
     upsertTaskCaches(deletion.previousTasks);
   },
-  create(title: string, _projectId?: string): Task {
+  create(
+    title: string,
+    _projectId?: string,
+    options?: { parentId?: string | null; dueDate?: number | null; priority?: number | null },
+  ): Task {
     const normalizedTitle = title.trim();
     if (!normalizedTitle) throw new Error('任务标题不能为空');
     ensureInbox();
@@ -164,6 +189,18 @@ export const LocalTaskProvider = {
     if (!listLocalTaskProjects().some((project) => project.id === projectId)) {
       throw new Error('FocusLink 清单不存在');
     }
+    const all = listTaskCache('local');
+    const parentId = options?.parentId ?? null;
+    if (parentId) {
+      const parent = all.find((task) => task.id === parentId);
+      if (!parent) throw new Error('父任务不存在');
+      // 产品约定只支持两层：子任务不能再挂子任务。
+      if (parent.parentId) throw new Error('子任务下不能再建子任务');
+    }
+    // 新任务排在同组末尾：与列表底部的行内添加框位置一致，落点可预期。
+    const maxOrder = all
+      .filter((task) => task.projectId === projectId && (task.parentId ?? null) === parentId)
+      .reduce((max, task) => Math.max(max, task.sortOrder ?? 0), 0);
     const now = Date.now();
     const id = crypto.randomUUID();
     const cache: TaskCache = {
@@ -171,17 +208,18 @@ export const LocalTaskProvider = {
       source: 'local' as TaskSource,
       externalId: id,
       projectId,
-      parentId: null,
+      parentId,
       title: normalizedTitle,
       status: 'incomplete',
-      priority: null,
+      priority: options?.priority ?? null,
       startDate: null,
-      dueDate: null,
+      dueDate: options?.dueDate ?? null,
       recurrence: null,
       tags: null,
       content: null,
       rawJson: null,
       lastSyncedAt: null,
+      sortOrder: maxOrder + 1,
       createdAt: now,
       updatedAt: now,
     };
@@ -202,6 +240,7 @@ export const LocalTaskProvider = {
       externalId: project.id,
       name: project.name,
       color: project.color,
+      icon: project.icon ?? null,
     }));
   },
 
@@ -419,5 +458,100 @@ export const LocalTaskProvider = {
       `${completed && c.status !== 'completed' ? 'advanced recurring' : completed ? 'completed' : 'reopened'} local task: ${c.title}`,
     );
     return cacheToTask(c);
+  },
+
+  /** 更新本地任务的可编辑字段。未传入的字段保持原值。 */
+  update(
+    id: string,
+    patch: {
+      title?: string;
+      dueDate?: number | null;
+      startDate?: number | null;
+      priority?: number | null;
+      tags?: string[] | null;
+      content?: string | null;
+      projectId?: string | null;
+    },
+  ): Task {
+    const all = listTaskCache('local');
+    const c = all.find((t) => t.id === id || t.externalId === id);
+    if (!c) throw new Error(`本地任务不存在: ${id}`);
+    const next: TaskCache = { ...c, updatedAt: Date.now() };
+    if (patch.title !== undefined) {
+      const title = patch.title.trim();
+      if (!title) throw new Error('任务标题不能为空');
+      next.title = title;
+    }
+    if (patch.dueDate !== undefined) next.dueDate = patch.dueDate ?? null;
+    if (patch.startDate !== undefined) next.startDate = patch.startDate ?? null;
+    if (patch.priority !== undefined) next.priority = patch.priority ?? null;
+    if (patch.content !== undefined) {
+      const content = (patch.content ?? '').trim();
+      next.content = content.length > 0 ? content : null;
+    }
+    if (patch.tags !== undefined) {
+      const tags = (patch.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+      next.tags = tags.length > 0 ? JSON.stringify(Array.from(new Set(tags))) : null;
+    }
+    if (patch.projectId !== undefined) {
+      const projectId = patch.projectId ?? LOCAL_PROJECT_ID;
+      if (!listLocalTaskProjects().some((project) => project.id === projectId)) {
+        throw new Error('FocusLink 清单不存在');
+      }
+      next.projectId = projectId;
+    }
+    upsertTaskCache(next);
+    logger.info('tasks:local', `updated local task: ${next.title}`);
+    return cacheToTask(next);
+  },
+
+  /** 删除任务及其全部子任务。 */
+  remove(id: string): { removed: number } {
+    const all = listTaskCache('local');
+    const root = all.find((t) => t.id === id || t.externalId === id);
+    if (!root) throw new Error(`本地任务不存在: ${id}`);
+    const removed = deleteTaskCacheSubtree(root.id);
+    logger.info('tasks:local', `deleted local task subtree: ${root.id}`, { removed });
+    return { removed };
+  },
+
+  /** 把任务挂到另一个任务下（或移出子任务层级）。只允许两层。 */
+  setParent(id: string, parentId: string | null): Task {
+    const all = listTaskCache('local');
+    const root = all.find((t) => t.id === id || t.externalId === id);
+    if (!root) throw new Error(`本地任务不存在: ${id}`);
+    if (parentId) {
+      if (parentId === root.id) throw new Error('任务不能成为自己的子任务');
+      const parent = all.find((task) => task.id === parentId);
+      if (!parent) throw new Error('父任务不存在');
+      // 环检测必须排在层级检查之前：把任务挂到自己的后代下时，
+      // 「会形成环」比「后代自己已经有父任务」更准确地说出用户做错了什么。
+      const descendants = new Set<string>();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const task of all) {
+          if (!task.parentId) continue;
+          if (task.parentId === root.id || descendants.has(task.parentId)) {
+            if (!descendants.has(task.id)) {
+              descendants.add(task.id);
+              changed = true;
+            }
+          }
+        }
+      }
+      if (descendants.has(parentId)) throw new Error('不能把任务移动到自己的子任务下');
+      if (parent.parentId) throw new Error('子任务下不能再建子任务');
+    }
+    const next: TaskCache = { ...root, parentId: parentId ?? null, updatedAt: Date.now() };
+    upsertTaskCache(next);
+    logger.info('tasks:local', `reparented local task: ${next.id}`);
+    return cacheToTask(next);
+  },
+
+  /** 按传入顺序重写手动排序位（拖拽重排后由渲染层提交整组顺序）。 */
+  reorder(orderedIds: readonly string[]): void {
+    updateTaskSortOrders(orderedIds.map((taskId, index) => ({ id: taskId, sortOrder: index + 1 })));
+    logger.info('tasks:local', `reordered ${orderedIds.length} local tasks`);
   },
 };

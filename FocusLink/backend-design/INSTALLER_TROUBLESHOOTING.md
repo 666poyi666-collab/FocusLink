@@ -165,6 +165,31 @@ EPERM: operation not permitted, rename '...\win-unpacked.tmp' -> '...\win-unpack
 
 并行 applicationId 的候选必须同时显式传入独立的 `focuslinkExpectedApplicationId`，测试回读 BuildConfig 与该预期一致；默认预期仍为正式包 `app.focuslink.mobile`。此项验证包身份，不能消除既有安装的签名不匹配，也不得通过卸载或清数据绕过覆盖安装失败。
 
+## FL-INSTALL-010：覆盖安装不清理旧版本遗留文件（2026-09-11 实测）
+
+**症状**：从 1.3.5 覆盖安装到 1.3.6 后，`%LOCALAPPDATA%\Programs\FocusLink\resources\app.asar.unpacked` 仍是 **48.4MB / 781 文件**，而干净安装同一版本只有 **26.03MB / 66 文件**。两者差的 22MB 是 1.3.4/1.3.5 打进包里的 Capacitor Gradle 产物（`@capacitor/**/build/` 下的 `.transforms`、`intermediates`、`outputs`、`tmp`），1.3.6 起已在 `electron-builder.yml` 排除，但旧文件没被删。
+
+**根因判定（用时间戳区分，不要靠猜）**：NSIS 覆盖安装只做「写入与替换」，不删除新版本不再包含的文件。判定命令：
+
+```powershell
+$res = "$env:LOCALAPPDATA\Programs\FocusLink\resources"
+(Get-Item "$res\app.asar").LastWriteTime                    # 应为本次安装时间
+(Get-Item "$res\app.asar.unpacked\node_modules\@capacitor\android\capacitor\build").LastWriteTime
+```
+
+实测 `app.asar` 是 `17:01:28`（新版已替换），而两个 `build` 目录是 `16:38:28`（上一版本时间）——**本体已更新、附加文件残留**，据此排除「打包配置没生效」这一错误方向。反证：安装到全新目录（`installer /S /D=<空目录>`）实测为 26.03MB / 66 文件，证明新包本身不含这些文件。
+
+**当前状态**：**未修复**。`build/installer.nsh` 未改动，故每次覆盖升级都会累积上一版本被移除的文件。若某版本的附加载荷变大再变小，安装目录会持续膨胀而不收敛。
+
+**可逆处理**：升级后如需回收，直接删残留目录即可（它们是新版本已不携带的产物）：
+
+```powershell
+$p = "$env:LOCALAPPDATA\Programs\FocusLink\resources\app.asar.unpacked\node_modules\@capacitor"
+if (Test-Path $p) { [System.IO.Directory]::Delete('\\?\' + (Resolve-Path $p).Path, $true) }
+```
+
+**必须用 `\\?\` 前缀**：这些路径含 `build\.transforms\<hash>\transformed\bundleLibRuntimeToDirDebug\...`，会超过 Windows 260 字符上限，普通 `Remove-Item -Recurse -Force` 报 `PathTooLong` 并只删掉一部分（实测如此）。这是 FL-INSTALL-008 之外的另一类删除失败——008 是执行策略拦截，本条是路径长度。
+
 ## 维护规则
 
 - 新增安装错误时，先分配稳定错误编号，再补充触发条件、可逆处理和验证命令。

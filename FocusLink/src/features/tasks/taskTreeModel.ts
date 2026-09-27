@@ -173,7 +173,7 @@ function compareTasks(a: Task, b: Task, mode: TaskSortMode): number {
     return byDue || compareTitle(a, b);
   }
 
-  // smart：到期日优先且真正按时间升序，其后保持滴答 sortOrder、优先级和名称稳定。
+  // smart：到期日优先且真正按时间升序，其后保持 sortOrder、优先级和名称稳定。
   const byDue = compareNullableNumber(a.dueDate, b.dueDate, 'asc');
   if (byDue) return byDue;
   const byOrder = compareNullableNumber(a.sortOrder, b.sortOrder, 'asc');

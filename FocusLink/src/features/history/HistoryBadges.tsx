@@ -3,9 +3,6 @@ import { motion } from 'framer-motion';
 import { Icon } from '../../ui/Icon';
 import { formatDuration, formatDateTime } from '../../lib/time';
 import type { FocusSession, FocusSegment } from '@shared/types';
-import type { SessionSyncState } from './syncPresentation';
-
-export { SyncBadge } from './HistoryTimeline';
 
 export function SessionLinkPreview({
   session,
@@ -16,14 +13,6 @@ export function SessionLinkPreview({
 }) {
   if (segments) {
     const linked = segments.filter((seg) => seg.taskId && seg.taskSource);
-    const ticktick = linked.filter((seg) => seg.taskSource === 'ticktick');
-    if (ticktick.length > 0) {
-      return (
-        <span className="status-chip border-success/25 bg-success/10 text-success">
-          <Icon.CheckCircleFilled size="xs" /> 已关联滴答 {ticktick.length} 段
-        </span>
-      );
-    }
     if (linked.length > 0) {
       return (
         <span className="status-chip border-border/60 bg-bg-subtle/60 text-fg-subtle">
@@ -37,16 +26,8 @@ export function SessionLinkPreview({
       </span>
     );
   }
-  const ticktickCount = session.ticktickLinkedSegmentCount ?? 0;
   const linkedCount = session.linkedSegmentCount ?? 0;
   const segmentCount = session.segmentCount ?? 0;
-  if (ticktickCount > 0) {
-    return (
-      <span className="status-chip border-success/25 bg-success/10 text-success">
-        <Icon.CheckCircleFilled size="xs" /> 已关联滴答 {ticktickCount} 段
-      </span>
-    );
-  }
   if (linkedCount > 0) {
     return (
       <span className="status-chip border-border/60 bg-bg-subtle/60 text-fg-subtle">
@@ -68,13 +49,7 @@ export function SessionLinkPreview({
       </span>
     );
   }
-  if (session.defaultTaskSource === 'ticktick') {
-    return (
-      <span className="status-chip border-success/25 bg-success/10 text-success">
-        <Icon.CheckCircleFilled size="xs" /> 默认任务已关联
-      </span>
-    );
-  }
+
   return (
     <span className="status-chip border-border/60 bg-bg-subtle/60 text-fg-subtle">
       <Icon.Link size="xs" /> 展开查看片段
@@ -88,22 +63,10 @@ export interface SessionDetail {
   pauses: import('@shared/types').PauseEvent[];
 }
 
-export function SessionDetailHeader({
-  detail,
-  syncState,
-  syncing,
-  syncMode,
-}: {
-  detail: SessionDetail;
-  syncState: SessionSyncState;
-  syncing: boolean;
-  syncMode: 'focus-record' | 'comment' | 'local-only';
-}) {
+export function SessionDetailHeader({ detail }: { detail: SessionDetail }) {
   const { session, segments, pauses } = detail;
   const linked = segments.filter((seg) => seg.taskId && seg.taskSource);
-  const ticktick = linked.filter((seg) => seg.taskSource === 'ticktick');
   const unlinked = Math.max(0, segments.length - linked.length);
-  const ticktickMs = ticktick.reduce((sum, seg) => sum + seg.activeElapsedMs, 0);
 
   return (
     <div className="history-session-summary">
@@ -133,38 +96,7 @@ export function SessionDetailHeader({
               text="本地已保存"
               title="Session、专注片段、暂停片段已写入本地 SQLite"
             />
-            {(ticktick.length > 0 || syncing) && (
-              <TinyStatusChip
-                tone={
-                  syncMode === 'local-only'
-                    ? 'muted'
-                    : syncing
-                      ? 'warn'
-                      : syncState.tone === 'ok'
-                        ? 'ok'
-                        : 'warn'
-                }
-                icon={<Icon.Refresh size="xs" />}
-                text={
-                  syncing
-                    ? '外部同步中'
-                    : syncMode === 'local-only'
-                      ? '外部同步已关闭'
-                      : syncState.tone === 'ok'
-                        ? `外部已同步 · ${formatDuration(ticktickMs)}`
-                        : `外部未同步 · ${ticktick.length} 段`
-                }
-                title={
-                  syncing
-                    ? '正在处理外部同步队列'
-                    : syncMode === 'local-only'
-                      ? '当前同步模式为仅本地'
-                      : syncState.tone === 'ok'
-                        ? '最近一次外部同步已完成'
-                        : '已有外部来源片段，但还没有成功同步记录'
-                }
-              />
-            )}
+
             <TinyStatusChip
               tone={unlinked > 0 ? 'warn' : 'muted'}
               icon={<Icon.AlertCircle size="xs" />}

@@ -92,6 +92,24 @@ export interface PauseEvent {
 }
 
 /** 任务缓存（FocusLink 自有任务 + 迁移兼容数据） */
+/** 任务页行内创建时的可选字段。 */
+export interface TaskCreateOptions {
+  parentId?: string | null;
+  dueDate?: number | null;
+  priority?: number | null;
+}
+
+/** 任务详情面板可编辑的字段；未传入的字段保持原值。 */
+export interface TaskUpdatePatch {
+  title?: string;
+  dueDate?: number | null;
+  startDate?: number | null;
+  priority?: number | null;
+  tags?: string[] | null;
+  content?: string | null;
+  projectId?: string | null;
+}
+
 export interface TaskCache {
   id: string;
   source: TaskSource;
@@ -109,6 +127,8 @@ export interface TaskCache {
   content: string | null;
   rawJson: string | null;
   lastSyncedAt: number | null;
+  /** 本地任务手动排序位；dida 任务仍以 raw_json 内的 sortOrder 为准。 */
+  sortOrder?: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -118,6 +138,7 @@ export interface LocalTaskProject {
   id: string;
   name: string;
   color: string | null;
+  icon?: string | null;
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -230,6 +251,7 @@ export interface Project {
   externalId: string;
   name: string;
   color: string | null;
+  icon?: string | null;
 }
 
 /** TickTick 适配器接口 */

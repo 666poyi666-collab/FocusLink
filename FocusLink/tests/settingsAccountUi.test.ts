@@ -58,13 +58,18 @@ describe('desktop FocusLink account settings', () => {
     expect(source).toContain("label: '站酷快乐体'");
   });
 
-  it('keeps external task adapters behind an explicit collapsed import entry', () => {
-    expect(source).toContain('settings-external-task-disclosure');
-    expect(source).toContain('外部任务导入');
-    expect(source).toContain("section.id === 'dida-sync'");
-    expect(source).toContain("settings.taskSource !== 'local'");
-    expect(source).toContain("section.id === 'dida-oauth'");
-    expect(source).toContain("settings.taskSource === 'ticktick-oauth'");
+  it('no longer offers any third-party task adapter in the settings surface', () => {
+    // L1（2026-09-27）：滴答清单/CLI/OAuth 已从 UI 退役，后端实现暂时保留但不暴露。
+    expect(source).not.toContain('外部任务导入');
+    expect(source).not.toContain('dida-sync');
+    expect(source).not.toContain('dida-oauth');
+    expect(source).not.toContain('dida-connection');
+    expect(source).not.toContain('taskSource');
+    expect(source).not.toContain('ticktickCli');
+    expect(source).not.toContain('滴答');
+    expect(source).not.toContain('TickTick');
+    // 番茄 To-do 是独立链路，必须保留。
+    expect(source).toContain("id: 'tomatodo'");
   });
 
   it('renders device-sync health from the machine-code presentation with its durable conflict count', () => {

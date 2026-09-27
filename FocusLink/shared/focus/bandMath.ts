@@ -39,7 +39,13 @@ export function overviewScaleForSpan(spanSec: number, availableWidthPx: number):
   return clampRange(availableWidthPx / spanSec, BAND_SCALE_OVERVIEW_MIN, BAND_SCALE_NEAR);
 }
 
-const OVERVIEW_TICK_LADDER_SEC = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400];
+/**
+ * 总览刻度步长阶梯。导出给渲染层做「连续/交叉淡入」过渡用：
+ * 那两种过渡需要在相邻两档之间插值，必须拿到同一张表，不能各写一份。
+ */
+export const OVERVIEW_TICK_LADDER_SEC = [
+  10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400,
+];
 
 /**
  * 总览刻度步长：梯子上第一个让屏幕间距 ≥ minPx 的档位。

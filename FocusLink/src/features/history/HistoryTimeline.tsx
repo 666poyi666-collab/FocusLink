@@ -1,9 +1,7 @@
 // 历史时间线 - 片段时间线列表 + 专注行 + 暂停行
 import type { CSSProperties } from 'react';
-import { motion } from 'framer-motion';
 import { Icon } from '../../ui/Icon';
 import { formatDuration, formatDateTime } from '../../lib/time';
-import { NOT_SYNCED_STATE, type SessionSyncState } from './syncPresentation';
 import { inferTomatodoSubject, resolveSegmentSubject } from '@shared/tomatodoPolicy';
 import { TomatodoSubjectChips } from './TomatodoSubjectChips';
 import type { FocusSegment, PauseEvent, TomatodoSubject } from '@shared/types';
@@ -34,11 +32,8 @@ export function HistoryTimelineList({
   onLink,
   onClear,
   onComplete,
-  onResync,
   onSetSubject,
   tomatodoStatus,
-  syncStates,
-  syncMode,
   tomatodoEnabled,
   completedTaskIds,
 }: {
@@ -51,11 +46,8 @@ export function HistoryTimelineList({
   onLink: (segmentId: string, index: number) => void;
   onClear: (segmentId: string) => void;
   onComplete: (seg: FocusSegment) => void;
-  onResync: (seg: FocusSegment) => void;
   onSetSubject: (sessionId: string, segmentId: string, subject: TomatodoSubject | null) => void;
   tomatodoStatus: Record<string, TomatodoSegmentStatus>;
-  syncStates: Record<string, SessionSyncState>;
-  syncMode: 'focus-record' | 'comment' | 'local-only';
   tomatodoEnabled: boolean;
   completedTaskIds: Set<string>;
 }) {
@@ -115,15 +107,11 @@ export function HistoryTimelineList({
                 onLink={() => onLink(item.segment.id, item.index)}
                 onClear={() => onClear(item.segment.id)}
                 onComplete={() => onComplete(item.segment)}
-                onResync={() => onResync(item.segment)}
                 onSetSubject={(subject) => onSetSubject(sessionId, item.segment.id, subject)}
                 resolvedSubject={tomatodoStatus[item.segment.id]?.subject}
                 resolvedSubjectSource={tomatodoStatus[item.segment.id]?.source}
                 tomatodoStatus={tomatodoStatus[item.segment.id]}
-                syncState={syncStates[item.segment.id]}
                 showTomatodo={tomatodoEnabled}
-                showDidaSync={syncMode !== 'local-only'}
-                allowCloudResync={syncMode === 'focus-record' && !!item.segment.cloudFocusId}
                 isTaskCompleted={!!item.segment.taskId && completedTaskIds.has(item.segment.taskId)}
               />
             ) : (
@@ -150,15 +138,11 @@ function HistoryFocusTimelineRow({
   onLink,
   onClear,
   onComplete,
-  onResync,
   onSetSubject,
   resolvedSubject,
   resolvedSubjectSource,
   tomatodoStatus,
-  syncState,
   showTomatodo,
-  showDidaSync,
-  allowCloudResync,
   isTaskCompleted,
 }: {
   seg: FocusSegment;
@@ -169,23 +153,14 @@ function HistoryFocusTimelineRow({
   onLink: () => void;
   onClear: () => void;
   onComplete: () => void;
-  onResync: () => void;
   onSetSubject: (subject: TomatodoSubject | null) => void;
   resolvedSubject?: TomatodoSubject;
   resolvedSubjectSource?: TomatodoSegmentStatus['source'];
   tomatodoStatus?: TomatodoSegmentStatus;
-  syncState?: SessionSyncState;
   showTomatodo: boolean;
-  showDidaSync: boolean;
-  allowCloudResync: boolean;
   isTaskCompleted: boolean;
 }) {
   const hasTask = !!seg.taskId && !!seg.taskSource;
-  const displayedSyncState =
-    syncState ??
-    (seg.cloudFocusId
-      ? { label: '已同步', tone: 'ok' as const, title: '已写入滴答清单' }
-      : NOT_SYNCED_STATE);
   return (
     <div
       className={`history-segment-row hm-stagger-in tone-focus ${hasTask ? 'is-linked' : 'is-unlinked'}`}
@@ -205,18 +180,12 @@ function HistoryFocusTimelineRow({
             {formatDateTime(seg.startedAt)}
             {seg.endedAt && ` → ${formatDateTime(seg.endedAt)}`}
           </span>
-          {showDidaSync && seg.taskSource === 'ticktick' && (
-            <SyncBadge state={displayedSyncState} />
-          )}
         </div>
         <div className="history-segment-task">
           {hasTask ? (
             <>
               <Icon.Link size="xs" tone="accent" />
               <span className="history-segment-task-title">{seg.title}</span>
-              {seg.taskSource === 'ticktick' && (
-                <span className="history-segment-source">滴答</span>
-              )}
             </>
           ) : (
             <span className="history-segment-unlinked">任务未关联</span>
@@ -261,16 +230,6 @@ function HistoryFocusTimelineRow({
             >
               {isTaskCompleted ? '已完成' : '完成'}
             </button>
-            {allowCloudResync && (
-              <button
-                className="motion-press rounded-md border border-accent/20 bg-accent/5 px-1.5 py-1 text-[10.5px] text-accent hover:bg-accent/10 disabled:opacity-40"
-                disabled={linking}
-                onClick={onResync}
-                title="删除现有云端专注记录并重新同步"
-              >
-                重新同步
-              </button>
-            )}
           </>
         )}
       </div>
@@ -418,38 +377,5 @@ function HistoryPauseTimelineRow({
         <p className="history-segment-note">仅计入暂停损耗，不参与任务同步</p>
       </div>
     </div>
-  );
-}
-
-export function SyncBadge({ state }: { state: SessionSyncState }) {
-  const cls =
-    state.tone === 'ok'
-      ? 'border-success/25 bg-success/10 text-success'
-      : state.tone === 'error'
-        ? 'border-danger/25 bg-danger/10 text-danger'
-        : state.tone === 'warn'
-          ? 'border-warning/25 bg-warning/10 text-warning'
-          : 'border-border/60 bg-bg-subtle/60 text-fg-subtle';
-  const StateIcon =
-    state.tone === 'ok'
-      ? Icon.CheckCircleFilled
-      : state.tone === 'error'
-        ? Icon.AlertCircle
-        : state.tone === 'warn'
-          ? Icon.Refresh
-          : Icon.Clock;
-
-  return (
-    <motion.span
-      key={`${state.tone}:${state.label}`}
-      initial={{ scale: 0.72, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-      title={state.title}
-      className={`status-chip inline-flex items-center gap-1 ${cls}`}
-    >
-      <StateIcon size="xs" />
-      {state.label}
-    </motion.span>
   );
 }

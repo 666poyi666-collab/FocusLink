@@ -30,26 +30,33 @@ type View = 'timer' | 'tasks' | 'history' | 'settings';
  * 浏览器要在缩放后的尺寸上重新栅格化整页文字，过渡期间文字被重采样，读起来就是
  * 「有点糊」；而且中途两层都接近全不透明（0.49 / 0.81），看不出是一次翻页。
  *
- * 现在只做两件事，都是为了在 160Hz 上也不掉帧：
- *  · 位移放大到 18px 并去掉 scale —— 位移只走合成层，文字始终以原生尺寸栅格化，
- *    过渡全程保持清晰；
- *  · 交叉淡化时间轴错开：旧页 0–200ms 退完，新页 60–280ms 才起来。两层不再同时
- *    逼近全不透明，观感是「旧的一页让开，新的一页落定」，而不是两页互相叠着抖。
- *    错开量按「两层不透明度之和始终 ≥ 0.9」定：再往后挪旧页就已经退干净了，
- *    中间会闪出一帧空背景。
+ * 第二版去掉了 scale、把位移放大到 18px。但实测（全 DOM 逐帧扫描）发现问题仍在：
+ * **没有任何元素在改尺寸，只有整页在横移 18px**，而 1880px 宽的窗口里整页内容横向
+ * 擦过去，观感就是用户说的「收缩/挤了一下」；同时两层在交叉期间各自平移 + 半透明
+ * 重叠，移动中的文字互相叠着，读起来发虚。
+ *
+ * 第三版（当前）：**整页不再位移，只做不透明度交叉**。内容原位淡出、原位淡入，
+ * 既没有横向擦除，也不存在两页文字错位叠加。位移量由 `__flPageShiftPx` 控制，
+ * 默认 0；诊断时可注入 18 复现旧观感。
  */
 const PAGE_ENTER = {
-  duration: 0.22,
-  delay: 0.06,
+  duration: 0.2,
+  delay: 0.04,
   ease: [0.16, 1, 0.3, 1] as const,
 };
 const PAGE_EXIT = {
-  duration: 0.2,
+  duration: 0.18,
   ease: [0.4, 0, 0.2, 1] as const,
 };
-const PAGE_SHIFT_PX = 18;
+
+/** 页面切换的横向位移量。0 = 只做淡化（当前），诊断时可注入 18 对比旧观感。 */
+function pageShiftPx(): number {
+  const forced = (globalThis as { __flPageShiftPx?: number }).__flPageShiftPx;
+  return typeof forced === 'number' ? forced : 0;
+}
+
 const PAGE_VARIANTS = {
-  initial: (direction: number) => ({ opacity: 0, x: direction * PAGE_SHIFT_PX }),
+  initial: (direction: number) => ({ opacity: 0, x: direction * pageShiftPx() }),
   animate: {
     opacity: 1,
     x: 0,
@@ -57,7 +64,7 @@ const PAGE_VARIANTS = {
   },
   exit: (direction: number) => ({
     opacity: 0,
-    x: direction * -PAGE_SHIFT_PX * 0.6,
+    x: direction * -pageShiftPx() * 0.6,
     transition: PAGE_EXIT,
   }),
 };

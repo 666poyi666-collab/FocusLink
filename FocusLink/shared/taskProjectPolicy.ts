@@ -21,9 +21,11 @@ export function defaultTaskProjectColor(projectCount: number): TaskProjectColor 
   return TASK_PROJECT_COLOR_PALETTE[index % TASK_PROJECT_COLOR_PALETTE.length];
 }
 
-export function normalizeTaskProjectColor(value: string | null | undefined): TaskProjectColor {
-  const normalized = value?.trim().toLowerCase();
-  return TASK_PROJECT_COLOR_PALETTE.includes(normalized as TaskProjectColor)
-    ? (normalized as TaskProjectColor)
-    : TASK_PROJECT_COLOR_PALETTE[0];
+export function normalizeTaskProjectColor(value: string | null | undefined): string {
+  if (!value) return TASK_PROJECT_COLOR_PALETTE[0];
+  const normalized = value.trim().toLowerCase();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized)) {
+    return normalized;
+  }
+  return TASK_PROJECT_COLOR_PALETTE[0];
 }

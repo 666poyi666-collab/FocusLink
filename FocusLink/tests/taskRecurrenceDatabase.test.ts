@@ -60,7 +60,9 @@ describe('task scheduling SQLite migration', () => {
     const columns = (getDb().pragma('table_info(tasks_cache)') as Array<{ name: string }>).map(
       (column) => column.name,
     );
-    expect(columns).toEqual(expect.arrayContaining(['parent_id', 'start_date', 'recurrence']));
+    expect(columns).toEqual(
+      expect.arrayContaining(['parent_id', 'start_date', 'recurrence', 'sort_order']),
+    );
 
     const recurrence = {
       timezone: 'Asia/Shanghai',
@@ -89,6 +91,8 @@ describe('task scheduling SQLite migration', () => {
       content: null,
       rawJson: null,
       lastSyncedAt: null,
+      // 旧库没有 sort_order 列；迁移会补上并默认 NULL，因此读回来是 null。
+      sortOrder: null,
       createdAt: 1,
       updatedAt: 2,
     };

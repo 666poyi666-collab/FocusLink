@@ -7,6 +7,7 @@ const localState = vi.hoisted(() => ({
     id: string;
     name: string;
     color: string | null;
+    icon?: string | null;
     sortOrder: number;
     createdAt: number;
     updatedAt: number;
@@ -56,6 +57,30 @@ vi.mock('../electron/db/index.js', () => ({
     },
   ),
   removeStaleLocalTaskSnapshotRows: vi.fn(),
+  deleteTaskCacheSubtree: vi.fn((rootId: string) => {
+    const doomed = new Set<string>([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const task of localState.tasks) {
+        if (task.parentId && doomed.has(task.parentId) && !doomed.has(task.id)) {
+          doomed.add(task.id);
+          changed = true;
+        }
+      }
+    }
+    const before = localState.tasks.length;
+    localState.tasks = localState.tasks.filter((task) => !doomed.has(task.id));
+    return before - localState.tasks.length;
+  }),
+  updateTaskSortOrders: vi.fn((rows: readonly { id: string; sortOrder: number }[]) => {
+    for (const row of rows) {
+      const index = localState.tasks.findIndex((item) => item.id === row.id);
+      if (index >= 0) {
+        localState.tasks[index] = { ...localState.tasks[index], sortOrder: row.sortOrder };
+      }
+    }
+  }),
 }));
 
 vi.mock('../electron/logger.js', () => ({
@@ -311,5 +336,115 @@ describe('local task completion mutations', () => {
 
   it('fails precisely when the local task no longer exists', () => {
     expect(() => LocalTaskProvider.setCompleted('missing', false)).toThrow(/本地任务不存在/);
+  });
+});
+
+describe('local task editing surface (Phase A)', () => {
+  it('creates new tasks at the end of their group with an explicit sort order', () => {
+    const first = LocalTaskProvider.create('第一条');
+    const second = LocalTaskProvider.create('第二条');
+    expect(first.sortOrder).toBe(1);
+    expect(second.sortOrder).toBe(2);
+  });
+
+  it('accepts due date, priority and parent at creation and rejects a third level', () => {
+    const parent = LocalTaskProvider.create('父任务');
+    const child = LocalTaskProvider.create('子任务', undefined, {
+      parentId: parent.id,
+      dueDate: 1_700_000_000_000,
+      priority: 5,
+    });
+    expect(child).toMatchObject({ parentId: parent.id, priority: 5, dueDate: 1_700_000_000_000 });
+    expect(() => LocalTaskProvider.create('孙任务', undefined, { parentId: child.id })).toThrow(
+      '子任务下不能再建子任务',
+    );
+  });
+
+  it('updates only the provided fields and keeps identity and creation time', () => {
+    const created = LocalTaskProvider.create('原标题');
+    const updated = LocalTaskProvider.update(created.id, { title: '新标题', priority: 3 });
+    expect(updated).toMatchObject({
+      id: created.id,
+      title: '新标题',
+      priority: 3,
+      createdAt: created.createdAt,
+    });
+    expect(localState.tasks).toHaveLength(1);
+  });
+
+  it('rejects an empty title and normalizes tags and blank notes', () => {
+    const created = LocalTaskProvider.create('任务');
+    expect(() => LocalTaskProvider.update(created.id, { title: '   ' })).toThrow(
+      '任务标题不能为空',
+    );
+    const tagged = LocalTaskProvider.update(created.id, {
+      tags: ['  工作 ', '工作', '学习'],
+      content: '   ',
+    });
+    expect(tagged.tags).toEqual(['工作', '学习']);
+    expect(tagged.content).toBeNull();
+  });
+
+  it('clears due date and priority when null is sent explicitly', () => {
+    const created = LocalTaskProvider.create('任务', undefined, {
+      dueDate: 1_700_000_000_000,
+      priority: 5,
+    });
+    const cleared = LocalTaskProvider.update(created.id, { dueDate: null, priority: null });
+    expect(cleared.dueDate).toBeNull();
+    expect(cleared.priority).toBeNull();
+  });
+
+  it('deletes a task together with its whole subtree', () => {
+    const parent = LocalTaskProvider.create('父任务');
+    LocalTaskProvider.create('子任务一', undefined, { parentId: parent.id });
+    LocalTaskProvider.create('子任务二', undefined, { parentId: parent.id });
+    LocalTaskProvider.create('无关任务');
+    expect(LocalTaskProvider.remove(parent.id)).toEqual({ removed: 3 });
+    expect(LocalTaskProvider.list().map((task) => task.title)).toEqual(['无关任务']);
+  });
+
+  it('reparents a task but refuses cycles and third-level nesting', () => {
+    const a = LocalTaskProvider.create('A');
+    const b = LocalTaskProvider.create('B');
+    const child = LocalTaskProvider.create('A 的子任务', undefined, { parentId: a.id });
+    expect(LocalTaskProvider.setParent(b.id, a.id).parentId).toBe(a.id);
+    expect(() => LocalTaskProvider.setParent(a.id, a.id)).toThrow('任务不能成为自己的子任务');
+    expect(() => LocalTaskProvider.setParent(a.id, child.id)).toThrow(
+      '不能把任务移动到自己的子任务下',
+    );
+    expect(() => LocalTaskProvider.setParent(child.id, b.id)).toThrow('子任务下不能再建子任务');
+    expect(LocalTaskProvider.setParent(child.id, null).parentId).toBeNull();
+  });
+
+  it('rewrites manual order from the submitted id list', () => {
+    const a = LocalTaskProvider.create('A');
+    const b = LocalTaskProvider.create('B');
+    const c = LocalTaskProvider.create('C');
+    LocalTaskProvider.reorder([c.id, a.id, b.id]);
+    expect(LocalTaskProvider.getById(c.id)?.sortOrder).toBe(1);
+    expect(LocalTaskProvider.getById(a.id)?.sortOrder).toBe(2);
+    expect(LocalTaskProvider.getById(b.id)?.sortOrder).toBe(3);
+  });
+
+  it('supports creating and updating projects with custom icons and emojis', () => {
+    const project = LocalTaskProvider.createProject('工作任务', '#2563EB', 'briefcase');
+    expect(project).toMatchObject({
+      name: '工作任务',
+      color: '#2563eb',
+      icon: 'briefcase',
+    });
+    const updated = LocalTaskProvider.updateProject(project.id, {
+      icon: '🚀',
+      color: '#E11D48',
+    });
+    expect(updated).toMatchObject({
+      name: '工作任务',
+      color: '#e11d48',
+      icon: '🚀',
+    });
+    const list = LocalTaskProvider.listProjects();
+    const found = list.find((p) => p.id === project.id);
+    expect(found?.icon).toBe('🚀');
   });
 });

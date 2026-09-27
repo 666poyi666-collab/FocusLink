@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS task_projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   color TEXT,
+  icon TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
