@@ -69,6 +69,52 @@ FocusLink 使用分步安装器。首屏标题是「FocusLink 安装」，需要
 
 先检查托盘区和任务管理器。FocusLink 可能以隐藏模式启动；从托盘打开主窗口，或直接运行安装目录下的 `FocusLink.exe`。如果进程不存在，重新运行安装包并保留上面的日志。
 
+**2026-09-29 修正**：上句「直接运行安装目录下的 `FocusLink.exe`」在**进程存在但窗口不存在**时是无效建议 —— 单实例锁会拦下第二实例，而 v1.3.13 之前 `second-instance` 处理器没有重建分支，于是每次点击都被静默吞掉。这种情况请改用 `FL-INSTALL-011` 的诊断顺序，不要再反复双击。
+
+## FL-INSTALL-011：进程在、窗口不在（安装后「打不开」，2026-09-29 实测）
+
+**症状**：安装完成后应用打不开。任务管理器里 `FocusLink.exe` 在跑、CPU 有占用，托盘可能也没有图标；反复双击桌面图标没有任何反应，日志里也看不到新的启动记录。
+
+**关键判据（先分清事实，不要用「进程存在」当作「应用已打开」）**：
+
+```powershell
+# 1. 进程在不在，以及**有没有可见顶层窗口**
+Get-Process -Name FocusLink -IncludeUserName -ErrorAction SilentlyContinue |
+  Where-Object UserName -eq "$env:USERDOMAIN\$env:USERNAME" |
+  Select-Object Id, UserName, MainWindowHandle, MainWindowTitle, Responding
+```
+
+`MainWindowHandle = 0` 且 `MainWindowTitle` 为空 → 该进程没有可见主窗口，**不算「已打开」**。
+
+```powershell
+# 2. 回读窗口可见性证据（v1.3.13 起）
+Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd).log" |
+  Select-String 'main window shown|main window failed to become visible|first paint timed out'
+```
+
+v1.3.13 起每次呈现主窗口都会写 `main window shown {trigger, force, visible, bounds, pid}`。**没有这一行、或 `visible: false`，就是没打开。**
+
+**必须先排除的自动化环境坑**：本机 agent shell 里 `ELECTRON_RUN_AS_NODE=1` 可能处于开启状态。用它拉起 GUI 会继承该变量，Electron 退化为纯 Node：实测**退出码 9**，或静默退出 0 且日志一行不写。
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue   # 拉起 GUI 前必须先清
+```
+
+**处置顺序**：
+
+1. 先按上面两条判据确认是「无窗口」而不是「没进程」。
+2. 清掉 `ELECTRON_RUN_AS_NODE`，**由用户自己从桌面或开始菜单启动**；不要用后台自动化代替用户拉起 GUI。
+3. 仍然打不开时，按 `FL-INSTALL-001` 的账户过滤方式结束当前账户下的 `FocusLink.exe`（先核对 PID 与路径，不做全局强杀），再从桌面图标启动一次。
+4. v1.3.13 之前的老版本若已陷入该状态，只能靠第 3 步结束进程；v1.3.13 起第二个实例会自行重建主窗口，首帧超时也会强制显示，无需人工干预。
+
+**根因（两处，均已修复）**：
+
+- `second-instance` 处理器此前只有 `if (mainWindow) { show/focus }`、没有 else：主窗口不存在时，用户每一次点图标都被静默吞掉。
+- `ready-to-show` 此前没有超时兜底：渲染进程未完成首帧时窗口永远停在 `show: false`，且不写任何日志。
+
+**验收口径（发布门禁已同步收紧）**：安装后必须回读到 `main window shown` 且 `visible: true`；`MainWindowHandle != 0` 或日志证据二者至少有一条，**进程存在本身不构成通过**。
+
+
 ## FL-INSTALL-003：卸载后仍显示旧版本
 
 核对桌面快捷方式目标、开始菜单快捷方式目标和卸载注册项的 `InstallLocation`。它们必须指向同一个工作区 release 安装目录。不要只看文件名判断版本；同时核对安装器内的版本号和 `SHA256SUMS.txt`。

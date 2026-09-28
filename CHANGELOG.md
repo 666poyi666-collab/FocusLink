@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.3.13 - 2026-09-29（安装后「打不开」根治：主窗口可见性自愈、第二实例重建窗口、安装门禁改为验窗口而非验进程）
+
+### 缺陷与根因
+
+- **安装 1.3.12 后应用「打不开」**：进程在、窗口不在，且无法自愈。
+  - 现象：安装完成后进程长期存活、事件循环正常（每 60 秒仍在写同步心跳），但**顶层窗口数为 0**；此后每次点桌面图标都只是拉起一个注定退出的第二实例，原实例既不显示窗口也不留任何日志，用户侧表现为「永远打不开」。
+  - 证据：用对照验证过的窗口枚举器（同机枚举到 493 个顶层窗口、38 个可见）查不到任何 FocusLink 窗口；另做隔离实验证明 `show: false` 的 Electron 窗口**同样可被枚举**，因此「0 窗口」不是枚举不到；同时主进程 USER 对象 96 个、GPU 进程持续占用约 36% 单核。
+  - 根因一（代码）：`electron/main.ts` 的 `second-instance` 处理器只有 `if (mainWindow) { show/focus }`、**没有 else 分支**。主窗口一旦不存在，用户之后每一次点图标都被静默吞掉，把「一次意外」变成「永久打不开」。
+  - 根因二（代码）：`ready-to-show` **没有任何超时兜底**。渲染进程只要因崩溃、死循环或加载失败而没有完成首帧，窗口就永远停在 `show: false`，且不写任何日志，现场无据可查。
+  - 根因三（流程）：安装门禁只验证「进程已拉起」，把「进程存在」当成了「应用已打开」。本次事故中该判定全程为真。
+
+### 修复
+
+- **主窗口呈现收敛为唯一入口 `presentMainWindow(trigger, force)`**：show / restore / focus，窗口已不在时重建，并且**必须写下可机检的证据** `main window shown {trigger, force, visible, bounds, pid}`；显示后仍不可见则记 `main window failed to become visible`。
+- **`second-instance` 补上重建分支**：新增纯函数 `planSecondInstanceAction()`；窗口不存在或已销毁时返回 `recreate`，不再静默吞掉用户的点击。
+- **`ready-to-show` 增加 3 秒首帧兜底**：新增纯函数 `shouldForceShowAfterFirstPaintTimeout()`；超时后强制显示并记录 `trigger: 'first-paint-timeout'`。只有「用户显式要求隐藏启动」（`--hidden` / 最小化到托盘设置）才允许保持隐藏。
+- **`activate` 与 `second-instance` 共用同一条呈现路径**，避免两处各自演化出不同的可见性语义。
+- **安装门禁改为验窗口**：日志中没有 `main window shown` 且 `visible: true`，就不算「应用已打开」。
+
+### 验证
+
+- `npm run format:check`、`npm run typecheck`（含 cloudflare worker）、`npm run lint` 全部 0 error 通过。
+- `npm test`：通过。
+- 新增回归 `tests/startupPolicy.test.ts`「main window visibility recovery (FL-INSTALL-011)」，钉死两条不变量：首帧超时必须强制显示（除非显式隐藏启动）；主窗口不存在时第二实例必须重建。
+- Windows 本机：静默覆盖安装 1.3.13，回读注册表 `DisplayVersion 1.3.13` 与已安装 EXE 文件版本，并**回读窗口可见性证据**（`main window shown ... visible: true`）。
+
 ## v1.3.12 - 2026-09-29（统计工作台重构：固定12栅格卡贴画卷、自适应高光防蓝光溢出、5大高精核心卡片与外观质感切换）
 
 ### 主要功能与体验升级

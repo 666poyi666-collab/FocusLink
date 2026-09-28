@@ -1,5 +1,32 @@
 # FocusLink 实施日志
 
+## 2026-09-29 · `FL-INSTALL-20260929-NO-WINDOW`：安装后「打不开」根治（v1.3.13）
+
+- **用户报告**：安装 1.3.12 后应用打不开。
+- **实测事实（先测后改，全部在用户机器上只读取证）**：
+  1. **进程在、窗口不在**：5 个 `FocusLink.exe` 进程自 `00:00:52` 存活，事件循环正常（`[sync] queue paused` 心跳每 60 秒持续写入，直到取证时仍在写），但**顶层窗口数为 0**。
+  2. **「0 窗口」不是枚举不到**（对照验证）：同机枚举到 493 个顶层窗口、38 个可见（explorer / 微信 / Edge / Clash 等）；另用仓库自带 Electron 做隔离实验，`new BrowserWindow({ show: false })` **同样产生可枚举的 HWND**（`FL-HWND-TEST-HIDDEN` 被枚举到，`getNativeWindowHandle()` 非空）。故该实例确实没有任何顶层窗口。
+  3. **不是崩溃**：`logs/focuslink-2026-09-28.log` 里该实例完成了 `createMainWindow`、`mini window pre-warmed`、`ipc all handlers registered`、5 条 `hotkey registered`，全程无 `[ERROR]`、无 `render process gone`、无 `did-fail-load`。
+  4. **点图标无效且无痕**：用 `Start-Process FocusLink.exe` 两次复现用户操作（含一次无参数、等同双击桌面图标）。第二实例完整初始化后自行退出；原实例**既不显示窗口，也不留任何日志**。
+  5. **资源异常**：主进程 USER 对象 96 个（explorer 对照 614），GPU 进程持续占用约 36% 单核 + 一个渲染进程约 12%，而没有任何可见窗口。
+  6. **自启登记与设置不一致**：`HKCU\...\Run\electron.app.FocusLink` = `"...\FocusLink.exe" --hidden`，而 `focuslink-settings.json` 的 `autoStart` 为 `false`（`shouldRunDeviceSyncAtLogin` 在「同步开启 + 自动同步」时返回 true，故该登记是既有设计，但会让机器长期处于「开机即无窗口」状态）。
+  7. **自动化侧环境坑（同轮独立复现）**：本机 agent shell 里 `ELECTRON_RUN_AS_NODE=1` 处于开启状态。从该 shell 用 `Start-Process` 拉起 GUI 会继承它，实测**退出码 9** 或静默退出 0 且日志一行不写。清除该变量后，同一份 1.3.12 安装**立即正常打开并产生可见窗口**（`MainWindowHandle=204682`，标题 `FocusLink`）。即「点了没反应」也可以由自动化自身的拉起方式造成。
+- **根因（代码，两处）**：
+  1. `electron/main.ts` 的 `second-instance` 处理器**只有 `if (mainWindow) { show/restore/focus }`、没有 else**。主窗口一旦不存在，用户之后每一次点图标都被静默吞掉 —— 缺陷从「一次意外」升级为「永久打不开」。同文件 `activate` 处理器写了 `if (getAllWindows().length === 0) mainWindow = createMainWindow();`，同一问题有兜底，`second-instance` 没有。
+  2. `ready-to-show` **没有任何超时兜底**。渲染进程只要因崩溃、死循环或加载失败而未完成首帧，窗口就永远停在 `show: false`，且不写日志。
+- **根因（流程）**：安装门禁只验证「进程已拉起运行」。本次事故中该判定全程为真，因此缺陷被验收通过。**「进程存在」不等于「应用已打开」。**
+- **修复**：
+  - `shared/startupPolicy.ts` 新增纯函数：`planSecondInstanceAction()`（`ignore-hidden-start` / `focus-existing` / `recreate`）、`shouldForceShowAfterFirstPaintTimeout()`、常量 `MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS = 3000`。
+  - `electron/main.ts`：新增唯一呈现入口 `presentMainWindow(trigger, force)`（show/restore/focus，窗口缺失时重建，并强制写下可机检证据 `main window shown {trigger, force, visible, bounds, pid}`；显示后仍不可见则记 `main window failed to become visible`）；`second-instance` 与 `activate` 统一走它；`ready-to-show` 增加 3 秒首帧兜底，超时记 `trigger: 'first-paint-timeout'`。
+  - **安装门禁改为验窗口**：日志中没有 `main window shown` 且 `visible: true`，不算「应用已打开」。
+- **测试与反向验证**：
+  - 新增 `tests/startupPolicy.test.ts` → `main window visibility recovery (FL-INSTALL-011)`，3 条用例、13 个断言，钉死两条不变量：首帧超时必须强制显示（除非显式隐藏启动）；主窗口不存在或已销毁时第二实例必须 `recreate`。
+  - **反向验证**：把 `planSecondInstanceAction` 的窗口缺失分支改回 `focus-existing`（等价于事故前的行为），用例 2 立即 FAIL；还原后 PASS。
+- **门禁**：`npm run format:check` PASS；`npm run typecheck`（含 cloudflare worker）PASS；`npm run lint` PASS；`npm test` PASS（**133 文件 / 1074 项**）；`npm run build` PASS。
+- **未完成/待确认（如实记录）**：
+  - 事故实例的窗口究竟「从未创建」还是「创建在非交互桌面上」，在不动用户进程的前提下无法定论：主进程 96 个 USER 对象倾向后者，但两个代码根因都会导致同一用户可见症状，且修复对两种情况都成立。
+  - 三设备同版安装门禁见本轮 CHANGELOG；华为平板若离线则如实标记为未闭合。
+
 ## 2026-09-29 · `FL-STATS-20260929-MASTERCLASS-WORKBENCH`：统计工作台全面升级为 5 大高精卡贴画卷 (v1.3.12)
 
 - **需求与背景**：

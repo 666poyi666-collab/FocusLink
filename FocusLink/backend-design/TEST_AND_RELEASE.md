@@ -99,7 +99,7 @@ canonical foxlink-cloud-mcp → private service binding → Account DO 链路。
   instrumentation 或 connected test；历史华为证据只保留为历史，不得冒充本轮通过。
 - 两台设备仍必须在安装前由 `adb devices -l` 唯一识别，所有安装与回读命令显式传各自序列号；华为缺失、
   offline、安装失败或版本不一致仍是三设备同版安装门禁失败，不能因为免除功能 smoke 而跳过安装回读。
-- Windows 门禁不受本范围调整影响：仍须静默覆盖安装、回读卸载注册表和已安装 EXE 文件版本并重启应用。
+- Windows 门禁不受本范围调整影响：仍须静默覆盖安装、回读卸载注册表和已安装 EXE 文件版本并重启应用，**并按「Windows 安装可见性门禁」回读主窗口可见性证据**。
 
 当前工程使用 compileSdk 36、AGP 8.9.1，targetSdk 35 保持独立升级评估；至少覆盖 minSdk 24 与 targetSdk 35 设备，minSdk 不得低于按域 Network Security Config 生效的 API 24。
 原生前台 Service 只显示云端已确认快照并转发通知/Tile 动作，不能复制业务计时状态机。必须验证通知权限允许/拒绝、
@@ -274,6 +274,33 @@ Android `versionCode` 必须为正整数，且高于此前所有已发布或测�
 执行正式打包、创建 tag 或发布。华为现用胶囊布局模块、Windows 两态小窗和小米系统表面必须保留并复验；
 OPPO 手表 renderer 已冻结并退出新开发。`1.3.0/1306` 的设备功能验收分工以本页候选专属小节为准：
 华为本轮只安装回读，不形成胶囊或其他平板功能复验证据；Windows 安装门禁和三设备同版矩阵不变。
+
+### Windows 安装可见性门禁（2026-09-29 起，硬性）
+
+**「进程存在」不等于「应用已打开」。** 2026-09-29 的 v1.3.12 事故中，安装后进程长期存活、事件循环正常、
+每 60 秒仍在写同步心跳，但**顶层窗口数为 0**；此后每次点图标都被静默吞掉，用户侧表现为「永远打不开」，
+而当时的门禁只验证「进程已拉起运行」，因此该缺陷被完整通过。Windows 端安装验收必须回读下列**窗口事实**，
+缺一即判失败：
+
+```powershell
+# ① 进程存在 + 主窗口句柄非零
+Get-Process -Name FocusLink -IncludeUserName -ErrorAction SilentlyContinue |
+  Where-Object UserName -eq "$env:USERDOMAIN\$env:USERNAME" |
+  Select-Object Id, MainWindowHandle, MainWindowTitle, Responding
+# ② 应用自己写的呈现证据（v1.3.13 起每次呈现都会记录）
+Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd).log" |
+  Select-String 'main window shown|main window failed to become visible|first paint timed out'
+```
+
+- ① 必须至少有一个进程 `MainWindowHandle != 0` 且 `MainWindowTitle` 非空；或 ② 必须回读到
+  `main window shown` 且 `visible: true`。两者都为否即「安装后打不开」，不得写成「已重新拉起运行」。
+- 回读到 `main window failed to become visible` 或 `first paint timed out` 时，按
+  [INSTALLER_TROUBLESHOOTING.md](INSTALLER_TROUBLESHOOTING.md) 的 `FL-INSTALL-011` 处理。
+- **自动化不得代替用户拉起 GUI**：本机 agent shell 可能带 `ELECTRON_RUN_AS_NODE=1`，继承它会让 Electron
+  退化为纯 Node（实测退出码 9 或静默退出 0 且不写日志）。任何脚本化拉起前必须
+  `Remove-Item Env:ELECTRON_RUN_AS_NODE`，且拉起后仍要按上面两条判据回读窗口事实，不能只看进程。
+- 桌面图标点击路径也要验一次：在已有实例运行时再启动一次 `FocusLink.exe`，必须能让主窗口可见
+  （v1.3.13 起 `second-instance` 会 `focus-existing` 或 `recreate`，并留下对应 `trigger` 证据）。
 
 每个补丁版本都在测试、三设备同版安装、CHANGELOG/实施日志、四文件发布目录和 Android APK 备份完成后推送 `main`。补丁尾号不再决定上传节奏；annotated tag、公开资产和 GitHub Release 只在用户明确要求时创建，不得因版本尾号自动发布。
 

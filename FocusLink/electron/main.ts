@@ -63,6 +63,10 @@ import {
   shouldRunDeviceSyncAtLogin,
   shouldAutoSelectDidaTaskSource,
   shouldStartHiddenToTray,
+  shouldForceShowAfterFirstPaintTimeout,
+  planSecondInstanceAction,
+  MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS,
+  type MainWindowShowTrigger,
 } from '@shared/startupPolicy';
 import { enqueueSessionSync, runPending } from './sync/syncService.js';
 import { resolveDidaExecTarget } from './tasks/cliProvider.js';
@@ -228,19 +232,57 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    if (shouldStartHiddenToTray(false, argv)) {
+    const action = planSecondInstanceAction({
+      argv,
+      windowExists: mainWindow !== null,
+      windowDestroyed: mainWindow?.isDestroyed() ?? true,
+    });
+    if (action === 'ignore-hidden-start') {
       logger.info('main', 'second instance hidden startup ignored');
       return;
     }
-    if (mainWindow) {
-      if (!mainWindow.isVisible()) mainWindow.show();
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    /* 主窗口不存在时必须重建。此前这里只有 `if (mainWindow) {...}`、没有 else，
+       于是「窗口已不在」的那个实例会把用户之后每一次点图标都静默吞掉 —— 2026-09-29
+       的「安装后打不开」就是这样变成永久状态的。 */
+    presentMainWindow('second-instance', action === 'recreate');
   });
 }
 
 const isDev = !app.isPackaged;
+
+/* 主窗口呈现的唯一入口：show / restore / focus，窗口已不在时重建，
+   并且**必须留下可机检的证据**。
+   安装门禁从此不接受「进程存在」当作「应用已打开」：日志里没有
+   `main window shown` 且 `visible:true` 就不算打开（FL-INSTALL-011）。 */
+function presentMainWindow(trigger: MainWindowShowTrigger, force: boolean): BrowserWindow | null {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    try {
+      mainWindow = createMainWindow();
+      logger.warn('main', 'main window recreated', { trigger, force });
+    } catch (error) {
+      logger.error('main', 'main window recreate failed', {
+        trigger,
+        force,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return null;
+  if (!win.isVisible()) win.show();
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  const visible = win.isVisible();
+  const record = { trigger, force, visible, pid: process.pid, bounds: win.getBounds() };
+  if (visible) {
+    logger.info('main', 'main window shown', record);
+  } else {
+    logger.error('main', 'main window failed to become visible', record);
+  }
+  return win;
+}
+
 function devUrl(): string {
   return process.env['VITE_DEV_SERVER_URL'] || 'http://localhost:5174';
 }
@@ -313,13 +355,42 @@ function createMainWindow(): BrowserWindow {
     }
   });
 
-  win.once('ready-to-show', () => {
+  /* 首帧兜底（FL-INSTALL-011）：渲染进程因为崩溃、死循环或加载失败而没有完成
+     首帧时，`ready-to-show` 永远不触发，窗口会一直停在 `show: false`。
+     此前没有任何兜底，这种状态无法自愈，用户看到的就是「打不开」。
+     超时后强制显示，并留下 `trigger: 'first-paint-timeout'` 的可检索证据。 */
+  let firstPaintFallback: NodeJS.Timeout | null = setTimeout(() => {
+    firstPaintFallback = null;
     const settings = getSettings();
-    if (!shouldStartHiddenToTray(settings.startMinimizedToTray, process.argv)) {
-      win.show();
-    } else {
-      logger.info('main', 'main window hidden on startup');
+    if (
+      shouldForceShowAfterFirstPaintTimeout({
+        startMinimizedToTray: settings.startMinimizedToTray,
+        argv: process.argv,
+        windowDestroyed: win.isDestroyed(),
+        windowVisible: win.isVisible(),
+      })
+    ) {
+      logger.warn('main', 'main window first paint timed out; forcing show', {
+        timeoutMs: MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS,
+      });
+      presentMainWindow('first-paint-timeout', true);
     }
+  }, MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS);
+  firstPaintFallback.unref?.();
+  const clearFirstPaintFallback = () => {
+    if (firstPaintFallback) clearTimeout(firstPaintFallback);
+    firstPaintFallback = null;
+  };
+  win.once('closed', clearFirstPaintFallback);
+
+  win.once('ready-to-show', () => {
+    clearFirstPaintFallback();
+    const settings = getSettings();
+    if (shouldStartHiddenToTray(settings.startMinimizedToTray, process.argv)) {
+      logger.info('main', 'main window hidden on startup', { argv: process.argv.slice(1) });
+      return;
+    }
+    presentMainWindow('ready-to-show', false);
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -1398,11 +1469,8 @@ app.whenReady().then(() => {
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createMainWindow();
-    } else {
-      mainWindow?.show();
-    }
+    /* 与 second-instance 走同一条呈现路径，避免两处各自演化出不同的可见性语义。 */
+    presentMainWindow('activate', true);
   });
 });
 
