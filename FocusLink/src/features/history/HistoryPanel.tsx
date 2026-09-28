@@ -1,5 +1,6 @@
 // 历史记录 - Session 列表 + 详情 + 导出 + 删除 + Segment 任务关联/后补/批量
 import '../../styles/history-motion.css';
+import '../../styles/stats-workbench.css';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Icon } from '../../ui/Icon';
@@ -18,7 +19,13 @@ import {
   type RangePreset,
 } from './historyStats';
 
-import type { FocusSession, FocusSegment, Task, TomatodoSubject } from '@shared/types';
+import {
+  resolveTaskWorkspaceAppearance,
+  type FocusSession,
+  type FocusSegment,
+  type Task,
+  type TomatodoSubject,
+} from '@shared/types';
 import type { SessionAnalyticsResult } from '@shared/ipc/api';
 import { TaskPicker } from '../tasks/TaskPicker';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
@@ -103,6 +110,51 @@ export function HistoryPanel() {
   const [customEnd, setCustomEnd] = useState(toDateInput(Date.now()));
   const [segmentFilter, setSegmentFilter] = useState<Record<string, SegmentFilter>>({});
   const tomatodoDefaultSubject: TomatodoSubject = settings?.tomatodo.defaultSubject ?? '学习';
+  const taskAppearance = resolveTaskWorkspaceAppearance(settings?.taskWorkspaceAppearance);
+  const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+  const appearanceMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const [cardSkin, setCardSkin] = useState<'ceramic' | 'frosted' | 'titanium'>(() => {
+    try {
+      return (
+        (localStorage.getItem('focuslink.stats.skin') as 'ceramic' | 'frosted' | 'titanium') ||
+        'ceramic'
+      );
+    } catch {
+      return 'ceramic';
+    }
+  });
+
+  const handleSelectSkin = (skin: 'ceramic' | 'frosted' | 'titanium') => {
+    setCardSkin(skin);
+    try {
+      localStorage.setItem('focuslink.stats.skin', skin);
+    } catch {}
+  };
+
+  const updatePalette = async (palette: 'linear' | 'rose' | 'contrast') => {
+    const current = useStore.getState().settings;
+    const currentApp = resolveTaskWorkspaceAppearance(current?.taskWorkspaceAppearance);
+    const nextApp = { ...currentApp, palette };
+    if (current) {
+      useStore.getState().setSettings({ ...current, taskWorkspaceAppearance: nextApp });
+    }
+    try {
+      const saved = await window.focuslink.settings.set({ taskWorkspaceAppearance: nextApp });
+      useStore.getState().setSettings(saved);
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (!showAppearanceMenu) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (appearanceMenuRef.current && !appearanceMenuRef.current.contains(event.target as Node)) {
+        setShowAppearanceMenu(false);
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [showAppearanceMenu]);
 
   const range = useMemo(
     () =>
@@ -615,7 +667,7 @@ export function HistoryPanel() {
   }
 
   return (
-    <div className="history-page">
+    <div className="history-page" data-pal={taskAppearance.palette} data-skin={cardSkin}>
       {/* 工位横幅：视图身份（当前范围）→ 范围仪器控制 → 刷新状态 */}
       <header className="history-header view-console">
         <div className="console-identity">
@@ -710,6 +762,83 @@ export function HistoryPanel() {
             <Icon.Loader size="xs" className={analyticsRefreshing ? 'motion-spin' : ''} />
             更新数据
           </span>
+          <div className="relative" ref={appearanceMenuRef}>
+            <button
+              type="button"
+              className="btn-tool motion-press"
+              onClick={() => setShowAppearanceMenu((prev) => !prev)}
+              aria-expanded={showAppearanceMenu}
+              aria-label="外观设置"
+              title="切换色彩基调与卡贴质感"
+            >
+              <Icon.Palette size="xs" />
+              外观
+            </button>
+            {showAppearanceMenu && (
+              <div
+                className="ctx-menu active"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '6px',
+                  display: 'flex',
+                }}
+              >
+                <div className="ctx-menu-title">色彩基调</div>
+                <div
+                  className="ctx-menu-item"
+                  aria-checked={taskAppearance.palette === 'linear'}
+                  onClick={() => {
+                    void updatePalette('linear');
+                  }}
+                >
+                  Linear 纯净白 (电光蓝)
+                </div>
+                <div
+                  className="ctx-menu-item"
+                  aria-checked={taskAppearance.palette === 'rose'}
+                  onClick={() => {
+                    void updatePalette('rose');
+                  }}
+                >
+                  高级粉 (Rose 典雅粉)
+                </div>
+                <div
+                  className="ctx-menu-item"
+                  aria-checked={taskAppearance.palette === 'contrast'}
+                  onClick={() => {
+                    void updatePalette('contrast');
+                  }}
+                >
+                  极致对比 (Sharp Black)
+                </div>
+                <div className="ctx-divider" />
+                <div className="ctx-menu-title">卡贴质感外观</div>
+                <div
+                  className="ctx-menu-item"
+                  aria-checked={cardSkin === 'ceramic'}
+                  onClick={() => handleSelectSkin('ceramic')}
+                >
+                  ▫️ 纯白陶瓷 (Pure Ceramic)
+                </div>
+                <div
+                  className="ctx-menu-item"
+                  aria-checked={cardSkin === 'frosted'}
+                  onClick={() => handleSelectSkin('frosted')}
+                >
+                  🪟 微光磨砂 (Frosted Glass)
+                </div>
+                <div
+                  className="ctx-menu-item"
+                  aria-checked={cardSkin === 'titanium'}
+                  onClick={() => handleSelectSkin('titanium')}
+                >
+                  ⚙️ 极客钛金 (Titanium Sheen)
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

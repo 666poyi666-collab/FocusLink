@@ -1,0 +1,989 @@
+/* ═════════════════════════════════════════════════════════════════════════
+   FocusLink 统计工作台专属高保真样式系统 (Stats Workbench Masterclass Styles)
+   1:1 对齐统计页设计原型：卡贴栅格、自适应感应高光、拟物卡片质感、心流全景仪表
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. 自适应鼠标感应光效令牌 (Spotlight & Sheen Tokens) ── */
+:root,
+html[data-pal='linear'],
+.history-page[data-pal='linear'],
+.history-page {
+  --border-default: var(--border-app, rgba(0, 0, 0, 0.12));
+  --mouse-x: -999px;
+  --mouse-y: -999px;
+  --spotlight-core: rgba(37, 99, 235, 0.05);
+  --spotlight-sheen: rgba(37, 99, 235, 0.03);
+  --spotlight-border: rgba(37, 99, 235, 0.35);
+  --pause-color: #94a3b8;
+  --heatmap-0: #ebedf0;
+  --heatmap-1: #9be9a8;
+  --heatmap-2: #40c463;
+  --heatmap-3: #30a14e;
+  --heatmap-4: #216e39;
+}
+
+html[data-pal='rose'],
+.history-page[data-pal='rose'] {
+  --spotlight-core: rgba(225, 29, 72, 0.05);
+  --spotlight-sheen: rgba(225, 29, 72, 0.03);
+  --spotlight-border: rgba(225, 29, 72, 0.35);
+  --heatmap-0: #fce7f3;
+  --heatmap-1: #fbcfe8;
+  --heatmap-2: #f472b6;
+  --heatmap-3: #db2777;
+  --heatmap-4: #9d174d;
+}
+
+html[data-pal='contrast'],
+.history-page[data-pal='contrast'] {
+  --spotlight-core: rgba(0, 0, 0, 0.07);
+  --spotlight-sheen: rgba(0, 0, 0, 0.025);
+  --spotlight-border: rgba(0, 0, 0, 0.25);
+  --heatmap-0: #e2e8f0;
+  --heatmap-1: #cbd5e1;
+  --heatmap-2: #94a3b8;
+  --heatmap-3: #475569;
+  --heatmap-4: #0f172a;
+}
+
+[data-theme='dark'],
+html[data-theme='dark'],
+.history-page[data-theme='dark'] {
+  --spotlight-core: rgba(59, 130, 246, 0.08);
+  --spotlight-sheen: rgba(37, 99, 235, 0.04);
+  --spotlight-border: rgba(59, 130, 246, 0.4);
+  --pause-color: #64748b;
+  --heatmap-0: #161b22;
+  --heatmap-1: #0e4429;
+  --heatmap-2: #006d32;
+  --heatmap-3: #26a641;
+  --heatmap-4: #39d353;
+}
+
+[data-theme='dark'][data-pal='rose'],
+html[data-theme='dark'][data-pal='rose'],
+.history-page[data-theme='dark'][data-pal='rose'] {
+  --spotlight-core: rgba(244, 114, 182, 0.08);
+  --spotlight-sheen: rgba(225, 29, 72, 0.05);
+  --spotlight-border: rgba(244, 114, 182, 0.4);
+  --heatmap-0: #2d121e;
+  --heatmap-1: #501630;
+  --heatmap-2: #831843;
+  --heatmap-3: #db2777;
+  --heatmap-4: #f472b6;
+}
+
+[data-theme='dark'][data-pal='contrast'],
+html[data-theme='dark'][data-pal='contrast'],
+.history-page[data-theme='dark'][data-pal='contrast'] {
+  --spotlight-core: rgba(255, 255, 255, 0.08);
+  --spotlight-sheen: rgba(255, 255, 255, 0.03);
+  --spotlight-border: rgba(255, 255, 255, 0.35);
+  --heatmap-0: #1e293b;
+  --heatmap-1: #334155;
+  --heatmap-2: #64748b;
+  --heatmap-3: #94a3b8;
+  --heatmap-4: #f8fafc;
+}
+
+/* ── 2. 固定 12 栅格卡贴画卷 ── */
+.stats-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  position: relative;
+  width: 100%;
+}
+
+.dashboard-card-tile {
+  grid-column: span 12;
+  position: relative;
+  box-shadow: var(--shadow-sm);
+}
+.dashboard-card-tile.span-5 {
+  grid-column: span 5;
+}
+.dashboard-card-tile.span-7 {
+  grid-column: span 7;
+}
+.dashboard-card-tile.span-12 {
+  grid-column: span 12;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-card-tile.span-5,
+  .dashboard-card-tile.span-7 {
+    grid-column: span 12 !important;
+  }
+}
+
+/* ── 3. 卡贴质感外观系统 (Tactile Card Plaque Skins) ── */
+.card-widget {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  position: relative;
+  overflow: hidden;
+}
+.card-widget:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.07);
+  border-color: var(--border-default);
+}
+
+/* 鼠标边缘高光与内部柔光微晕 */
+.card-widget::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    380px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
+    var(--spotlight-border),
+    transparent 65%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
+
+.card-widget::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    480px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
+    var(--spotlight-core) 0%,
+    var(--spotlight-sheen) 35%,
+    transparent 72%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.card-widget:hover::before,
+.card-widget:hover::after {
+  opacity: 1;
+}
+
+/* 纯白陶瓷 (Pure Ceramic) */
+[data-skin='ceramic'] .card-widget,
+.history-page[data-skin='ceramic'] .card-widget,
+html:not([data-skin]) .card-widget {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.03),
+    0 4px 14px -2px rgba(0, 0, 0, 0.03);
+}
+
+/* 微光磨砂 (Frosted Glass) */
+[data-skin='frosted'] .card-widget,
+.history-page[data-skin='frosted'] .card-widget {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+[data-theme='dark'][data-skin='frosted'] .card-widget,
+.history-page[data-theme='dark'][data-skin='frosted'] .card-widget {
+  background: rgba(24, 27, 33, 0.75);
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 10px 36px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 极客钛金 (Titanium Sheen) */
+[data-skin='titanium'] .card-widget,
+.history-page[data-skin='titanium'] .card-widget {
+  background: linear-gradient(145deg, #f3f4f6 0%, #e5e7eb 100%);
+  border: 1px solid #d1d5db;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+[data-theme='dark'][data-skin='titanium'] .card-widget,
+.history-page[data-theme='dark'][data-skin='titanium'] .card-widget {
+  background: linear-gradient(145deg, #1f242d 0%, #171a21 100%);
+  border: 1px solid #374151;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ── 4. 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD) ── */
+.hero-focus-card {
+  padding: 22px 24px 20px;
+  background: linear-gradient(
+    180deg,
+    var(--bg-card) 0%,
+    color-mix(in srgb, var(--bg-card) 96%, var(--accent-soft)) 100%
+  );
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.hero-top-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: center;
+}
+@media (max-width: 1050px) {
+  .hero-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hero-focus-gauge-box {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.hero-dial-wrap {
+  width: 96px;
+  height: 96px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.dial-center-content {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+  pointer-events: none;
+}
+.dial-rate-big {
+  font-size: 20px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+.dial-rate-lbl {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+.hero-dial-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.hero-stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.hero-time-massive {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+  letter-spacing: -0.8px;
+  line-height: 1.15;
+}
+.hero-time-massive .time-unit {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin: 0 3px 0 1px;
+}
+.hero-target-row {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-family: var(--font-num);
+  font-weight: 500;
+}
+.hero-delta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: var(--font-num);
+  margin-top: 2px;
+  width: fit-content;
+}
+.hero-delta-pill.positive {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+.hero-delta-pill.negative {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* 今日连续心流时序谱 (08:00 - 22:00) */
+.hero-spectrum-box {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 12px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.spectrum-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.spectrum-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.spectrum-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.spectrum-bar-wrap {
+  width: 100%;
+  height: 24px;
+  background: var(--bg-hover);
+  border-radius: var(--r-sm);
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.spectrum-block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: var(--font-num);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    transform 0.14s ease,
+    filter 0.14s ease;
+}
+.spectrum-block:hover {
+  transform: translateY(-1px) scaleY(1.08);
+  filter: brightness(1.12);
+  z-index: 5;
+}
+.spectrum-block.focus {
+  background: var(--accent);
+  color: var(--app-solid-fg);
+  box-shadow: 0 2px 6px var(--accent-soft);
+}
+.spectrum-block.pause {
+  background: var(--pause-color);
+  color: var(--app-solid-fg);
+  opacity: 0.85;
+}
+.spectrum-ticks-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
+  padding: 0 2px;
+}
+
+/* 下半区三项指标胶囊 */
+.hero-bottom-capsules {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 800px) {
+  .hero-bottom-capsules {
+    grid-template-columns: 1fr;
+  }
+}
+.hero-cap-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease;
+}
+.hero-cap-item:hover {
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+}
+.cap-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.cap-left svg {
+  width: 14px;
+  height: 14px;
+}
+.cap-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* ── 5. 通用面板组件容器 ── */
+.section-panel {
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section-title-wrap h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.section-title-wrap p {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ── 6. 卡贴二：24 小时精力节律时钟分布 ── */
+.rhythm-chart-box {
+  width: 100%;
+  height: 190px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  position: relative;
+  margin-top: 2px;
+}
+.rhythm-grid-lines {
+  position: absolute;
+  inset: 0 0 22px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.rhythm-grid-line {
+  position: relative;
+  width: 100%;
+  height: 1px;
+  border-top: 1px dashed var(--border-subtle);
+  opacity: 0.5;
+}
+.rhythm-grid-line.rhythm-target-guide {
+  border-top: 1px dashed var(--accent);
+  opacity: 0.7;
+}
+.rhythm-grid-tag {
+  position: absolute;
+  top: -14px;
+  right: 0;
+  font-size: 10px;
+  font-family: var(--font-num);
+  color: var(--accent);
+  background: var(--bg-card);
+  padding: 0 4px;
+}
+
+.bars-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 160px;
+  width: 100%;
+  padding-bottom: 22px;
+  position: relative;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.bar-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+  transition:
+    opacity 0.18s,
+    transform 0.18s;
+}
+.bar-track {
+  width: 100% !important;
+  max-width: 14px !important;
+  height: 100% !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  position: relative !important;
+  overflow: visible !important;
+}
+.bar-track.inactive {
+  justify-content: flex-end !important;
+}
+.bar-empty-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-subtle);
+  margin-bottom: 2px;
+  transition: all 0.15s ease;
+}
+.bar-col:hover .bar-empty-dot {
+  background: var(--accent);
+  transform: scale(1.6);
+  box-shadow: 0 0 6px var(--accent-soft);
+}
+.bar-seg-focus {
+  background: var(--accent) !important;
+  width: 100% !important;
+  border-radius: 4px 4px 1px 1px !important;
+  box-shadow:
+    0 2px 6px var(--accent-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+  transition:
+    height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.15s ease !important;
+}
+.bar-seg-pause {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--pause-color),
+    var(--pause-color) 2px,
+    rgba(255, 255, 255, 0.4) 2px,
+    rgba(255, 255, 255, 0.4) 4px
+  ) !important;
+  width: 100% !important;
+  border-radius: 3px 3px 0 0 !important;
+  margin-bottom: 1px !important;
+  transition: height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.bar-col:hover .bar-seg-focus {
+  transform: scaleY(1.04) translateY(-2px) !important;
+  filter: brightness(1.15) !important;
+  box-shadow: 0 4px 14px var(--accent-soft) !important;
+}
+.bar-time-lbl {
+  position: absolute;
+  bottom: -18px;
+  font-size: 9.5px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
+}
+.bar-hover-tip {
+  position: absolute;
+  top: -42px;
+  background: var(--text-primary);
+  color: var(--bg-card);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+  z-index: 30;
+  box-shadow: var(--shadow-md);
+}
+.bar-col:hover .bar-hover-tip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 4 大时段胶囊 */
+.period-capsule-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  border-top: 1px solid var(--border-row);
+  padding-top: 12px;
+  margin-top: 2px;
+}
+@media (max-width: 900px) {
+  .period-capsule-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.period-cap-card {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+.period-cap-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+.period-cap-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.period-cap-head {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  display: flex;
+  justify-content: space-between;
+}
+.period-cap-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+}
+.period-cap-card.active .period-cap-val {
+  color: var(--accent);
+}
+
+/* ── 7. 卡贴三：清单分类投入占比 (Category Allocations Donut) ── */
+.donut-alloc-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0;
+  gap: 14px;
+}
+.donut-top-display {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+.donut-svg-wrap {
+  width: 135px;
+  height: 135px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.donut-center-metric {
+  position: absolute;
+  text-align: center;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+}
+.d-big {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+}
+.d-unit {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+.d-lbl {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-top: 1px;
+}
+
+.alloc-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.alloc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: var(--bg-app);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.12s ease;
+  cursor: pointer;
+}
+.alloc-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+  transform: translateX(2px);
+}
+.alloc-row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.alloc-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.alloc-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.alloc-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.alloc-dur {
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: 11.5px;
+}
+.alloc-pct-tag {
+  font-size: 10px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
+  background: var(--bg-card);
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ── 8. 卡贴四：重点任务专注排行榜 (Top Focused Tasks) ── */
+.leaderboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-rank-card {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 10px 12px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition:
+    transform 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.task-rank-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.tr-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tr-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.tr-rank-num {
+  font-family: var(--font-num);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  flex: none;
+}
+.tr-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-cat-pill {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+  flex: none;
+}
+.tr-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.tr-time {
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.tr-status-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+}
+.tr-status-pill.done {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+.tr-status-pill.focusing {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tr-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--border-row);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tr-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ── 9. 卡贴五：心流活跃热力 (24 周心流矩阵 (近半年)) ── */
+.heatmap-container-flex {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+  overflow-x: auto;
+}
+.hm-day-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 115px;
+  font-size: 10px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
+  padding-top: 2px;
+  padding-bottom: 2px;
+  flex: none;
+}
+.hm-strip-wrap {
+  display: flex !important;
+  gap: 5px !important;
+  align-items: center !important;
+  overflow-x: auto !important;
+  padding: 4px 2px 6px !important;
+}
+.hm-col {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+.hm-cell {
+  width: 13.5px !important;
+  height: 13.5px !important;
+  border-radius: 3px !important;
+  cursor: pointer !important;
+  transition:
+    transform 0.14s ease,
+    filter 0.14s ease,
+    box-shadow 0.14s ease !important;
+}
+.hm-cell:hover {
+  transform: scale(1.3) !important;
+  filter: brightness(1.15) !important;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.hm-legend-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  font-size: 11px !important;
+  color: var(--text-tertiary) !important;
+}
+.hm-leg-box {
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 2px !important;
+  flex: none !important;
+  display: inline-block !important;
+}
