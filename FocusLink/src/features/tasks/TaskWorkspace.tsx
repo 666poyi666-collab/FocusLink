@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   resolveTaskWorkspaceAppearance,
   type Project,
@@ -7,6 +7,7 @@ import {
   type TaskWorkspaceAppearance,
 } from '@shared/types';
 import { assembleTaskTree } from '@shared/taskTreeUtils';
+import { resolveThemeAppearance } from '@shared/theme';
 import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
 import '../../styles/task-workbench.css';
@@ -449,6 +450,14 @@ export function TaskWorkspace() {
     y: number;
   }>({ open: false, projectId: null, x: 0, y: 0 });
 
+  // 任务页空白处右键 → 外观自定义菜单（复用 ctx-menu 组件与同一套外观/行为）
+  const [appearanceMenu, setAppearanceMenu] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+  }>({ open: false, x: 0, y: 0 });
+  const appearanceMenuRef = useRef<HTMLDivElement | null>(null);
+
   // Smart view modal
   const [smartModalOpen, setSmartModalOpen] = useState(false);
   const [smartModalName, setSmartModalName] = useState('');
@@ -529,6 +538,83 @@ export function TaskWorkspace() {
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
+
+  // 全局 Esc 关闭所有浮层（键盘可达）
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setPopover({ type: null });
+      setTaskContextMenu({ open: false, taskId: null, x: 0, y: 0 });
+      setProjContextMenu({ open: false, projectId: null, x: 0, y: 0 });
+      setAppearanceMenu({ open: false, x: 0, y: 0 });
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, []);
+
+  // 浮层视口硬夹取（按真实渲染尺寸二次校正）。
+  // 两个坑：
+  //   1. .app-stage 带 backdrop-filter，会成为 position:fixed 的包含块 —— 浮层的
+  //      left/top 坐标原点不是视口原点，直接用 window.innerWidth 夹取会整体偏一个舞台宽度。
+  //      这里用「布局矩形 - 行内 left/top」反推包含块原点，两套坐标换算清楚再夹。
+  //   2. popZoomIn 动画期间 getBoundingClientRect() 是缩放后的矩形；offsetWidth/Height
+  //      才是布局尺寸。先按中心缩放反推一次，动画结束后（180ms）再精确校正一次。
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const el = document.querySelector<HTMLElement>(
+      '.date-popover.active, .popover-menu.active, .tag-popover.active, .iconpop.active, .appearance-menu.active',
+    );
+    if (!el) return;
+    const clamp = () => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (!w || !h) return;
+      const M = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const inlineLeft = Number.parseFloat(el.style.left) || 0;
+      const inlineTop = Number.parseFloat(el.style.top) || 0;
+      const r = el.getBoundingClientRect();
+      const layoutLeft = r.left + (r.width - w) / 2;
+      const layoutTop = r.top + (r.height - h) / 2;
+      const originX = layoutLeft - inlineLeft;
+      const originY = layoutTop - inlineTop;
+      let leftVp = layoutLeft;
+      let topVp = layoutTop;
+      // 水平：右侧越界向左对齐，左侧越界向右对齐
+      if (leftVp + w > vw - M) leftVp = vw - w - M;
+      if (leftVp < M) leftVp = M;
+      // 垂直：下方不足向上翻转；上下都放不下则夹进视口
+      if (topVp + h > vh - M) {
+        const trigger = popover.rect;
+        const above = trigger ? trigger.top - h - 5 : Number.NaN;
+        topVp = Number.isFinite(above) && above >= M ? above : Math.max(M, vh - h - M);
+      }
+      el.style.left = `${Math.round(leftVp - originX)}px`;
+      el.style.top = `${Math.round(topVp - originY)}px`;
+    };
+    clamp();
+    const timer = window.setTimeout(clamp, 180);
+    return () => window.clearTimeout(timer);
+  });
+
+  // 任务页主题跟随全局 settings.theme（右键外观菜单写的就是它）。
+  // 否则从设置页切换全局主题后，任务页会停留在旧主题上，两边不一致。
+  useEffect(() => {
+    if (!settings) return;
+    const prefersDark =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setThemeMode(resolveThemeAppearance(settings.theme, prefersDark));
+  }, [settings]);
+
+  // 打开外观菜单后自动聚焦首项
+  useEffect(() => {
+    if (!appearanceMenu.open) return;
+    const first = appearanceMenuRef.current?.querySelector<HTMLElement>('.ctx-menu-item');
+    first?.focus();
+  }, [appearanceMenu.open]);
 
   // Compute Task Focus Times
   const taskFocusMap = useMemo(() => {
@@ -857,23 +943,92 @@ export function TaskWorkspace() {
     }
   };
 
+  // 外观自定义菜单：主题走全局 settings.theme（持久化），调色板/字体/密度走
+  // taskWorkspaceAppearance（持久化），音效沿用既有的 localStorage 通道。
+  const applyAppearanceTheme = useCallback(
+    async (next: 'light' | 'dark') => {
+      setThemeMode(next);
+      try {
+        const saved = await window.focuslink.settings.set({ theme: next });
+        useStore.getState().setSettings(saved);
+      } catch {
+        addToast('主题保存失败，请重试', 'error');
+      }
+    },
+    [addToast],
+  );
+
+  const openAppearanceMenu = useCallback((x: number, y: number) => {
+    // 与任务行/清单右键菜单互斥：打开外观菜单时先收起其它浮层。
+    setPopover({ type: null });
+    setTaskContextMenu({ open: false, taskId: null, x: 0, y: 0 });
+    setProjContextMenu({ open: false, projectId: null, x: 0, y: 0 });
+    const M = 8;
+    const mw = 210;
+    const mh = 420;
+    const left = Math.max(M, Math.min(x, window.innerWidth - mw - M));
+    const top = Math.max(M, Math.min(y, window.innerHeight - mh - M));
+    setAppearanceMenu({ open: true, x: Math.round(left), y: Math.round(top) });
+  }, []);
+
+  const handleWorkspaceContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    // 任务行 / 清单 / 任意可交互控件仍走各自的右键行为，两者不冲突。
+    if (
+      target.closest(
+        '.task-entry, [data-proj-id], [data-view-id], input, textarea, select, button, a, .ctx-menu, .iconpop, .date-popover, .popover-menu, .tag-popover, .prop-action-pill, .meta-pill, .subtask-item, .quick-create-bar, .btn-tool, .btn-add-section, .detail-heading, .completed-divider-bar',
+      )
+    ) {
+      return;
+    }
+    e.preventDefault();
+    openAppearanceMenu(e.clientX, e.clientY);
+  };
+
+  const handleAppearanceMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const menu = appearanceMenuRef.current;
+    if (!menu) return;
+    const items = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-menu-item'));
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(idx + 1 + items.length) % items.length].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length].focus();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active.classList.contains('ctx-menu-item')) active.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setAppearanceMenu({ open: false, x: 0, y: 0 });
+    }
+  };
+
   // Popover positioning helper
+  // 硬夹取：下方空间不足向上翻转；上下都放不下则夹进视口；右侧越界左对齐、左侧越界右对齐。
   const getPopoverStyle = (rect?: DOMRect, width = 240, height = 300): React.CSSProperties => {
     if (!rect) return { display: 'none' };
-    let top = rect.bottom + 6;
+    const M = 8;
+    let top = rect.bottom + 5;
     let left = rect.left;
     if (typeof window !== 'undefined') {
-      if (top + height > window.innerHeight - 10) {
-        top = Math.max(10, rect.top - height - 6);
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (top + height > vh - M) {
+        const above = rect.top - height - 5;
+        top = above >= M ? above : Math.max(M, Math.min(top, vh - height - M));
       }
-      if (left + width > window.innerWidth - 10) {
-        left = window.innerWidth - width - 12;
-      }
+      if (left + width > vw - M) left = vw - width - M;
+      if (left < M) left = M;
     }
     return {
       position: 'fixed',
-      top: `${top}px`,
-      left: `${left}px`,
+      top: `${Math.round(top)}px`,
+      left: `${Math.round(left)}px`,
       zIndex: 1200,
       display: 'flex',
     };
@@ -1186,7 +1341,7 @@ export function TaskWorkspace() {
       </header>
 
       {/* 工作区三栏主体 */}
-      <div className="workspace-body">
+      <div className="workspace-body" onContextMenu={handleWorkspaceContextMenu}>
         {/* 1. 左侧栏 (Sidebar) */}
         <aside className="sidebar">
           <div className="nav-section">
@@ -1433,11 +1588,12 @@ export function TaskWorkspace() {
             <span dangerouslySetInnerHTML={{ __html: ICONS.plus }} />
             <input
               type="text"
-              placeholder="输入任务名称，按 Enter 回车快速创建（右键可快速改卡）"
+              placeholder="添加任务…"
               value={quickInput}
               onChange={(e) => setQuickInput(e.target.value)}
               onKeyDown={handleQuickAdd}
             />
+            <span className="kbd-hint">Enter</span>
           </div>
         </main>
 
@@ -1817,15 +1973,24 @@ export function TaskWorkspace() {
 
               {/* 详情底部操作 Dock */}
               <div className="detail-dock-bar">
-                <button className="btn-action-focus" onClick={() => handleStartFocus(currentTask)}>
-                  <span dangerouslySetInnerHTML={{ __html: ICONS.play }} /> 开始专注 (25m)
+                <button
+                  className="btn-action-focus"
+                  title="开始专注 (25m)"
+                  onClick={() => handleStartFocus(currentTask)}
+                >
+                  <span dangerouslySetInnerHTML={{ __html: ICONS.play }} />
+                  <span className="dock-label">开始专注</span>
+                  <span className="dock-focus-dur"> (25m)</span>
                 </button>
                 <button
                   className="btn-action-done"
+                  title={currentTask.isCompleted ? '重新开启' : '完成任务'}
                   onClick={(e) => handleToggleTaskDone(currentTask, e)}
                 >
-                  <span dangerouslySetInnerHTML={{ __html: ICONS.checkCircle }} />{' '}
-                  {currentTask.isCompleted ? '重新开启' : '完成任务'}
+                  <span dangerouslySetInnerHTML={{ __html: ICONS.checkCircle }} />
+                  <span className="dock-label">
+                    {currentTask.isCompleted ? '重新开启' : '完成任务'}
+                  </span>
                 </button>
                 <button
                   className="btn-action-del"
@@ -2780,56 +2945,172 @@ export function TaskWorkspace() {
         </div>
       )}
 
-      {/* 9. 底部悬浮控制条 (HUD) */}
-      <div className="floating-hud">
-        <span className="hud-label">外观</span>
-        <div className="hud-btn-group">
-          <button
-            className={`hud-btn ${themeMode === 'light' ? 'active' : ''}`}
-            onClick={() => setThemeMode('light')}
+      {/* 9. 任务页空白处右键：外观自定义菜单（复用 ctx-menu 组件与同一套外观/行为） */}
+      {appearanceMenu.open && (
+        <div
+          className="ctx-menu appearance-menu active"
+          role="menu"
+          aria-label="外观自定义"
+          ref={appearanceMenuRef}
+          style={{ top: `${appearanceMenu.y}px`, left: `${appearanceMenu.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={handleAppearanceMenuKeyDown}
+        >
+          <div className="ctx-menu-label">外观自定义</div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-theme="light"
+            aria-checked={themeMode === 'light'}
+            onClick={() => void applyAppearanceTheme('light')}
           >
-            浅色
-          </button>
-          <button
-            className={`hud-btn ${themeMode === 'dark' ? 'active' : ''}`}
-            onClick={() => setThemeMode('dark')}
+            <div className="item-left">
+              <span>浅色主题</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-theme="dark"
+            aria-checked={themeMode === 'dark'}
+            onClick={() => void applyAppearanceTheme('dark')}
           >
-            深色
-          </button>
-        </div>
-        <div className="hud-divider" />
-        <span className="hud-label">色彩基调</span>
-        <div className="hud-btn-group">
-          <button
-            className={`hud-btn ${taskAppearance.palette === 'linear' ? 'active' : ''}`}
+            <div className="item-left">
+              <span>深色主题</span>
+            </div>
+          </div>
+          <div className="ctx-menu-divider" />
+          <div className="ctx-menu-label">色彩基调</div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-pal="linear"
+            aria-checked={taskAppearance.palette === 'linear'}
             onClick={() => void updateTaskAppearance({ palette: 'linear' })}
           >
-            Linear 纯净白
-          </button>
-          <button
-            className={`hud-btn ${taskAppearance.palette === 'rose' ? 'active' : ''}`}
+            <div className="item-left">
+              <span>Linear 纯净白</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-pal="rose"
+            aria-checked={taskAppearance.palette === 'rose'}
             onClick={() => void updateTaskAppearance({ palette: 'rose' })}
           >
-            高级粉调高对比
-          </button>
-          <button
-            className={`hud-btn ${taskAppearance.palette === 'contrast' ? 'active' : ''}`}
+            <div className="item-left">
+              <span>高级粉调高对比</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-pal="contrast"
+            aria-checked={taskAppearance.palette === 'contrast'}
             onClick={() => void updateTaskAppearance({ palette: 'contrast' })}
           >
-            锐利黑白对比
-          </button>
+            <div className="item-left">
+              <span>锐利黑白对比</span>
+            </div>
+          </div>
+          <div className="ctx-menu-divider" />
+          <div className="ctx-menu-label">字体</div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-font="sans"
+            aria-checked={taskAppearance.font === 'sans'}
+            onClick={() => void updateTaskAppearance({ font: 'sans' })}
+          >
+            <div className="item-left">
+              <span>无衬线（默认）</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-font="serif"
+            aria-checked={taskAppearance.font === 'serif'}
+            onClick={() => void updateTaskAppearance({ font: 'serif' })}
+          >
+            <div className="item-left">
+              <span>衬线（Noto Serif）</span>
+            </div>
+          </div>
+          <div className="ctx-menu-divider" />
+          <div className="ctx-menu-label">密度</div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-density="default"
+            aria-checked={taskAppearance.density === 'default'}
+            onClick={() => void updateTaskAppearance({ density: 'default' })}
+          >
+            <div className="item-left">
+              <span>标准</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-density="compact"
+            aria-checked={taskAppearance.density === 'compact'}
+            onClick={() => void updateTaskAppearance({ density: 'compact' })}
+          >
+            <div className="item-left">
+              <span>紧凑</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-density="relaxed"
+            aria-checked={taskAppearance.density === 'relaxed'}
+            onClick={() => void updateTaskAppearance({ density: 'relaxed' })}
+          >
+            <div className="item-left">
+              <span>宽松</span>
+            </div>
+          </div>
+          <div className="ctx-menu-divider" />
+          <div className="ctx-menu-label">音效</div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-sound="on"
+            aria-checked={sound === true}
+            onClick={() => setSound(true)}
+          >
+            <div className="item-left">
+              <span>开启（晶莹触感）</span>
+            </div>
+          </div>
+          <div
+            className="ctx-menu-item"
+            role="menuitemradio"
+            tabIndex={0}
+            data-app-sound="off"
+            aria-checked={sound === false}
+            onClick={() => setSound(false)}
+          >
+            <div className="item-left">
+              <span>静音</span>
+            </div>
+          </div>
         </div>
-        <div className="hud-divider" />
-        <span className="hud-label">音效</span>
-        <div className="hud-btn-group">
-          <button className={`hud-btn ${sound ? 'active' : ''}`} onClick={() => setSound(true)}>
-            晶莹触感 🔊
-          </button>
-          <button className={`hud-btn ${!sound ? 'active' : ''}`} onClick={() => setSound(false)}>
-            静音 🔇
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 

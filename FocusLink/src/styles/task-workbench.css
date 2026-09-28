@@ -212,6 +212,46 @@ html.dark,
   --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
+/* 深色 + 高级粉调：补全缺失的深色玫粉令牌。
+   修复前 dark+rose 与 dark+linear 完全相同（rose 令牌被后面的 dark 块整体覆盖），
+   导致「切换色彩基调」在深色主题下毫无变化。只覆盖 accent 系与表面色，不动中性文字色。 */
+html[data-theme='dark'][data-pal='rose'],
+html.dark[data-pal='rose'],
+.task-workspace-root[data-theme='dark'][data-pal='rose'],
+.task-workspace-root.dark[data-pal='rose'] {
+  --bg-app: #141013;
+  --bg-titlebar: #141013;
+  --bg-sidebar: #1a1418;
+  --bg-list: #201a1e;
+  --bg-detail: #241d22;
+  --bg-card: #2a2228;
+  --bg-hover: rgba(244, 63, 94, 0.08);
+  --bg-active: rgba(244, 63, 94, 0.14);
+  --bg-selected: rgba(225, 29, 72, 0.26);
+  --selected-border: #fb7185;
+  --border-app: rgba(244, 63, 94, 0.18);
+  --border-subtle: rgba(244, 63, 94, 0.12);
+  --border-row: rgba(244, 63, 94, 0.08);
+  --accent: #e11d48;
+  --accent-soft: rgba(225, 29, 72, 0.26);
+  --accent-ink: #fb7185;
+  --check-bg: #e11d48;
+  --check-border: #e11d48;
+  --check-fg: #ffffff;
+  --check-hover-border: #e11d48;
+  --check-ghost: rgba(225, 29, 72, 0.45);
+  --check-halo-0: rgba(225, 29, 72, 0.65);
+  --check-halo-1: rgba(225, 29, 72, 0.25);
+  --confetti-colors: '#E11D48,#F43F5E,#FB7185,#FDA4AF,#BE123C';
+}
+html[data-theme='dark'][data-pal='rose'] .btn-action-focus,
+html.dark[data-pal='rose'] .btn-action-focus,
+.task-workspace-root[data-theme='dark'][data-pal='rose'] .btn-action-focus,
+.task-workspace-root.dark[data-pal='rose'] .btn-action-focus {
+  background: var(--accent);
+  color: var(--app-solid-fg);
+}
+
 /* 深色模式下的专注主按钮 - 高级电光蓝 (绝不暗淡发灰) */
 html[data-theme='dark'] .btn-action-focus {
   background: #2563eb;
@@ -390,33 +430,45 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 27px;
-  background: var(--bg-hover);
+  height: 32px;
+  background: var(--accent-soft);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  padding: 0 10px;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  transition: all 0.15s ease;
+  border-radius: var(--r-md);
+  padding: 0 8px 0 11px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.cmd-search-box:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
 .cmd-search-box:focus-within {
   background: var(--bg-card);
   border-color: var(--accent);
   color: var(--text-primary);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .cmd-search-box input {
   width: 100%;
-  color: inherit;
-  font-size: 12px;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12.5px;
 }
 .cmd-search-box input::placeholder {
   color: var(--text-tertiary);
 }
 .cmd-search-box svg {
-  width: 13px;
-  height: 13px;
-  color: var(--text-tertiary);
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex: none;
+}
+.cmd-search-box .kbd-hint {
   flex: none;
 }
 .kbd-hint {
@@ -449,8 +501,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .workspace-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 220px minmax(360px, 1fr) 380px;
-  overflow: hidden;
+  /* 窄窗口保护：中栏可压缩，右栏（属性区）最小 276px 且永不越界被裁切 */
+  grid-template-columns: minmax(168px, 220px) minmax(0, 1fr) minmax(276px, 380px);
+  /* 兜底：工作区比栅格最小宽度（168+276=444）还窄时（主窗口 floor 是 980px，
+     正常不可达），宁可横向可滚动，也绝不让属性区被静默裁掉。 */
+  overflow-x: auto;
+  overflow-y: hidden;
   position: relative;
 }
 
@@ -646,6 +702,7 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   flex-direction: column;
   overflow-y: auto;
   position: relative;
+  min-width: 0;
 }
 .task-paper::-webkit-scrollbar {
   width: 6px;
@@ -1041,42 +1098,50 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   background: rgba(124, 58, 237, 0.08);
 }
 
-/* 底部快速录入任务框 (自然吸附底部，滚动时不漂浮重叠遮挡列表项) */
+/* 底部快速录入任务框 (与任务行 / 详情控件同一节奏；吸附底部，滚动时不漂浮重叠遮挡列表项) */
 .quick-create-bar {
   position: sticky;
   bottom: 14px;
   margin-top: 24px;
   flex: none;
-  height: 40px;
+  height: 34px;
   background: var(--bg-card);
-  border: 1px solid var(--border-app);
-  border-radius: var(--r-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
   box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
-  padding: 0 14px;
-  gap: 10px;
-  transition: all 0.15s;
+  padding: 0 8px 0 11px;
+  gap: 8px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   z-index: 10;
+}
+.quick-create-bar:hover {
+  border-color: var(--accent);
 }
 .quick-create-bar:focus-within {
   border-color: var(--accent);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.08),
-    0 0 0 2px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .quick-create-bar input {
   flex: 1;
-  font-size: 13px;
+  min-width: 0;
+  font-size: 12.5px;
   color: var(--text-primary);
 }
 .quick-create-bar input::placeholder {
   color: var(--text-tertiary);
 }
 .quick-create-bar svg {
-  width: 15px;
-  height: 15px;
-  color: var(--text-tertiary);
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex: none;
+}
+.quick-create-bar .kbd-hint {
+  flex: none;
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -1088,8 +1153,18 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: 20px 20px 80px;
+  padding: 20px 20px 20px;
   position: relative;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: detailpane;
+}
+/* 根治「压缩即被折叠」：详情栏纵向空间不足时，子块一律不得被 flex 压缩。
+   过去 .linear-props-table（overflow:hidden）与标题输入框的 flex-shrink:1 会把自身压成 0~32px，
+   内容被 overflow:hidden 直接裁掉 —— 视觉上就是「整块属性区消失」。
+   现在改为不收缩 + 详情栏自身滚动，属性区四行永远完整可见。 */
+.detail-pane > * {
+  flex: 0 0 auto;
 }
 .detail-pane::-webkit-scrollbar {
   width: 5px;
@@ -1174,6 +1249,7 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   height: 32px;
   padding: 0 10px;
   cursor: default;
+  min-width: 0;
 }
 .prop-table-row:hover {
   background: var(--bg-hover);
@@ -1205,6 +1281,14 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   background: var(--bg-hover);
   cursor: pointer;
   transition: all 0.12s ease;
+  max-width: 68%;
+  min-width: 0;
+}
+.prop-action-pill > span:not(.proj-badge-icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .prop-action-pill:hover {
   background: var(--bg-active);
@@ -1581,15 +1665,21 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   user-select: none;
 }
 
-/* 详情栏底部操作按钮 */
+/* 详情栏底部操作按钮 (抗压排布：窄容器逐级收窄文案，绝不换行错乱) */
 .detail-dock-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  background: var(--bg-detail);
+  padding-top: 10px;
 }
 .btn-action-focus {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 34px;
   border-radius: var(--r-sm);
   background: #18181b;
@@ -1611,9 +1701,18 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .btn-action-focus svg {
   width: 13px;
   height: 13px;
+  flex: none;
+}
+.btn-action-focus .dock-label {
+  flex: none;
+}
+.btn-action-focus .dock-focus-dur {
+  flex: none;
 }
 
 .btn-action-done {
+  flex: 0 1 auto;
+  min-width: 0;
   height: 34px;
   padding: 0 12px;
   border-radius: var(--r-sm);
@@ -1627,7 +1726,6 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   gap: 5px;
   transition: all 0.15s;
   white-space: nowrap;
-  flex: none;
 }
 .btn-action-done:hover {
   background: var(--bg-hover);
@@ -1636,6 +1734,27 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   width: 13px;
   height: 13px;
   color: #10b981;
+  flex: none;
+}
+.btn-action-done .dock-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 容器查询：详情栏内容盒变窄时，先收「(25m)」后缀，再收次要按钮文案 */
+@container detailpane (max-width: 312px) {
+  .detail-dock-bar .dock-focus-dur {
+    display: none;
+  }
+}
+@container detailpane (max-width: 244px) {
+  .detail-dock-bar .btn-action-done .dock-label {
+    display: none;
+  }
+  .detail-dock-bar .btn-action-done {
+    padding: 0 9px;
+  }
 }
 
 .btn-action-del {
@@ -1675,6 +1794,9 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: none;
   flex-direction: column;
   gap: 11px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .date-popover.active {
   display: flex;
@@ -1947,6 +2069,8 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: none;
   flex-direction: column;
   gap: 1px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 .popover-menu.active {
   display: flex;
@@ -1981,6 +2105,8 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: none;
   flex-direction: column;
   gap: 9px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 .tag-popover.active {
   display: flex;
@@ -2038,10 +2164,17 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: none;
   flex-direction: column;
   gap: 1px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 .ctx-menu.active {
   display: flex;
   animation: popZoomIn 0.12s ease-out;
+}
+/* 任务页空白处右键的外观自定义菜单：条目文案更长，给一档更宽的版式 */
+.ctx-menu.appearance-menu {
+  width: 210px;
+  max-height: min(420px, calc(100vh - 16px));
 }
 .ctx-menu-item {
   display: flex;
@@ -2071,6 +2204,29 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   width: 13px;
   height: 13px;
 }
+.ctx-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ctx-menu-item[aria-checked='true'] {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft);
+}
+.ctx-menu-item[aria-checked='true']::after {
+  content: '¹3';
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  flex: none;
+}
+.ctx-menu-label {
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+}
 .ctx-menu-divider {
   height: 1px;
   background: var(--border-subtle);
@@ -2090,7 +2246,7 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: none;
   flex-direction: column;
   gap: 8px;
-  max-height: 480px;
+  max-height: min(480px, calc(100vh - 16px));
   overflow-y: auto;
 }
 .iconpop.active {
@@ -2268,57 +2424,6 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .btn-modal.primary {
   background: var(--accent);
   color: var(--app-solid-fg);
-}
-
-/* ═════════════════════════════════════════════════════════════════════════
-   8. 底部多功能悬浮 HUD (外观、色彩基调、音效控制)
-   ═════════════════════════════════════════════════════════════════════════ */
-.floating-hud {
-  position: fixed;
-  bottom: 16px;
-  right: 24px;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  color: #d4d4d8;
-  background: #18191d;
-  padding: 4px 10px;
-  border-radius: 20px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
-.hud-btn-group {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.hud-btn {
-  padding: 3px 8px;
-  border-radius: 12px;
-  color: #a1a1aa;
-  font-size: 11.5px;
-  transition: all 0.12s;
-}
-.hud-btn:hover {
-  color: var(--app-solid-fg);
-}
-.hud-btn.active {
-  background: #2563eb;
-  color: var(--app-solid-fg);
-  font-weight: 600;
-}
-.hud-divider {
-  width: 1px;
-  height: 12px;
-  background: rgba(255, 255, 255, 0.18);
-  margin: 0 2px;
-}
-.hud-label {
-  color: #71717a;
-  font-size: 11px;
-  margin-right: 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

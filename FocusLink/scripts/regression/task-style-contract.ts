@@ -298,6 +298,9 @@ function main(): void {
       const animation: any = await win.webContents.executeJavaScript(ANIMATION_JS);
       runAnimationContract(animation);
 
+      // ── v18 移植契约（task-7）──────────────────────────────────────────
+      await runPortContract(win);
+
       timer.dispose();
       closeDatabase();
 
@@ -566,6 +569,793 @@ function runAnimationContract(a: any): void {
   if (restoreSeen) {
     eq('恢复闪烁走伪元素 opacity', restoreSeen.pseudoAnimation, 'restoreFlash');
   }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   v18 原型 → 客户端移植契约（task-7）
+   5 项：① 搜索框跟随调色板 ② 浮层视口夹取 ③ 删 HUD + 右键外观菜单
+        ④ 快速录入行 + 动作栏抗压 ⑤ 压缩时属性区不被折叠
+   ⑤ 的判定是三重校验：行矩形落在属性表裁剪盒内 ∧ 落在视口内 ∧ 表 scrollHeight <= clientHeight。
+   只跟视口比会得到假阳性（原型作者第一版就是这么错的）。
+   ═════════════════════════════════════════════════════════════════════════ */
+
+// 打开任务页空白处的外观自定义菜单（合成 contextmenu，走真实 React 事件）。
+const OPEN_APPEARANCE_MENU_JS = `(() => {
+  const body = document.querySelector('.workspace-body');
+  if (!body) return 'no-body';
+  const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 520, clientY: 300 });
+  body.dispatchEvent(ev);
+  return 'dispatched';
+})()`;
+
+const SEARCH_BOX_JS = `(() => {
+  const box = document.querySelector('.cmd-search-box');
+  if (!box) return { error: 'no search box' };
+  const s = getComputedStyle(box);
+  const icon = box.querySelector('svg');
+  return {
+    background: s.backgroundColor,
+    borderColor: s.borderTopColor,
+    color: s.color,
+    height: s.height,
+    radius: s.borderRadius,
+    fontSize: s.fontSize,
+    paddingLeft: s.paddingLeft,
+    paddingRight: s.paddingRight,
+    transitionProperty: s.transitionProperty,
+    iconColor: icon ? getComputedStyle(icon).color : null,
+    iconWidth: icon ? getComputedStyle(icon).width : null
+  };
+})()`;
+
+// 属性区 / 动作栏 / 标题的几何实测（⑤ + ④ 用同一份探针）。
+const PANE_GEOMETRY_JS = `(() => {
+  const body = document.querySelector('.workspace-body');
+  const table = document.querySelector('.linear-props-table');
+  if (!table) return { error: 'no props table' };
+  const pane = document.querySelector('.detail-pane');
+  const heading = document.querySelector('.detail-heading');
+  const dock = document.querySelector('.detail-dock-bar');
+  const tr = table.getBoundingClientRect();
+  const rows = Array.prototype.slice.call(table.querySelectorAll('.prop-table-row')).map(function (row) {
+    const r = row.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height, width: r.width };
+  });
+  const hr = heading ? heading.getBoundingClientRect() : null;
+  const dr = dock ? dock.getBoundingClientRect() : null;
+  const dockDur = dock ? dock.querySelector('.dock-focus-dur') : null;
+  const dockDoneLabel = dock ? dock.querySelector('.btn-action-done .dock-label') : null;
+  const kids = dock ? Array.prototype.slice.call(dock.children).map(function (k) {
+    const r = k.getBoundingClientRect();
+    return {
+      top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+      height: r.height, width: r.width,
+      scrollWidth: k.scrollWidth, clientWidth: k.clientWidth,
+      text: (k.textContent || '').trim(),
+      visible: getComputedStyle(k).display !== 'none'
+    };
+  }) : null;
+  return {
+    viewport: { w: window.innerWidth, h: window.innerHeight },
+    table: { top: tr.top, bottom: tr.bottom, left: tr.left, right: tr.right, height: tr.height, width: tr.width },
+    tableScrollHeight: table.scrollHeight,
+    tableClientHeight: table.clientHeight,
+    tableOverflowY: getComputedStyle(table).overflowY,
+    rows: rows,
+    rowCount: rows.length,
+    headingLineHeight: heading ? getComputedStyle(heading).lineHeight : null,
+    headingHeight: hr ? hr.height : null,
+    headingFontSize: heading ? getComputedStyle(heading).fontSize : null,
+    dock: dr ? {
+      top: dr.top, bottom: dr.bottom, left: dr.left, right: dr.right,
+      height: dr.height, width: dr.width,
+      scrollWidth: dock.scrollWidth, clientWidth: dock.clientWidth
+    } : null,
+    dockKids: kids,
+    dockParts: {
+      focusDur: dockDur ? getComputedStyle(dockDur).display : null,
+      focusDurText: dockDur ? (dockDur.textContent || '').trim() : null,
+      doneLabel: dockDoneLabel ? getComputedStyle(dockDoneLabel).display : null,
+      doneLabelText: dockDoneLabel ? (dockDoneLabel.textContent || '').trim() : null,
+      doneTitle: dock ? (dock.querySelector('.btn-action-done') || {}).title : null
+    },
+    workspace: body
+      ? {
+          left: body.getBoundingClientRect().left,
+          width: body.getBoundingClientRect().width,
+          scrollWidth: body.scrollWidth,
+          clientWidth: body.clientWidth
+        }
+      : null,
+    detailPane: pane ? { scrollHeight: pane.scrollHeight, clientHeight: pane.clientHeight } : null
+  };
+})()`;
+
+// 打开「截止时间」浮层并读它的真实矩形。
+const OPEN_DATE_POPOVER_JS = `(() => {
+  const pane = document.querySelector('.detail-pane');
+  if (pane) pane.scrollTop = 0;
+  const rows = Array.prototype.slice.call(document.querySelectorAll('.linear-props-table .prop-table-row'));
+  const row = rows.filter(function (r) { return (r.textContent || '').indexOf('截止时间') >= 0; })[0];
+  if (!row) return 'no-row';
+  const pill = row.querySelector('.prop-action-pill');
+  if (!pill) return 'no-pill';
+  pill.click();
+  return 'ok';
+})()`;
+
+const POPOVER_RECT_JS = `(() => {
+  const el = document.querySelector('.date-popover.active');
+  if (!el) return { error: 'no date popover' };
+  const r = el.getBoundingClientRect();
+  const s = getComputedStyle(el);
+  return {
+    viewport: { w: window.innerWidth, h: window.innerHeight },
+    rect: { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height },
+    maxHeight: s.maxHeight,
+    overflowY: s.overflowY
+  };
+})()`;
+
+const QUICK_BAR_JS = `(() => {
+  const bar = document.querySelector('.quick-create-bar');
+  if (!bar) return { error: 'no quick create bar' };
+  const s = getComputedStyle(bar);
+  const input = bar.querySelector('input');
+  const kbd = bar.querySelector('.kbd-hint');
+  return {
+    height: s.height,
+    radius: s.borderRadius,
+    borderColor: s.borderTopColor,
+    paddingLeft: s.paddingLeft,
+    paddingRight: s.paddingRight,
+    inputFontSize: input ? getComputedStyle(input).fontSize : null,
+    placeholder: input ? input.getAttribute('placeholder') : null,
+    kbdText: kbd ? (kbd.textContent || '').trim() : null,
+    kbdPresent: !!kbd,
+    floatingHudPresent: !!document.querySelector('.floating-hud')
+  };
+})()`;
+
+// 搜索框三档调色板的验收计算值（原型 v18 实测值）。
+const SEARCH_EXPECTED: Record<string, { bg: string; border: string; icon: string }> = {
+  linear: { bg: 'rgba(37, 99, 235, 0.1)', border: 'rgba(0, 0, 0, 0.06)', icon: 'rgb(37, 99, 235)' },
+  rose: {
+    bg: 'rgba(225, 29, 72, 0.12)',
+    border: 'rgba(225, 29, 72, 0.08)',
+    icon: 'rgb(225, 29, 72)',
+  },
+  contrast: { bg: 'rgba(0, 0, 0, 0.08)', border: 'rgba(0, 0, 0, 0.15)', icon: 'rgb(0, 0, 0)' },
+};
+
+async function setViewport(win: BrowserWindow, width: number, height: number): Promise<void> {
+  win.setContentSize(width, height);
+  // 布局 + 过渡都要落定，否则读到中间值。
+  await sleep(260);
+}
+
+function insideViewport(rect: any, vp: any): boolean {
+  return (
+    rect.top >= -0.5 && rect.left >= -0.5 && rect.bottom <= vp.h + 0.5 && rect.right <= vp.w + 0.5
+  );
+}
+
+// ⑤ 的三重校验：行矩形在属性表裁剪盒内 ∧ 在视口内 ∧ 表自身不溢出。
+function assertPropsTripleCheck(tag: string, m: any, checkViewport = true): void {
+  if (!m || m.error) {
+    ok(`属性区几何可读 ${tag}`, false, m);
+    return;
+  }
+  eq(`${tag} 属性表高 136px（四行 32px + 3 间隙 2px + 2 边框）`, m.table.height, 136);
+  eq(`${tag} 属性表 4 行`, m.rowCount, 4);
+  ok(
+    `${tag} 属性表自身 scrollHeight <= clientHeight（未被 flex 压缩裁掉）`,
+    m.tableScrollHeight <= m.tableClientHeight,
+    { scrollHeight: m.tableScrollHeight, clientHeight: m.tableClientHeight },
+  );
+  m.rows.forEach((row: any, idx: number) => {
+    ok(
+      `${tag} 第 ${idx + 1} 行落在属性表裁剪盒内`,
+      row.top >= m.table.top - 0.5 &&
+        row.bottom <= m.table.bottom + 0.5 &&
+        row.left >= m.table.left - 0.5 &&
+        row.right <= m.table.right + 0.5,
+      { row, table: m.table },
+    );
+    if (checkViewport) {
+      ok(`${tag} 第 ${idx + 1} 行落在视口内`, insideViewport(row, m.viewport), {
+        row,
+        viewport: m.viewport,
+      });
+    } else {
+      // 主窗口 floor 980x660 以下不可达；这里只要求「没被静默裁掉」：工作区可横向滚动到它。
+      ok(
+        `${tag} 第 ${idx + 1} 行未被静默裁掉（工作区可横向滚动到它）`,
+        !!m.workspace &&
+          m.workspace.scrollWidth > m.workspace.clientWidth &&
+          row.right <= m.workspace.left + m.workspace.scrollWidth + 0.5,
+        { row, workspace: m.workspace },
+      );
+    }
+    eq(`${tag} 第 ${idx + 1} 行高 32px`, row.height, 32);
+  });
+  // 标题不许被压成 0（原型修复前连标题都被压成 0px）。
+  eq(`${tag} 详情标题行高 22.9px（未被压扁）`, m.headingLineHeight, '22.95px');
+  ok(`${tag} 详情标题有实际高度`, m.headingHeight > 20, { headingHeight: m.headingHeight });
+  ok(
+    `${tag} 详情动作 dock 可见`,
+    !!m.dock &&
+      m.dock.height > 20 &&
+      m.dock.width > 20 &&
+      (checkViewport
+        ? insideViewport(m.dock, m.viewport)
+        : !!m.workspace && m.dock.right <= m.workspace.left + m.workspace.scrollWidth + 0.5),
+    { dock: m.dock, viewport: m.viewport, workspace: m.workspace },
+  );
+}
+
+// ④ 的动作栏抗压判定。
+function assertDockRow(tag: string, m: any): void {
+  if (!m || m.error || !m.dock || !m.dockKids || m.dockKids.length < 3) {
+    ok(`${tag} 动作栏几何可读`, false, m && { dock: m.dock, kids: m.dockKids });
+    return;
+  }
+  const dock = m.dock;
+  const kids = m.dockKids.filter((k: any) => k.visible);
+  const kidsInside = kids.every(
+    (k: any) =>
+      k.top >= dock.top - 0.5 &&
+      k.bottom <= dock.bottom + 0.5 &&
+      k.left >= dock.left - 0.5 &&
+      k.right <= dock.right + 0.5,
+  );
+  ok(`${tag} kidsInside（按钮矩形都在动作栏内）`, kidsInside, { dock, kids });
+  const tops = kids.map((k: any) => Math.round(k.top));
+  const sameRow = tops.every((t: number) => Math.abs(t - tops[0]) <= 1) && dock.height <= 48;
+  ok(`${tag} sameRow（同一行，不上下堆叠）`, sameRow, { tops, dockHeight: dock.height });
+  ok(`${tag} noSelfOverflow（动作栏自身不横向溢出）`, dock.scrollWidth <= dock.clientWidth + 1, {
+    scrollWidth: dock.scrollWidth,
+    clientWidth: dock.clientWidth,
+  });
+  kids.forEach((k: any) => {
+    ok(`${tag} 按钮「${k.text || '(图标)'}」内容不溢出`, k.scrollWidth <= k.clientWidth + 1, {
+      text: k.text,
+      scrollWidth: k.scrollWidth,
+      clientWidth: k.clientWidth,
+    });
+  });
+
+  // 容器查询逐级收窄：内容盒 <=312px 收「(25m)」；<=244px 收「完成任务」文字（变图标按钮，保留 title）。
+  const parts = m.dockParts || {};
+  const cw = dock.width;
+  eq(
+    `${tag} 内容盒 ${Math.round(cw)}px 时「(25m)」后缀${cw <= 312 ? '已收起' : '仍显示'}`,
+    parts.focusDur,
+    // flex 子项会被 blockify，所以可见时 computed display 是 block 而不是 inline。
+    cw <= 312 ? 'none' : 'block',
+  );
+  eq(
+    `${tag} 内容盒 ${Math.round(cw)}px 时「完成任务」文字${cw <= 244 ? '已收起' : '仍显示'}`,
+    parts.doneLabel,
+    cw <= 244 ? 'none' : 'block',
+  );
+  if (cw <= 244) {
+    ok(
+      `${tag} 收成图标按钮后仍保留 title（可发现性）`,
+      typeof parts.doneTitle === 'string' && parts.doneTitle.length > 0,
+      parts.doneTitle,
+    );
+  }
+}
+
+async function runPortContract(win: BrowserWindow): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code);
+  const openAppearanceMenu = async (): Promise<void> => {
+    const r = await js(OPEN_APPEARANCE_MENU_JS);
+    await sleep(260);
+    const open = await js(`Boolean(document.querySelector('.appearance-menu.active'))`);
+    ok('任务页空白处右键打开外观自定义菜单', r === 'dispatched' && open === true, { r, open });
+  };
+  const pressEscape = async (): Promise<void> => {
+    await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+    await sleep(200);
+  };
+
+  // ── ③ 删掉底部 HUD ────────────────────────────────────────────────────
+  const hud = await js(`(() => ({
+    hud: !!document.querySelector('.floating-hud'),
+    quickBar: !!document.querySelector('.quick-create-bar')
+  }))()`);
+  eq('③ 客户端底部悬浮 HUD 已删除', hud.hud, false);
+  eq('③ 快速录入行仍在', hud.quickBar, true);
+
+  // ── ① 搜索框跟随调色板（三档互不相同，等过渡结束再读）──────────────
+  await setViewport(win, 1100, 660);
+  await openAppearanceMenu();
+  const seenSearch: Record<string, any> = {};
+  for (const pal of ['linear', 'rose', 'contrast']) {
+    const clicked = await js(
+      `(() => {
+        const item = document.querySelector('.appearance-menu.active [data-app-pal="${pal}"]');
+        if (!item) return false;
+        item.click();
+        return true;
+      })()`,
+    );
+    ok(`① 外观菜单可点选调色板 ${pal}`, clicked === true, clicked);
+    // transition: background/border/color .15s —— 必须等过渡结束，否则三档读到同一个中间值。
+    await sleep(460);
+    const s = await js(SEARCH_BOX_JS);
+    if (s && !s.error) {
+      console.log(
+        `[style-contract] ① 搜索框 ${pal} 实测 bg=${s.background} border=${s.borderColor} icon=${s.iconColor}`,
+      );
+    }
+    seenSearch[pal] = s;
+    const exp = SEARCH_EXPECTED[pal];
+    ok(`① 搜索框 ${pal} 可读`, !!s && !s.error, s);
+    if (s && !s.error) {
+      eq(`① 搜索框 ${pal} 背景 = --accent-soft`, s.background, exp.bg);
+      eq(`① 搜索框 ${pal} 边框 = --border-subtle`, s.borderColor, exp.border);
+      eq(`① 搜索框 ${pal} 图标色 = --accent`, s.iconColor, exp.icon);
+    }
+  }
+  const searchGeom = seenSearch.linear;
+  if (searchGeom && !searchGeom.error) {
+    eq('① 搜索框高 32px', searchGeom.height, '32px');
+    eq('① 搜索框圆角 8px (--r-md)', searchGeom.radius, '8px');
+    eq('① 搜索框字号 12.5px', searchGeom.fontSize, '12.5px');
+    eq('① 搜索框左内距 11px', searchGeom.paddingLeft, '11px');
+    eq('① 搜索框右内距 8px', searchGeom.paddingRight, '8px');
+    eq('① 搜索框图标 14px', searchGeom.iconWidth, '14px');
+    ok(
+      '① 搜索框过渡仍是分属性过渡（保留过渡但不再 all）',
+      String(searchGeom.transitionProperty).indexOf('all') < 0 &&
+        String(searchGeom.transitionProperty).indexOf('background') >= 0 &&
+        String(searchGeom.transitionProperty).indexOf('color') >= 0,
+      searchGeom.transitionProperty,
+    );
+  }
+  const bgSet = ['linear', 'rose', 'contrast'].map(
+    (p) => seenSearch[p] && seenSearch[p].background,
+  );
+  ok('① 三档调色板背景两两不同', new Set(bgSet).size === 3, bgSet);
+  await pressEscape();
+  // 复位到 linear：后续几何 / 颜色断言都以默认档为基准。
+  await js(
+    `window.focuslink.settings.set({ taskWorkspaceAppearance: { palette: 'linear', font: 'sans', density: 'default' } })`,
+  );
+  await sleep(460);
+
+  // ── 额外缺陷①：原型 openProjectPopover() 引用了未声明的 t，点「所属清单」
+  //    pill 立刻抛 ReferenceError，弹层永远打不开（v17 就坏，不是新引入）。
+  //    客户端是 React 结构（弹层读 currentTask?.projectId，没有裸 t），
+  //    所以这里必须实测确认它本来就能打开，而不是照抄原型的修法。
+  const projOpen = await js(`(() => {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('.linear-props-table .prop-table-row'));
+    const row = rows.filter(function (r) { return (r.textContent || '').indexOf('所属清单') >= 0; })[0];
+    if (!row) return 'no-row';
+    const pill = row.querySelector('.prop-action-pill');
+    if (!pill) return 'no-pill';
+    pill.click();
+    return 'ok';
+  })()`);
+  await sleep(280);
+  const projPop = await js(`(() => {
+    const el = document.querySelector('.popover-menu.active');
+    if (!el) return { open: false };
+    const r = el.getBoundingClientRect();
+    return {
+      open: true,
+      items: el.querySelectorAll('.popover-item').length,
+      top: r.top, left: r.left, bottom: r.bottom, right: r.right,
+      vw: window.innerWidth, vh: window.innerHeight
+    };
+  })()`);
+  ok(
+    '额外缺陷① 客户端「所属清单」弹层能打开（无未声明变量 ReferenceError）',
+    projOpen === 'ok' && projPop.open === true && projPop.items > 0,
+    { projOpen, projPop },
+  );
+  if (projPop.open) {
+    ok(
+      '额外缺陷① 所属清单弹层也完整落在视口内（共用同一套硬夹取）',
+      projPop.top >= -0.5 &&
+        projPop.left >= -0.5 &&
+        projPop.bottom <= projPop.vh + 0.5 &&
+        projPop.right <= projPop.vw + 0.5,
+      projPop,
+    );
+  }
+  await pressEscape();
+
+  // ── ③ 任务行右键仍走原任务菜单（两者不冲突）──────────────────────────
+  await js(`(() => {
+    const row = document.querySelector('.task-entry');
+    if (!row) return 'no-row';
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 220, clientY: 220 }));
+    return 'ok';
+  })()`);
+  await sleep(220);
+  const rowMenu = await js(`(() => {
+    const m = document.querySelector('.ctx-menu.active');
+    return {
+      present: !!m,
+      isAppearance: !!document.querySelector('.appearance-menu.active'),
+      text: m ? (m.textContent || '') : ''
+    };
+  })()`);
+  ok(
+    '③ 任务行右键仍走原任务菜单（不是外观菜单）',
+    rowMenu.present && !rowMenu.isAppearance && rowMenu.text.indexOf('开始专注') >= 0,
+    rowMenu,
+  );
+  await pressEscape();
+
+  // ── ⑤ 属性区不折叠（8 档宽度 + 三重校验）─────────────────────────────
+  const viewports: Array<[number, number]> = [
+    [1280, 660],
+    [1100, 660],
+    [980, 660],
+    [900, 660],
+    [840, 600],
+    [780, 600],
+    [560, 560],
+    [460, 560],
+  ];
+  // 客户端主窗口 floor = 980x660（shared/mainWindowLayout.ts MAIN_WINDOW_MIN_SIZE），
+  // 且 app-shell 左轨（64~77px）还会再吃掉一截宽度，所以 980 以下的宽度只在回归
+  // harness 里可达。判定按「工作区是否还容得下栅格最小宽度 168+276=444px」分流：
+  //   - 容得下 → 完整三重校验（行在属性表裁剪盒内 ∧ 行在视口内 ∧ 表 scrollHeight <= clientHeight）
+  //   - 容不下（只有 460 这一档，工作区 396px）→ 仍做纵向三重校验，并断言「没被静默裁掉」：
+  //     工作区必须真的可横向滚动到属性区，而不是被 overflow:hidden 悄悄切掉。
+  for (const [w, h] of viewports) {
+    await setViewport(win, w, h);
+    const m = await js(PANE_GEOMETRY_JS);
+    const fits = !m.workspace || m.workspace.width >= 444;
+    console.log(
+      `[style-contract] ⑤ ${w}x${h} 实测 表高=${m.table.height} 行高=${m.rows
+        .map((r: any) => r.height)
+        .join(
+          '/',
+        )} scrollH=${m.tableScrollHeight} clientH=${m.tableClientHeight} 标题行高=${m.headingLineHeight} 工作区宽=${m.workspace && m.workspace.width}`,
+    );
+    assertPropsTripleCheck(`⑤ ${w}x${h}`, m, fits);
+  }
+
+  // ── ④ 动作栏抗压（980 / 840 / 560）───────────────────────────────────
+  // 620 / 460 两档是为了真正走到容器查询的两个断点（<=312 与 <=244），
+  // 否则断言只在「不收」分支上空跑。
+  for (const [w, h] of [
+    [980, 660],
+    [840, 600],
+    [620, 600],
+    [560, 560],
+    [460, 560],
+  ] as Array<[number, number]>) {
+    await setViewport(win, w, h);
+    const m = await js(PANE_GEOMETRY_JS);
+    console.log(
+      `[style-contract] ④ ${w}x${h} 实测 内容盒=${m.dock && m.dock.width} dockH=${m.dock && m.dock.height} scrollW=${m.dock && m.dock.scrollWidth} clientW=${m.dock && m.dock.clientWidth} (25m)=${m.dockParts && m.dockParts.focusDur} 完成任务=${m.dockParts && m.dockParts.doneLabel}`,
+    );
+    assertDockRow(`④ ${w}x${h}`, m);
+  }
+
+  // ── ② 浮层视口夹取（980x660 / 840x600 / 980x440）─────────────────────
+  for (const [w, h] of [
+    [980, 660],
+    [840, 600],
+    [980, 440],
+  ] as Array<[number, number]>) {
+    await setViewport(win, w, h);
+    const opened = await js(OPEN_DATE_POPOVER_JS);
+    ok(`② ${w}x${h} 可打开「截止时间」浮层`, opened === 'ok', opened);
+    await sleep(320);
+    const p = await js(POPOVER_RECT_JS);
+    if (p && !p.error) {
+      console.log(
+        `[style-contract] ② ${w}x${h} 浮层实测 rect=${JSON.stringify(p.rect)} viewport=${JSON.stringify(p.viewport)}`,
+      );
+    }
+    ok(`② ${w}x${h} 浮层可读`, !!p && !p.error, p);
+    if (p && !p.error) {
+      ok(`② ${w}x${h} 浮层完全落在视口内`, insideViewport(p.rect, p.viewport), {
+        rect: p.rect,
+        viewport: p.viewport,
+      });
+      ok(
+        `② ${w}x${h} 浮层高度 > 0 且 <= 视口`,
+        p.rect.height > 0 && p.rect.height <= p.viewport.h,
+        p.rect,
+      );
+      eq(`② ${w}x${h} 浮层 overflow-y auto`, p.overflowY, 'auto');
+    }
+    await pressEscape();
+  }
+
+  // ── ④ 快速录入行 ────────────────────────────────────────────────────
+  await setViewport(win, 980, 660);
+  const qb = await js(QUICK_BAR_JS);
+  ok('④ 快速录入行可读', !!qb && !qb.error, qb);
+  if (qb && !qb.error) {
+    eq('④ 快速录入行高 34px', qb.height, '34px');
+    eq('④ 快速录入行圆角 6px (--r-sm)', qb.radius, '6px');
+    eq('④ 快速录入行边框 --border-subtle', qb.borderColor, 'rgba(0, 0, 0, 0.06)');
+    eq('④ 快速录入行左内距 11px', qb.paddingLeft, '11px');
+    eq('④ 快速录入行右内距 8px', qb.paddingRight, '8px');
+    eq('④ 快速录入行字号 12.5px', qb.inputFontSize, '12.5px');
+    eq('④ 快速录入行 placeholder', qb.placeholder, '添加任务…');
+    ok('④ 快速录入行右侧 Enter kbd', qb.kbdPresent && qb.kbdText === 'Enter', qb);
+    eq('④ 底部 HUD 不存在', qb.floatingHudPresent, false);
+  }
+
+  // ── ③ 外观菜单每一项都写设置（持久化，不是组件内 state）──────────────
+  await openAppearanceMenu();
+  const menuShape = await js(`(() => {
+    const m = document.querySelector('.appearance-menu.active');
+    if (!m) return { error: 'no menu' };
+    return {
+      role: m.getAttribute('role'),
+      label: m.getAttribute('aria-label'),
+      items: Array.prototype.slice.call(m.querySelectorAll('.ctx-menu-item')).map(function (el) {
+        return {
+          theme: el.getAttribute('data-app-theme'),
+          pal: el.getAttribute('data-app-pal'),
+          font: el.getAttribute('data-app-font'),
+          density: el.getAttribute('data-app-density'),
+          sound: el.getAttribute('data-app-sound'),
+          checked: el.getAttribute('aria-checked')
+        };
+      }),
+      focusedIsFirstItem: document.activeElement === m.querySelector('.ctx-menu-item'),
+      labels: Array.prototype.slice.call(m.querySelectorAll('.ctx-menu-label')).map(function (el) { return el.textContent; })
+    };
+  })()`);
+  ok('③ 外观菜单存在且 role=menu', menuShape && menuShape.role === 'menu', menuShape);
+  if (menuShape && !menuShape.error) {
+    const groups = [
+      ['主题', ['light', 'dark'], 'theme'],
+      ['色彩基调', ['linear', 'rose', 'contrast'], 'pal'],
+      ['字体', ['sans', 'serif'], 'font'],
+      ['密度', ['default', 'compact', 'relaxed'], 'density'],
+      ['音效', ['on', 'off'], 'sound'],
+    ] as Array<[string, string[], string]>;
+    for (const [label, values, key] of groups) {
+      const found = menuShape.items
+        .map((i: any) => i[key])
+        .filter((v: any) => v != null && values.indexOf(v) >= 0);
+      eq(
+        `③ 外观菜单含「${label}」全部档位`,
+        Array.from(new Set(found)).sort().join(','),
+        values.slice().sort().join(','),
+      );
+    }
+    ok(
+      '③ 打开外观菜单自动聚焦首项',
+      menuShape.focusedIsFirstItem === true,
+      menuShape.focusedIsFirstItem,
+    );
+  }
+
+  const clickItem = async (selector: string): Promise<boolean> =>
+    (await js(`(() => {
+      const el = document.querySelector('.appearance-menu.active ' + ${JSON.stringify('')} + '${selector}');
+      if (!el) return false;
+      el.click();
+      return true;
+    })()`)) === true;
+
+  ok('③ 可点选调色板 rose', await clickItem('[data-app-pal="rose"]'));
+  await sleep(300);
+  ok('③ 可点选密度 compact', await clickItem('[data-app-density="compact"]'));
+  await sleep(300);
+  ok('③ 可点选字体 serif', await clickItem('[data-app-font="serif"]'));
+  await sleep(300);
+  ok('③ 可点选主题 dark', await clickItem('[data-app-theme="dark"]'));
+  await sleep(400);
+  await pressEscape();
+
+  const persisted = await js(`window.focuslink.settings.get()`);
+  eq('③ 调色板写入 settings（持久化）', persisted.taskWorkspaceAppearance.palette, 'rose');
+  eq('③ 密度写入 settings（持久化）', persisted.taskWorkspaceAppearance.density, 'compact');
+  eq('③ 字体写入 settings（持久化）', persisted.taskWorkspaceAppearance.font, 'serif');
+  eq('③ 主题写入 settings（持久化）', persisted.theme, 'dark');
+
+  // 深色 + rose 不再是 dark + linear（修掉「切颜色它不变」）
+  const darkRose = await js(`(() => {
+    const root = document.querySelector('.task-workspace-root');
+    const cs = getComputedStyle(root);
+    const btn = document.querySelector('.btn-action-focus');
+    return {
+      pal: root.getAttribute('data-pal'),
+      theme: root.getAttribute('data-theme'),
+      accent: cs.getPropertyValue('--accent').trim(),
+      accentSoft: cs.getPropertyValue('--accent-soft').trim(),
+      btnBg: btn ? getComputedStyle(btn).backgroundColor : null
+    };
+  })()`);
+  eq('③ 深色主题下 data-pal=rose 生效', darkRose.pal, 'rose');
+  eq('③ 深色主题下 data-theme=dark 生效', darkRose.theme, 'dark');
+  eq('③ 深色 + rose 的 --accent 是玫红（不是蓝）', darkRose.accent, '#e11d48');
+  // 自定义属性的 getPropertyValue 走 token 序列化（.26 / .2），不是颜色归一化。
+  eq('③ 深色 + rose 的 --accent-soft 是玫红', darkRose.accentSoft, 'rgba(225, 29, 72, .26)');
+  eq('③ 深色 + rose 的专注主按钮是玫红', darkRose.btnBg, 'rgb(225, 29, 72)');
+
+  // 深色 + linear 必须与深色 + rose 不同（修复前二者完全相同）
+  await openAppearanceMenu();
+  await clickItem('[data-app-pal="linear"]');
+  await sleep(300);
+  await pressEscape();
+  const darkLinear = await js(`(() => {
+    const cs = getComputedStyle(document.querySelector('.task-workspace-root'));
+    return {
+      accent: cs.getPropertyValue('--accent').trim(),
+      accentSoft: cs.getPropertyValue('--accent-soft').trim()
+    };
+  })()`);
+  ok(
+    '③ 深色下 rose 与 linear 的 --accent-soft 不同（修复前恒等）',
+    darkLinear.accentSoft !== darkRose.accentSoft,
+    { rose: darkRose.accentSoft, linear: darkLinear.accentSoft },
+  );
+  eq(
+    '③ 深色 + linear 的 --accent-soft 回到电光蓝',
+    darkLinear.accentSoft,
+    'rgba(59, 130, 246, .2)',
+  );
+
+  // 还原默认外观，避免污染后续断言与用户设置
+  await js(`window.focuslink.settings.set({
+    theme: 'light',
+    taskWorkspaceAppearance: { palette: 'linear', font: 'sans', density: 'default' }
+  })`);
+  await sleep(420);
+  const restored = await js(`(() => {
+    const root = document.querySelector('.task-workspace-root');
+    const box = document.querySelector('.cmd-search-box');
+    return {
+      pal: root.getAttribute('data-pal'),
+      density: root.getAttribute('data-density'),
+      theme: root.getAttribute('data-theme'),
+      searchBg: getComputedStyle(box).backgroundColor,
+      hud: !!document.querySelector('.floating-hud')
+    };
+  })()`);
+  eq('③ 还原：data-pal=linear', restored.pal, 'linear');
+  eq('③ 还原：data-density=default', restored.density, 'default');
+  eq('③ 还原：data-theme=light', restored.theme, 'light');
+  eq('③ 还原：搜索框背景回到 linear --accent-soft', restored.searchBg, 'rgba(37, 99, 235, 0.1)');
+  eq('③ 还原：底部 HUD 仍然不存在', restored.hud, false);
+
+  // ── B. 既有已验收功能未被破坏（勾选动效 / 删除线由上方 ANIMATION 段覆盖）────
+  await setViewport(win, 1100, 700);
+  const legacy = await js(`(() => {
+    const group = document.querySelector('.uncompleted-group');
+    const divider = document.querySelector('.completed-divider-bar');
+    const qb = document.querySelector('.quick-create-bar');
+    return {
+      uncompletedMinHeight: group ? getComputedStyle(group).minHeight : null,
+      // 50vh - 76px 会被浏览器解析成 px，这里按同一算式给出期望值
+      uncompletedMinHeightExpected: Math.max(260, window.innerHeight / 2 - 76),
+      uncompletedHeight: group ? group.getBoundingClientRect().height : null,
+      dividerText: divider ? (divider.textContent || '').trim() : null,
+      focusTimeline: !!document.querySelector('.f-nodes-flow, .f-horiz-track'),
+      quickPosition: qb ? getComputedStyle(qb).position : null,
+      quickBottom: qb ? getComputedStyle(qb).bottom : null
+    };
+  })()`);
+  eq(
+    'B 1/2 沉底：未完成组保底 max(260px, calc(50vh - 76px))',
+    Number.parseFloat(legacy.uncompletedMinHeight),
+    legacy.uncompletedMinHeightExpected,
+  );
+  ok('B 1/2 沉底：未完成组实际高度 >= 260px', legacy.uncompletedHeight >= 260, legacy);
+  ok(
+    'B 已完成分隔条仍在（显示「已完成 N」）',
+    typeof legacy.dividerText === 'string' && legacy.dividerText.indexOf('已完成') >= 0,
+    legacy.dividerText,
+  );
+  ok(
+    'B 横向专注时序卡容器仍在（.f-nodes-flow / .f-horiz-track）',
+    legacy.focusTimeline === true,
+    legacy.focusTimeline,
+  );
+  eq('B 快速录入行仍是 sticky 沉底', legacy.quickPosition, 'sticky');
+  eq('B 快速录入行 bottom 14px', legacy.quickBottom, '14px');
+
+  // B 清单图标弹层（清单右键 → 更换图标与颜色 → .iconpop）
+  const projMenuOpen = await js(`(() => {
+    const items = Array.prototype.slice.call(document.querySelectorAll('.sidebar .side-item'));
+    const target = items.filter(function (el) { return (el.textContent || '').indexOf('样式契约清单') >= 0; })[0];
+    if (!target) return 'no-project';
+    target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 260 }));
+    return 'ok';
+  })()`);
+  await sleep(240);
+  const projMenu = await js(`(() => {
+    const m = document.querySelector('.ctx-menu.active');
+    if (!m) return { open: false, hasIconItem: false };
+    const items = Array.prototype.slice.call(m.querySelectorAll('.ctx-menu-item'));
+    return {
+      open: true,
+      hasIconItem: items.some(function (el) { return (el.textContent || '').indexOf('更换图标') >= 0; }),
+      text: (m.textContent || '').trim()
+    };
+  })()`);
+  ok(
+    'B 清单右键菜单仍在（含「更换图标与颜色」）',
+    projMenuOpen === 'ok' && projMenu.open === true && projMenu.hasIconItem === true,
+    { projMenuOpen, projMenu },
+  );
+  if (projMenu.hasIconItem) {
+    await js(`(() => {
+      const m = document.querySelector('.ctx-menu.active');
+      const items = Array.prototype.slice.call(m.querySelectorAll('.ctx-menu-item'));
+      items.filter(function (el) { return (el.textContent || '').indexOf('更换图标') >= 0; })[0].click();
+      return true;
+    })()`);
+    await sleep(320);
+    const iconPop = await js(`(() => {
+      const el = document.querySelector('.iconpop.active');
+      if (!el) return { open: false };
+      const r = el.getBoundingClientRect();
+      return {
+        open: true,
+        icons: el.querySelectorAll('.grid-icon-btn').length,
+        top: r.top, left: r.left, bottom: r.bottom, right: r.right,
+        vw: window.innerWidth, vh: window.innerHeight
+      };
+    })()`);
+    ok('B 清单图标弹层仍能打开', iconPop.open === true && iconPop.icons > 0, iconPop);
+    if (iconPop.open) {
+      ok(
+        'B 清单图标弹层也在视口内（共用同一套硬夹取）',
+        iconPop.top >= -0.5 &&
+          iconPop.left >= -0.5 &&
+          iconPop.bottom <= iconPop.vh + 0.5 &&
+          iconPop.right <= iconPop.vw + 0.5,
+        iconPop,
+      );
+    }
+    await pressEscape();
+  }
+
+  // B 就地改名（任务行右键 → 重命名任务 → 行内输入框）
+  await js(`(() => {
+    const row = document.querySelector('.task-entry');
+    if (!row) return 'no-row';
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 220, clientY: 220 }));
+    return 'ok';
+  })()`);
+  await sleep(240);
+  const renameOpened = await js(`(() => {
+    const m = document.querySelector('.ctx-menu.active');
+    if (!m) return 'no-menu';
+    const items = Array.prototype.slice.call(m.querySelectorAll('.ctx-menu-item'));
+    const item = items.filter(function (el) { return (el.textContent || '').indexOf('重命名任务') >= 0; })[0];
+    if (!item) return 'no-item';
+    item.click();
+    return 'ok';
+  })()`);
+  await sleep(260);
+  const inlineEdit = await js(`(() => {
+    const el = document.querySelector('.inline-task-edit');
+    return { present: !!el, value: el ? el.value : null };
+  })()`);
+  ok(
+    'B 就地改名仍在（行内输入框带当前标题）',
+    renameOpened === 'ok' && inlineEdit.present === true && !!inlineEdit.value,
+    { renameOpened, inlineEdit },
+  );
+  await js(`(() => {
+    const el = document.querySelector('.inline-task-edit');
+    if (el) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return true;
+  })()`);
+  await sleep(200);
+
+  // 窄窗回到默认尺寸，避免影响后续（本契约已是最后一段）
+  await setViewport(win, 1180, 760);
 }
 
 function waitForSelector(win: BrowserWindow, selector: string, timeoutMs = 10000): Promise<void> {

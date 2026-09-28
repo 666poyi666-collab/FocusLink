@@ -1,5 +1,40 @@
 # Changelog
 
+## v1.3.11 - 2026-09-28（任务页 UI 迭代：搜索框令牌化、浮层夹取、删 HUD 改右键、抗压动作栏、属性区不再被折叠）
+
+### 修复（用户在客户端截图里逐项指出的问题）
+
+- **顶部搜索框不跟随调色板**：原本用硬编码色值，三档调色板下完全不变。改为 `--accent-soft` / `--border-subtle` / `--accent`，并重做几何（高 27→32px、圆角 6→8px、字号 12.5px）与整页节奏对齐。实测三档互不相同：linear `rgba(37,99,235,.1)` / rose `rgba(225,29,72,.12)` / contrast `rgba(0,0,0,.08)`。
+- **深色主题下「高级粉」整档失效**（正是上一条抱怨的隐藏原因）：`[data-pal="rose"]` 的令牌被后面的 `[data-theme="dark"]` 整体覆盖，且没有 `dark + rose` 块，导致 dark+rose 恒等于 dark+linear。已补 `html[data-theme="dark"][data-pal="rose"]` 与 `.dark` 变体。
+- **右栏浮层被裁切**：窗口变矮时「截止时间」等浮层只显示一半。定位函数补成硬夹取（下方不足向上翻转；上下都放不下则夹进视口；左右越界对齐）+ 各浮层 `max-height: calc(100vh - 16px)` 内部滚动。实测 980×660 / 840×600 / **980×440** 三档 `getBoundingClientRect()` 全部落在视口内。
+- **删除底部悬浮 HUD，改为任务页右键外观菜单**：HUD 遮挡视野，且设置页已有「任务界面」分区。改为在任务页空白处右键弹出外观菜单（主题 / 色彩基调 / 字体 / 密度 / 音效），复用既有 `.ctx-menu` 组件；点击外部与 Escape 关闭、↑↓ 移焦点、Enter/Space 选择。任务行右键仍走原任务菜单，两者不冲突。菜单各项**写 `settings` 持久化**（palette/font/density → `taskWorkspaceAppearance`，theme → `theme`）。
+- **压缩时右侧属性区被折叠（本轮最重要）**：真凶**不是媒体查询**（`task-workbench.css` 通篇没有 `@media`），是 `.detail-pane` 的 flex 压缩 —— 固定高度 flex 列 + 子项默认 `flex-shrink:1`，把带 `overflow:hidden` 的 `.linear-props-table` 压扁后裁掉内容。修复前实测 980×660 表高 **84px**（第 4 行被切）、840×600 **32px**、560×560 **2px（整块消失）**，连任务标题也被压成 0px。修法：栅格 `minmax(168,220) minmax(0,1fr) minmax(276,380)`、`.detail-pane > * { flex:0 0 auto }`、去掉给已删 HUD 留的 80px 底部内距、动作栏改 `position:sticky`。修复后 1280→560 宽全部：表高 **136px**、四行完整、标题 22.95px。
+- **底部快速录入行与详情栏动作按钮拥挤**：录入行重做（40→34px、对齐设计节奏、placeholder 改「添加任务…」+ Enter 提示）；动作栏改用**容器查询**逐级收窄（内容盒 ≤312px 收「(25m)」、≤244px「完成任务」变图标按钮保留 title），**未改成两行堆叠**。实测 980/840/620/560/460 五档 `kidsInside / sameRow / noSelfOverflow` 全 true。
+- **`themeMode` 跨组件状态耦合**：客户端 `themeMode` 原是组件内 state，从设置页改全局主题后任务页会停在旧主题，与「右键写 `settings.theme`」长期不一致。已改为跟随 `settings.theme`。
+
+### 结构差异（如实记录，未硬凑）
+
+- 客户端主窗口 floor 是 `MAIN_WINDOW_MIN_SIZE = {980, 660}`，980 以下用户拖不到；且客户端比原型多一条 64~77px 的 app-shell 左轨，工作区 = 窗口宽 − 左轨。460 宽时工作区只剩 396px < 栅格最小 444px。原型是独立 HTML 页没有左轨，所以该档在原型能过、在客户端不可能等价过。
+- 处理：保留栅格数值（保护属性区不被横向压扁的关键），把 `.workspace-body` 的 `overflow:hidden` 改为 `overflow-x:auto; overflow-y:hidden` —— 真窄到容不下时宁可横向可滚动，**绝不静默裁掉属性区**。契约测试按「工作区是否容得下 444px」分流判定。
+- 若产品真要支持 <980 的任务页，需单独设计（缩左轨 / 允许右栏 <276px + 表格横向滚动），不在本版本范围。
+
+### 新增门禁
+
+- `npm run smoke:task-style` 断言从 **78 条扩到 370 条**真实 `getComputedStyle` / 几何断言，覆盖搜索框三档调色板、属性表窄窗三重校验、动作栏五档抗压、浮层矮窗夹取、右键外观菜单写设置，以及已验收功能的回归（勾选 spring-pop / restoreFlash / 删除线 / 1/2 沉底 / 横向专注时序卡 / 清单图标弹层 / 就地改名 / 外观持久化）。
+- **反向验证 2 次，都真的 FAIL 过**：① 搜索框令牌改回 `--bg-hover` → FAIL 4 条；⑤ `flex:0 0 auto` 改回 `0 1 auto` → **FAIL 43 条**（560×560 表高掉到 35.7px，第 2/3/4 行**跑到属性表裁剪盒外但仍落在视口内** —— 正是「只跟视口比会得到假阳性」那一类）。
+
+### 验证
+
+- `npm run format:check` / `typecheck` / `lint` PASS
+- `npm test` PASS：133 个测试文件 / 1071 项
+- `npm run build` PASS；`npm run smoke:task-style` PASS（370 条）
+
+### 三设备同版安装门禁
+
+- Windows 本机：静默覆盖安装并回读（见下方实测）
+- 小米手机：未执行（需用户确认）
+- 华为平板：`192.168.1.12:5555` 长期 `offline`，未闭合
+
 ## v1.3.10 - 2026-09-28（Windows 已安装 1.3.9；本轮安装门禁未闭合：华为平板离线）
 
 ### 对 v1.3.9 的更正
