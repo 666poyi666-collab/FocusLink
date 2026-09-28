@@ -18,13 +18,19 @@
 - **`ready-to-show` 增加 3 秒首帧兜底**：新增纯函数 `shouldForceShowAfterFirstPaintTimeout()`；超时后强制显示并记录 `trigger: 'first-paint-timeout'`。只有「用户显式要求隐藏启动」（`--hidden` / 最小化到托盘设置）才允许保持隐藏。
 - **`activate` 与 `second-instance` 共用同一条呈现路径**，避免两处各自演化出不同的可见性语义。
 - **安装门禁改为验窗口**：日志中没有 `main window shown` 且 `visible: true`，就不算「应用已打开」。
+- **同轮修掉一个打包版可稳定复现的 P0**：暂停态熔断画布 `mini-fuse-canvas` 此前**全仓库没有任何 CSS 规则定义它**。canvas 是 replaced element，无 CSS 宽度时布局宽度取 `width` 属性，而绘制循环每帧又把 `rect.width * dpr` 写回 `canvas.width`、ResizeObserver 再触发下一帧，于是每帧 ×dpr 指数膨胀。打包版实测（dpr=1.5，收起暂停态）布局盒 `22369622×22369622`、位图 `33554433×33554433`、`getImageData` 取到 0 像素 —— 熔断/粒子效果一个像素都看不见，`npm run smoke:mini` 因此稳定失败。已补上贴满轨道的显式盒（`position:absolute; inset:0; width/height:100%`），smoke 恢复通过。
 
 ### 验证
 
 - `npm run format:check`、`npm run typecheck`（含 cloudflare worker）、`npm run lint` 全部 0 error 通过。
-- `npm test`：通过。
-- 新增回归 `tests/startupPolicy.test.ts`「main window visibility recovery (FL-INSTALL-011)」，钉死两条不变量：首帧超时必须强制显示（除非显式隐藏启动）；主窗口不存在时第二实例必须重建。
-- Windows 本机：静默覆盖安装 1.3.13，回读注册表 `DisplayVersion 1.3.13` 与已安装 EXE 文件版本，并**回读窗口可见性证据**（`main window shown ... visible: true`）。
+- `npm test`：**133 个测试文件 / 1074 项测试**全部通过。
+- `npm run smoke:mini` PASS（打包版 `win-unpacked/FocusLink.exe`）；`npm run smoke:live-fallback` PASS（`status: passed`）。
+- Android：`:app:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug` BUILD SUCCESSFUL。
+- 新增回归 `tests/startupPolicy.test.ts`「main window visibility recovery (FL-INSTALL-011)」，钉死两条不变量：首帧超时必须强制显示（除非显式隐藏启动）；主窗口不存在时第二实例必须重建。已做反向验证：把重建分支改回 `focus-existing`（等价事故前行为）时该用例立即失败，还原后通过。
+- **三条恢复路径在打包版上实测留证**：正常启动 → `trigger:"ready-to-show"`；已有实例时再启动一次（等同双击图标）→ `trigger:"second-instance"` 且窗口重新可见；关闭到托盘后再点图标 → 再次 `second-instance` 且窗口回来。
+- **Windows 安装矩阵**：静默覆盖安装退出码 0；卸载注册表 `DisplayVersion: 1.3.13`；已安装 EXE `FileVersion 1.3.13 / ProductVersion 1.3.13.0`；**窗口可见性回读通过**（`MainWindowHandle = 38936336`，标题 `FocusLink`，日志含 `main window shown {"visible":true}`）；包内构建元数据 `commit=bdfc543`，不含 `-dirty`。
+- **小米手机（22041216C）**：`adb install -r` Success，回读 `versionName=1.3.13 / versionCode=1319`（安装前 1.3.12/1318）。
+- **华为平板（192.168.1.12:5555）**：`adb devices -l` 为 `offline`，未安装、未回读。**三设备同版安装门禁未闭合**，本版不标记为完整交付。
 
 ## v1.3.12 - 2026-09-29（统计工作台重构：固定12栅格卡贴画卷、自适应高光防蓝光溢出、5大高精核心卡片与外观质感切换）
 
