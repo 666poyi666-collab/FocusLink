@@ -8,6 +8,9 @@
 *.woff2 binary
 
 # Release executables exceed GitHub's regular per-file limit.
-release-v*/FocusLink-*-x64*.exe filter=lfs diff=lfs merge=lfs -text
-release-v*/FocusLink-*.exe filter=lfs diff=lfs merge=lfs -text
-release-v01224/*.exe filter=lfs diff=lfs merge=lfs -text
+
+# 2026-09-28：发布产物不再进 Git。
+# 原因：每个发布 EXE 约 200MB，走 LFS 会迅速吃满 GitHub 的 LFS 配额
+# （免费额度 1GB，本仓库曾累积到 2.53GB），导致任何推送都被拒。
+# 现在：release-v*/ 下的 EXE 由 .gitignore 排除，只作为 GitHub Releases 附件分发。
+# 不要再为 release-v*/*.exe 添加 filter=lfs —— 那会让配额问题复发。

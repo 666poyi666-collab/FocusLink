@@ -44,3 +44,9 @@ design-pack/
 # design workshop assets
 /test-data/
 /.wrangler/
+
+# 2026-09-28：发布产物不再进 Git（见 .gitattributes 顶部说明）。
+# 每个 EXE 约 200MB，走 LFS 会吃满 GitHub 配额并阻断所有推送；
+# 发布产物只作为 GitHub Releases 附件分发，本地目录保留但不再跟踪。
+release-v*/*.exe
+release-v*/win-unpacked/
