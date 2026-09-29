@@ -1,92 +1,806 @@
-/* ═════════════════════════════════════════════════════════════════════════
-   FocusLink 统计工作台专属高保真样式系统 (Stats Workbench Masterclass Styles)
-   1:1 对齐统计页设计原型：卡贴栅格、自适应感应高光、拟物卡片质感、心流全景仪表
-   ═════════════════════════════════════════════════════════════════════════ */
-
-/* ── 1. 自适应鼠标感应光效令牌 (Spotlight & Sheen Tokens) ── */
-:root,
-html[data-pal='linear'],
-.history-page[data-pal='linear'],
-.history-page {
+:root {
   --border-default: var(--border-app, rgba(0, 0, 0, 0.12));
   --mouse-x: -999px;
   --mouse-y: -999px;
-  --spotlight-core: rgba(37, 99, 235, 0.05);
-  --spotlight-sheen: rgba(37, 99, 235, 0.03);
-  --spotlight-border: rgba(37, 99, 235, 0.35);
+  --r-full: 9999px;
+  --bar-scale: 1;
+}
+/* FocusLink 统计工作台 - 1:1 对齐设计原型 */
+
+/* ═════════════════════════════════════════════════════════════════════════
+   2. 设计系统全局令牌 (直接继承自任务页标准规范)
+   ═════════════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════════════
+   1. 设计系统全局令牌 (Unified Design System Tokens)
+   ═════════════════════════════════════════════════════════════════════════ */
+:root {
+  --heatmap-0: #e2e8f0;
+  --heatmap-1: #a7f3d0;
+  --heatmap-2: #6ee7b7;
+  --heatmap-3: #10b981;
+  --heatmap-4: #047857;
+}
+:root,
+html[data-pal='linear'] {
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC Variable', Roboto, 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --font-num: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* 基础三栏空间进深体系 (Sidebar < List < Detail) */
+  --bg-app: #f7f8fa;
+  --bg-titlebar: #f7f8fa;
+  --bg-sidebar: #f7f8fa;
+  --bg-list: #ffffff;
+  --bg-detail: #fafafc;
+  --bg-card: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.045);
+  --bg-active: rgba(0, 0, 0, 0.075);
+  --bg-selected: #ebf3ff;
+  --selected-border: #2563eb;
+
+  --border-app: rgba(0, 0, 0, 0.08);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-row: rgba(0, 0, 0, 0.045);
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-tertiary: #8c8c8c;
+  --text-disabled: #a1a1aa;
+
+  --accent: #2563eb;
   --pause-color: #94a3b8;
-  --heatmap-0: #ebedf0;
-  --heatmap-1: #9be9a8;
-  --heatmap-2: #40c463;
-  --heatmap-3: #30a14e;
-  --heatmap-4: #216e39;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --accent-ink: #1d4ed8;
+
+  --prio-p1: #ef4444;
+  --prio-p1-bg: rgba(239, 68, 68, 0.1);
+  --prio-p2: #f59e0b;
+  --prio-p2-bg: rgba(245, 158, 11, 0.1);
+  --prio-p3: #3b82f6;
+  --prio-p3-bg: rgba(59, 130, 246, 0.1);
+  --prio-p0: #71717a;
+
+  --badge-late: #dc2626;
+  --badge-late-bg: rgba(220, 38, 38, 0.08);
+  --badge-today: #d97706;
+  --badge-today-bg: rgba(217, 119, 6, 0.08);
+  --badge-range: #2563eb;
+  --badge-range-bg: rgba(37, 99, 235, 0.08);
+
+  /* 打勾专用自适应主题变量 (纯净白：科技沉浸电光蓝) */
+  --check-bg: #2563eb;
+  --check-border: #2563eb;
+  --check-fg: #ffffff;
+  --check-hover-border: #2563eb;
+  --check-ghost: rgba(37, 99, 235, 0.45);
+  --check-halo-0: rgba(37, 99, 235, 0.65);
+  --check-halo-1: rgba(37, 99, 235, 0.25);
+  --confetti-colors: '#2563EB,#3B82F6,#60A5FA,#93C5FD,#1D4ED8';
+
+  /* 鼠标跟随与镜面高光 (Linear 纯净白：电光蓝科技辉光) */
+  --spotlight-core: rgba(37, 99, 235, 0.12);
+  --spotlight-sheen: rgba(37, 99, 235, 0.045);
+  --spotlight-border: rgba(37, 99, 235, 0.35);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+
+  /* 统一几何阶梯模数 */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
 }
 
-html[data-pal='rose'],
-.history-page[data-pal='rose'] {
-  --spotlight-core: rgba(225, 29, 72, 0.05);
-  --spotlight-sheen: rgba(225, 29, 72, 0.03);
+/* 高级粉调高对比模式 */
+html[data-pal='rose'] {
+  --bg-app: #fdf9fa;
+  --bg-titlebar: #fdf9fa;
+  --bg-sidebar: #faf3f5;
+  --bg-list: #ffffff;
+  --bg-detail: #fcf8f9;
+  --bg-card: #ffffff;
+  --bg-hover: rgba(225, 29, 72, 0.045);
+  --bg-active: rgba(225, 29, 72, 0.08);
+  --bg-selected: #ffe4e6;
+  --selected-border: #e11d48;
+  --accent: #e11d48;
+  --accent-soft: rgba(225, 29, 72, 0.12);
+  --accent-ink: #be123c;
+  --border-app: rgba(225, 29, 72, 0.12);
+  --border-subtle: rgba(225, 29, 72, 0.08);
+
+  /* 打勾专用自适应主题变量 (高级粉：典雅柔魅玫粉色) */
+  --check-bg: #e11d48;
+  --check-border: #e11d48;
+  --check-fg: #ffffff;
+  --check-hover-border: #e11d48;
+  --check-ghost: rgba(225, 29, 72, 0.45);
+  --check-halo-0: rgba(225, 29, 72, 0.65);
+  --check-halo-1: rgba(225, 29, 72, 0.25);
+  --confetti-colors: '#E11D48,#F43F5E,#FB7185,#FDA4AF,#BE123C';
+
+  /* 鼠标跟随与镜面高光 (高级粉：典雅柔魅玫粉辉光) */
+  --spotlight-core: rgba(225, 29, 72, 0.12);
+  --spotlight-sheen: rgba(225, 29, 72, 0.045);
   --spotlight-border: rgba(225, 29, 72, 0.35);
-  --heatmap-0: #fce7f3;
-  --heatmap-1: #fbcfe8;
-  --heatmap-2: #f472b6;
-  --heatmap-3: #db2777;
-  --heatmap-4: #9d174d;
 }
 
-html[data-pal='contrast'],
-.history-page[data-pal='contrast'] {
+/* 锐利黑白高对比模式 - 浅色 (彻底消灭死黑方块，瑞士国际主义版式规范) */
+html[data-pal='contrast'] {
+  --bg-app: #ffffff;
+  --bg-titlebar: #ffffff;
+  --bg-sidebar: #f5f5f7;
+  --bg-list: #ffffff;
+  --bg-detail: #fafafa;
+  --bg-card: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(0, 0, 0, 0.1);
+  --bg-selected: #f0f1f4;
+  --selected-border: #000000;
+
+  --accent: #000000;
+  --accent-soft: rgba(0, 0, 0, 0.08);
+  --accent-ink: #000000;
+  --border-app: #000000;
+  --border-subtle: rgba(0, 0, 0, 0.15);
+  --border-row: rgba(0, 0, 0, 0.08);
+  --text-primary: #000000;
+  --text-secondary: #27272a;
+  --text-tertiary: #52525b;
+  --text-disabled: #71717a;
+
+  --badge-late: #000000;
+  --badge-late-bg: rgba(0, 0, 0, 0.08);
+  --badge-today: #000000;
+  --badge-today-bg: rgba(0, 0, 0, 0.08);
+  --badge-range: #000000;
+  --badge-range-bg: rgba(0, 0, 0, 0.08);
+
+  /* 打勾专用自适应主题变量 (锐利黑白高对比 - 浅色：曜石黑圆底、雪白对勾) */
+  --check-bg: #000000;
+  --check-border: #000000;
+  --check-fg: #ffffff;
+  --check-hover-border: #000000;
+  --check-ghost: rgba(0, 0, 0, 0.4);
+  --check-halo-0: rgba(0, 0, 0, 0.55);
+  --check-halo-1: rgba(0, 0, 0, 0.18);
+  --confetti-colors: '#000000,#27272A,#52525B,#71717A,#A1A1AA';
+
+  /* 鼠标跟随与镜面高光 (锐利黑白高对比：冷灰曜岩光影) */
   --spotlight-core: rgba(0, 0, 0, 0.07);
   --spotlight-sheen: rgba(0, 0, 0, 0.025);
   --spotlight-border: rgba(0, 0, 0, 0.25);
-  --heatmap-0: #e2e8f0;
-  --heatmap-1: #cbd5e1;
-  --heatmap-2: #94a3b8;
-  --heatmap-3: #475569;
-  --heatmap-4: #0f172a;
+}
+html[data-pal='contrast'] .side-item[aria-selected='true'],
+html[data-pal='contrast'] .task-entry[aria-selected='true'] {
+  background: #f0f1f4;
+  color: #000000;
+  font-weight: 700;
+}
+html[data-pal='contrast'] .side-item[aria-selected='true']::before {
+  background: #000000;
+}
+html[data-pal='contrast'] .side-item[aria-selected='true'] .nav-num {
+  color: #000000;
+  font-weight: 700;
+}
+html[data-pal='contrast'] .task-entry[aria-selected='true'] {
+  box-shadow: inset 3px 0 0 #000000;
+}
+html[data-pal='contrast'] .task-entry[aria-selected='true'] .entry-title {
+  color: #000000;
+  font-weight: 600;
+}
+html[data-pal='contrast'] .btn-action-focus {
+  background: #000000;
+  color: var(--app-solid-fg);
+  font-weight: 700;
 }
 
-[data-theme='dark'],
-html[data-theme='dark'],
-.history-page[data-theme='dark'] {
-  --spotlight-core: rgba(59, 130, 246, 0.08);
-  --spotlight-sheen: rgba(37, 99, 235, 0.04);
-  --spotlight-border: rgba(59, 130, 246, 0.4);
+/* 深色模式体系 (Obsidian Dark) */
+html[data-theme='dark'] {
+  --heatmap-0: rgba(255, 255, 255, 0.08);
+  --heatmap-1: #064e3b;
+  --heatmap-2: #047857;
+  --heatmap-3: #10b981;
+  --heatmap-4: #34d399;
+
+  --bg-app: #121316;
+  --bg-titlebar: #121316;
+  --bg-sidebar: #17181c;
+  --bg-list: #1e2024;
+  --bg-detail: #22242a;
+  --bg-card: #262830;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.09);
+  --bg-selected: rgba(59, 130, 246, 0.18);
+  --selected-border: #3b82f6;
+
+  --border-app: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-row: rgba(255, 255, 255, 0.045);
+
+  --text-primary: #f4f4f5;
+  --text-secondary: #d4d4d8;
+  --text-tertiary: #8e929e;
+  --text-disabled: #52525b;
+
+  --accent: #3b82f6;
   --pause-color: #64748b;
-  --heatmap-0: #161b22;
-  --heatmap-1: #0e4429;
-  --heatmap-2: #006d32;
-  --heatmap-3: #26a641;
-  --heatmap-4: #39d353;
+  --accent-soft: rgba(59, 130, 246, 0.2);
+  --accent-ink: #60a5fa;
+
+  /* 深色纯净白打勾令牌 */
+  --check-bg: #3b82f6;
+  --check-border: #3b82f6;
+  --check-fg: #ffffff;
+  --check-hover-border: #3b82f6;
+  --check-ghost: rgba(59, 130, 246, 0.45);
+  --check-halo-0: rgba(59, 130, 246, 0.65);
+  --check-halo-1: rgba(59, 130, 246, 0.25);
+  --confetti-colors: '#3B82F6,#60A5FA,#93C5FD,#1D4ED8,#2563EB';
+
+  /* 鼠标跟随与镜面高光 (深色模式 Linear：电光蓝深空氖光) */
+  --spotlight-core: rgba(96, 165, 250, 0.2);
+  --spotlight-sheen: rgba(59, 130, 246, 0.08);
+  --spotlight-border: rgba(96, 165, 250, 0.4);
+
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
-[data-theme='dark'][data-pal='rose'],
-html[data-theme='dark'][data-pal='rose'],
-.history-page[data-theme='dark'][data-pal='rose'] {
-  --spotlight-core: rgba(244, 114, 182, 0.08);
-  --spotlight-sheen: rgba(225, 29, 72, 0.05);
-  --spotlight-border: rgba(244, 114, 182, 0.4);
-  --heatmap-0: #2d121e;
-  --heatmap-1: #501630;
-  --heatmap-2: #831843;
-  --heatmap-3: #db2777;
-  --heatmap-4: #f472b6;
+/* 深色模式下的专注主按钮 - 高级电光蓝 (绝不暗淡发灰) */
+html[data-theme='dark'] .btn-action-focus {
+  background: #2563eb;
+  color: var(--app-solid-fg);
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+html[data-theme='dark'] .btn-action-focus:hover {
+  background: #3b82f6;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.5);
 }
 
-[data-theme='dark'][data-pal='contrast'],
-html[data-theme='dark'][data-pal='contrast'],
-.history-page[data-theme='dark'][data-pal='contrast'] {
-  --spotlight-core: rgba(255, 255, 255, 0.08);
-  --spotlight-sheen: rgba(255, 255, 255, 0.03);
-  --spotlight-border: rgba(255, 255, 255, 0.35);
-  --heatmap-0: #1e293b;
-  --heatmap-1: #334155;
-  --heatmap-2: #64748b;
-  --heatmap-3: #94a3b8;
-  --heatmap-4: #f8fafc;
+/* 深色 + 锐利黑白高对比模式 */
+html[data-theme='dark'][data-pal='contrast'] {
+  --bg-app: #0a0b0e;
+  --bg-titlebar: #0a0b0e;
+  --bg-sidebar: #111216;
+  --bg-list: #16181d;
+  --bg-detail: #1b1d23;
+  --bg-card: #21232b;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(255, 255, 255, 0.14);
+  --bg-selected: #2b2e38;
+  --selected-border: #ffffff;
+
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.15);
+  --accent-ink: #ffffff;
+  --border-app: rgba(255, 255, 255, 0.2);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-row: rgba(255, 255, 255, 0.08);
+  --text-primary: #ffffff;
+  --text-secondary: #e4e4e7;
+  --text-tertiary: #a1a1aa;
+  --text-disabled: #71717a;
+
+  /* 深色锐利黑白高对比打勾令牌：纯白圆底、曜黑对勾 */
+  --check-bg: #ffffff;
+  --check-border: #ffffff;
+  --check-fg: #000000;
+  --check-hover-border: #ffffff;
+  --check-ghost: rgba(255, 255, 255, 0.45);
+  --check-halo-0: rgba(255, 255, 255, 0.65);
+  --check-halo-1: rgba(255, 255, 255, 0.25);
+  --confetti-colors: '#FFFFFF,#E4E4E7,#D4D4D8,#A1A1AA,#71717A';
+
+  /* 鼠标跟随与镜面高光 (深色模式 锐利黑白高对比：璀璨纯白钻石切光) */
+  --spotlight-core: rgba(255, 255, 255, 0.18);
+  --spotlight-sheen: rgba(255, 255, 255, 0.06);
+  --spotlight-border: rgba(255, 255, 255, 0.4);
+}
+html[data-theme='dark'][data-pal='contrast'] .side-item[aria-selected='true'],
+html[data-theme='dark'][data-pal='contrast'] .task-entry[aria-selected='true'] {
+  background: #2b2e38;
+  color: var(--app-solid-fg);
+  font-weight: 700;
+}
+html[data-theme='dark'][data-pal='contrast'] .side-item[aria-selected='true']::before {
+  background: #ffffff;
+}
+html[data-theme='dark'][data-pal='contrast'] .side-item[aria-selected='true'] .nav-num {
+  color: var(--app-solid-fg);
+  font-weight: 700;
+}
+html[data-theme='dark'][data-pal='contrast'] .task-entry[aria-selected='true'] {
+  box-shadow: inset 3px 0 0 #ffffff;
+}
+html[data-theme='dark'][data-pal='contrast'] .task-entry[aria-selected='true'] .entry-title {
+  color: var(--app-solid-fg);
+  font-weight: 600;
+}
+html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
+  background: #ffffff;
+  color: #000000;
+  font-weight: 700;
 }
 
-/* ── 2. 固定 12 栅格卡贴画卷 ── */
+/* 深色 + 高级粉调：补全缺失的深色玫粉令牌。
+   修复前 dark+rose 与 dark+linear 完全相同（rose 令牌被 dark 块整体覆盖），
+   导致「切换色彩基调」在深色主题下毫无变化。 */
+html[data-theme='dark'][data-pal='rose'] {
+  --bg-app: #141013;
+  --bg-titlebar: #141013;
+  --bg-sidebar: #1a1418;
+  --bg-list: #201a1e;
+  --bg-detail: #241d22;
+  --bg-card: #2a2228;
+  --bg-hover: rgba(244, 63, 94, 0.08);
+  --bg-active: rgba(244, 63, 94, 0.14);
+  --bg-selected: rgba(225, 29, 72, 0.26);
+  --selected-border: #fb7185;
+  --border-app: rgba(244, 63, 94, 0.18);
+  --border-subtle: rgba(244, 63, 94, 0.12);
+  --border-row: rgba(244, 63, 94, 0.08);
+  --accent: #e11d48;
+  --accent-soft: rgba(225, 29, 72, 0.26);
+  --accent-ink: #fb7185;
+  --check-bg: #e11d48;
+  --check-border: #e11d48;
+  --check-fg: #ffffff;
+  --check-hover-border: #e11d48;
+  --check-ghost: rgba(225, 29, 72, 0.45);
+  --check-halo-0: rgba(225, 29, 72, 0.65);
+  --check-halo-1: rgba(225, 29, 72, 0.25);
+  --confetti-colors: '#E11D48,#F43F5E,#FB7185,#FDA4AF,#BE123C';
+
+  /* 鼠标跟随与镜面高光 (深色模式 高级粉：魅影夜光玫红) */
+  --spotlight-core: rgba(251, 113, 133, 0.22);
+  --spotlight-sheen: rgba(225, 29, 72, 0.09);
+  --spotlight-border: rgba(251, 113, 133, 0.42);
+}
+html[data-theme='dark'][data-pal='rose'] .btn-action-focus {
+  background: var(--accent);
+  color: var(--app-solid-fg);
+}
+
+/* 字体方案：衬线（产品自带 Noto Serif SC）—— 变量必须真正被 UI 消费，禁止只写不接 */
+html[data-font='serif'] {
+  --font-ui: 'Noto Serif SC Variable', 'Songti SC', 'SimSun', serif;
+}
+/* 密度方案：紧凑 —— 统一压缩行高与内边距，绝不隐藏任何内容 */
+html[data-density='compact'] .task-entry {
+  height: 34px;
+}
+html[data-density='compact'] .side-item {
+  height: 28px;
+}
+html[data-density='compact'] .prop-table-row {
+  height: 27px;
+}
+html[data-density='compact'] .quick-create-bar {
+  height: 30px;
+}
+html[data-density='compact'] .subtask-item {
+  min-height: 25px;
+  padding: 1px 6px;
+}
+html[data-density='compact'] .list-toolbar {
+  padding: 12px 26px 8px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+
+/* ═════════════════════════════════════════════════════════════════════════
+   3. 客户端原生外壳 (App Shell & Navigation - 与任务页同源)
+   ═════════════════════════════════════════════════════════════════════════ */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  user-select: none;
+}
+button,
+input,
+textarea,
+select {
+  border: none;
+  background: none;
+  outline: none;
+  font-size: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+
+.app-window {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 42px 沉浸式标题栏 (100% 对齐任务页) */
+.app-titlebar {
+  height: 42px;
+  background: var(--bg-titlebar);
+  border-bottom: 1px solid var(--border-app);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex: none;
+  z-index: 10;
+}
+.titlebar-left,
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.app-brand-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--app-solid-fg);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-num);
+}
+
+.titlebar-center {
+  flex: 1;
+  max-width: 460px;
+  margin: 0 20px;
+}
+.cmd-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 0 8px 0 11px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.cmd-search-box:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.cmd-search-box:focus-within {
+  background: var(--bg-card);
+  border-color: var(--accent);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.cmd-search-box input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+.cmd-search-box input::placeholder {
+  color: var(--text-tertiary);
+}
+.cmd-search-box svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex: none;
+}
+.kbd-hint {
+  font-family: var(--font-num);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-active);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  flex: none;
+}
+
+.sync-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.sync-badge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.btn-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  transition: all 0.12s;
+  user-select: none;
+}
+.btn-tool:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.btn-tool svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   4. 三栏工作区 (Workspace Body - 严格继承任务页模数)
+   ═════════════════════════════════════════════════════════════════════════ */
+.workspace-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(280px, 360px);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   5. 左侧栏 (Sidebar) - 稳重克制的侧边导航
+   ═════════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px 10px;
+  overflow-y: auto;
+  position: relative;
+  gap: 14px;
+}
+.sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.side-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+  width: 100%;
+  position: relative;
+  text-align: left;
+}
+.side-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.side-item.active {
+  background: var(--bg-selected);
+  color: var(--accent);
+  font-weight: 600;
+}
+.side-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--selected-border);
+  border-radius: 0 2px 2px 0;
+}
+.side-item-icon {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.side-item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.side-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-num {
+  font-family: var(--font-num);
+  font-size: 11px;
+  line-height: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+  flex: none;
+}
+.side-item.active .nav-num {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.project-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.sidebar-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.user-avatar-mini {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--app-solid-fg);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-num);
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   6. 中间画卷 (Stats Paper - 真实白纸与卡片质感)
+   ═════════════════════════════════════════════════════════════════════════ */
+.stats-paper {
+  background: var(--bg-list);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  position: relative;
+  min-width: 0;
+}
+.stats-paper::-webkit-scrollbar {
+  width: 6px;
+}
+.stats-paper::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 6px;
+}
+
+/* 粘性工具栏 (与任务页 100% 对齐) */
+.list-toolbar {
+  height: 48px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  background: var(--bg-list);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.list-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.list-title-group h2 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.list-stats-text {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: var(--font-num);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.list-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* 画卷内容区 */
+.stats-scroll-area {
+  flex: 1;
+  padding: 20px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   7. 统计看板卡贴栅格系统 (Statistics Dashboard Fixed Plaque Grid)
+   固定严谨、层级分明的高级卡贴布局；开放原生文本复制与自如交互
+   ═════════════════════════════════════════════════════════════════════════ */
 .stats-dashboard-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -117,7 +831,9 @@ html[data-theme='dark'][data-pal='contrast'],
   }
 }
 
-/* ── 3. 卡贴质感外观系统 (Tactile Card Plaque Skins) ── */
+/* ═════════════════════════════════════════════════════════════════════════
+   8. 核心卡贴架构 (Card-Widget Architecture - 拟物卡片质感)
+   ═════════════════════════════════════════════════════════════════════════ */
 .card-widget {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -136,116 +852,12 @@ html[data-theme='dark'][data-pal='contrast'],
   border-color: var(--border-default);
 }
 
-/* 鼠标边缘高光与内部柔光微晕 */
-.card-widget::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: radial-gradient(
-    380px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
-    var(--spotlight-border),
-    transparent 65%
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 2;
-}
+/* ═════════════════════════════════════════════════════════════════════════
+   8. 核心主体卡贴：今日心流全景仪表 (THE FOCUS HERO CARD)
+   一眼就能看懂的绝对视觉核心，将全天心流宏观与时段微观合二为一
+   ═════════════════════════════════════════════════════════════════════════ */
 
-.card-widget::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    480px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
-    var(--spotlight-core) 0%,
-    var(--spotlight-sheen) 35%,
-    transparent 72%
-  );
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 1;
-}
-
-.card-widget:hover::before,
-.card-widget:hover::after {
-  opacity: 1;
-}
-
-/* 纯白陶瓷 (Pure Ceramic) */
-[data-skin='ceramic'] .card-widget,
-.history-page[data-skin='ceramic'] .card-widget,
-html:not([data-skin]) .card-widget {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.03),
-    0 4px 14px -2px rgba(0, 0, 0, 0.03);
-}
-
-/* 微光磨砂 (Frosted Glass) */
-[data-skin='frosted'] .card-widget,
-.history-page[data-skin='frosted'] .card-widget {
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow:
-    0 8px 30px rgba(0, 0, 0, 0.035),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-[data-theme='dark'][data-skin='frosted'] .card-widget,
-.history-page[data-theme='dark'][data-skin='frosted'] .card-widget {
-  background: rgba(24, 27, 33, 0.75);
-  backdrop-filter: blur(20px) saturate(190%);
-  -webkit-backdrop-filter: blur(20px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 10px 36px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-/* 极客钛金 (Titanium Sheen) */
-[data-skin='titanium'] .card-widget,
-.history-page[data-skin='titanium'] .card-widget {
-  background: linear-gradient(145deg, #f3f4f6 0%, #e5e7eb 100%);
-  border: 1px solid #d1d5db;
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-[data-theme='dark'][data-skin='titanium'] .card-widget,
-.history-page[data-theme='dark'][data-skin='titanium'] .card-widget {
-  background: linear-gradient(145deg, #1f242d 0%, #171a21 100%);
-  border: 1px solid #374151;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-/* ── 4. 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD) ── */
-.hero-focus-card {
-  padding: 22px 24px 20px;
-  background: linear-gradient(
-    180deg,
-    var(--bg-card) 0%,
-    color-mix(in srgb, var(--bg-card) 96%, var(--accent-soft)) 100%
-  );
-  border: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
+/* 核心主体上半区：大数字主指标 + 全天连续心流谱 */
 .hero-top-grid {
   display: grid;
   grid-template-columns: 220px 1fr;
@@ -258,109 +870,52 @@ html:not([data-skin]) .card-widget {
   }
 }
 
-.hero-focus-gauge-box {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-.hero-dial-wrap {
-  width: 96px;
-  height: 96px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-}
-.dial-center-content {
-  position: absolute;
-  /* 原型实测 96×96：绝对定位缺少 inset 时会 shrink-to-fit 成 34.5×34，
-     表盘读数因此挤成两行小字。inset: 0 让读数层填满 96×96 表盘。 */
-  inset: 0;
+.hero-main-stat {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  line-height: 1.1;
-  pointer-events: none;
-}
-.dial-rate-big {
-  font-size: 20px;
-  font-weight: 800;
-  font-family: var(--font-num);
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
-}
-.dial-rate-lbl {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  margin-top: 1px;
-}
-
-.hero-dial-details {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.hero-stat-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--accent);
-}
-.hero-time-massive {
-  font-size: 28px;
-  font-weight: 800;
-  font-family: var(--font-num);
-  color: var(--text-primary);
-  letter-spacing: -0.8px;
-  line-height: 1.15;
-}
-.hero-time-massive .time-unit {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  margin: 0 3px 0 1px;
-}
-.hero-target-row {
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-  font-family: var(--font-num);
-  font-weight: 500;
-}
-.hero-delta-pill {
-  display: inline-flex;
-  align-items: center;
   gap: 4px;
-  padding: 2px 7px;
-  border-radius: var(--r-xs);
-  font-size: 10.5px;
+}
+.hero-label {
+  font-size: 12px;
   font-weight: 600;
-  font-family: var(--font-num);
-  margin-top: 2px;
-  width: fit-content;
-}
-.hero-delta-pill.positive {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-.hero-delta-pill.negative {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-/* 旧版估算口径说明：原来挂在「核心指标带」那一行，该行已按原型移除，说明并入卡贴一。 */
-.hero-estimated-note {
-  font-size: 10.5px;
-  font-weight: 500;
   color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hero-time-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.hero-time-val {
+  font-size: 38px;
+  font-weight: 800;
   font-family: var(--font-num);
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.hero-time-target {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.hero-progress-track {
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.hero-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.5s ease;
 }
 
-/* 今日连续心流时序谱 (08:00 - 22:00) */
+/* 今日连续心流谱 (Continuous Flow Spectrum - 08:00 到 22:00 时序连贯图) */
 .hero-spectrum-box {
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
@@ -368,16 +923,15 @@ html:not([data-skin]) .card-widget {
   padding: 12px 16px 10px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  min-width: 0;
+  gap: 8px;
 }
 .spectrum-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-size: 11.5px;
 }
 .spectrum-title {
-  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   display: flex;
@@ -388,53 +942,59 @@ html:not([data-skin]) .card-widget {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 11px;
   color: var(--text-tertiary);
+  font-size: 11px;
 }
 
+/* 连续时间谱带 */
 .spectrum-bar-wrap {
   width: 100%;
-  height: 24px;
-  background: var(--bg-hover);
+  height: 32px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
   position: relative;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
 }
 .spectrum-block {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 3px;
+  bottom: 3px;
   border-radius: 3px;
-  font-size: 10px;
-  font-family: var(--font-num);
-  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--font-num);
+  color: var(--app-solid-fg);
   cursor: pointer;
   transition:
-    transform 0.14s ease,
-    filter 0.14s ease;
+    transform 0.12s ease,
+    filter 0.12s ease;
 }
 .spectrum-block:hover {
-  transform: translateY(-1px) scaleY(1.08);
-  filter: brightness(1.12);
+  transform: scaleY(1.1);
+  filter: brightness(1.08);
   z-index: 5;
 }
 .spectrum-block.focus {
   background: var(--accent);
-  color: var(--app-solid-fg);
-  box-shadow: 0 2px 6px var(--accent-soft);
 }
 .spectrum-block.pause {
-  background: var(--pause-color);
-  color: var(--app-solid-fg);
-  opacity: 0.85;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--pause-color),
+    var(--pause-color) 3px,
+    rgba(255, 255, 255, 0.4) 3px,
+    rgba(255, 255, 255, 0.4) 6px
+  );
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
+
+/* 时间轴刻度 */
 .spectrum-ticks-row {
   display: flex;
   justify-content: space-between;
@@ -444,32 +1004,31 @@ html:not([data-skin]) .card-widget {
   padding: 0 2px;
 }
 
-/* 下半区三项指标胶囊 */
+/* 核心主体下半区：三项关键质感指标胶囊 */
 .hero-bottom-capsules {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+  border-top: 1px solid var(--border-row);
+  padding-top: 14px;
 }
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .hero-bottom-capsules {
     grid-template-columns: 1fr;
   }
 }
 .hero-cap-item {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  padding: 10px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  transition: all 0.15s ease;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  transition: border-color 0.14s;
 }
 .hero-cap-item:hover {
   border-color: var(--border-default);
-  transform: translateY(-1px);
 }
 .cap-left {
   display: flex;
@@ -491,7 +1050,9 @@ html:not([data-skin]) .card-widget {
   white-space: nowrap;
 }
 
-/* ── 5. 通用面板组件容器 ── */
+/* ═════════════════════════════════════════════════════════════════════════
+   9. 模块二：24 小时精力分布 (24-Hour Energy Rhythm)
+   ═════════════════════════════════════════════════════════════════════════ */
 .section-panel {
   padding: 18px 20px 16px;
   display: flex;
@@ -517,7 +1078,6 @@ html:not([data-skin]) .card-widget {
   margin-top: 2px;
 }
 
-/* ── 6. 卡贴二：24 小时精力节律时钟分布 ── */
 .rhythm-chart-box {
   width: 100%;
   height: 190px;
@@ -527,32 +1087,23 @@ html:not([data-skin]) .card-widget {
   position: relative;
   margin-top: 2px;
 }
-.rhythm-grid-lines {
+.chart-target-line {
   position: absolute;
-  inset: 0 0 22px 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  top: 48px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed var(--border-default);
+  opacity: 0.7;
   pointer-events: none;
 }
-.rhythm-grid-line {
-  position: relative;
-  width: 100%;
-  height: 1px;
-  border-top: 1px dashed var(--border-subtle);
-  opacity: 0.5;
-}
-.rhythm-grid-line.rhythm-target-guide {
-  border-top: 1px dashed var(--accent);
-  opacity: 0.7;
-}
-.rhythm-grid-tag {
+.chart-target-tag {
   position: absolute;
-  top: -14px;
+  top: -16px;
   right: 0;
   font-size: 10px;
   font-family: var(--font-num);
-  color: var(--accent);
+  color: var(--text-tertiary);
   background: var(--bg-card);
   padding: 0 4px;
 }
@@ -560,11 +1111,10 @@ html:not([data-skin]) .card-widget {
 .bars-row {
   display: flex;
   align-items: flex-end;
-  /* 原型实测：高 155 / 下内边距 24 / 间距 6（此前 160/22/4，柱轨矮 7px） */
-  gap: 6px;
-  height: 155px;
+  gap: 4px;
+  height: 160px;
   width: 100%;
-  padding-bottom: 24px;
+  padding-bottom: 22px;
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -582,73 +1132,36 @@ html:not([data-skin]) .card-widget {
     transform 0.18s;
 }
 .bar-track {
-  width: 14px !important;
-  min-width: 14px !important;
-  max-width: 14px !important;
-  height: 100% !important;
+  width: 100%;
+  max-width: 14px;
   background: transparent !important;
-  /* 原型实测 3px 圆角 */
-  border-radius: 3px !important;
-  display: flex !important;
-  flex-direction: column-reverse !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  position: relative !important;
-  overflow: visible !important;
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column-reverse;
+  overflow: visible;
+  height: 100%;
+  justify-content: flex-start;
+  position: relative;
 }
-.bar-track.inactive {
-  justify-content: flex-end !important;
-}
-.bar-empty-dot {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--border-subtle);
-  margin-bottom: 2px;
-  transition: all 0.15s ease;
-}
-.bar-col:hover .bar-empty-dot {
-  background: var(--accent);
-  transform: scale(1.6);
-  box-shadow: 0 0 6px var(--accent-soft);
+.bar-col:hover .bar-track {
+  background: transparent !important;
 }
 .bar-seg-focus {
-  background: var(--accent) !important;
-  width: 100% !important;
-  border-radius: 4px 4px 1px 1px !important;
-  box-shadow:
-    0 2px 6px var(--accent-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
-  transition:
-    height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
-    transform 0.15s ease !important;
+  background: var(--accent);
+  width: 100%;
+  transition: height 0.4s ease;
 }
 .bar-seg-pause {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--pause-color),
-    var(--pause-color) 2px,
-    rgba(255, 255, 255, 0.4) 2px,
-    rgba(255, 255, 255, 0.4) 4px
-  ) !important;
-  width: 100% !important;
-  border-radius: 3px 3px 0 0 !important;
-  margin-bottom: 1px !important;
-  transition: height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-}
-.bar-col:hover .bar-seg-focus {
-  transform: scaleY(1.04) translateY(-2px) !important;
-  filter: brightness(1.15) !important;
-  box-shadow: 0 4px 14px var(--accent-soft) !important;
+  background: var(--pause-color);
+  width: 100%;
+  transition: height 0.4s ease;
 }
 .bar-time-lbl {
-  /* 原型实测：绝对定位在柱轨下方 20px，字号 10px（此前 -18px / 9.5px） */
   position: absolute;
-  bottom: -20px;
-  font-size: 10px;
+  bottom: -18px;
+  font-size: 9.5px;
   font-family: var(--font-num);
   color: var(--text-tertiary);
-  white-space: nowrap;
 }
 .bar-hover-tip {
   position: absolute;
@@ -674,19 +1187,14 @@ html:not([data-skin]) .card-widget {
   transform: translateY(0);
 }
 
-/* 4 大时段胶囊 */
+/* 五大时段胶囊 */
 .period-capsule-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   border-top: 1px solid var(--border-row);
   padding-top: 12px;
   margin-top: 2px;
-}
-@media (max-width: 900px) {
-  .period-capsule-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 .period-cap-card {
   background: var(--bg-app);
@@ -697,12 +1205,11 @@ html:not([data-skin]) .card-widget {
   flex-direction: column;
   gap: 2px;
   cursor: pointer;
-  transition: all 0.14s ease;
+  transition: all 0.12s ease;
 }
 .period-cap-card:hover {
-  border-color: var(--accent);
+  border-color: var(--border-strong);
   background: var(--bg-hover);
-  transform: translateY(-1px);
 }
 .period-cap-card.active {
   border-color: var(--accent);
@@ -710,7 +1217,6 @@ html:not([data-skin]) .card-widget {
   font-weight: 600;
 }
 .period-cap-head {
-  /* 原型实测 10px/400（此前 10.5px） */
   font-size: 10px;
   color: var(--text-tertiary);
   display: flex;
@@ -726,90 +1232,87 @@ html:not([data-skin]) .card-widget {
   color: var(--accent);
 }
 
-/* ── 7. 卡贴三：清单分类投入占比 (Category Allocations Donut) ── */
+/* ═════════════════════════════════════════════════════════════════════════
+   10. 模块三：双列矩阵 (清单投入分布 Donut + Top 任务排行榜)
+   ═════════════════════════════════════════════════════════════════════════ */
+.dual-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 16px;
+}
+@media (max-width: 1000px) {
+  .dual-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .donut-alloc-body {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 4px 0;
-  gap: 14px;
-}
-.donut-top-display {
-  display: flex;
-  justify-content: center;
-  width: 100%;
 }
 .donut-svg-wrap {
-  width: 135px;
-  height: 135px;
+  width: 130px;
+  height: 130px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.donut-center-metric {
+.donut-center-box {
   position: absolute;
   text-align: center;
   pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1.15;
 }
-.d-big {
-  font-size: 22px;
+.donut-center-big {
+  font-size: 20px;
   font-weight: 800;
   font-family: var(--font-num);
   color: var(--text-primary);
+  line-height: 1;
 }
-.d-unit {
-  font-size: 13px;
+.donut-center-sub {
+  font-size: 10.5px;
   color: var(--text-tertiary);
-}
-.d-lbl {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  font-weight: 500;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 .alloc-list {
-  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
+  width: 100%;
 }
 .alloc-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 10px;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  padding: 8px 12px !important;
+  border-radius: var(--r-md);
   background: var(--bg-app);
-  border-radius: var(--r-sm);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
   border: 1px solid var(--border-subtle);
-  transition: all 0.12s ease;
+  transition: all 0.15s ease;
   cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
 }
 .alloc-row:hover {
-  background: var(--bg-hover);
+  background: var(--bg-card);
   border-color: var(--border-default);
-  transform: translateX(2px);
+  transform: translateY(-1px) translateX(2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 .alloc-row-main {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
 }
 .alloc-left {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  /* 原型实测：分类名 12px/600 text-primary */
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
@@ -824,50 +1327,62 @@ html:not([data-skin]) .card-widget {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: none;
+  font-family: var(--font-num);
+  font-size: 12px;
 }
 .alloc-dur {
-  font-family: var(--font-num);
   font-weight: 700;
-  font-size: 11.5px;
+  color: var(--text-primary);
 }
 .alloc-pct-tag {
-  /* 原型实测：10.5px/700，padding 1px 6px，圆角 4px */
   font-size: 10.5px;
   font-weight: 700;
-  font-family: var(--font-num);
   color: var(--text-tertiary);
   background: var(--bg-card);
   padding: 1px 6px;
   border-radius: 4px;
   border: 1px solid var(--border-subtle);
 }
+.alloc-micro-bar-track {
+  width: 100%;
+  height: 3.5px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.alloc-micro-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-/* ── 8. 卡贴四：重点任务专注排行榜 (Top Focused Tasks) ── */
+/* ── 4. 重点任务专注排行：带相对时长进度条与精密排名 ── */
 .leaderboard-container {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .task-rank-card {
-  background: var(--bg-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  /* 原型实测：padding 10px 12px / gap 6px（此前 10px 12px 9px + gap 8px，卡高差 7px） */
-  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  cursor: pointer;
+  padding: 10px 12px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
   transition:
-    transform 0.14s ease,
-    border-color 0.14s ease,
-    box-shadow 0.14s ease;
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 .task-rank-card:hover {
-  transform: translateY(-1px);
-  border-color: var(--accent);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1.5px) translateX(2px);
+  background: var(--bg-card);
+  border-color: var(--border-default);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 }
 .tr-top-row {
   display: flex;
@@ -878,7 +1393,7 @@ html:not([data-skin]) .card-widget {
 .tr-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   flex: 1;
 }
@@ -886,14 +1401,22 @@ html:not([data-skin]) .card-widget {
   font-family: var(--font-num);
   font-size: 11px;
   font-weight: 800;
-  color: var(--accent);
-  background: var(--accent-soft);
-  padding: 1px 6px;
-  border-radius: var(--r-xs);
+  color: var(--text-tertiary);
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  display: grid;
+  place-items: center;
   flex: none;
 }
+.task-rank-card:first-child .tr-rank-num {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+}
 .tr-title {
-  /* 原型实测 12.5px/600（此前 12px） */
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-primary);
@@ -903,335 +1426,608 @@ html:not([data-skin]) .card-widget {
 }
 .tr-cat-pill {
   font-size: 10px;
+  font-weight: 600;
   color: var(--text-tertiary);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--r-xs);
-  padding: 1px 5px;
+  padding: 1px 6px;
+  border-radius: 3px;
   flex: none;
 }
 .tr-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: none;
+  font-family: var(--font-num);
 }
 .tr-time {
-  font-family: var(--font-num);
   font-size: 12px;
   font-weight: 700;
   color: var(--accent);
 }
 .tr-status-pill {
   font-size: 10.5px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: var(--r-xs);
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--r-full);
 }
 .tr-status-pill.done {
+  color: #059669;
   background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
 }
-.tr-status-pill.focusing {
-  background: var(--accent-soft);
-  color: var(--accent);
+.tr-status-pill.active {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tr-pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2563eb;
+  animation: pulseRing 1.8s infinite;
 }
 
+/* 任务相对投入时长条 (Relative Time Bar) */
 .tr-bar-track {
   width: 100%;
-  /* 原型实测：4.5px 高 / 3px 圆角 / 上间距 5px / 底色 border-subtle(0.06) */
-  height: 4.5px;
+  height: 3.5px;
   background: var(--border-subtle);
-  border-radius: 3px;
+  border-radius: 2px;
   overflow: hidden;
-  margin-top: 5px;
+  margin-top: 2px;
 }
 .tr-bar-fill {
   height: 100%;
   border-radius: 2px;
-  transition: width 0.4s ease;
-}
-
-/* ── 9. 卡贴五：心流活跃热力 (24 周心流矩阵 (近半年)) ── */
-/* 星期标签：原型实测 20×14（10px 字号 + 14px 行高）。
-   此前只继承父级的 10px 字号，行高走 normal 得到 15.5px，
-   与原型差 1.5px —— 由 tests/statsStyleContract.test.ts 的冻结选择器抓出。 */
-.hm-day-lbl {
-  font-size: 10px;
-  line-height: 14px;
-}
-.heatmap-container-flex {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding-top: 4px;
-  overflow-x: auto;
-}
-.hm-day-labels {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  /* 原型实测：126px 高 / 上下各 1px（此前 115px / 2px） */
-  height: 126px;
-  font-size: 10px;
-  font-family: var(--font-num);
-  color: var(--text-tertiary);
-  padding-top: 1px;
-  padding-bottom: 1px;
-  flex: none;
-}
-.hm-strip-wrap {
-  display: flex !important;
-  gap: 5px !important;
-  align-items: center !important;
-  overflow-x: auto !important;
-  padding: 4px 2px 6px !important;
-}
-.hm-col {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 4px !important;
-}
-.hm-cell {
-  width: 13.5px !important;
-  height: 13.5px !important;
-  border-radius: 3px !important;
-  cursor: pointer !important;
-  transition:
-    transform 0.14s ease,
-    filter 0.14s ease,
-    box-shadow 0.14s ease !important;
-}
-.hm-cell:hover {
-  transform: scale(1.3) !important;
-  filter: brightness(1.15) !important;
-  z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-.hm-legend-row {
-  display: flex !important;
-  align-items: center !important;
-  gap: 4px !important;
-  font-size: 11px !important;
-  color: var(--text-tertiary) !important;
-}
-.hm-leg-box {
-  width: 10px !important;
-  height: 10px !important;
-  border-radius: 2px !important;
-  flex: none !important;
-  display: inline-block !important;
+  transition: width 0.75s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
-   ── 10. 统计页三栏工作台：标题栏 + 统计侧栏 + 统计画卷 + 会话账本轨 ──
-   1:1 移植 `统计页原型.html` 的页面级骨架：
-     header.app-titlebar → div.workspace-body(220px | 1fr | detail) → main.stats-paper
-   唯一一处有意偏离原型：原型把 220px 侧栏当作「统计页自己的导航列」，客户端已有
-   全局图标导航 `.edge-dock`（专注/任务/统计/设置）。删掉它用户就到不了任务页与
-   设置页，所以这里**新增一列**统计侧栏，而不是用统计侧栏替换全局导航。
+   【四大核心组件与右侧抽屉大师级完整样式库】
+   1. 今日心流目标环 (Hero Dial Console)
+   2. 24 小时自然节律去牢笼柱状图 (Airy Rhythm Chart)
+   3. 清单分类投入环与微比例柱条 (Donut & Proportional Bars)
+   4. 重点任务相对时长排行卡贴 (Ranked Tasks with Comparative Flow Bars)
+   5. 右侧抽屉：会话时间账本与横向时序流 (Session Detail Drawer)
    ═════════════════════════════════════════════════════════════════════════ */
-.history-page.stats-workbench {
-  grid-template-rows: auto minmax(0, 1fr);
+
+/* ── 1. 今日心流目标环与核心控制台 ── */
+.hero-top-grid {
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  gap: 28px;
+  align-items: center;
+}
+@media (max-width: 1080px) {
+  .hero-top-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
 }
 
-/* ── 10.1 标题栏 ─────────────────────────────────────────────
-   客户端 shell 顶部 0–30px 被固定的 `.window-drag-region`（z-index 48）与
-   `.window-controls`（z-index 110）占用。实测：任务页把 42px 标题栏放在 y=0，
-   结果搜索框整个落在拖拽带下（elementFromPoint 命中 window-drag-region，
-   真实点击后 activeElement 仍是 body），同步胶囊也被窗口按钮盖住。
-   这里让标题栏高 72px、内容带落在 y=30–72（即原型那 42px 内容带），
-   于是拖拽带与窗口按钮都不再与标题栏内容相交，同时窗口拖拽行为完全不变。 */
-.history-page.stats-workbench .app-titlebar {
-  height: 72px;
-  /* 右侧留出窗口按钮宽度（实测 .window-controls 占 109px） */
-  padding: 30px 125px 0 16px;
+.hero-focus-gauge-box {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 6px 0;
 }
-.history-page.stats-workbench .titlebar-center {
-  max-width: 460px;
+.hero-dial-wrap {
+  width: 96px;
+  height: 96px;
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.history-page.stats-workbench .btn-tool {
-  height: 28px;
-  padding: 0 10px;
-  gap: 6px;
-  font-size: 12px;
+.dial-center-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.dial-rate-big {
+  font-size: 20px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+  line-height: 1;
+}
+.dial-rate-lbl {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+  letter-spacing: 0.04em;
+}
+
+.hero-dial-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.hero-stat-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.hero-time-massive {
+  font-size: 34px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  color: var(--text-primary);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+.time-unit {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin: 0 2px 0 1px;
+}
+.hero-target-row {
+  font-size: 11.5px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
   font-weight: 500;
 }
-.history-page.stats-workbench .sync-badge {
-  gap: 6px;
+.hero-delta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
-  color: var(--text-tertiary);
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  margin-top: 4px;
+  width: fit-content;
 }
-.history-page.stats-workbench .sync-badge.is-warn i {
-  background: #f59e0b;
+.hero-delta-pill.positive {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
 }
-.history-page.stats-workbench .sync-badge.is-error i {
-  background: #ef4444;
+[data-theme='dark'] .hero-delta-pill.positive {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(52, 211, 153, 0.25);
 }
 
-/* ── 10.2 统计侧栏（统计视图 / 清单分类 / 侧栏页脚） ── */
-.history-page.stats-workbench .stats-sidebar {
-  gap: 14px;
+/* ── 2. 24 小时自然节律去牢笼柱状图 (Airy Rhythm Chart) ── */
+.rhythm-chart-box {
+  width: 100%;
+  height: 185px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
-.history-page.stats-workbench .stats-sidebar .nav-section + .nav-section {
-  margin-top: 0;
+.rhythm-grid-lines {
+  position: absolute;
+  inset: 0 0 24px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
 }
-.history-page.stats-workbench .stats-sidebar .side-item-icon {
-  width: 16px;
-  height: 16px;
-  display: grid;
-  place-items: center;
-  flex: none;
+.rhythm-grid-line {
+  width: 100%;
+  height: 1px;
+  border-top: 1px dashed var(--border-row);
+  display: flex;
+  justify-content: flex-end;
 }
-.history-page.stats-workbench .stats-sidebar .side-item-icon svg {
-  width: 14px;
-  height: 14px;
+.rhythm-grid-tag {
+  font-size: 9.5px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
+  margin-top: -8px;
+  background: var(--bg-card);
+  padding: 0 4px;
 }
-.history-page.stats-workbench .stats-sidebar .side-name {
+.rhythm-target-guide {
+  border-top: 1px dashed rgba(37, 99, 235, 0.4) !important;
+}
+.rhythm-target-guide .rhythm-grid-tag {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.bars-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 155px;
+  width: 100%;
+  padding-bottom: 24px;
+  position: relative;
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 2;
+}
+.bar-col {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+}
+.bar-track {
+  width: 100%;
+  max-width: 16px;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  overflow: visible;
+  height: 100%;
+  justify-content: flex-start;
+  position: relative;
+}
+.bar-seg-focus {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  width: 100%;
+  border-radius: 4px 4px 1px 1px;
+  box-shadow:
+    0 2px 6px rgba(37, 99, 235, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition:
+    height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.15s ease;
+}
+.bar-seg-pause {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--pause-color),
+    var(--pause-color) 2px,
+    rgba(255, 255, 255, 0.4) 2px,
+    rgba(255, 255, 255, 0.4) 4px
+  );
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  margin-bottom: 1px;
+  transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.bar-empty-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-subtle);
+  margin-bottom: 2px;
+}
+.bar-time-lbl {
+  position: absolute;
+  bottom: -20px;
+  font-size: 10px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
-.history-page.stats-workbench .stats-sidebar .nav-num,
-.nav-num {
+.bar-col:hover .bar-seg-focus {
+  transform: scaleY(1.04) translateY(-2px);
+  filter: brightness(1.15);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
+}
+
+.bar-col::before {
+  content: '';
+  position: absolute;
+  inset: 0 -2px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08) 0%, transparent 100%);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.bar-col:hover::before {
+  opacity: 1;
+}
+.bar-hover-tip {
+  position: absolute;
+  top: -46px;
+  background: var(--text-primary);
+  color: var(--bg-card);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+  z-index: 40;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bar-col:hover .bar-hover-tip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── 3. 清单分类投入占比：现代弧环与微比例进度条 ── */
+.donut-alloc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+}
+.donut-top-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.donut-svg-wrap {
+  width: 140px;
+  height: 140px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.donut-center-metric {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.d-big {
+  font-size: 26px;
+  font-weight: 800;
   font-family: var(--font-num);
-  font-size: 11px;
-  line-height: 14px;
-  height: 14px;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.d-unit {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-tertiary);
-  flex: none;
+  margin-left: 2px;
 }
-.history-page.stats-workbench .stats-sidebar .side-item[aria-selected='true']::before {
-  top: 6px;
-  bottom: 6px;
+.d-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  margin-top: 3px;
 }
-.history-page.stats-workbench .stats-sidebar .project-dot {
+
+.alloc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.alloc-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  padding: 8px 12px !important;
+  border-radius: var(--r-md);
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+}
+.alloc-row:hover {
+  background: var(--bg-card);
+  border-color: var(--border-default);
+  transform: translateY(-1px) translateX(2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+.alloc-row-main {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.alloc-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.alloc-color-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex: none;
 }
-.history-page.stats-workbench .stats-sidebar .sidebar-footer {
-  padding-top: 10px;
-}
-.history-page.stats-workbench .stats-sidebar .sidebar-user-pill {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.history-page.stats-workbench .stats-sidebar .user-avatar-mini {
-  border-radius: 4px;
-  font-size: 10px;
-  font-family: var(--font-num);
-}
-.history-page.stats-workbench .stats-sidebar-status {
+.alloc-right {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--success, #10b981);
+  gap: 8px;
+  font-family: var(--font-num);
+  font-size: 12px;
 }
-.history-page.stats-workbench .stats-sidebar-status i {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
+.alloc-dur {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.alloc-pct-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  background: var(--bg-card);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+}
+.alloc-micro-bar-track {
+  width: 100%;
+  height: 3.5px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.alloc-micro-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── 10.3 统计画卷工具栏（原型 .list-toolbar，48px） ── */
-.history-page.stats-workbench .stats-toolbar {
-  height: 48px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-list);
+/* ── 4. 重点任务专注排行：带相对时长进度条与精密排名 ── */
+.leaderboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.history-page.stats-workbench .stats-toolbar .list-title-group h2 {
-  font-size: 16px;
-  font-weight: 700;
+.task-rank-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  transition:
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
 }
-.history-page.stats-workbench .stats-toolbar .list-stats-text {
+.task-rank-card:hover {
+  transform: translateY(-1.5px) translateX(2px);
+  background: var(--bg-card);
+  border-color: var(--border-default);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+.tr-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.tr-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.tr-rank-num {
   font-family: var(--font-num);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-tertiary);
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.task-rank-card:first-child .tr-rank-num {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+}
+.tr-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.history-page.stats-workbench .stats-toolbar .list-toolbar-actions {
-  gap: 6px;
+.tr-cat-pill {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: 3px;
   flex: none;
 }
-.history-page.stats-workbench .stats-toolbar .btn-tool {
-  white-space: nowrap;
+.tr-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  font-family: var(--font-num);
 }
-/* 中栏比原型窄（客户端 1240 窗口下只有 535px）：工具栏折成
-   「视图标题 + 日期/会话数/累计」与「前一天/后一天/导出账本」两行，
-   否则按钮标签会被逐字换行、统计文案会被省略号吃掉（既有 .history-header 的同一处理方式）。 */
-@container stats-paper (max-width: 620px) {
-  .history-page.stats-workbench .stats-toolbar {
-    height: auto;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-    padding: 8px 16px 10px;
-  }
-  .history-page.stats-workbench .stats-toolbar .list-title-group {
-    min-width: 0;
-    flex-shrink: 1;
-    flex-wrap: wrap;
-    white-space: normal;
-  }
-  .history-page.stats-workbench .stats-toolbar .list-toolbar-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
+.tr-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
 }
-.history-page.stats-workbench .stats-toolbar button[disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
+.tr-status-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--r-full);
 }
-/* 筛选胶囊：搜索框关键词或侧栏清单分类生效时，页头回读当前筛选与命中条数。 */
-.history-page.stats-workbench .stats-filter-chip {
-  display: inline-flex;
+.tr-status-pill.done {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.tr-status-pill.active {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  display: flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--accent-soft);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
 }
-.history-page.stats-workbench .stats-filter-chip svg {
-  width: 11px;
-  height: 11px;
+.tr-pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2563eb;
+  animation: pulseRing 1.8s infinite;
 }
-
-/* ── 10.4 三栏主体：统计侧栏 | 统计画卷（工具栏 + 画布）| 会话时间账本抽屉 ── */
-.history-page.stats-workbench .history-body {
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(280px, 360px);
-}
-/* 中栏 = 原型 main.stats-paper：工具栏固定在顶部，画布自己滚动。 */
-.history-page.stats-workbench .stats-paper-main {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
+.tr-bar-track {
+  width: 100%;
+  height: 3.5px;
+  background: var(--border-subtle);
+  border-radius: 2px;
   overflow: hidden;
-  background: var(--bg-list);
-  container-type: inline-size;
-  container-name: stats-paper;
+  margin-top: 2px;
 }
-.history-page.stats-workbench .history-canvas {
-  flex: 1;
-  min-height: 0;
-  padding: 20px 24px 48px;
+.tr-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.75s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── 右侧抽屉：会话时间账本与横向时序流 (Session Detail Drawer) ── */
-.history-page.stats-workbench .detail-pane {
+/* ── 5. 右侧抽屉：会话时间账本与横向时序流 (Session Detail Drawer) ── */
+.detail-pane {
   background: var(--bg-detail);
   border-left: 1px solid var(--border-subtle);
   display: flex;
@@ -1242,13 +2038,13 @@ html:not([data-skin]) .card-widget {
   min-width: 0;
   gap: 14px;
 }
-.history-page.stats-workbench .detail-pane > * {
+.detail-pane > * {
   flex: 0 0 auto;
 }
-.history-page.stats-workbench .detail-pane::-webkit-scrollbar {
+.detail-pane::-webkit-scrollbar {
   width: 5px;
 }
-.history-page.stats-workbench .detail-pane::-webkit-scrollbar-thumb {
+.detail-pane::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
   border-radius: 5px;
 }
@@ -1373,10 +2169,6 @@ html:not([data-skin]) .card-widget {
   font-size: 10px;
   font-weight: 700;
   font-family: var(--font-num);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 4px;
 }
 .hf-seg-pause {
   background: var(--pause-color);
@@ -1388,10 +2180,6 @@ html:not([data-skin]) .card-widget {
   font-size: 9.5px;
   font-weight: 700;
   font-family: var(--font-num);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 2px;
 }
 
 .segment-mini-list {
@@ -1401,25 +2189,13 @@ html:not([data-skin]) .card-widget {
 }
 .seg-mini-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  background: var(--bg-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-}
-.seg-row-top {
-  display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-}
-.seg-name-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg-app);
+  border-radius: var(--r-sm);
+  font-size: 11px;
 }
 .seg-dot {
   width: 6px;
@@ -1427,34 +2203,12 @@ html:not([data-skin]) .card-widget {
   border-radius: 50%;
   display: inline-block;
   margin-right: 6px;
-  flex-shrink: 0;
 }
 .seg-dot.focus {
   background: var(--accent);
 }
 .seg-dot.pause {
   background: var(--pause-color);
-}
-.seg-name-txt {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.seg-dur-txt {
-  font-family: var(--font-num);
-  font-size: 11px;
-  font-weight: 700;
-  flex: none;
-  margin-left: 8px;
-}
-.seg-time-sub {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  font-family: var(--font-num);
-  margin-left: 14px;
 }
 
 /* ── 会话卡片条目结构 ── */
@@ -1492,98 +2246,647 @@ html:not([data-skin]) .card-widget {
   gap: 8px;
 }
 
-/* 窄窗：侧栏保持整列，画卷与账本抽屉回落为上下顺读（账本抽屉放在第 2 列，避免与侧栏重叠）。 */
-@media (max-width: 1239px) {
-  .history-page.stats-workbench .history-body {
-    display: grid;
-    grid-template-columns: minmax(168px, 220px) minmax(0, 1fr);
-    overflow-y: auto;
+/* ── 阶段明细清晰双行布局 ── */
+.seg-mini-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+.seg-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.seg-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.seg-name-txt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seg-dur-txt {
+  font-family: var(--font-num);
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+  margin-left: 8px;
+}
+.seg-time-sub {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: var(--font-num);
+  margin-left: 14px;
+}
+
+/* ── 精密 24 小时精力节律图（去灰柱，空闲仅显示极简微圆点） ── */
+.bar-track {
+  width: 100% !important;
+  max-width: 14px !important;
+  height: 100% !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  position: relative !important;
+  overflow: visible !important;
+}
+.bar-track.inactive {
+  justify-content: flex-end !important;
+}
+.bar-empty-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-subtle);
+  margin-bottom: 2px;
+  transition: all 0.15s ease;
+}
+.bar-col:hover .bar-empty-dot {
+  background: var(--accent);
+  transform: scale(1.6);
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.4);
+}
+.bar-seg-focus {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%) !important;
+  width: 100% !important;
+  border-radius: 4px 4px 1px 1px !important;
+  box-shadow:
+    0 2px 6px rgba(37, 99, 235, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+  transition:
+    height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.15s ease !important;
+}
+.bar-seg-pause {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--pause-color),
+    var(--pause-color) 2px,
+    rgba(255, 255, 255, 0.4) 2px,
+    rgba(255, 255, 255, 0.4) 4px
+  ) !important;
+  width: 100% !important;
+  border-radius: 3px 3px 0 0 !important;
+  margin-bottom: 1px !important;
+  transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.bar-col:hover .bar-seg-focus {
+  transform: scaleY(1.04) translateY(-2px) !important;
+  filter: brightness(1.15) !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45) !important;
+}
+
+/* ── 12 周心流活动矩阵 (GitHub-Style Heatmap) ── */
+.heatmap-strip-wrap {
+  display: flex !important;
+  gap: 6px !important;
+  align-items: center !important;
+  overflow-x: auto !important;
+  padding: 14px 4px 6px !important;
+}
+.hm-col {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+}
+.hm-cell {
+  width: 13.5px !important;
+  height: 13.5px !important;
+  border-radius: 3px !important;
+  cursor: pointer !important;
+  transition:
+    transform 0.14s ease,
+    filter 0.14s ease,
+    box-shadow 0.14s ease !important;
+}
+.hm-cell:hover {
+  transform: scale(1.3) !important;
+  filter: brightness(1.15) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  z-index: 10 !important;
+}
+.hm-legend-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 11px !important;
+  color: var(--text-tertiary) !important;
+}
+.hm-leg-box {
+  width: 11px !important;
+  height: 11px !important;
+  border-radius: 2.5px !important;
+}
+
+/* ── 微比例进度条与相对投入条加深触感 ── */
+.alloc-micro-bar-track {
+  width: 100% !important;
+  height: 4.5px !important;
+  background: var(--border-subtle) !important;
+  border-radius: 3px !important;
+  overflow: hidden !important;
+}
+.alloc-micro-bar-fill {
+  height: 100% !important;
+  border-radius: 3px !important;
+  transition: width 0.75s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.tr-bar-track {
+  width: 100% !important;
+  height: 4.5px !important;
+  background: var(--border-subtle) !important;
+  border-radius: 3px !important;
+  overflow: hidden !important;
+  margin-top: 5px !important;
+}
+.tr-bar-fill {
+  height: 100% !important;
+  border-radius: 3px !important;
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%) !important;
+  transition: width 0.75s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* ── 精密心流热力矩阵布局 ── */
+.heatmap-container-flex {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 4px 6px;
+  overflow-x: auto;
+}
+.hm-day-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 126px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+.hm-day-lbl {
+  font-size: 10px;
+  font-family: var(--font-num);
+  color: var(--text-tertiary);
+  line-height: 14px;
+}
+.hm-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.hm-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.hm-cell:hover {
+  transform: scale(1.3);
+  filter: brightness(1.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+.hm-legend-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  font-size: 11px !important;
+  color: var(--text-tertiary) !important;
+}
+.hm-leg-box {
+  width: 11px !important;
+  height: 11px !important;
+  border-radius: 2.5px !important;
+  flex: none !important;
+  display: inline-block !important;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   【卡贴质感外观系统 (Tactile Card Plaque Skins Architecture)】
+   ▫️ 纯白陶瓷 (Pure Ceramic) / 🪟 微光磨砂 (Frosted Glass) / ⚙️ 极客钛金 (Titanium Sheen)
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* 动态光效：自适应鼠标镜面微光 (Specular Sheen) & 边缘感应高光 (Border Spotlight) */
+.card-widget {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* 1. 边缘感应高光：根据鼠标位置点亮微米级卡片切边 */
+.card-widget::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    380px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
+    var(--spotlight-border),
+    transparent 65%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
+
+/* 2. 内部柔光倒影：自适应当前色彩基调与明暗主题的漫反射微光晕 */
+.card-widget::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    480px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
+    var(--spotlight-core) 0%,
+    var(--spotlight-sheen) 35%,
+    transparent 72%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.card-widget:hover::before,
+.card-widget:hover::after {
+  opacity: 1;
+}
+
+/* 1. ▫️ 纯白陶瓷 (Pure Ceramic) - 细腻无瑕、高频微细边框 */
+[data-skin='ceramic'] .card-widget,
+html:not([data-skin]) .card-widget {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.03),
+    0 4px 14px -2px rgba(0, 0, 0, 0.03) !important;
+}
+[data-skin='ceramic'] .card-widget:hover,
+html:not([data-skin]) .card-widget:hover {
+  border-color: var(--border-default) !important;
+  box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.06) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* 2. 🪟 微光磨砂 (Frosted Glass) - 顶级毛玻璃与内发光金属内圈 */
+[data-skin='frosted'] .card-widget {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(18px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.65) !important;
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+[data-skin='frosted'] .card-widget:hover {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border-color: var(--spotlight-border) !important;
+  box-shadow:
+    0 12px 36px var(--spotlight-sheen),
+    inset 0 1px 0 #ffffff !important;
+  transform: translateY(-2px) !important;
+}
+[data-theme='dark'][data-skin='frosted'] .card-widget {
+  background: rgba(24, 27, 33, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    0 10px 36px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+[data-theme='dark'][data-skin='frosted'] .card-widget:hover {
+  background: rgba(30, 34, 42, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* 3. ⚙️ 极客钛金 (Titanium Sheen) - 阳极氧化喷砂金属感 */
+[data-skin='titanium'] .card-widget {
+  background: linear-gradient(145deg, #f8fafc 0%, #eef2f6 100%) !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow:
+    0 2px 10px rgba(100, 116, 139, 0.12),
+    inset 0 1px 0 #ffffff !important;
+}
+[data-skin='titanium'] .card-widget:hover {
+  border-color: #94a3b8 !important;
+  box-shadow:
+    0 6px 20px rgba(100, 116, 139, 0.18),
+    inset 0 1px 0 #ffffff !important;
+  transform: translateY(-2px) !important;
+}
+[data-theme='dark'][data-skin='titanium'] .card-widget {
+  background: linear-gradient(145deg, #1c1f26 0%, #13161c 100%) !important;
+  border: 1px solid #334155 !important;
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+[data-theme='dark'][data-skin='titanium'] .card-widget:hover {
+  border-color: #475569 !important;
+  box-shadow:
+    0 8px 26px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   【外观弹出菜单系统 (Context Menu & Appearance Modal)】
+   对齐任务页标准，高层级悬浮、带微阴影与平滑弹出动效
+   ═════════════════════════════════════════════════════════════════════════ */
+.ctx-menu {
+  position: fixed !important;
+  width: 220px !important;
+  background: var(--bg-card) !important;
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow:
+    0 10px 30px -4px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  z-index: 9999 !important;
+  padding: 6px !important;
+  display: none !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  max-height: calc(100vh - 24px) !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+}
+.ctx-menu.active {
+  display: flex !important;
+  animation: popZoomIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.ctx-menu-title {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--text-tertiary) !important;
+  padding: 5px 8px 3px !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+.ctx-menu-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 30px !important;
+  padding: 0 10px !important;
+  border-radius: var(--r-xs) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer !important;
+  transition: all 0.12s ease !important;
+  user-select: none !important;
+}
+.ctx-menu-item:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+  transform: translateX(2px) !important;
+}
+.ctx-menu-item[aria-checked='true'] {
+  color: var(--accent) !important;
+  font-weight: 700 !important;
+  background: rgba(37, 99, 235, 0.08) !important;
+}
+.ctx-menu-item[aria-checked='true']::after {
+  content: '✓' !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: var(--accent) !important;
+}
+.ctx-divider {
+  height: 1px !important;
+  background: var(--border-row) !important;
+  margin: 4px 0 !important;
+}
+[data-theme='dark'] .ctx-menu {
+  background: #181a20 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5) !important;
+}
+[data-theme='dark'] .ctx-menu-item[aria-checked='true'] {
+  background: rgba(37, 99, 235, 0.2) !important;
+}
+@keyframes popZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
   }
-  .history-page.stats-workbench .stats-sidebar {
-    grid-row: 1 / span 2;
-    grid-column: 1;
-  }
-  .history-page.stats-workbench .stats-paper-main {
-    grid-row: 1;
-    grid-column: 2;
-    overflow: visible;
-  }
-  .history-page.stats-workbench .history-canvas {
-    overflow: visible;
-    padding: 18px 22px 6px;
-  }
-  .history-page.stats-workbench .detail-pane,
-  .history-page.stats-workbench .history-ledger-rail {
-    grid-row: 2;
-    grid-column: 2;
-    overflow: visible;
-    margin-top: 22px;
-    border-top: 1px solid var(--border-subtle);
-    border-left: 0;
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
 
-/* ── 10.5 画卷容器查询 ───────────────────────────────────────
-   原型按 viewport 断点写（它没有全局导航，画布 ≈ viewport − 580）；
-   客户端画布 = viewport − 77(全局导航) − 220(统计侧栏) − 408(账本轨)，
-   1240 默认窗口下只有 535px。这里改用**容器查询**按画布真实宽度收口，
-   否则 2 列 hero / span-5+span-7 / 五连时段胶囊会在 535px 里互相挤压并被裁切。
-   断点依据实测：hero 双列需要 220 + 24 + ≥320(谱带) ≈ 620；span-5 单卡要 ≥300 ≈ 790 画布。 */
-.history-page.stats-workbench .history-canvas {
-  container-type: inline-size;
-  container-name: stats-canvas;
+/* 确保外观菜单绝对不透明、高层级、精致悬浮 */
+.ctx-menu {
+  position: fixed !important;
+  width: 215px !important;
+  background: #ffffff !important;
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow:
+    0 12px 36px -4px rgba(0, 0, 0, 0.18),
+    0 4px 14px rgba(0, 0, 0, 0.08) !important;
+  z-index: 10000 !important;
+  padding: 6px !important;
+  display: none !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  max-height: calc(100vh - 24px) !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
 }
-@container stats-canvas (max-width: 820px) {
-  .stats-brief {
-    min-height: 0;
-    grid-template-columns: minmax(0, 1fr) 72px;
-    grid-template-areas:
-      'readout donut'
-      'copy copy';
-    gap: 14px 18px;
-    padding: 18px 20px;
+.ctx-menu.active {
+  display: flex !important;
+  animation: popZoomIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+[data-theme='dark'] .ctx-menu {
+  background: #181a20 !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   【外观弹出菜单系统 (Context Menu & Appearance Modal)】
+   对齐任务页标准，高层级悬浮、绝对不透明固体背景、带微阴影与平滑弹出动效
+   ═════════════════════════════════════════════════════════════════════════ */
+.ctx-menu {
+  position: fixed !important;
+  width: 215px !important;
+  background: #ffffff !important;
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow:
+    0 14px 40px -4px rgba(0, 0, 0, 0.22),
+    0 6px 18px rgba(0, 0, 0, 0.12) !important;
+  z-index: 10000 !important;
+  padding: 6px !important;
+  display: none !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  max-height: calc(100vh - 24px) !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+  opacity: 1 !important;
+}
+.ctx-menu.active {
+  display: flex !important;
+  opacity: 1 !important;
+  transform: scale(1) translateY(0) !important;
+  animation: popZoomIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+.ctx-menu-title {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--text-tertiary) !important;
+  padding: 5px 8px 3px !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+.ctx-menu-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 30px !important;
+  padding: 0 10px !important;
+  border-radius: var(--r-xs) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer !important;
+  transition: all 0.12s ease !important;
+  user-select: none !important;
+}
+.ctx-menu-item:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+  transform: translateX(2px) !important;
+}
+.ctx-menu-item[aria-checked='true'] {
+  color: var(--accent) !important;
+  font-weight: 700 !important;
+  background: rgba(37, 99, 235, 0.08) !important;
+}
+.ctx-menu-item[aria-checked='true']::after {
+  content: '✓' !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: var(--accent) !important;
+}
+.ctx-divider {
+  height: 1px !important;
+  background: var(--border-row) !important;
+  margin: 4px 0 !important;
+}
+[data-theme='dark'] .ctx-menu {
+  background: #181a20 !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.65) !important;
+}
+[data-theme='dark'] .ctx-menu-item[aria-checked='true'] {
+  background: rgba(37, 99, 235, 0.2) !important;
+}
+@keyframes popZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
   }
-  .stats-primary-readout {
-    grid-area: readout;
-  }
-  .stats-brief-copy {
-    grid-area: copy;
-    padding-top: 12px;
-    padding-left: 0;
-    border-top: 1px solid rgb(var(--app-border));
-    border-left: 0;
-  }
-  .stats-time-donut {
-    grid-area: donut;
-    width: 72px;
-    height: 72px;
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
-@container stats-canvas (max-width: 790px) {
+
+/* ═════════════════════════════════════════════════════════════════════════
+   响应式与自适应视口弹性布局 (Adaptive Responsive Layout)
+   完美适配各种尺寸：超宽屏、标准桌面、笔记本窄屏及半屏分屏
+   ═════════════════════════════════════════════════════════════════════════ */
+.stats-page {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+.workspace-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(280px, 360px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  position: relative;
+  min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .workspace-body {
+    grid-template-columns: minmax(168px, 200px) minmax(0, 1fr) minmax(260px, 320px);
+  }
+}
+
+@media (max-width: 1100px) {
+  .workspace-body {
+    grid-template-columns: minmax(150px, 180px) minmax(0, 1fr) minmax(240px, 280px);
+  }
   .dashboard-card-tile.span-5,
   .dashboard-card-tile.span-7 {
-    grid-column: span 12;
+    grid-column: span 12 !important;
+  }
+  .hero-top-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .period-capsule-row {
+    grid-template-columns: repeat(3, 1fr) !important;
   }
 }
-@container stats-canvas (max-width: 620px) {
-  .hero-top-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
+
+@media (max-width: 900px) {
+  .workspace-body {
+    grid-template-columns: minmax(140px, 160px) minmax(0, 1fr) minmax(220px, 250px);
   }
   .hero-bottom-capsules {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .hero-cap-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    grid-template-columns: 1fr !important;
   }
   .period-capsule-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, 1fr) !important;
   }
 }
-@container stats-canvas (max-width: 420px) {
-  .period-capsule-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+@media (max-width: 800px) {
+  .workspace-body {
+    min-width: 780px;
   }
 }

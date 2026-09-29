@@ -37,20 +37,16 @@ describe('desktop instrument visual regression contract', () => {
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.stats-day-column/);
   });
 
-  it('renders the 24-hour map as an explicit day instrument instead of three faint tracks', () => {
+  it('renders the 24-hour rhythm chart as an explicit day instrument with periods and columns', () => {
     const source = readFileSync(resolve('src/features/history/HistoryInsights.tsx'), 'utf8');
-    const styles = readFileSync(resolve('src/styles/focuslink-2.css'), 'utf8');
+    const styles = readFileSync(resolve('src/styles/stats-workbench.css'), 'utf8');
 
-    expect(source).toContain('className="stats-day-periods"');
-    expect(source).toContain('className="stats-day-lane-label"');
-    expect(source).toContain('<span>{formatClock(ledger.observationEndedAt)}</span>');
-    expect(styles).toMatch(/\.stats-day-map\s*\{[^}]*--day-label-width:\s*78px/);
-    expect(styles).toMatch(/\.stats-day-lane\s*\{[^}]*min-height:\s*52px/);
-    expect(styles).toMatch(/\.stats-day-map-grid i:nth-child\(7\)/);
-    expect(styles).toMatch(/\.stats-day-now span\s*\{/);
-    expect(styles).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.stats-day-lane \.stats-ledger-block/,
-    );
+    expect(source).toContain('period-capsule-row');
+    expect(source).toContain('bars-row');
+    expect(styles).toContain('.period-cap-card');
+    expect(styles).toContain('.bar-col');
+    expect(styles).toContain('.bar-track');
+    expect(styles).toContain('.bar-seg-focus');
   });
 
   it('keeps the main timer frame singular and its industrial labels readable', () => {

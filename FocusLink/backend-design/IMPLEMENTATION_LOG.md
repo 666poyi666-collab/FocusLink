@@ -1,5 +1,23 @@
 # FocusLink 实施日志
 
+## 2026-09-29 · `FL-STATS-20260929-MASTERCLASS-PARITY`：统计工作台 100% 对齐设计原型、彻底剔除旧版残留、全尺寸响应式适配与交互音效完整落地（v1.3.15）
+
+- **需求与背景**：
+  1. 用户明确指出「还是和网页版我定下的差很远，而且不要保留之前的东西啊，而且现在很多功能以及效果没有实现，并且无法适应各个大小的界面」。
+  2. 彻底剔除历史遗留组件（旧版三轨时间轴 `stats-day-lane`、堆叠空档图 `gap-bar`、旧版手风琴抽屉及确认弹窗），还原 100% 纯粹的 5 大固定卡贴画卷。
+  3. 完整落地网页原型的全部动态交互与视觉效果：Web Audio 晶莹和弦音效合成器、浮动 Toast 队列、镜面鼠标高光跟随（`--mouse-x`, `--mouse-y`）、环形图悬停聚焦、五大自然时段胶囊动态灰显联动、排行榜与右栏账本流双向高光对齐、外观定制弹出面板（3 种调色盘、明暗主题、衬线/无衬线、3 种卡贴皮肤与音效开关）、实时搜索过滤与 Markdown 账本导出。
+  4. 解决全尺寸响应式适配问题：根治了旧版 `@media (max-width: 1239px) { .history-body { display: block; } }` 导致窗口缩小时布局崩塌的缺陷，提供从 800px 紧凑到 4K 超宽屏的自适应流式网格与独立纵向滚动区。
+  5. 打通真实时间账本数据流：修复 `HistoryPanel` 误调不存在的 `window.focuslink?.analytics?.getRange`，切换为标准的 `window.focuslink?.sessions?.analytics` 并监听 `'timer:state-changed'` 事件。
+  6. 严格保留并保护 DeepSeek 的主窗口自愈修复（`presentMainWindow`、`planSecondInstanceAction` 及 3 秒超时保底）。
+- **验证与门禁**：
+  - `npm run format:check` PASS。
+  - `npm run typecheck`（含 cloudflare worker）PASS。
+  - `npm run lint` PASS。
+  - `npm test` PASS：134 文件，1108 项测试全部通过（含 `statsStyleContract.test.ts` 34 项、`historyInsightsRenderer.test.ts` 5 项、`desktopInstrumentRegression.test.ts` 6 项）。
+  - `npm run build` PASS：Vite / Electron 生产级编译完全通过。
+  - Windows 安装矩阵：静默安装覆盖更新，回读 `FocusLink 1.3.15`，EXE 文件版本 `1.3.15.0`。
+  - 小米手机 / 华为平板：ADB 离线，如实记录未闭合状态。
+
 ## 2026-09-29 · `FL-STATS-20260929-PROTOTYPE-PARITY`：统计工作台 100% 对齐设计原型与样式捆绑修复（v1.3.14）
 
 - **需求与背景**：

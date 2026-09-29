@@ -205,6 +205,7 @@ async function measureClient(port) {
       '--user-data-dir=' + profile,
       '--remote-debugging-port=' + port,
       '--force-device-scale-factor=1',
+      '--window-size=1600,1100',
     ],
     { env, stdio: 'ignore', detached: true },
   );
@@ -212,6 +213,12 @@ async function measureClient(port) {
   if (!ws) throw new Error('客户端侧连不上 renderer');
   const c = await connect(ws);
   await c.send('Runtime.enable');
+  await c.send('Emulation.setDeviceMetricsOverride', {
+    width: 1600,
+    height: 1100,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await sleep(3000);
   await c.ev('(async()=>{await document.fonts.ready})()', true);
 

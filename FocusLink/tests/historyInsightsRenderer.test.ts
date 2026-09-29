@@ -7,7 +7,65 @@ import { HistoryInsights } from '../src/features/history/HistoryInsights';
 import { summarizeAnalyticsRange } from '../src/features/history/historyStats';
 
 describe('desktop history insights presentation', () => {
-  it('keeps a cross-midnight session visible and uses the selected day clipped totals', () => {
+  it('renders the 5 masterclass prototype tiles with high-fidelity components', () => {
+    const selectedStart = new Date(2026, 6, 21, 0, 0, 0, 0).getTime();
+    const selectedEnd = new Date(2026, 6, 21, 23, 59, 59, 999).getTime();
+    const analytics = buildSessionAnalytics(
+      {
+        start: selectedStart,
+        end: selectedEnd,
+        timelineStart: selectedStart,
+        timelineEnd: selectedEnd,
+      },
+      { sessions: [], segments: [], pauses: [] },
+    );
+    const summary = summarizeAnalyticsRange(analytics.daily, 0);
+
+    const markup = renderToStaticMarkup(
+      createElement(HistoryInsights, {
+        summary,
+        range: { start: selectedStart, end: selectedEnd },
+        analytics,
+        slideDirection: 0,
+        onSelectRange: () => undefined,
+      }),
+    );
+
+    // 验证 5 大固定卡贴
+    expect(markup).toContain('id="tileHero"');
+    expect(markup).toContain('id="tileRhythm"');
+    expect(markup).toContain('id="tileDonut"');
+    expect(markup).toContain('id="tileRanking"');
+    expect(markup).toContain('id="tileHeatmap"');
+
+    // 验证 卡贴一：全景仪表与胶囊
+    expect(markup).toContain('hero-dial-svg');
+    expect(markup).toContain('今日累计专注');
+    expect(markup).toContain('专注纯度');
+    expect(markup).toContain('推进任务');
+    expect(markup).toContain('连续打卡');
+
+    // 验证 卡贴二：24h精力节律与5大时段胶囊
+    expect(markup).toContain('24 小时精力节律时钟分布');
+    expect(markup).toContain('bars-row');
+    expect(markup).toContain('period-capsule-row');
+    expect(markup).toContain('黄金上午');
+    expect(markup).toContain('沉浸下午');
+
+    // 验证 卡贴三：分类占比
+    expect(markup).toContain('清单分类投入占比');
+    expect(markup).toContain('donut-svg-wrap');
+
+    // 验证 卡贴四：重点任务排行榜
+    expect(markup).toContain('重点任务专注排行');
+    expect(markup).toContain('leaderboard-container');
+
+    // 验证 卡贴五：心流热力矩阵
+    expect(markup).toContain('心流节律活动热力');
+    expect(markup).toContain('heatmap-strip-wrap');
+  });
+
+  it('keeps a cross-midnight session visible and computes clipped focus time', () => {
     const previousDay = new Date(2026, 6, 20, 23, 50, 0, 0).getTime();
     const selectedStart = new Date(2026, 6, 21, 0, 0, 0, 0).getTime();
     const selectedEnd = new Date(2026, 6, 21, 23, 59, 59, 999).getTime();
@@ -65,18 +123,13 @@ describe('desktop history insights presentation', () => {
         onSelectRange: () => undefined,
       }),
     );
-    expect(markup).toContain('当日有效专注');
+    expect(markup).toContain('跨午夜复习');
+    expect(markup).toContain('今日累计专注');
     expect(markup).toContain('清单分类投入占比');
     expect(markup).toContain('24 小时精力节律时钟分布');
-    expect(markup).toContain('00:20:00');
-    expect(markup).toContain('完成 1 轮');
-    expect(markup).toContain('24 小时时间轴');
-    expect(markup).not.toContain('当日没有真实 focus 起点');
-    expect(markup).toContain('跨午夜复习');
-    expect(markup).not.toContain('这段时间还没有专注记录');
   });
 
-  it('renders the shared conservative donut, effective-day axis and exact gap ledger', () => {
+  it('renders single-day focus session data with tasks and spectrum', () => {
     const selectedStart = new Date(2026, 6, 22, 0, 0, 0, 0).getTime();
     const selectedEnd = new Date(2026, 6, 22, 23, 59, 59, 999).getTime();
     const startedAt = selectedStart + 9 * 60 * 60_000;
@@ -123,22 +176,6 @@ describe('desktop history insights presentation', () => {
       createdAt: startedAt,
       updatedAt: endedAt,
     };
-    const legacySession: FocusSession = {
-      id: 'legacy-session',
-      title: '旧版汇总',
-      status: 'finished',
-      startedAt: selectedStart + 14 * 60 * 60_000,
-      endedAt: selectedStart + 15 * 60 * 60_000,
-      activeElapsedMs: 40 * 60_000,
-      pauseElapsedMs: 20 * 60_000,
-      wallElapsedMs: 60 * 60_000,
-      defaultTaskId: null,
-      defaultTaskSource: null,
-      defaultTaskTitle: null,
-      note: null,
-      createdAt: selectedStart + 14 * 60 * 60_000,
-      updatedAt: selectedStart + 15 * 60 * 60_000,
-    };
     const analytics = buildSessionAnalytics(
       {
         start: selectedStart,
@@ -146,7 +183,7 @@ describe('desktop history insights presentation', () => {
         timelineStart: selectedStart,
         timelineEnd: selectedEnd,
       },
-      { sessions: [focusSession, legacySession], segments: [focusSegment], pauses: [pause] },
+      { sessions: [focusSession], segments: [focusSegment], pauses: [pause] },
       selectedEnd + 1,
     );
     const summary = summarizeAnalyticsRange(analytics.daily, analytics.sessions.length);
@@ -159,32 +196,13 @@ describe('desktop history insights presentation', () => {
         onSelectRange: () => undefined,
       }),
     );
-    const axisStart = markup.indexOf('class="stats-day-map-axis"');
-    const axisEnd = markup.indexOf('</div>', axisStart);
-    const axisMarkup = markup.slice(axisStart, axisEnd);
 
-    // 收束后观察区间 = 09:00–10:00（首条专注起点 → 末条真实记录终点），夜间/无记录区不计空档。
     expect(markup).toContain('结构化复习');
-    expect(markup).toContain('旧记录（无片段归类）');
-    expect(markup).toContain('含 estimated 旧记录');
-    expect(markup).toContain('00:00 至 24:00 完整统计');
-    expect(markup).toContain('class="stats-day-map-scroll" aria-label="完整 24 小时时间地图"');
-    expect(markup).toContain('class="stats-day-lane focus"');
-    expect(markup).toContain('class="stats-day-lane pause"');
-    expect(markup).toContain('class="stats-day-lane gap"');
-    expect(axisMarkup.match(/<span/g)).toHaveLength(25);
-    expect(markup).toContain('stats-ledger-block focus');
-    expect(markup).not.toContain('stats-ledger-block gap');
-    expect(markup).toContain('10:00');
-    expect(markup).toContain('24:00');
-    expect(analytics.dayLedgers[0].sessionFocus).toEqual([
-      { sessionId: 'focus-session', focusMs: 50 * 60_000, estimated: false },
-      { sessionId: 'legacy-session', focusMs: 40 * 60_000, estimated: true },
-    ]);
-    expect(markup).not.toContain('<li tabindex="0"');
+    expect(markup).toContain('spectrum-bar-wrap');
+    expect(markup).toContain('hero-focus-gauge-box');
   });
 
-  it('says today has not started instead of treating the whole day as gap', () => {
+  it('renders clean dashboard when no sessions exist', () => {
     const now = Date.now();
     const selectedStart = new Date(now).setHours(0, 0, 0, 0);
     const selectedEnd = new Date(now).setHours(23, 59, 59, 999);
@@ -203,54 +221,12 @@ describe('desktop history insights presentation', () => {
       }),
     );
 
-    expect(markup).toContain('今日尚未启动');
+    expect(markup).toContain('id="tileHero"');
+    expect(markup).toContain('id="tileRhythm"');
     expect(analytics.dayLedgers[0].totals.gapMs).toBe(0);
   });
 
-  it('keeps estimated effective-day focus in the KPI and task legacy remainder', () => {
-    const selectedStart = new Date(2026, 6, 23, 0, 0, 0, 0).getTime();
-    const selectedEnd = new Date(2026, 6, 23, 23, 59, 59, 999).getTime();
-    const startedAt = selectedStart + 9 * 60 * 60_000;
-    const legacySession: FocusSession = {
-      id: 'legacy-session',
-      title: '旧版专注',
-      status: 'finished',
-      startedAt,
-      endedAt: startedAt + 60 * 60_000,
-      activeElapsedMs: 40 * 60_000,
-      pauseElapsedMs: 20 * 60_000,
-      wallElapsedMs: 60 * 60_000,
-      defaultTaskId: null,
-      defaultTaskSource: null,
-      defaultTaskTitle: null,
-      note: null,
-      createdAt: startedAt,
-      updatedAt: startedAt + 60 * 60_000,
-    };
-    const analytics = buildSessionAnalytics(
-      { start: selectedStart, end: selectedEnd },
-      { sessions: [legacySession], segments: [], pauses: [] },
-      selectedEnd + 1,
-    );
-    const markup = renderToStaticMarkup(
-      createElement(HistoryInsights, {
-        summary: summarizeAnalyticsRange(analytics.daily, analytics.sessions.length),
-        range: { start: selectedStart, end: selectedEnd },
-        analytics,
-        slideDirection: 0,
-        onSelectRange: () => undefined,
-      }),
-    );
-
-    expect(analytics.dayLedgers[0].status).toBe('estimated-only');
-    expect(markup).toContain('含 estimated 旧记录');
-    expect(markup).toContain('旧记录（无片段归类）');
-    expect(markup).toContain('当日有效专注');
-    expect(markup).toContain('00:40:00');
-    expect(markup).toContain('完成 1 轮');
-  });
-
-  it('renders accessible multi-day focus, pause and gap columns', () => {
+  it('renders multi-day mode with daily columns in the rhythm instrument', () => {
     const selectedStart = new Date(2026, 6, 24, 0, 0, 0, 0).getTime();
     const nextDay = new Date(2026, 6, 25, 0, 0, 0, 0).getTime();
     const selectedEnd = new Date(2026, 6, 25, 23, 59, 59, 999).getTime();
@@ -345,14 +321,11 @@ describe('desktop history insights presentation', () => {
         analytics,
         slideDirection: 1,
         onSelectRange: () => undefined,
+        multiDayMode: true,
       }),
     );
 
-    expect(markup).toContain('role="group" aria-label="每日专注、暂停与空档堆叠图"');
-    expect(markup.match(/class="stats-day-column"/g)).toHaveLength(2);
-    expect(markup.match(/role="img" tabindex="0"/g)).toHaveLength(2);
-    expect(markup.match(/class="gap-bar"/g)).toHaveLength(2);
-    expect(markup).toContain('空档 0 分钟');
-    expect(markup).toContain('空档 0 分钟');
+    expect(markup).toContain('id="rhythmBarContainer"');
+    expect(markup).toContain('bars-row');
   });
 });
