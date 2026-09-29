@@ -1,5 +1,30 @@
 # FocusLink 实施日志
 
+## 2026-09-29 · `FL-STATS-20260929-PROTOTYPE-PARITY`：统计工作台 100% 对齐设计原型与样式捆绑修复（v1.3.14）
+
+- **需求与背景**：
+  1. 用户明确反馈「实际上和我们网页定下的差别很大，而且我用deepseek修复了你安装打不开的问题」。
+  2. 严格保留并保护 DeepSeek 在 commit `bdfc543` / `63f5e5e` 中所做的安装后可见性自愈与第二实例重建窗口机制。
+  3. 彻底对齐 `C:\Users\16408\Desktop\FocusLink-统计页-预览\统计页原型.html` 的全部设计与结构。
+- **根因分析（先测后改）**：
+  1. **样式表打包未集成**：`src/styles/main.css` 中缺少 `@import './stats-workbench.css';`，导致 Vite 在打包生产客户端时丢弃了全部统计工作台 CSS 规则。
+  2. **右栏结构与原型脱节**：原型拥有独立的 `aside.detail-pane.stats-detail-pane`、`session-card-stream`、`deep-dive-box`、`horiz-flow-track` 横向比例轨及 `segment-mini-list`；客户端原先仍使用旧版手风琴折叠。
+  3. **微观尺寸与测试契约偏差**：`.nav-num` 与 `.bar-track` 在 `stats-prototype-parity.cjs` 运行时实测中存在高度与宽度偏差。
+- **修复**：
+  1. 在 `src/styles/main.css` 顶部添加 `@import './stats-workbench.css';`。
+  2. 落地 `detail-pane.stats-detail-pane`、`session-card-stream`、`deep-dive-box`、`horiz-flow-track` 与 `segment-mini-list`，点击会话即时联动。
+  3. 修正 `.nav-num`（`line-height: 14px; height: 14px; font-size: 11px`）与 `.bar-track`（`width: 14px !important`）。
+  4. 使用 `var(--app-solid-fg)` 替换字面 `#fff`，满足样式契约。
+- **门禁与测试**：
+  - `npm run format:check` PASS。
+  - `npm run typecheck`（含 cloudflare worker）PASS。
+  - `npm run lint` PASS。
+  - `npm test` PASS：134 文件，1108 项测试全部通过（含 `statsStyleContract.test.ts` 34 项、`historyInsightsRenderer.test.ts` 5 项）。
+  - `node scripts/regression/stats-prototype-parity.cjs` PASS：运行时全量尺寸 100% 对齐。
+  - Windows 安装矩阵：静默安装成功，回读 `FocusLink 1.3.14`，EXE 文件版本 `1.3.14.0`。
+  - 小米手机（`192.168.1.5:5555`）：`adb devices` 为 `unauthorized`，如实记录未闭合。
+  - 华为平板（`192.168.1.12:5555`）：离线休眠，如实记录未闭合。
+
 ## 2026-09-29 · `FL-INSTALL-20260929-NO-WINDOW`：安装后「打不开」根治（v1.3.13）
 
 - **用户报告**：安装 1.3.12 后应用打不开。

@@ -10,9 +10,14 @@ import type {
 import {
   buildDashboardTaskAllocation,
   formatDashboardDuration,
-  largestRemainderPercentages,
 } from '@shared/dashboardPresentation';
 import { formatClock, formatMinutes } from '../../lib/time';
+import {
+  ALLOCATION_COLORS,
+  HEATMAP_WEEKS,
+  ledgerTotalsOf,
+  mergeLedgerTasks,
+} from './statsLedgerModel';
 import {
   isSameLocalDay,
   type RangePreset,
@@ -27,6 +32,8 @@ interface HistoryInsightsProps {
   slideDirection: -1 | 0 | 1;
   onSelectRange: (preset: RangePreset) => void;
   onOpenSession?: (sessionId: string) => void;
+  /** 标题栏全局搜索框的关键词：只过滤重点任务排行（原型 handleSearch 口径）。 */
+  taskQuery?: string;
 }
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -50,10 +57,6 @@ function axisDuration(ms: number): string {
   return `${hours >= 10 || Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)}h`;
 }
 
-function percentage(part: number, total: number): number {
-  return total > 0 ? Math.round((part / total) * 100) : 0;
-}
-
 /** Recorded values must remain visible even when viewport observation or animation is suspended. */
 function StatValue({ value, format }: { value: number; format: (current: number) => string }) {
   return <>{format(value)}</>;
@@ -64,10 +67,9 @@ export function HistoryInsights({
   range,
   analytics,
   slideDirection,
-  onSelectRange,
   onOpenSession,
+  taskQuery,
 }: HistoryInsightsProps) {
-  const isEmpty = summary.count === 0;
   const singleDay = isSameLocalDay(range.start, range.end - 1);
   const isToday = singleDay && isSameLocalDay(range.start, Date.now());
   const dayLedgers = useMemo(() => analytics?.dayLedgers ?? [], [analytics?.dayLedgers]);
@@ -77,72 +79,12 @@ export function HistoryInsights({
       ) ?? dayLedgers[0])
     : dayLedgers.at(-1);
 
-  const ledgerTotals = dayLedgers.reduce(
-    (total, item) => ({
-      focusMs: total.focusMs + item.totals.focusMs,
-      pauseMs: total.pauseMs + item.totals.pauseMs,
-      gapMs: total.gapMs + item.totals.gapMs,
-      observationMs: total.observationMs + item.totals.observationMs,
-      estimatedFocusMs: total.estimatedFocusMs + item.totals.estimatedFocusMs,
-      estimatedPauseMs: total.estimatedPauseMs + item.totals.estimatedPauseMs,
-    }),
-    {
-      focusMs: 0,
-      pauseMs: 0,
-      gapMs: 0,
-      observationMs: 0,
-      estimatedFocusMs: 0,
-      estimatedPauseMs: 0,
-    },
-  );
+  const ledgerTotals = ledgerTotalsOf(dayLedgers);
 
   const dashboardFocus = ledgerTotals.focusMs + ledgerTotals.estimatedFocusMs;
   const dashboardPause = ledgerTotals.pauseMs + ledgerTotals.estimatedPauseMs;
 
-  const effectiveTasks = useMemo(() => {
-    const taskMap = new Map<string, DayLedgerTask>();
-    for (const ledger of dayLedgers) {
-      for (const task of ledger.tasks) {
-        const current = taskMap.get(task.key);
-        taskMap.set(
-          task.key,
-          current
-            ? {
-                ...current,
-                activeMs: current.activeMs + task.activeMs,
-                segmentCount: current.segmentCount + task.segmentCount,
-              }
-            : { ...task },
-        );
-      }
-    }
-    return Array.from(taskMap.values()).sort(
-      (left, right) => right.activeMs - left.activeMs || left.title.localeCompare(right.title),
-    );
-  }, [dayLedgers]);
-
-  const [focusRate, pauseRate, gapRate] = largestRemainderPercentages([
-    ledgerTotals.focusMs,
-    ledgerTotals.pauseMs,
-    ledgerTotals.gapMs,
-  ]);
-  const average = summary.count > 0 ? dashboardFocus / summary.count : 0;
-  const longestSession = useMemo(() => {
-    const bySession = new Map<string, { focusMs: number; estimated: boolean }>();
-    for (const ledger of dayLedgers) {
-      for (const session of ledger.sessionFocus) {
-        const current = bySession.get(session.sessionId);
-        bySession.set(session.sessionId, {
-          focusMs: (current?.focusMs ?? 0) + session.focusMs,
-          estimated: Boolean(current?.estimated || session.estimated),
-        });
-      }
-    }
-    return Array.from(bySession.values()).reduce(
-      (longest, session) => (session.focusMs > longest.focusMs ? session : longest),
-      { focusMs: 0, estimated: false },
-    );
-  }, [dayLedgers]);
+  const effectiveTasks = useMemo(() => mergeLedgerTasks(dayLedgers), [dayLedgers]);
 
   const activeDays = dayLedgers.filter(
     (ledger) => ledger.totals.focusMs + ledger.totals.estimatedFocusMs > 0,
@@ -190,141 +132,15 @@ export function HistoryInsights({
     e.currentTarget.style.setProperty('--mouse-y', `${y}px`);
   };
 
-  if (isEmpty) {
-    return (
-      <section
-        className="history-insights stats-dashboard is-empty"
-        aria-label="专注统计 Dashboard"
-      >
-        <div className="stats-empty-hero" role="status">
-          <div className="stats-empty-copy">
-            <span>{singleDay && isToday ? 'TODAY' : 'SELECTED RANGE'}</span>
-            <strong>0 分钟</strong>
-            <h2>
-              {selectedLedger?.status === 'estimated-only'
-                ? '这里只有旧版估算记录'
-                : singleDay && isToday
-                  ? '今日尚未启动'
-                  : '这个范围还没有专注记录'}
-            </h2>
-            <p>
-              {selectedLedger?.status === 'estimated-only'
-                ? '旧记录缺少精确起止边界，只保留估算时长，不生成空档区间。'
-                : '今天还留着完整的时间。完成第一轮后，这里会形成专注、暂停、空档与任务投入的同一份时间账本。'}
-            </p>
-          </div>
-          <div className="stats-empty-orbit" aria-hidden="true">
-            <span>待开始</span>
-          </div>
-        </div>
-        <div className="stats-empty-metrics" aria-label="等待生成的核心指标">
-          <div>
-            <span>有效专注</span>
-            <strong>0:00</strong>
-          </div>
-          <div>
-            <span>暂停损耗</span>
-            <strong>0:00</strong>
-          </div>
-          <div>
-            <span>观察空档</span>
-            <strong>0:00</strong>
-          </div>
-          <div>
-            <span>完成轮次</span>
-            <strong>0</strong>
-          </div>
-        </div>
-        {singleDay && selectedLedger && (
-          <DayActivityTimeline ledger={selectedLedger} onOpenSession={onOpenSession} />
-        )}
-        <div className="stats-empty-footer">
-          <span>查看已有时间</span>
-          <div>
-            {(['7d', '15d', '30d'] as const).map((preset) => (
-              <button
-                type="button"
-                className="btn-outline motion-press"
-                key={preset}
-                onClick={() => onSelectRange(preset)}
-              >
-                {preset === '7d' ? '近 7 天' : preset === '15d' ? '半个月' : '1 个月'}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section
       className="history-insights stats-dashboard"
       aria-label="专注统计 Dashboard"
       style={{ '--stats-shift': `${slideDirection * 7}px` } as CSSProperties}
     >
-      {/* 顶部简报：保持无障碍大数字与自然语言结论 */}
-      <header className="stats-brief">
-        <div className="stats-primary-readout">
-          <span>{singleDay ? (isToday ? '今日有效专注' : '当日有效专注') : '范围内有效专注'}</span>
-          <strong>
-            <StatValue value={dashboardFocus} format={formatDashboardDuration} />
-          </strong>
-        </div>
-        <div className="stats-brief-copy">
-          <h2>
-            {singleDay
-              ? isToday
-                ? '今天的时间，花在了哪里'
-                : '这一天的时间，花在了哪里'
-              : '这段时间，投入是否稳定'}
-          </h2>
-          <p>
-            {singleDay
-              ? `完成 ${summary.count} 轮，平均每轮 ${duration(average)}；暂停占专注/暂停已分类时间 ${percentage(dashboardPause, dashboardFocus + dashboardPause)}%。`
-              : `${activeDays} 个活跃日完成 ${summary.count} 轮，有效日日均专注 ${duration(activeDays > 0 ? dashboardFocus / activeDays : 0)}。`}
-          </p>
-        </div>
-        <TimeBudgetDonut
-          totals={{
-            focusMs: ledgerTotals.focusMs,
-            pauseMs: ledgerTotals.pauseMs,
-            gapMs: ledgerTotals.gapMs,
-          }}
-        />
-      </header>
-
-      {/* 核心指标带 */}
-      <div className="stats-metric-strip" aria-label="核心指标">
-        <Metric
-          label="有效专注"
-          value={dashboardFocus}
-          note={ledgerTotals.estimatedFocusMs > 0 ? '含 estimated 旧记录' : '真实 segment 区间'}
-          tone="accent"
-        />
-        <Metric
-          label="暂停损耗"
-          value={dashboardPause}
-          note={
-            ledgerTotals.estimatedPauseMs > 0
-              ? `${pauseRate}% 精确观察 · 含 estimated`
-              : `${pauseRate}% 精确观察`
-          }
-          tone="pause"
-        />
-        <Metric
-          label="观察空档"
-          value={ledgerTotals.gapMs}
-          note={ledgerTotals.observationMs > 0 ? `${gapRate}% 已分类时间` : '尚无观察区间'}
-        />
-        <Metric
-          label="最长一轮"
-          value={longestSession.focusMs}
-          note={longestSession.estimated ? '有效日内 · estimated' : '有效日内单次专注'}
-        />
-      </div>
-
-      {/* 🌟 固定 12 栅格卡贴工作台画卷 (The 5 Fixed Masterclass Cards) */}
+      {/* 🌟 固定 12 栅格卡贴工作台画卷 (The 5 Fixed Masterclass Cards)
+          无数据时同样渲染完整画卷骨架（不再切换到「0 分钟」那一套空态页面）：
+          零数据由各卡贴自己的空状态表达，页面结构与原型 100% 对齐。 */}
       <div className="stats-dashboard-grid" id="statsDashboardGrid">
         {/* 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD) */}
         <HeroFocusCard
@@ -340,6 +156,7 @@ export function HistoryInsights({
           purity={purity}
           effectiveTasks={effectiveTasks}
           streakDays={streakDays}
+          estimatedFocusMs={ledgerTotals.estimatedFocusMs}
           onMouseMove={handleCardMouseMove}
         />
 
@@ -371,7 +188,7 @@ export function HistoryInsights({
           id="tileRanking"
           onMouseMove={handleCardMouseMove}
         >
-          <TopTasksLeaderboard tasks={effectiveTasks} />
+          <TopTasksLeaderboard tasks={effectiveTasks} query={taskQuery} />
         </div>
 
         {/* 卡贴五：心流活跃热力 (24 周心流矩阵 (近半年)) */}
@@ -383,19 +200,6 @@ export function HistoryInsights({
           <FlowHeatmapCard daily={analytics?.daily ?? []} />
         </div>
       </div>
-
-      {/* 精确空档账本与暂停损耗底栏 */}
-      <GapLedger ledger={selectedLedger} />
-
-      <PauseCost
-        pauseMs={dashboardPause}
-        average={average}
-        focusRate={focusRate}
-        pauseRate={pauseRate}
-        gapRate={gapRate}
-        estimated={ledgerTotals.estimatedFocusMs > 0 || ledgerTotals.estimatedPauseMs > 0}
-        hasPreciseObservation={ledgerTotals.observationMs > 0}
-      />
     </section>
   );
 }
@@ -414,6 +218,7 @@ function HeroFocusCard({
   purity,
   effectiveTasks,
   streakDays,
+  estimatedFocusMs,
   onMouseMove,
 }: {
   singleDay: boolean;
@@ -428,6 +233,7 @@ function HeroFocusCard({
   purity: string;
   effectiveTasks: DayLedgerTask[];
   streakDays: number;
+  estimatedFocusMs: number;
   onMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const arcLength = 251.3;
@@ -530,6 +336,8 @@ function HeroFocusCard({
                 完成 {summaryCount} 轮
               </div>
             )}
+            {/* 指标口径只保留原型的三个胶囊；旧版估算说明并入卡贴一，不再单开一整行指标带。 */}
+            {estimatedFocusMs > 0 && <div className="hero-estimated-note">含 estimated 旧记录</div>}
           </div>
         </div>
 
@@ -610,7 +418,7 @@ function HeroFocusCard({
                   color: 'var(--text-tertiary)',
                 }}
               >
-                今日尚未开始专注
+                {isToday ? '今日尚未启动' : '当日尚无专注记录'}
               </div>
             )}
           </div>
@@ -719,7 +527,8 @@ function DonutAllocationCard({
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const colors = ['#2563EB', '#6366F1', '#10B981', '#F59E0B', '#94A3B8', '#CBD5E1'];
+  // 与统计侧栏「清单分类」色点共用同一调色板（statsLedgerModel.ALLOCATION_COLORS）。
+  const colors = ALLOCATION_COLORS;
   const circumference = 238.76; // 2 * PI * 38
 
   // 计算环形图 segment
@@ -841,8 +650,18 @@ function DonutAllocationCard({
 }
 
 /** 🌟 卡贴四：重点任务专注排行榜 (Top Focused Tasks) */
-function TopTasksLeaderboard({ tasks }: { tasks: DayLedgerTask[] }) {
-  const topTasks = tasks.slice(0, 5);
+function TopTasksLeaderboard({ tasks, query }: { tasks: DayLedgerTask[]; query?: string }) {
+  const keyword = (query ?? '').trim().toLowerCase();
+  // 标题栏搜索框口径对齐原型 handleSearch：命中任务标题或状态胶囊文案。
+  const matched = keyword
+    ? tasks.filter((task) => {
+        const category = task.taskId !== null ? '已关联任务' : '未关联任务';
+        return (
+          task.title.toLowerCase().includes(keyword) || category.toLowerCase().includes(keyword)
+        );
+      })
+    : tasks;
+  const topTasks = matched.slice(0, 5);
   const maxMs = topTasks[0]?.activeMs || 1;
 
   return (
@@ -900,7 +719,11 @@ function TopTasksLeaderboard({ tasks }: { tasks: DayLedgerTask[] }) {
             </div>
           );
         })}
-        {topTasks.length === 0 && <p className="stats-caption">周期内暂无任务专注记录。</p>}
+        {topTasks.length === 0 && (
+          <p className="stats-caption">
+            {keyword ? `没有匹配「${query}」的任务投入记录。` : '周期内暂无任务专注记录。'}
+          </p>
+        )}
       </div>
     </>
   );
@@ -908,9 +731,7 @@ function TopTasksLeaderboard({ tasks }: { tasks: DayLedgerTask[] }) {
 
 /** 🌟 卡贴五：心流活跃热力 (24 周心流矩阵 (近半年)) */
 function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
-  const WEEKS = 24;
-
-  // 生成最近 168 天矩阵数据
+  // 生成最近 168 天矩阵数据（HEATMAP_WEEKS = 24，与统计侧栏「心流热力全景」同一常量）
   const matrix = useMemo(() => {
     const map = new Map<string, { activeMs: number; sessionCount: number }>();
     for (const d of daily) {
@@ -928,7 +749,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
     const endDate = new Date(today);
     endDate.setDate(today.getDate() + endOffset);
 
-    for (let w = WEEKS - 1; w >= 0; w--) {
+    for (let w = HEATMAP_WEEKS - 1; w >= 0; w--) {
       const colDays: Array<{
         date: string;
         activeMs: number;
@@ -1032,93 +853,6 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
         </div>
       </div>
     </>
-  );
-}
-
-function TimeBudgetDonut({
-  totals,
-}: {
-  totals: { focusMs: number; pauseMs: number; gapMs: number };
-}) {
-  const total = totals.focusMs + totals.pauseMs + totals.gapMs;
-  const [focus, pause, gap] = largestRemainderPercentages([
-    totals.focusMs,
-    totals.pauseMs,
-    totals.gapMs,
-  ]);
-  const label =
-    total > 0
-      ? `精确观察时间构成：专注 ${duration(totals.focusMs)}，暂停 ${duration(totals.pauseMs)}，空档 ${duration(totals.gapMs)}`
-      : '尚无可绘制的精确观察区间';
-  return (
-    <svg
-      className="stats-time-donut hm-fade-in"
-      viewBox="0 0 100 100"
-      role="img"
-      aria-label={label}
-    >
-      <circle className="track" cx="50" cy="50" r="38" pathLength="100" />
-      {total > 0 && (
-        <>
-          <circle
-            className="segment focus"
-            cx="50"
-            cy="50"
-            r="38"
-            pathLength="100"
-            strokeDasharray={`${focus} ${100 - focus}`}
-          />
-          <circle
-            className="segment pause"
-            cx="50"
-            cy="50"
-            r="38"
-            pathLength="100"
-            strokeDasharray={`${pause} ${100 - pause}`}
-            strokeDashoffset={-focus}
-          />
-          <circle
-            className="segment gap"
-            cx="50"
-            cy="50"
-            r="38"
-            pathLength="100"
-            strokeDasharray={`${gap} ${100 - gap}`}
-            strokeDashoffset={-(focus + pause)}
-          />
-        </>
-      )}
-      <text x="50" y="47" textAnchor="middle">
-        {total > 0 ? `${focus}%` : '—'}
-      </text>
-      <text className="caption" x="50" y="61" textAnchor="middle">
-        时间利用
-      </text>
-    </svg>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  format = formatDashboardDuration,
-  note,
-  tone = 'neutral',
-}: {
-  label: string;
-  value: number;
-  format?: (current: number) => string;
-  note: string;
-  tone?: 'neutral' | 'accent' | 'pause';
-}) {
-  return (
-    <div className={`stats-metric tone-${tone}`}>
-      <span>{label}</span>
-      <strong>
-        <StatValue value={value} format={format} />
-      </strong>
-      <small>{note}</small>
-    </div>
   );
 }
 
@@ -1229,7 +963,9 @@ function DayActivityTimeline({
             const focusPct = Math.min(100, (item.focusMs / (60 * MINUTE)) * 100);
             const pausePct = Math.min(100, (item.pauseMs / (60 * MINUTE)) * 100);
             const hasData = focusMinutes > 0 || pauseMinutes > 0;
-            const hourLabel = String(item.hour).padStart(2, '0');
+            // 原型口径：标签文本为 HH:00，且只在 h%4==0 与 23 点显示（24 个全显示会互相压字）。
+            const hourLabel = `${String(item.hour).padStart(2, '0')}:00`;
+            const showHourLabel = item.hour % 4 === 0 || item.hour === 23;
 
             return (
               <div
@@ -1257,7 +993,7 @@ function DayActivityTimeline({
                     <div className="bar-empty-dot" />
                   )}
                 </div>
-                <span className="bar-time-tag">{hourLabel}</span>
+                <span className="bar-time-lbl">{showHourLabel ? hourLabel : ''}</span>
               </div>
             );
           })}
@@ -1459,46 +1195,6 @@ function LedgerBlock({
   );
 }
 
-function GapLedger({ ledger }: { ledger?: DayLedgerAnalytics }) {
-  const gaps = ledger?.gaps ?? [];
-  return (
-    <article className="stats-gap-ledger" aria-labelledby="stats-gap-title">
-      <header>
-        <div>
-          <span>精确空档</span>
-          <h3 id="stats-gap-title">{ledger?.date ?? '所选日期'}的空档明细</h3>
-        </div>
-        {ledger?.estimated && <strong className="stats-estimated-badge">含旧数据估算</strong>}
-      </header>
-      {gaps.length > 0 ? (
-        <ol>
-          {gaps.map((gap) => {
-            const label = `${formatClock(gap.startedAt)} 至 ${formatClock(gap.endedAt)}，空档 ${duration(gap.durationMs)}`;
-            return (
-              <li key={`${gap.startedAt}-${gap.endedAt}`} aria-label={label}>
-                <time>{formatClock(gap.startedAt)}</time>
-                <i aria-hidden="true" />
-                <time>{formatClock(gap.endedAt)}</time>
-                <strong>{duration(gap.durationMs)}</strong>
-              </li>
-            );
-          })}
-        </ol>
-      ) : (
-        <p role="status">
-          {ledger?.status === 'not-started'
-            ? ledger.isToday
-              ? '今日尚未启动，不把全天计算为空档。'
-              : '当日没有真实 focus 起点，未生成空档。'
-            : ledger?.status === 'estimated-only'
-              ? '旧记录缺少精确边界，只显示 estimated 时长，不伪造空档。'
-              : '观察区间内没有空档。'}
-        </p>
-      )}
-    </article>
-  );
-}
-
 function DailyActivityChart({ daily }: { daily: DayLedgerAnalytics[] }) {
   const width = 720;
   const height = 210;
@@ -1612,61 +1308,6 @@ function DailyActivityChart({ daily }: { daily: DayLedgerAnalytics[] }) {
         每根柱子的总高度是当天已分类时间；强调色为专注、红色为暂停、灰色为空档。旧边界只计入
         estimated，悬停或键盘聚焦可读精确值。
       </p>
-    </article>
-  );
-}
-
-function PauseCost({
-  pauseMs,
-  average,
-  focusRate,
-  pauseRate,
-  gapRate,
-  estimated,
-  hasPreciseObservation,
-}: {
-  pauseMs: number;
-  average: number;
-  focusRate: number;
-  pauseRate: number;
-  gapRate: number;
-  estimated: boolean;
-  hasPreciseObservation: boolean;
-}) {
-  return (
-    <article className="stats-pause-cost">
-      <div>
-        <span>暂停损耗</span>
-        <strong>
-          <StatValue value={pauseMs} format={duration} />
-        </strong>
-      </div>
-      <div>
-        <span>每轮平均专注</span>
-        <strong>
-          <StatValue value={average} format={duration} />
-        </strong>
-      </div>
-      <div>
-        <span>时间利用</span>
-        <strong>
-          <StatValue value={focusRate} format={(current) => `${Math.round(current)}%`} />
-        </strong>
-      </div>
-      <div
-        className="stats-cost-track hm-fade-in"
-        style={{ '--hm-delay': '120ms' } as CSSProperties}
-        role="img"
-        aria-label={
-          hasPreciseObservation
-            ? `精确观察时间：专注 ${focusRate}%，暂停 ${pauseRate}%，空档 ${gapRate}%${estimated ? '；另有 estimated 旧记录，不进入三分类' : ''}`
-            : `尚无精确观察区间${estimated ? '；旧记录只作 estimated 汇总，不进入三分类' : ''}`
-        }
-      >
-        <i className="focus" style={{ width: `${focusRate}%` }} />
-        <i className="pause" style={{ left: `${focusRate}%`, width: `${pauseRate}%` }} />
-        <i className="gap" style={{ left: `${focusRate + pauseRate}%`, width: `${gapRate}%` }} />
-      </div>
     </article>
   );
 }

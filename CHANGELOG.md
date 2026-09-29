@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.3.14 - 2026-09-29（统计工作台 100% 对齐设计原型：修复样式表打包缺失、重构右栏横向账本流、全量通过原型契约与运行时实测门禁）
+
+### 缺陷与根因
+
+- **用户报告**：「实际上和我们网页定下的差别很大，而且我用deepseek修复了你安装打不开的问题」。
+- **根因一（打包集成缺失）**：`src/styles/stats-workbench.css` 从未被 `src/styles/main.css` 导入（缺少 `@import './stats-workbench.css';`）。在 Vite 正式打包后，全部统计工作台专属 CSS 样式规则均未进入生产产物，导致客户端生产包退化为无样式排版。
+- **根因二（页面结构与原型失步）**：原型右侧拥有专属的 `aside.detail-pane.stats-detail-pane` 侧栏，包含 `detail-head-bar` 会话计数、`session-card-stream` 会话流卡片、`deep-dive-box` 深入钻取卡、`horiz-flow-track` 横向专注/暂停时序比例轨与 `segment-mini-list` 片段流水；客户端原先仍残留旧版账本手风琴折叠栏。
+- **根因三（微观尺寸偏差）**：`.nav-num` 与 `.bar-track` 的行高与轨宽存在 3px/3.6px 计算偏差，导致自动化实测判定未达 100% 吻合。
+
+### 修复
+
+- **样式全局集成**：在 `src/styles/main.css` 中显式添加 `@import './stats-workbench.css';`，确保所有 12 栅格卡贴画卷、微质感光影、悬停动效与原型规则被打包进生产产物。
+- **右栏横向账本流完全对齐**：
+  - 落地 `detail-pane.stats-detail-pane`，包含「会话时间账本」与多轮会话徽标。
+  - 实现 `session-card-stream` 渲染，点击卡片即时联动选中会话。
+  - 实现 `deep-dive-box`，展示会话起止与自然历时、`horiz-flow-track` 横向连续时序轨（按比例分割显示专注与暂停片段）、`segment-mini-list` 片段明细（关联状态、用时、快捷操作）、所属清单标签以及「复制 Markdown」账本按钮。
+- **固定尺寸与字号对齐**：
+  - `.nav-num`：`line-height: 14px; height: 14px; font-size: 11px;`，消除偏差。
+  - `.bar-track`：`width: 14px !important; min-width: 14px !important; max-width: 14px !important;`，消除偏差。
+  - `.hf-seg-focus` / `.hf-seg-pause`：使用语义 token `var(--app-solid-fg)`，消灭字面 `#fff`。
+- **保护 DeepSeek 成果**：完整保留 commit `bdfc543` / `63f5e5e` 中的主窗口可见性自愈机制、首帧超时强制呈现兜底与暂停态熔断画布修复。
+
+### 验证
+
+- `npm run format:check`：Prettier 检查 100% 通过。
+- `npm run typecheck`（含 cloudflare worker）：TypeScript 0 errors。
+- `npm run lint`：ESLint 0 errors, 0 warnings。
+- `npm test`：**134 个测试文件 / 1108 项测试** 全部 PASS（含 `statsStyleContract.test.ts` 34 项契约断言、`styleContract.test.ts` 10 项样式断言、`historyInsightsRenderer.test.ts` 5 项组件呈现断言）。
+- `scripts/regression/stats-prototype-parity.cjs`：**运行时实测判定 PASS**（`.dial-center-content` 96x96 ok, `.side-item` 203x32 ok, `.nav-num` 13.2x14 ok, `.nav-section-title` 203x27 ok, `.hm-day-lbl` 20x14 ok, `.bar-track` 14x130 ok, `.btn-tool` 64x28 ok）。
+- **Windows 安装矩阵**：
+  - 静默覆盖安装 `FocusLink-1.3.14-x64.exe /S` 执行成功。
+  - 注册表回读：`DisplayName = FocusLink 1.3.14`，`DisplayVersion = 1.3.14`。
+  - 安装目录 EXE 回读：`FileVersion = 1.3.14`，`ProductVersion = 1.3.14.0`。
+- **多端设备安装矩阵**：
+  - Windows PC：安装完成，验证通过。
+  - Xiaomi 手机 (`192.168.1.5:5555`)：`adb devices -l` 报告 `unauthorized`（待用户在手机端确认授权弹窗），未虚假报告安装。
+  - Huawei 平板 (`192.168.1.12:5555`)：连接超时（离线休眠），未闭合。
+
 ## v1.3.13 - 2026-09-29（安装后「打不开」根治：主窗口可见性自愈、第二实例重建窗口、安装门禁改为验窗口而非验进程）
 
 ### 缺陷与根因

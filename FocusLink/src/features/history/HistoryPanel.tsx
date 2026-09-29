@@ -1,11 +1,10 @@
 // 历史记录 - Session 列表 + 详情 + 导出 + 删除 + Segment 任务关联/后补/批量
 import '../../styles/history-motion.css';
 import '../../styles/stats-workbench.css';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../../ui/Icon';
 import { useStore } from '../../app/store';
-import { formatClock, formatDuration, formatRelative, formatMinutes } from '../../lib/time';
+import { formatClock, formatClockSeconds, formatDuration, formatMinutes } from '../../lib/time';
 import {
   formatDayLabel,
   formatShortDate,
@@ -18,29 +17,27 @@ import {
   toDateInput,
   type RangePreset,
 } from './historyStats';
-
 import {
   resolveTaskWorkspaceAppearance,
   type FocusSession,
   type FocusSegment,
   type Task,
-  type TomatodoSubject,
 } from '@shared/types';
 import type { SessionAnalyticsResult } from '@shared/ipc/api';
 import { TaskPicker } from '../tasks/TaskPicker';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
-import {
-  HistoryTimelineList,
-  type TomatodoSegmentStatus,
-  type SegmentFilter,
-} from './HistoryTimeline';
-import {
-  SessionLinkPreview,
-  SessionDetailHeader,
-  BatchLinkPanel,
-  type SessionDetail,
-} from './HistoryBadges';
+import type { SessionDetail } from './HistoryBadges';
 import { HistoryInsights } from './HistoryInsights';
+import { StatsSidebar, type StatsSidebarView } from './StatsSidebar';
+import {
+  HEATMAP_WINDOW_DAYS,
+  buildStatsSidebarCategories,
+  formatCompactHours,
+  formatHoursMinutes,
+  ledgerTotalsOf,
+  summarizeRangeWindows,
+  type StatsRangeWindows,
+} from './statsLedgerModel';
 import { createRequestGate } from './requestGate';
 
 /** TaskPicker 弹窗目标类型 */
@@ -55,17 +52,23 @@ type ConfirmTarget =
   | { kind: 'delete-session'; sessionId: string }
   | { kind: 'batch-all'; sessionId: string; task: Task };
 
-const RANGE_PRESETS: Array<{ id: RangePreset; label: string }> = [
-  { id: 'today', label: '单日' },
-  { id: '7d', label: '近 7 天' },
-  { id: '15d', label: '半个月' },
-  { id: '30d', label: '1 个月' },
-  { id: 'custom', label: '自定义' },
-];
-
 /** 空 Session 列表的模块级稳定引用：避免 `analytics?.sessions ?? []` 每次渲染
     产生新数组，导致下游 useMemo 依赖不稳定（react-hooks/exhaustive-deps）。 */
 const EMPTY_SESSIONS: FocusSession[] = [];
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/** 侧栏「最近 30 天」窗口长度：统计视图的 今日/7 天/30 天 三个读数共用这一次请求。 */
+const SIDEBAR_WINDOW_DAYS = 30;
+
+/** 侧栏「统计视图」标题与工具栏标题：与原型的 activeViewTitle 文案一致。 */
+const RANGE_VIEW_TITLES: Record<string, string> = {
+  today: '今日心流看板',
+  '7d': '最近 7 天精力全景',
+  '30d': '最近 30 天心流沉淀',
+  '15d': '最近 15 天心流沉淀',
+  custom: '自定义范围心流沉淀',
+};
 
 export function HistoryPanel() {
   // Elapsed time changes every second while focusing. History only needs the identity/state of the
@@ -75,6 +78,7 @@ export function HistoryPanel() {
   const settings = useStore((state) => state.settings);
   const addToast = useStore((state) => state.addToast);
   const setSnapshot = useStore((state) => state.setSnapshot);
+  const syncQueue = useStore((state) => state.syncQueue);
 
   const [analytics, setAnalytics] = useState<SessionAnalyticsResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,23 +97,24 @@ export function HistoryPanel() {
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
   const [linking, setLinking] = useState(false);
-  const [syncingSessionId, setSyncingSessionId] = useState<string | null>(null);
-  const [syncingKind, setSyncingKind] = useState<'tomatodo' | null>(null);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(() => new Set());
   const [sessionSegmentsById, setSessionSegmentsById] = useState<Record<string, FocusSegment[]>>(
     {},
   );
-  const [tomatodoStatusBySession, setTomatodoStatusBySession] = useState<
-    Record<string, Record<string, TomatodoSegmentStatus>>
-  >({});
   const [rangePreset, setRangePreset] = useState<RangePreset>('today');
   const [dayCursor, setDayCursor] = useState(() => startOfDay(Date.now()));
   // 单日导航方向：-1 前一天 / 1 后一天 / 0 预设或自定义切换；供图表做有方向感的滑动入场。
   const [slideDirection, setSlideDirection] = useState<-1 | 0 | 1>(0);
-  const [customStart, setCustomStart] = useState(toDateInput(Date.now()));
-  const [customEnd, setCustomEnd] = useState(toDateInput(Date.now()));
-  const [segmentFilter, setSegmentFilter] = useState<Record<string, SegmentFilter>>({});
-  const tomatodoDefaultSubject: TomatodoSubject = settings?.tomatodo.defaultSubject ?? '学习';
+  // 原型页头只保留「前一天/后一天 + 导出账本」，自定义区间不再有输入控件；
+  // 这里保留默认值，使 getRange('custom') 仍然是一个可用的纯函数口径。
+  const customStart = toDateInput(Date.now());
+  const customEnd = toDateInput(Date.now());
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [taskQuery, setTaskQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<{ key: string; label: string } | null>(null);
+  const [sidebarReloadToken, setSidebarReloadToken] = useState(0);
+  const sidebarRequestGate = useRef(createRequestGate()).current;
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const taskAppearance = resolveTaskWorkspaceAppearance(settings?.taskWorkspaceAppearance);
   const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
   const appearanceMenuRef = useRef<HTMLDivElement | null>(null);
@@ -173,52 +178,64 @@ export function HistoryPanel() {
     [analytics?.daily, filteredSessions.length],
   );
 
-  // 时间线按自然日分组（保持原有倒序，最新的一天在最上面）。
-  const sessionGroups = useMemo(() => {
-    const activeBySession = new Map(
-      (analytics?.sessionActive ?? []).map((item) => [item.sessionId, item.activeMs]),
-    );
-    const groups: Array<{
-      key: string;
-      label: string;
-      weekday: string;
-      sessions: FocusSession[];
-      activeMs: number;
-    }> = [];
-    for (const session of filteredSessions) {
-      // 跨午夜会话进入单日范围时归到当前范围日，不再显示在范围外的原始开始日。
-      const displayedAt = Math.max(session.startedAt, range.start);
-      const key = formatDayLabel(displayedAt);
-      let group = groups.find((item) => item.key === key);
-      if (!group) {
-        const date = new Date(displayedAt);
-        group = {
-          key,
-          label: date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }),
-          weekday: date.toLocaleDateString('zh-CN', { weekday: 'short' }),
-          sessions: [],
-          activeMs: 0,
-        };
-        groups.push(group);
-      }
-      group.sessions.push(session);
-      group.activeMs += activeBySession.get(session.id) ?? 0;
-    }
-    return groups;
-  }, [analytics?.sessionActive, filteredSessions, range.start]);
+  // ── 统计侧栏读数（原型「统计视图」四项 +「清单分类」四项） ──────────────
+  // 侧栏是「总览列」：四项读数与清单分类都取自同一个截止今天的 30 天窗口，
+  // 不随页头范围抖动（原型该列同样是范围无关的静态总览）。
+  const [sidebarWindows, setSidebarWindows] = useState<StatsRangeWindows | null>(null);
+  const [sidebarCategories, setSidebarCategories] = useState<
+    ReturnType<typeof buildStatsSidebarCategories>
+  >([]);
 
-  // 会话条目交错入场序号：按时间线展示顺序展开，逐项延迟 40ms（封顶 560ms，总时长 ~800ms）。
-  const sessionStaggerIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    let index = 0;
-    for (const group of sessionGroups) {
-      for (const session of group.sessions) {
-        map.set(session.id, index);
-        index += 1;
+  useEffect(() => {
+    const requestId = sidebarRequestGate.issue();
+    void (async () => {
+      try {
+        if (!window.focuslink) return;
+        const end = new Date().setHours(23, 59, 59, 999);
+        const start = startOfDay(Date.now() - (SIDEBAR_WINDOW_DAYS - 1) * DAY_MS);
+        const result = await window.focuslink.sessions.analytics({ start, end });
+        if (!sidebarRequestGate.isCurrent(requestId)) return;
+        setSidebarWindows(summarizeRangeWindows(result.daily));
+        const totals = ledgerTotalsOf(result.dayLedgers);
+        setSidebarCategories(
+          buildStatsSidebarCategories(result.dayLedgers, totals.focusMs + totals.estimatedFocusMs),
+        );
+      } catch {
+        // 侧栏读数失败时保留上一次读数，不写空值也不弹错误（主画卷自己的错误处理在 load()）。
       }
-    }
-    return map;
-  }, [sessionGroups]);
+    })();
+  }, [sidebarRequestGate, sidebarReloadToken]);
+
+  // 标题栏全局搜索框（Ctrl K）：过滤重点任务排行与会话账本，口径对齐原型 handleSearch。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // 会话账本的筛选：搜索框关键词 + 侧栏清单分类，两者可叠加。
+  const railKeyword = taskQuery.trim().toLowerCase();
+  const railCategory = categoryFilter?.label.trim().toLowerCase() ?? '';
+  const visibleSessions = useMemo(() => {
+    if (!railKeyword && !railCategory) return filteredSessions;
+    return filteredSessions.filter((session) => {
+      const segmentTitles = (sessionSegmentsById[session.id] ?? [])
+        .map((segment) => segment.title ?? '')
+        .join(' ');
+      const haystack = [session.title, session.defaultTaskTitle ?? '', segmentTitles]
+        .join(' ')
+        .toLowerCase();
+      if (railKeyword && !haystack.includes(railKeyword)) return false;
+      if (railCategory && !haystack.includes(railCategory)) return false;
+      return true;
+    });
+  }, [filteredSessions, railKeyword, railCategory, sessionSegmentsById]);
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -238,12 +255,158 @@ export function HistoryPanel() {
     setRangePreset(next);
   };
 
+  /** 原型「心流热力全景」不是范围预设：它把画卷滚到卡贴五（24 周热力矩阵）。 */
+  const focusHeatmap = () => {
+    const tile = document.getElementById('tileHeatmap');
+    if (!tile) return;
+    tile.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    addToast('已定位至 24 周心流活动矩阵', 'info');
+  };
+
+  const statsViews: StatsSidebarView[] = [
+    {
+      id: 'today',
+      label: '今日看板',
+      value: formatCompactHours(sidebarWindows?.todayMs ?? 0),
+      active: rangePreset === 'today',
+      onSelect: () => selectRangePreset('today'),
+      title: '只看今天（再用页头「前一天/后一天」逐日回看）',
+    },
+    {
+      id: '7d',
+      label: '最近 7 天',
+      value: formatCompactHours(sidebarWindows?.weekMs ?? 0),
+      active: rangePreset === '7d',
+      onSelect: () => selectRangePreset('7d'),
+      title: '最近 7 个自然日',
+    },
+    {
+      id: '30d',
+      label: '最近 30 天',
+      value: formatCompactHours(sidebarWindows?.monthMs ?? 0),
+      active: rangePreset === '30d',
+      onSelect: () => selectRangePreset('30d'),
+      title: '最近 30 个自然日',
+    },
+    {
+      id: 'heatmap',
+      label: '心流热力全景',
+      // 卡贴五固定渲染 24 周（168 天）矩阵，这里回读的正是它的窗口长度。
+      value: `${HEATMAP_WINDOW_DAYS}天`,
+      active: false,
+      onSelect: focusHeatmap,
+      title: `定位到 24 周（${HEATMAP_WINDOW_DAYS} 天）心流活动矩阵`,
+    },
+  ];
+
+  // 标题栏同步胶囊：可见文案与原型的「本地同步就绪」一致（原型该处是静态样例文案），
+  // 但状态是真实的——读取中、云同步队列失败会直接改写文案，队列待处理条数进 title 提示。
+  const syncState = useMemo(() => {
+    const failed = syncQueue.filter((item) => item.status === 'failed').length;
+    const pending = syncQueue.filter((item) => item.status === 'pending').length;
+    if (analyticsRefreshing) {
+      return { tone: '', label: '正在同步...', detail: '正在重新读取本地账本' };
+    }
+    if (failed > 0) {
+      return {
+        tone: 'is-error',
+        label: `同步失败 ${failed}`,
+        detail: `云同步队列失败 ${failed} 条`,
+      };
+    }
+    if (pending > 0) {
+      return {
+        tone: '',
+        label: '本地同步就绪',
+        detail: `本地账本就绪；云同步队列待处理 ${pending} 条`,
+      };
+    }
+    return { tone: '', label: '本地同步就绪', detail: '本地账本与云同步队列均无待处理项' };
+  }, [syncQueue, analyticsRefreshing]);
+
+  /**
+   * 导出账本：把当前范围的时间账本导成一个 CSV。
+   * 客户端没有范围级导出 IPC（`sessions.export` 只接受单个 sessionId），
+   * 因此这里用页面上同一份 analytics 数据在前端拼装，保证导出的就是用户看到的账本。
+   */
+  const handleExportLedger = () => {
+    const rows: string[] = [];
+    rows.push('# FocusLink 时间账本');
+    rows.push(
+      rangePreset === 'today'
+        ? `# 日期: ${dayCursorFullLabel}`
+        : `# 范围: ${formatShortDate(range.start)} – ${formatShortDate(range.end)}`,
+    );
+    rows.push('日期,开始,结束,任务,有效专注(分钟),暂停(分钟),自然历时(分钟)');
+    let totalActiveMs = 0;
+    let totalPauseMs = 0;
+    for (const session of visibleSessions) {
+      totalActiveMs += session.activeElapsedMs;
+      totalPauseMs += session.pauseElapsedMs;
+      const day = formatDayLabel(Math.max(session.startedAt, range.start));
+      const title = (session.defaultTaskTitle ?? session.title ?? '未命名任务').replace(
+        /[",\n]/g,
+        ' ',
+      );
+      rows.push(
+        [
+          day,
+          formatClock(session.startedAt),
+          session.endedAt ? formatClock(session.endedAt) : '进行中',
+          `"${title}"`,
+          Math.round(session.activeElapsedMs / 60_000),
+          Math.round(session.pauseElapsedMs / 60_000),
+          Math.round(session.wallElapsedMs / 60_000),
+        ].join(','),
+      );
+    }
+    rows.push(
+      [
+        '合计',
+        '',
+        '',
+        `"${visibleSessions.length} 个专注会话"`,
+        Math.round(totalActiveMs / 60_000),
+        Math.round(totalPauseMs / 60_000),
+        '',
+      ].join(','),
+    );
+    try {
+      const blob = new Blob([`\uFEFF${rows.join('\n')}\n`], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `focuslink-ledger-${formatDayLabel(range.start)}_${formatDayLabel(range.end)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      addToast(`已导出 ${visibleSessions.length} 条账本记录（CSV）`, 'success');
+    } catch (e) {
+      addToast('导出账本失败：' + (e as Error).message, 'error');
+    }
+  };
+
   const moveSingleDay = (amount: -1 | 1) => {
     setSlideDirection(amount);
     setDayCursor((current) => {
       const next = startOfDay(shiftLocalDay(current, amount));
       return Math.min(next, startOfDay(Date.now()));
     });
+  };
+
+  /**
+   * 页头「前一天 / 后一天」（原型 stepDateNav）：原型的这两个按钮始终可用。
+   * 在多日范围下先回到单日视图并落在对应日（前一天 → 昨天，后一天 → 今天），
+   * 而不是把多日范围整体平移——用户点的是「日」导航。
+   */
+  const stepDay = (amount: -1 | 1) => {
+    if (rangePreset !== 'today') {
+      setRangePreset('today');
+      setSlideDirection(amount);
+      const base = startOfDay(Date.now());
+      setDayCursor(Math.min(startOfDay(shiftLocalDay(base, amount)), base));
+      return;
+    }
+    moveSingleDay(amount);
   };
 
   const load = useCallback(async () => {
@@ -289,76 +452,38 @@ export function HistoryPanel() {
     };
   }, [load, detailRequestGate, analyticsRequestGate]);
 
-  const refreshTomatodoStatus = async (sessionId: string) => {
-    try {
-      const status = await window.focuslink.tomatodo.status(sessionId);
-      const segmentStatus = Object.fromEntries(
-        status.segments.map((segment: TomatodoSegmentStatus & { segmentId: string }) => [
-          segment.segmentId,
-          {
-            subject: segment.subject,
-            synced: segment.synced,
-            writtenLocally: segment.writtenLocally,
-            cloudSynced: segment.cloudSynced,
-            state: segment.state,
-            source: segment.source,
-          },
-        ]),
-      );
-      setTomatodoStatusBySession((prev) => ({ ...prev, [sessionId]: segmentStatus }));
-    } catch {
-      // 番茄 Todo 未安装或路径不可读不应阻断历史账本。
-    }
-  };
-
-  const reloadDetail = async (id: string) => {
-    // A slower mutation can finish after the user has already opened another row. Never let that
-    // stale callback restart loading for a row which is no longer the active detail target.
-    if (expandedRef.current !== id) return;
-    const requestId = detailRequestGate.issue();
-    setDetailLoadingId(id);
-    setDetailLoadError(null);
-    try {
-      const d = await window.focuslink.sessions.get(id);
-      if (!detailRequestGate.isCurrent(requestId) || expandedRef.current !== id) return;
-      if (!d) throw new Error('这条专注记录已不存在，请刷新统计列表。');
-      setDetail(d);
-      setSessionSegmentsById((prev) => ({
-        ...prev,
-        [id]: d.segments,
-      }));
-      void refreshTomatodoStatus(id);
-    } catch (error) {
-      if (!detailRequestGate.isCurrent(requestId) || expandedRef.current !== id) return;
-      setDetail(null);
-      setDetailLoadError({
-        sessionId: id,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      if (detailRequestGate.isCurrent(requestId) && expandedRef.current === id) {
-        setDetailLoadingId(null);
+  const reloadDetail = useCallback(
+    async (id: string) => {
+      // A slower mutation can finish after the user has already opened another row. Never let that
+      // stale callback restart loading for a row which is no longer the active detail target.
+      if (expandedRef.current !== id) return;
+      const requestId = detailRequestGate.issue();
+      setDetailLoadingId(id);
+      setDetailLoadError(null);
+      try {
+        const d = await window.focuslink.sessions.get(id);
+        if (!detailRequestGate.isCurrent(requestId) || expandedRef.current !== id) return;
+        if (!d) throw new Error('这条专注记录已不存在，请刷新统计列表。');
+        setDetail(d);
+        setSessionSegmentsById((prev) => ({
+          ...prev,
+          [id]: d.segments,
+        }));
+      } catch (error) {
+        if (!detailRequestGate.isCurrent(requestId) || expandedRef.current !== id) return;
+        setDetail(null);
+        setDetailLoadError({
+          sessionId: id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (detailRequestGate.isCurrent(requestId) && expandedRef.current === id) {
+          setDetailLoadingId(null);
+        }
       }
-    }
-  };
-
-  const getSessionSegmentsForEdit = (sessionId: string) =>
-    (detail?.session.id === sessionId ? detail.segments : sessionSegmentsById[sessionId]) ?? [];
-
-  const replaceSessionSegments = (sessionId: string, nextSegments: FocusSegment[]) => {
-    setSessionSegmentsById((prev) => ({
-      ...prev,
-      [sessionId]: nextSegments,
-    }));
-    setDetail((prev) =>
-      prev?.session.id === sessionId
-        ? {
-            ...prev,
-            segments: nextSegments,
-          }
-        : prev,
-    );
-  };
+    },
+    [detailRequestGate],
+  );
 
   const toggleExpand = async (id: string) => {
     if (expandedRef.current === id) {
@@ -377,6 +502,146 @@ export function HistoryPanel() {
     await reloadDetail(id);
   };
 
+  // 保持当前选中的会话与可见会话同步（默认选中首条记录）
+  useEffect(() => {
+    if (visibleSessions.length > 0) {
+      if (!selectedSessionId || !visibleSessions.some((s) => s.id === selectedSessionId)) {
+        const firstId = visibleSessions[0].id;
+        setSelectedSessionId(firstId);
+        expandedRef.current = firstId;
+        setExpanded(firstId);
+        void reloadDetail(firstId);
+      }
+    } else {
+      setSelectedSessionId(null);
+      expandedRef.current = null;
+      setExpanded(null);
+    }
+  }, [visibleSessions, selectedSessionId, reloadDetail]);
+
+  const handleSelectSession = (id: string) => {
+    setSelectedSessionId(id);
+    expandedRef.current = id;
+    setExpanded(id);
+    void reloadDetail(id);
+  };
+
+  const activeSession =
+    visibleSessions.find((s) => s.id === selectedSessionId) ?? visibleSessions[0] ?? null;
+
+  const copySessionRecord = (session: FocusSession) => {
+    const title = session.title || session.defaultTaskTitle || '专注会话';
+    const clock = `${formatClock(session.startedAt)} - ${session.endedAt ? formatClock(session.endedAt) : '进行中'}`;
+    const dur = formatMinutes(session.activeElapsedMs);
+    const project = session.defaultTaskTitle ? '💻 工作任务' : '默认心流';
+    const segs =
+      (detail?.session.id === session.id ? detail.segments : sessionSegmentsById[session.id]) ?? [];
+    const segCount = segs.length || 1;
+    const pauseCount =
+      detail?.session.id === session.id ? detail.pauses.length : session.pauseElapsedMs > 0 ? 1 : 0;
+    const md = `### [FocusLink 会话记录]\n- **任务**：${title}\n- **起止**：${clock}\n- **有效专注**：${dur}\n- **所属清单**：${project}\n- **片段数**：${segCount} 段\n- **暂停**：${pauseCount} 次`;
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(md);
+    }
+    addToast('会话结构化 Markdown 已复制', 'success');
+  };
+
+  const { trackSlices, miniSegments } = useMemo(() => {
+    if (!activeSession) return { trackSlices: [], miniSegments: [] };
+    const isLoaded = detail?.session.id === activeSession.id;
+    const focusSegments = isLoaded
+      ? detail.segments
+      : (sessionSegmentsById[activeSession.id] ?? []);
+    const pauses = isLoaded ? detail.pauses : [];
+
+    type UnifiedItem = {
+      type: 'focus' | 'pause';
+      startedAt: number;
+      endedAt: number;
+      durationMs: number;
+      name: string;
+      segment?: FocusSegment;
+    };
+
+    const items: UnifiedItem[] = [];
+    focusSegments.forEach((seg, idx) => {
+      const start = seg.startedAt;
+      const dur = Math.max(1000, seg.activeElapsedMs);
+      const end = seg.endedAt ?? start + dur;
+      items.push({
+        type: 'focus',
+        startedAt: start,
+        endedAt: end,
+        durationMs: dur,
+        name: `片段 ${idx + 1} · ${seg.title || '专注片段'}`,
+        segment: seg,
+      });
+    });
+
+    pauses.forEach((p) => {
+      const start = p.pauseStartedAt;
+      const dur = Math.max(1000, p.durationMs);
+      const end = p.pauseEndedAt ?? start + dur;
+      items.push({
+        type: 'pause',
+        startedAt: start,
+        endedAt: end,
+        durationMs: dur,
+        name: `暂停事件 · ${p.reason || '休息暂停'}`,
+      });
+    });
+
+    if (items.length === 0) {
+      items.push({
+        type: 'focus',
+        startedAt: activeSession.startedAt,
+        endedAt: activeSession.startedAt + activeSession.activeElapsedMs,
+        durationMs: Math.max(1000, activeSession.activeElapsedMs),
+        name: `片段 1 · ${activeSession.title || activeSession.defaultTaskTitle || '专注片段'}`,
+      });
+      if (activeSession.pauseElapsedMs > 0) {
+        items.push({
+          type: 'pause',
+          startedAt: activeSession.startedAt + activeSession.activeElapsedMs,
+          endedAt:
+            activeSession.startedAt + activeSession.activeElapsedMs + activeSession.pauseElapsedMs,
+          durationMs: activeSession.pauseElapsedMs,
+          name: '暂停事件 · 休息暂停',
+        });
+      }
+    }
+
+    items.sort((a, b) => a.startedAt - b.startedAt);
+
+    const totalMs = Math.max(
+      1,
+      items.reduce((sum, it) => sum + it.durationMs, 0),
+    );
+
+    const slices = items.map((it) => {
+      const pct = Math.max(4, Math.round((it.durationMs / totalMs) * 100));
+      return {
+        type: it.type,
+        pct,
+        lbl:
+          it.type === 'focus'
+            ? `专注 ${formatMinutes(it.durationMs)}`
+            : formatMinutes(it.durationMs),
+      };
+    });
+
+    const miniRows = items.map((it, idx) => ({
+      key: `${it.type}-${it.startedAt}-${idx}`,
+      type: it.type,
+      name: it.name,
+      time: `${formatClockSeconds(it.startedAt)} - ${formatClockSeconds(it.endedAt)}`,
+      dur: formatDuration(it.durationMs),
+      segment: it.segment,
+    }));
+
+    return { trackSlices: slices, miniSegments: miniRows };
+  }, [activeSession, detail, sessionSegmentsById]);
+
   const handleDelete = (id: string) => {
     const isCurrentSession = currentSessionId === id;
     if (isCurrentSession && (currentTimerState === 'running' || currentTimerState === 'paused')) {
@@ -393,6 +658,8 @@ export function HistoryPanel() {
         setSnapshot(freshSnapshot);
       }
       await load();
+      // 删除会改变侧栏「今日/7 天/30 天」三个读数，需要一并重取。
+      setSidebarReloadToken((token) => token + 1);
       if (expandedRef.current === id) {
         expandedRef.current = null;
         detailRequestGate.invalidate();
@@ -404,24 +671,6 @@ export function HistoryPanel() {
       addToast('已删除本地记录；番茄 To-do 仅清理本机记录', 'success');
     } catch (e) {
       addToast('删除失败：' + (e as Error).message, 'error');
-    }
-  };
-
-  const handleExport = async (id: string, format: 'json' | 'csv' | 'markdown') => {
-    try {
-      const content = await window.focuslink.sessions.export(id, format);
-      const blob = new Blob([content], {
-        type: format === 'json' ? 'application/json' : 'text/plain',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `focuslink-${id.slice(0, 8)}.${format === 'markdown' ? 'md' : format}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      addToast('已导出', 'success');
-    } catch (e) {
-      addToast('导出失败：' + (e as Error).message, 'error');
     }
   };
 
@@ -479,32 +728,6 @@ export function HistoryPanel() {
       if (expanded) await reloadDetail(expanded);
     } catch (e) {
       addToast('关联失败：' + (e as Error).message, 'error');
-    } finally {
-      setLinking(false);
-    }
-  };
-
-  const handleClearSegment = async (segmentId: string) => {
-    setLinking(true);
-    try {
-      await window.focuslink.timer.clearSegmentTask(segmentId);
-      addToast('已清除该片段任务关联', 'info');
-      if (expanded) await reloadDetail(expanded);
-    } catch (e) {
-      addToast('清除失败：' + (e as Error).message, 'error');
-    } finally {
-      setLinking(false);
-    }
-  };
-
-  const handleClearSessionDefault = async (sessionId: string) => {
-    setLinking(true);
-    try {
-      await window.focuslink.timer.clearSessionDefaultTask(sessionId);
-      addToast('已清除本次默认任务', 'info');
-      if (expanded) await reloadDetail(expanded);
-    } catch (e) {
-      addToast('清除失败：' + (e as Error).message, 'error');
     } finally {
       setLinking(false);
     }
@@ -569,74 +792,6 @@ export function HistoryPanel() {
     }
   };
 
-  const handleSyncTomatodo = async (sessionId: string) => {
-    if (syncingSessionId) return;
-    setSyncingSessionId(sessionId);
-    setSyncingKind('tomatodo');
-    try {
-      const result = await window.focuslink.tomatodo.syncSession(sessionId);
-      if (result.total === 0) {
-        addToast('没有符合同步条件的专注片段（需要已结束且有专注时长）', 'info');
-        return;
-      }
-      const cloudSynced = result.results.filter(
-        (item: { cloudSynced?: boolean }) => item.cloudSynced,
-      ).length;
-      const localPending = result.results.filter(
-        (item: { localWritten?: boolean; cloudSynced?: boolean }) =>
-          item.localWritten && !item.cloudSynced,
-      ).length;
-      if (result.failed > 0) {
-        // 番茄 Todo 语义：cloudSynced = 客户端已确认上传；本地已写未确认 = 待上传；不宣称独立云端回读。
-        addToast(
-          `番茄 Todo 同步：上传已确认 ${cloudSynced} 条，待上传 ${localPending} 条，失败 ${result.failed} 条`,
-          'error',
-        );
-      } else if (cloudSynced > 0 && localPending === 0) {
-        addToast(`番茄 Todo 已确认上传 ${cloudSynced} 条专注记录`, 'success');
-      } else if (localPending > 0) {
-        addToast(`已写入本地 ${localPending} 条，待番茄 Todo 上传`, 'info');
-      } else {
-        addToast('番茄 Todo 记录已存在且无需重复同步', 'info');
-      }
-      await refreshTomatodoStatus(sessionId);
-      if (expanded) await reloadDetail(expanded);
-    } catch (e) {
-      addToast('番茄 Todo 同步失败：' + (e as Error).message, 'error');
-    } finally {
-      setSyncingSessionId(null);
-      setSyncingKind(null);
-    }
-  };
-
-  const handleSetSubject = async (
-    sessionId: string,
-    segmentId: string,
-    subject: TomatodoSubject | null,
-  ) => {
-    const prevSegments = getSessionSegmentsForEdit(sessionId);
-    if (prevSegments.length === 0) return;
-    const nextSegments = prevSegments.map((segment) =>
-      segment.id === segmentId ? { ...segment, tomatodoSubject: subject } : segment,
-    );
-    replaceSessionSegments(sessionId, nextSegments);
-    try {
-      const result = await window.focuslink.tomatodo.setSubject(segmentId, subject);
-      await refreshTomatodoStatus(sessionId);
-      if (!result.ok) {
-        addToast(
-          `学科已保存到本地，但番茄 Todo 更新失败：${result.error ?? '请稍后补同步'}`,
-          'error',
-        );
-      } else if (result.externalUpdatedCount > 0) {
-        addToast('已更新番茄 Todo 学科记录', 'success');
-      }
-    } catch (e) {
-      replaceSessionSegments(sessionId, prevSegments);
-      addToast('设置学科失败：' + (e as Error).message, 'error');
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 text-fg-subtle">
@@ -667,101 +822,51 @@ export function HistoryPanel() {
   }
 
   return (
-    <div className="history-page" data-pal={taskAppearance.palette} data-skin={cardSkin}>
-      {/* 工位横幅：视图身份（当前范围）→ 范围仪器控制 → 刷新状态 */}
-      <header className="history-header view-console">
-        <div className="console-identity">
-          <span className="console-kicker">统计 · 时间账本</span>
-          <span className="history-range-word">
-            {rangePreset === 'today'
-              ? dayCursorFullLabel
-              : `${formatShortDate(range.start)} – ${formatShortDate(range.end)}`}
-          </span>
-          <span className="history-range-count">
-            {rangePreset === 'today'
-              ? `${filteredSessions.length} 条记录`
-              : `${filteredSessions.length} / ${sessions.length} 条记录`}
-          </span>
-        </div>
-        <div className="console-readout history-header-controls">
-          <div className="history-filter-row">
-            <span className="history-filter-label">时间范围</span>
-            <div className="history-filter-buttons" role="group" aria-label="时间范围筛选">
-              {RANGE_PRESETS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`motion-press ${
-                    rangePreset === item.id ? 'bg-accent text-accent-fg' : ''
-                  }`}
-                  onClick={() => selectRangePreset(item.id)}
-                  aria-pressed={rangePreset === item.id}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+    <div
+      className="history-page stats-workbench"
+      data-pal={taskAppearance.palette}
+      data-skin={cardSkin}
+    >
+      {/* 标题栏（原型 header.app-titlebar）：FL 品牌 + 全局搜索框(Ctrl K) + 同步胶囊 + 外观。
+          内容带落在 y=30–72，让开客户端 shell 顶部 0–30px 的固定拖拽带与窗口按钮——
+          详见 stats-workbench.css 第 10.1 节：42px 标题栏会被拖拽带吞掉搜索框。 */}
+      <header className="app-titlebar">
+        <div className="titlebar-left">
+          <div className="app-brand">
+            <div className="app-brand-badge">FL</div>
+            <span>FocusLink</span>
           </div>
-          {rangePreset === 'today' && (
-            <div className="history-day-navigator" aria-label="单日日期导航">
-              <button
-                type="button"
-                className="motion-press"
-                onClick={() => moveSingleDay(-1)}
-                aria-label="前一天"
-                title="前一天"
-              >
-                <Icon.ChevronLeft size="sm" />
-              </button>
-              <button
-                type="button"
-                className="history-day-current motion-press"
-                onClick={() => setDayCursor(startOfDay(Date.now()))}
-                aria-label={dayCursorIsToday ? `当前日期：${dayCursorFullLabel}` : '回到今天'}
-                title={dayCursorIsToday ? dayCursorFullLabel : '回到今天'}
-              >
-                <strong>{dayCursorFullLabel}</strong>
-                <span>{dayCursorIsToday ? '今天' : '回到今天'}</span>
-              </button>
-              <button
-                type="button"
-                className="motion-press"
-                onClick={() => moveSingleDay(1)}
-                disabled={dayCursorIsToday}
-                aria-label="后一天"
-                title={dayCursorIsToday ? '今天之后没有统计数据' : '后一天'}
-              >
-                <Icon.ChevronRight size="sm" />
-              </button>
-            </div>
-          )}
-          {rangePreset === 'custom' && (
-            <div className="history-custom-range">
-              <input
-                type="date"
-                className="input"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-              />
-              <span>至</span>
-              <input
-                type="date"
-                className="input"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-              />
-            </div>
-          )}
         </div>
-        <div className="console-actions">
-          <span
-            className={`history-range-refresh ${analyticsRefreshing ? 'is-visible' : ''}`}
+
+        <div className="titlebar-center">
+          <div className="cmd-search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              id="globalSearchInput"
+              type="text"
+              placeholder="快速查找专注记录、任务或标签..."
+              aria-label="全局搜索：专注记录、任务或标签"
+              value={taskQuery}
+              onChange={(event) => setTaskQuery(event.target.value)}
+            />
+            <span className="kbd-hint">Ctrl K</span>
+          </div>
+        </div>
+
+        <div className="titlebar-right">
+          <div
+            className={`sync-badge ${syncState.tone}`}
             role="status"
             aria-live="polite"
+            title={syncState.detail}
           >
-            <Icon.Loader size="xs" className={analyticsRefreshing ? 'motion-spin' : ''} />
-            更新数据
-          </span>
+            <i />
+            <span>{syncState.label}</span>
+          </div>
           <div className="relative" ref={appearanceMenuRef}>
             <button
               type="button"
@@ -842,318 +947,371 @@ export function HistoryPanel() {
         </div>
       </header>
 
-      {/* 双区工作台：左侧分析画布独立滚动，右侧唯一账本作为阅读列 */}
+      {/* 三栏工作台：统计侧栏 | 统计画卷（工具栏 + 分析画布）| 唯一会话账本阅读列。
+          工具栏必须放在中栏内部（原型 main.stats-paper > div.list-toolbar）：
+          原型侧栏是从标题栏下方直接开始的，工具栏只压在中栏上。 */}
       <div className="history-body">
-        <div className="history-canvas">
-          {/* 统一分析画布：零数据时同样渲染，由 HistoryInsights 提供完整零状态
-              （state-block 说明 + 空图表骨架），不隐藏统计区域。 */}
-          <HistoryInsights
-            summary={rangeStats}
-            range={range}
-            analytics={analytics}
-            slideDirection={slideDirection}
-            onSelectRange={selectRangePreset}
-            onOpenSession={toggleExpand}
-          />
+        <StatsSidebar
+          views={statsViews}
+          categories={sidebarCategories}
+          activeCategory={categoryFilter?.key ?? 'all'}
+          onSelectCategory={(key) => {
+            if (key === 'all') {
+              setCategoryFilter(null);
+              return;
+            }
+            const match = sidebarCategories.find((category) => category.key === key);
+            setCategoryFilter(match ? { key: match.key, label: match.label } : null);
+          }}
+        />
+
+        <div className="stats-paper-main">
+          <div className="list-toolbar stats-toolbar">
+            <div className="list-title-group">
+              <h2 id="activeViewTitle">{RANGE_VIEW_TITLES[rangePreset] ?? '今日心流看板'}</h2>
+              <span className="list-stats-text" id="activeViewStats">
+                {rangePreset === 'today'
+                  ? `${dayCursorLabel} · ${filteredSessions.length} 个专注会话 · 累计 ${formatHoursMinutes(rangeStats.active)}`
+                  : `${formatShortDate(range.start)} - ${formatShortDate(range.end)} · ${filteredSessions.length} 个专注会话 · 累计 ${formatHoursMinutes(rangeStats.active)}`}
+              </span>
+              {(railKeyword || railCategory) && (
+                <button
+                  type="button"
+                  className="stats-filter-chip motion-press"
+                  onClick={() => {
+                    setTaskQuery('');
+                    setCategoryFilter(null);
+                  }}
+                  title="清除筛选，恢复完整账本"
+                >
+                  {categoryFilter ? `清单：${categoryFilter.label}` : `搜索：${taskQuery}`} ·{' '}
+                  {visibleSessions.length} 条
+                  <Icon.X size="xs" />
+                </button>
+              )}
+            </div>
+
+            <div className="list-toolbar-actions">
+              <button
+                type="button"
+                className="btn-tool motion-press"
+                onClick={() => stepDay(-1)}
+                title="前一天"
+                aria-label="前一天"
+              >
+                <Icon.ChevronLeft size="xs" />
+                前一天
+              </button>
+              <button
+                type="button"
+                className="btn-tool motion-press"
+                onClick={() => stepDay(1)}
+                disabled={rangePreset === 'today' && dayCursorIsToday}
+                title={
+                  rangePreset === 'today' && dayCursorIsToday ? '今天之后没有统计数据' : '后一天'
+                }
+                aria-label="后一天"
+              >
+                后一天
+                <Icon.ChevronRight size="xs" />
+              </button>
+              <button
+                type="button"
+                className="btn-tool motion-press"
+                onClick={handleExportLedger}
+                title="导出当前范围的 CSV 时间账本"
+              >
+                <Icon.Download size="xs" />
+                导出账本
+              </button>
+              <span
+                className={`history-range-refresh ${analyticsRefreshing ? 'is-visible' : ''}`}
+                role="status"
+                aria-live="polite"
+              >
+                <Icon.Loader size="xs" className={analyticsRefreshing ? 'motion-spin' : ''} />
+                更新数据
+              </span>
+            </div>
+          </div>
+
+          <div className="history-canvas">
+            {/* 统一分析画布：零数据时同样渲染完整 5 卡贴画卷骨架，
+                不再切换到另一套「0 分钟」空态页面。 */}
+            <HistoryInsights
+              summary={rangeStats}
+              range={range}
+              analytics={analytics}
+              slideDirection={slideDirection}
+              onSelectRange={selectRangePreset}
+              onOpenSession={toggleExpand}
+              taskQuery={taskQuery}
+            />
+          </div>
         </div>
 
-        <aside className="history-ledger-rail" aria-label="历史会话时间线">
-          <header className="history-timeline-header">
-            <span className="history-section-title">
-              <Icon.History size="sm" tone="accent" />
-              会话时间线
+        <aside className="detail-pane stats-detail-pane" aria-label="会话时间账本">
+          <div className="detail-head-bar">
+            <div className="detail-head-title">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                style={{ width: 14, height: 14, color: 'var(--accent)' }}
+              >
+                <path d="M12 8v4l3 3" />
+                <circle cx="12" cy="12" r="10" />
+              </svg>
+              会话时间账本
+            </div>
+            <span
+              id="sessionBadgeCount"
+              style={{
+                fontSize: 11,
+                fontFamily: 'var(--font-num)',
+                color: 'var(--text-tertiary)',
+              }}
+            >
+              {visibleSessions.length} 轮记录
             </span>
-            <span className="history-timeline-meta">{filteredSessions.length} 次会话</span>
-          </header>
-          {filteredSessions.length > 0 ? (
-            <section className="history-timeline">
-              {sessionGroups.map((group) => (
-                <div className="history-day-group" key={group.key}>
-                  <header className="history-day-header">
-                    <span className="history-day-title">
-                      {group.label}
-                      <small>{group.weekday}</small>
-                    </span>
-                    <span className="history-day-meta">
-                      专注 <strong>{formatMinutes(group.activeMs)}</strong> ·{' '}
-                      {group.sessions.length} 次
-                    </span>
-                  </header>
-                  <div className="history-day-sessions">
-                    {group.sessions.map((session) => {
-                      const rowSegments =
-                        detail?.session.id === session.id
-                          ? detail.segments
-                          : sessionSegmentsById[session.id];
-                      const measuredMs = Math.max(
-                        1,
-                        session.wallElapsedMs,
-                        session.activeElapsedMs + session.pauseElapsedMs,
-                      );
-                      const activeRatio = Math.min(
-                        100,
-                        (session.activeElapsedMs / measuredMs) * 100,
-                      );
-                      const pauseRatio = Math.min(
-                        100 - activeRatio,
-                        (session.pauseElapsedMs / measuredMs) * 100,
-                      );
-                      return (
-                        <div
-                          key={session.id}
-                          className="history-session hm-stagger-in"
-                          style={
-                            {
-                              '--hm-delay': `${Math.min((sessionStaggerIndex.get(session.id) ?? 0) * 40, 560)}ms`,
-                            } as CSSProperties
-                          }
-                        >
-                          <button
-                            type="button"
-                            className="history-session-row"
-                            onClick={() => toggleExpand(session.id)}
-                          >
-                            {/* 时刻锚点：起止墙钟立在行首，构成账本的时间脊线 */}
-                            <span className="history-session-anchor timer-digit">
-                              <strong>{formatClock(session.startedAt)}</strong>
-                              <small>
-                                {session.endedAt ? formatClock(session.endedAt) : '进行中'}
-                              </small>
-                            </span>
-                            <div className="history-session-main">
-                              <div className="history-session-line">
-                                <span className="history-session-active timer-digit">
-                                  {formatMinutes(session.activeElapsedMs)}
-                                </span>
-                                <span className="history-session-when">
-                                  {formatRelative(session.startedAt)}
-                                </span>
-                              </div>
-                              <div className="history-ratio-track" aria-hidden="true">
-                                <span className="focus" style={{ width: `${activeRatio}%` }} />
-                                <span className="pause" style={{ width: `${pauseRatio}%` }} />
-                              </div>
-                              {session.defaultTaskTitle && (
-                                <div className="history-session-task">
-                                  <Icon.Star size="xs" />
-                                  <span className="truncate">{session.defaultTaskTitle}</span>
-                                </div>
-                              )}
-                              <div className="history-session-badges">
-                                <SessionLinkPreview session={session} segments={rowSegments} />
+          </div>
 
-                                {session.pauseElapsedMs > 0 && (
-                                  <span className="history-session-pause">
-                                    暂停 {formatDuration(session.pauseElapsedMs)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <Icon.ChevronRight
-                              size="sm"
-                              tone="subtle"
-                              className={`history-session-caret shrink-0 transition-transform duration-[var(--motion-normal)] ease-[var(--ease-out)] ${
-                                expanded === session.id ? 'rotate-90' : ''
-                              }`}
-                            />
-                          </button>
-
-                          <AnimatePresence initial={false} mode="sync">
-                            {expanded === session.id &&
-                              detailLoadingId === session.id &&
-                              detail?.session.id !== session.id && (
-                                <motion.div
-                                  key={`detail-loading-${session.id}`}
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                                  className="history-session-detail"
-                                >
-                                  <div className="flex items-center gap-2 px-4 py-4 text-[11.5px] text-fg-subtle">
-                                    <Icon.Loader size="sm" className="motion-spin text-accent" />
-                                    正在读取这次专注的片段与同步状态…
-                                  </div>
-                                </motion.div>
-                              )}
-                            {expanded === session.id &&
-                              detailLoadError?.sessionId === session.id && (
-                                <motion.div
-                                  key={`detail-error-${session.id}`}
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                                  className="history-session-detail error"
-                                >
-                                  <div className="flex items-center gap-2.5 px-4 py-3 text-[11.5px] text-danger">
-                                    <Icon.AlertCircle size="sm" />
-                                    <span className="min-w-0 flex-1 break-words">
-                                      详情读取失败：{detailLoadError.message}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="btn-outline motion-press !min-h-[28px] !px-2 !py-1 !text-[11px]"
-                                      onClick={() => void reloadDetail(session.id)}
-                                    >
-                                      <Icon.Refresh size="xs" />
-                                      重试
-                                    </button>
-                                  </div>
-                                </motion.div>
-                              )}
-                            {expanded === session.id && detail?.session.id === session.id && (
-                              <motion.div
-                                key={`detail-${session.id}`}
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                                className="history-session-detail"
-                              >
-                                <div className="history-session-detail-body">
-                                  <SessionDetailHeader detail={detail} />
-                                  <HistoryTimelineList
-                                    sessionId={session.id}
-                                    segments={detail.segments}
-                                    pauses={detail.pauses}
-                                    filter={segmentFilter[session.id] ?? 'all'}
-                                    linking={linking}
-                                    defaultSubject={tomatodoDefaultSubject}
-                                    onLink={(segId, idx) =>
-                                      setPickerTarget({
-                                        kind: 'segment',
-                                        segmentId: segId,
-                                        title: `专注片段 ${idx + 1} 关联任务`,
-                                      })
-                                    }
-                                    onClear={handleClearSegment}
-                                    onComplete={handleCompleteTask}
-                                    onSetSubject={handleSetSubject}
-                                    tomatodoStatus={tomatodoStatusBySession[session.id] ?? {}}
-                                    tomatodoEnabled={settings?.tomatodo.enabled === true}
-                                    completedTaskIds={completedTaskIds}
-                                  />
-                                  <div className="history-batch-section">
-                                    <BatchLinkPanel
-                                      segments={detail.segments}
-                                      linking={linking}
-                                      filter={segmentFilter[session.id] ?? 'all'}
-                                      onFilterChange={(f) =>
-                                        setSegmentFilter((prev) => ({ ...prev, [session.id]: f }))
-                                      }
-                                      onBatchUnlinked={() =>
-                                        setPickerTarget({
-                                          kind: 'batch-unlinked',
-                                          sessionId: session.id,
-                                          title: '把所有未关联片段关联到某任务',
-                                        })
-                                      }
-                                      onBatchAll={() =>
-                                        setPickerTarget({
-                                          kind: 'batch-all',
-                                          sessionId: session.id,
-                                          title: '把所有片段改为同一任务',
-                                        })
-                                      }
-                                    />
-                                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/40 pt-2 text-[11px]">
-                                      <span className="text-fg-subtle">本次默认任务</span>
-                                      <span className="max-w-[280px] truncate font-medium text-fg">
-                                        {detail.session.defaultTaskTitle ?? '未设置'}
-                                      </span>
-                                      <button
-                                        className="btn-ghost motion-press !min-h-[26px] !px-2 !py-0.5 !text-[11px]"
-                                        disabled={linking}
-                                        onClick={() =>
-                                          setPickerTarget({
-                                            kind: 'session-default',
-                                            sessionId: session.id,
-                                            title: '设置本次专注默认任务',
-                                          })
-                                        }
-                                      >
-                                        {detail.session.defaultTaskTitle ? '更换' : '关联'}
-                                      </button>
-                                      {detail.session.defaultTaskTitle && (
-                                        <button
-                                          className="btn-ghost motion-press !min-h-[26px] !px-2 !py-0.5 !text-[11px] text-danger"
-                                          disabled={linking}
-                                          onClick={() => handleClearSessionDefault(session.id)}
-                                        >
-                                          清除
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 pt-2.5">
-                                    {settings?.tomatodo.enabled && (
-                                      <button
-                                        className="btn-outline motion-press !min-h-[30px] !px-3 !py-1.5 !text-[12px]"
-                                        disabled={linking || syncingSessionId === session.id}
-                                        onClick={() => handleSyncTomatodo(session.id)}
-                                        title="补写入或重试番茄 Todo 同步"
-                                      >
-                                        <Icon.Refresh
-                                          size="xs"
-                                          className={
-                                            syncingSessionId === session.id &&
-                                            syncingKind === 'tomatodo'
-                                              ? 'animate-spin'
-                                              : ''
-                                          }
-                                        />
-                                        {syncingSessionId === session.id &&
-                                        syncingKind === 'tomatodo'
-                                          ? '写入中'
-                                          : '补写入番茄 Todo'}
-                                      </button>
-                                    )}
-
-                                    <div className="ml-auto flex items-center gap-1.5">
-                                      <details className="relative">
-                                        <summary className="btn-ghost motion-press flex min-h-[28px] cursor-pointer list-none items-center gap-1 px-2 py-1 text-[11px]">
-                                          <Icon.Download size="xs" />
-                                          导出
-                                        </summary>
-                                        <div className="absolute bottom-full right-0 z-20 mb-1 w-32 rounded-lg border border-border/60 bg-bg-elevated p-1">
-                                          {(['markdown', 'csv', 'json'] as const).map((format) => (
-                                            <button
-                                              key={format}
-                                              className="block w-full rounded-md px-2 py-1.5 text-left text-[11px] text-fg-muted hover:bg-bg-subtle hover:text-fg"
-                                              onClick={() => handleExport(session.id, format)}
-                                            >
-                                              {format === 'markdown'
-                                                ? 'Markdown'
-                                                : format.toUpperCase()}
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </details>
-                                      <button
-                                        className="history-icon-action danger motion-press"
-                                        onClick={() => handleDelete(session.id)}
-                                        title="删除记录"
-                                        aria-label="删除记录"
-                                      >
-                                        <Icon.Trash size="xs" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
+          {/* 会话流列表 */}
+          <div className="session-card-stream" id="sessionCardStream">
+            {visibleSessions.length === 0 ? (
+              <div
+                style={{
+                  padding: '24px 12px',
+                  textAlign: 'center',
+                  color: 'var(--text-tertiary)',
+                  fontSize: 12,
+                }}
+              >
+                {railKeyword || railCategory
+                  ? '没有匹配当前筛选的会话，点页头筛选胶囊可清除。'
+                  : '这段时间还没有会话记录。'}
+              </div>
+            ) : (
+              visibleSessions.map((session) => {
+                const isSelected = activeSession?.id === session.id;
+                const clock = `${formatClock(session.startedAt)} - ${session.endedAt ? formatClock(session.endedAt) : '进行中'}`;
+                const dur = formatMinutes(session.activeElapsedMs);
+                const title = session.title || session.defaultTaskTitle || '专注会话';
+                const project = session.defaultTaskTitle ? '💻 工作任务' : '默认心流';
+                const segCount = (sessionSegmentsById[session.id] ?? []).length || 1;
+                const pauseCount = session.pauseElapsedMs > 0 ? 1 : 0;
+                return (
+                  <div
+                    key={session.id}
+                    className={`session-card ${isSelected ? 'active' : ''}`}
+                    onClick={() => handleSelectSession(session.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') handleSelectSession(session.id);
+                    }}
+                  >
+                    <div className="sc-top">
+                      <span className="sc-time-pill">{clock}</span>
+                      <span className="sc-dur">{dur}</span>
+                    </div>
+                    <div className="sc-title" title={title}>
+                      {title}
+                    </div>
+                    <div className="sc-meta">
+                      <span>{project}</span>
+                      <span>
+                        · {segCount}片段 · {pauseCount}暂停
+                      </span>
+                    </div>
                   </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* 选中会话详情 (连续横向多段时序图) */}
+          {activeSession && (
+            <div className="card-widget deep-dive-box" id="deepDiveBox">
+              <div className="dd-head">
+                <h4 id="ddTitle">
+                  {activeSession.title || activeSession.defaultTaskTitle || '专注会话'}
+                </h4>
+                <p id="ddMeta">
+                  起止：{formatClockSeconds(activeSession.startedAt)} -{' '}
+                  {activeSession.endedAt ? formatClockSeconds(activeSession.endedAt) : '进行中'} ·
+                  自然历时{' '}
+                  {formatDuration(
+                    activeSession.wallElapsedMs ||
+                      activeSession.activeElapsedMs + activeSession.pauseElapsedMs,
+                  )}
+                </p>
+                {detailLoadingId === activeSession.id && (
+                  <div className="flex items-center gap-1.5 pt-1 text-[11px] text-fg-subtle">
+                    <Icon.Loader size="xs" className="motion-spin text-accent" />
+                    <span>加载明细中…</span>
+                  </div>
+                )}
+                {detailLoadError?.sessionId === activeSession.id && (
+                  <div className="pt-1 text-[11px] text-danger">
+                    详情加载失败：{detailLoadError.message}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: 'var(--text-tertiary)',
+                    marginBottom: 4,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span>连续时序轨 (Chronological Track)</span>
+                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-num)' }}>
+                    有效专注 {formatMinutes(activeSession.activeElapsedMs)}
+                  </span>
                 </div>
-              ))}
-            </section>
-          ) : (
-            <div className="history-rail-empty text-meta" role="status">
-              这段时间还没有会话记录。
+                <div className="horiz-flow-track" id="ddTrack">
+                  {trackSlices.map((slice, i) => (
+                    <div
+                      key={i}
+                      className={slice.type === 'focus' ? 'hf-seg-focus' : 'hf-seg-pause'}
+                      style={{ width: `${slice.pct}%` }}
+                      title={slice.lbl}
+                    >
+                      {slice.lbl}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: 'var(--text-tertiary)',
+                    marginBottom: 6,
+                  }}
+                >
+                  片段流水明细 (Segments & Pauses)
+                </div>
+                <div className="segment-mini-list" id="ddSegmentList">
+                  {miniSegments.map((seg) => (
+                    <div className="seg-mini-row" key={seg.key}>
+                      <div className="seg-row-top">
+                        <div className="seg-name-wrap">
+                          <span className={`seg-dot ${seg.type}`} />
+                          <span className="seg-name-txt" title={seg.name}>
+                            {seg.name}
+                          </span>
+                        </div>
+                        <span
+                          className="seg-dur-txt"
+                          style={{
+                            color: seg.type === 'focus' ? 'var(--accent)' : 'var(--pause-color)',
+                          }}
+                        >
+                          {seg.dur}
+                        </span>
+                      </div>
+                      <div
+                        className="seg-time-sub"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>{seg.time}</span>
+                        {seg.type === 'focus' && seg.segment && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="btn-ghost !min-h-[20px] !px-1.5 !py-0 !text-[10px]"
+                              disabled={linking}
+                              onClick={() =>
+                                setPickerTarget({
+                                  kind: 'segment',
+                                  segmentId: seg.segment!.id,
+                                  title: `为片段关联任务`,
+                                })
+                              }
+                            >
+                              {seg.segment.taskId ? '更换' : '关联'}
+                            </button>
+                            {seg.segment.taskId && (
+                              <button
+                                type="button"
+                                className="btn-ghost !min-h-[20px] !px-1.5 !py-0 !text-[10px] text-accent"
+                                disabled={linking || completedTaskIds.has(seg.segment.taskId)}
+                                onClick={() => void handleCompleteTask(seg.segment!)}
+                              >
+                                {completedTaskIds.has(seg.segment.taskId) ? '已完成' : '完成'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  borderTop: '1px solid var(--border-row)',
+                  paddingTop: 10,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }} id="ddProjectLabel">
+                  所属清单：{activeSession.defaultTaskTitle ? '💻 工作任务' : '默认心流'}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn-tool motion-press"
+                    style={{ height: 25, fontSize: 11 }}
+                    onClick={() => copySessionRecord(activeSession)}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      style={{ width: 12, height: 12 }}
+                    >
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    复制 Markdown
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-tool motion-press"
+                    style={{
+                      height: 25,
+                      width: 25,
+                      padding: 0,
+                      justifyContent: 'center',
+                      color: 'var(--prio-p1, #ef4444)',
+                    }}
+                    onClick={() => handleDelete(activeSession.id)}
+                    title="删除记录"
+                    aria-label="删除记录"
+                  >
+                    <Icon.Trash size="xs" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </aside>

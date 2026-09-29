@@ -1,0 +1,182 @@
+{
+  "_comment": "由 scripts/regression/extract-stats-prototype-contract.cjs 从用户已确认的统计页原型抽取。原型变更后必须重新运行该脚本，否则 tests/statsStyleContract.test.ts 会因 SHA256 不符而失败。",
+  "prototypeFile": "统计页原型.html",
+  "prototypeSha256": "cd6dc2391af48aedde05c753b4d4d0f3125d9462124ce08e9639d0ef913d6810",
+  "capturedAt": "2026-09-29",
+  "prototypeViewport": {
+    "w": 1570,
+    "h": 1005
+  },
+  "requiredSelectors": [
+    ".stats-dashboard-grid",
+    ".dashboard-card-tile",
+    ".card-widget",
+    ".side-item",
+    ".side-name",
+    ".nav-num",
+    ".nav-section",
+    ".nav-section-title",
+    ".project-dot",
+    ".btn-tool",
+    ".period-cap-card",
+    ".period-cap-head",
+    ".period-cap-val",
+    ".task-rank-card",
+    ".alloc-row-main",
+    ".hm-day-lbl",
+    ".bar-col",
+    ".bar-track",
+    ".dial-center-content",
+    ".section-panel"
+  ],
+  "requiredTexts": [
+    "统计视图",
+    "今日看板",
+    "最近 7 天",
+    "最近 30 天",
+    "心流热力全景",
+    "清单分类",
+    "全部分类",
+    "今日心流看板",
+    "导出账本",
+    "会话时间账本"
+  ],
+  "frozenStyles": {
+    ".stats-dashboard-grid": {
+      "w": 936,
+      "h": 1312.2,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".dashboard-card-tile": {
+      "w": 936,
+      "h": 175.4,
+      "bg": "rgb(255, 255, 255)",
+      "radius": "12px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".card-widget": {
+      "w": 936,
+      "h": 175.4,
+      "bg": "rgb(255, 255, 255)",
+      "radius": "12px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".side-item": {
+      "w": 203,
+      "h": 32,
+      "bg": "rgb(235, 243, 255)",
+      "radius": "6px",
+      "fontSize": "13px",
+      "fontWeight": "600"
+    },
+    ".side-name": {
+      "w": 122.6,
+      "h": 19,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "13px",
+      "fontWeight": "600"
+    },
+    ".nav-num": {
+      "w": 26.4,
+      "h": 14,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "11px",
+      "fontWeight": "600"
+    },
+    ".btn-tool": {
+      "w": 65,
+      "h": 28,
+      "bg": "rgb(255, 255, 255)",
+      "radius": "6px",
+      "fontSize": "12px",
+      "fontWeight": "500"
+    },
+    ".dial-center-content": {
+      "w": 96,
+      "h": 96,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".period-cap-card": {
+      "w": 172.4,
+      "h": 54.5,
+      "bg": "rgb(247, 248, 250)",
+      "radius": "8px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".period-cap-head": {
+      "w": 150.4,
+      "h": 15,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "10px",
+      "fontWeight": "400"
+    },
+    ".period-cap-val": {
+      "w": 150.4,
+      "h": 19.5,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "13px",
+      "fontWeight": "700"
+    },
+    ".task-rank-card": {
+      "w": 497.3,
+      "h": 59.5,
+      "bg": "rgb(247, 248, 250)",
+      "radius": "8px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".alloc-row-main": {
+      "w": 312.7,
+      "h": 19.8,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".hm-day-lbl": {
+      "w": 20,
+      "h": 14,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "10px",
+      "fontWeight": "400"
+    },
+    ".bar-col": {
+      "w": 31.5,
+      "h": 130,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".bar-track": {
+      "w": 14,
+      "h": 130,
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "3px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    },
+    ".section-panel": {
+      "w": 936,
+      "h": 366.8,
+      "bg": "rgb(255, 255, 255)",
+      "radius": "12px",
+      "fontSize": "13px",
+      "fontWeight": "400"
+    }
+  }
+}

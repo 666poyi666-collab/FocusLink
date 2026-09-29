@@ -66,7 +66,8 @@ describe('desktop history insights presentation', () => {
       }),
     );
     expect(markup).toContain('当日有效专注');
-    expect(markup).toContain('这一天的时间，花在了哪里');
+    expect(markup).toContain('清单分类投入占比');
+    expect(markup).toContain('24 小时精力节律时钟分布');
     expect(markup).toContain('00:20:00');
     expect(markup).toContain('完成 1 轮');
     expect(markup).toContain('24 小时时间轴');
@@ -163,7 +164,9 @@ describe('desktop history insights presentation', () => {
     const axisMarkup = markup.slice(axisStart, axisEnd);
 
     // 收束后观察区间 = 09:00–10:00（首条专注起点 → 末条真实记录终点），夜间/无记录区不计空档。
-    expect(markup).toContain('精确观察时间构成：专注 50 分钟，暂停 10 分钟，空档 0 分钟');
+    expect(markup).toContain('结构化复习');
+    expect(markup).toContain('旧记录（无片段归类）');
+    expect(markup).toContain('含 estimated 旧记录');
     expect(markup).toContain('00:00 至 24:00 完整统计');
     expect(markup).toContain('class="stats-day-map-scroll" aria-label="完整 24 小时时间地图"');
     expect(markup).toContain('class="stats-day-lane focus"');
@@ -174,10 +177,6 @@ describe('desktop history insights presentation', () => {
     expect(markup).not.toContain('stats-ledger-block gap');
     expect(markup).toContain('10:00');
     expect(markup).toContain('24:00');
-    expect(markup).toContain('精确空档');
-    expect(markup).toContain('精确观察时间：专注 83%，暂停 17%，空档 0%');
-    expect(markup).toContain('旧记录（无片段归类）');
-    expect(markup).toContain('另有 estimated 旧记录，不进入三分类');
     expect(analytics.dayLedgers[0].sessionFocus).toEqual([
       { sessionId: 'focus-session', focusMs: 50 * 60_000, estimated: false },
       { sessionId: 'legacy-session', focusMs: 40 * 60_000, estimated: true },
@@ -246,7 +245,9 @@ describe('desktop history insights presentation', () => {
     expect(analytics.dayLedgers[0].status).toBe('estimated-only');
     expect(markup).toContain('含 estimated 旧记录');
     expect(markup).toContain('旧记录（无片段归类）');
-    expect(markup).toContain('尚无精确观察区间；旧记录只作 estimated 汇总，不进入三分类');
+    expect(markup).toContain('当日有效专注');
+    expect(markup).toContain('00:40:00');
+    expect(markup).toContain('完成 1 轮');
   });
 
   it('renders accessible multi-day focus, pause and gap columns', () => {
