@@ -14,6 +14,17 @@ import {
 import type { FocusSession } from '@shared/types';
 import type { SessionAnalyticsResult } from '@shared/ipc/api';
 import { HistoryInsights } from './HistoryInsights';
+import { StatsSidebar, type StatsSidebarView } from './StatsSidebar';
+import {
+  HEATMAP_WINDOW_DAYS,
+  buildStatsSidebarCategories,
+  formatCompactHours,
+  formatHoursMinutes,
+  ledgerTotalsOf,
+  summarizeRangeWindows,
+  type StatsRangeWindows,
+  type StatsSidebarCategory,
+} from './statsLedgerModel';
 
 type StatsPreset = RangePreset | 'heatmap';
 
@@ -30,106 +41,6 @@ interface ProtoSession {
   track: Array<{ type: 'focus' | 'pause'; width: number; lbl: string }>;
   segments: Array<{ type: 'focus' | 'pause'; name: string; time: string; dur: string }>;
 }
-
-const DEFAULT_SESSIONS: ProtoSession[] = [
-  {
-    id: 1,
-    clock: '14:20 - 15:45',
-    title: 'Q3 季度重点业务复盘与跨部门协作交付物整理汇报',
-    project: '工作任务',
-    projectKey: 'dev',
-    dur: '1h 20m',
-    segCount: 2,
-    pauseCount: 1,
-    meta: '起止：14:20:00 - 15:45:00 · 自然历时 1h 25m',
-    track: [
-      { type: 'focus', width: 55, lbl: '专注 45m' },
-      { type: 'pause', width: 8, lbl: '5m' },
-      { type: 'focus', width: 37, lbl: '专注 35m' },
-    ],
-    segments: [
-      {
-        type: 'focus',
-        name: '片段 1 · 业务数据汇总结算',
-        time: '14:20:00 - 15:05:00',
-        dur: '45m 00s',
-      },
-      { type: 'pause', name: '暂停事件 · 休息喝水', time: '15:05:00 - 15:10:00', dur: '5m 00s' },
-      {
-        type: 'focus',
-        name: '片段 2 · 协作看板对齐联调',
-        time: '15:10:00 - 15:45:00',
-        dur: '35m 00s',
-      },
-    ],
-  },
-  {
-    id: 2,
-    clock: '16:10 - 17:30',
-    title: '设计并实现 FocusLink 任务页 4K 纯净网膜级交互设计规范',
-    project: '工作任务',
-    projectKey: 'dev',
-    dur: '1h 20m',
-    segCount: 1,
-    pauseCount: 0,
-    meta: '起止：16:10:00 - 17:30:00 · 自然历时 1h 20m',
-    track: [{ type: 'focus', width: 100, lbl: '专注 1h 20m (满格心流)' }],
-    segments: [
-      {
-        type: 'focus',
-        name: '片段 1 · 规范设计推导与实现',
-        time: '16:10:00 - 17:30:00',
-        dur: '1h 20m 00s',
-      },
-    ],
-  },
-  {
-    id: 3,
-    clock: '10:40 - 11:30',
-    title: '重构 LocalTaskProvider 数据库写入与排序幂等迁移',
-    project: '深度学习',
-    projectKey: 'ui',
-    dur: '50m',
-    segCount: 1,
-    pauseCount: 0,
-    meta: '起止：10:40:00 - 11:30:00 · 自然历时 50m',
-    track: [{ type: 'focus', width: 100, lbl: '专注 50m' }],
-    segments: [
-      {
-        type: 'focus',
-        name: '片段 1 · 数据库写入校验',
-        time: '10:40:00 - 11:30:00',
-        dur: '50m 00s',
-      },
-    ],
-  },
-  {
-    id: 4,
-    clock: '09:15 - 10:25',
-    title: '精读《深度工作》(Deep Work)：沉浸式专注与心流建立策略',
-    project: '个人生活',
-    projectKey: 'read',
-    dur: '1h 05m',
-    segCount: 2,
-    pauseCount: 1,
-    meta: '起止：09:15:00 - 10:25:00 · 自然历时 1h 10m',
-    track: [
-      { type: 'focus', width: 45, lbl: '专注 30m' },
-      { type: 'pause', width: 10, lbl: '5m' },
-      { type: 'focus', width: 45, lbl: '专注 35m' },
-    ],
-    segments: [
-      { type: 'focus', name: '片段 1 · 核心策略研读', time: '09:15:00 - 09:45:00', dur: '30m 00s' },
-      {
-        type: 'pause',
-        name: '暂停事件 · 记录架构笔记',
-        time: '09:45:00 - 09:50:00',
-        dur: '5m 00s',
-      },
-      { type: 'focus', name: '片段 2 · 实践比对', time: '09:50:00 - 10:25:00', dur: '35m 00s' },
-    ],
-  },
-];
 
 // Web Audio API 晶莹和弦音效合成器
 function playWebAudioChime(kind: 'kpi' | 'click') {
@@ -240,13 +151,111 @@ export function HistoryPanel() {
     };
   }, [range]);
 
+  /* ── 侧栏真实读数（v1.3.17 修复：此前是写死的原型样例值）──────────────────
+     2026-10-01 事故：侧栏显示 今日看板 4.6h / 最近7天 32.2h / 最近30天 128.6h /
+     心流热力全景 84天，以及 工作任务 55% / 深度学习 25% / 个人生活 12% ——
+     这些**全部是统计页原型里的样例数字**，被 e67767f（v1.3.15「彻底剔除旧版残留」）
+     连取数逻辑一起换掉了。用户看到的就是「数据来源有问题」。
+
+     侧栏是「范围无关的总览列」：四项读数与清单分类都取自同一个**截止今天的连续 30 天**
+     窗口，不随页头范围抖动（原型该列同样是范围无关的静态总览）。
+     `summarizeRangeWindows` 要求 daily 是截止今天的连续自然日序列，所以这里必须
+     用 start=今天-29天 / end=今天 请求，不能复用页头那份 analytics。 */
+  const [sidebarWindows, setSidebarWindows] = useState<StatsRangeWindows | null>(null);
+  const [sidebarCategories, setSidebarCategories] = useState<StatsSidebarCategory[]>([]);
+  /* 侧栏的点击回调要引用下面才定义的 handleSwitchPreset，用 ref 避开定义顺序问题。 */
+  const handleSwitchPresetRef = useRef<(mode: StatsPreset) => void>(() => {});
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSidebar = async () => {
+      try {
+        if (!window.focuslink?.sessions?.analytics) return;
+        const now = new Date();
+        const end = Date.now();
+        const start =
+          new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 29 * 86_400_000;
+        const res = await window.focuslink.sessions.analytics({
+          start,
+          end,
+          timelineStart: start,
+          timelineEnd: end,
+        });
+        if (cancelled) return;
+        const ledgers = res.dayLedgers ?? [];
+        setSidebarWindows(summarizeRangeWindows(res.daily ?? []));
+        const totalFocus = Math.max(
+          0,
+          ledgerTotalsOf(ledgers).focusMs + ledgerTotalsOf(ledgers).estimatedFocusMs,
+        );
+        setSidebarCategories(buildStatsSidebarCategories(ledgers, totalFocus, 3));
+      } catch (err) {
+        console.error('Failed to load sidebar analytics:', err);
+      }
+    };
+
+    void loadSidebar();
+    const unsub = window.focuslink?.on?.('timer:state-changed', () => {
+      void loadSidebar();
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, []);
+
+  const sidebarViews = useMemo<StatsSidebarView[]>(
+    () => [
+      {
+        id: 'today',
+        label: '今日看板',
+        value: formatCompactHours(sidebarWindows?.todayMs ?? 0),
+        active: curRange === 'today',
+        onSelect: () => handleSwitchPresetRef.current('today'),
+        title: '只看今天的心流看板',
+      },
+      {
+        id: '7d',
+        label: '最近 7 天',
+        value: formatCompactHours(sidebarWindows?.weekMs ?? 0),
+        active: curRange === '7d',
+        onSelect: () => handleSwitchPresetRef.current('7d'),
+        title: '最近 7 天的累计有效专注',
+      },
+      {
+        id: '30d',
+        label: '最近 30 天',
+        value: formatCompactHours(sidebarWindows?.monthMs ?? 0),
+        active: curRange === '30d',
+        onSelect: () => handleSwitchPresetRef.current('30d'),
+        title: '最近 30 天的累计有效专注',
+      },
+      {
+        id: 'heatmap',
+        label: '心流热力全景',
+        value: `${HEATMAP_WINDOW_DAYS}天`,
+        active: curRange === 'heatmap',
+        onSelect: () => handleSwitchPresetRef.current('heatmap'),
+        title: `热力矩阵窗口：${HEATMAP_WINDOW_DAYS} 天（${HEATMAP_WINDOW_DAYS / 7} 周）`,
+      },
+    ],
+    [sidebarWindows, curRange],
+  );
+
   // 会话列表数据投影
   const sessions = useMemo<ProtoSession[]>(() => {
+    /* 没有真实会话就如实为空。
+       2026-10-01 修复：原实现在这里回落 `DEFAULT_SESSIONS`（一整份原型样例会话：
+       工作任务/深度学习/个人生活、写死的时长与片段），于是空数据的一天会渲染出
+       一份**不存在的**会话账本。原型是设计稿，样例会话不是可以渲染给用户的数据。
+       常量本身保留，只用于测试与故事板参考。 */
     if (!analytics?.sessions || analytics.sessions.length === 0) {
-      return DEFAULT_SESSIONS;
+      return [];
     }
     return analytics.sessions.map((s: FocusSession, idx: number) => {
-      const isDev = Boolean(s.defaultTaskTitle);
+      /* 分类键必须用**真实任务名**，否则侧栏「清单分类」的筛选点不动任何会话。
+         原实现把 projectKey 硬编码成 'dev'/'all'，与真实分类永远对不上。 */
+      const label = s.defaultTaskTitle || s.title || '未关联';
       const dur = formatMinutes(s.activeElapsedMs);
       const clock = `${formatClock(s.startedAt)} - ${s.endedAt ? formatClock(s.endedAt) : '进行中'}`;
       const title = s.title || s.defaultTaskTitle || '专注会话';
@@ -255,8 +264,8 @@ export function HistoryPanel() {
         id: s.id || idx,
         clock,
         title,
-        project: isDev ? '工作任务' : '默认心流',
-        projectKey: isDev ? 'dev' : 'all',
+        project: label,
+        projectKey: label,
         dur,
         segCount: 1,
         pauseCount: s.pauseElapsedMs > 0 ? 1 : 0,
@@ -373,6 +382,7 @@ export function HistoryPanel() {
     };
     showToast(`已切换至${titles[mode] ?? '心流看板'}`);
   };
+  handleSwitchPresetRef.current = handleSwitchPreset;
 
   // 切换清单分类
   const handleFilterProject = (catKey: string, name: string) => {
@@ -380,6 +390,17 @@ export function HistoryPanel() {
     setProjectFilter(catKey);
     setCurSelectedSession(0);
     showToast(`已筛选清单：${name}`);
+  };
+
+  /* 侧栏「清单分类」点击：把真实分类名交给筛选。
+     原实现写死 dev/ui/read 三个假键，与真实分类永远对不上。 */
+  const handleSelectSidebarCategory = (key: string) => {
+    if (key === 'all') {
+      handleFilterProject('all', '全部分类');
+      return;
+    }
+    const category = sidebarCategories.find((item) => item.key === key);
+    handleFilterProject(key, category?.label ?? key);
   };
 
   // 前后日期导航
@@ -439,12 +460,19 @@ export function HistoryPanel() {
         ? '最近 7 天精力全景'
         : '最近 30 天心流沉淀';
 
+  /* 页头读数必须来自当前范围的真实 analytics。
+     2026-10-01 修复：这里原本写死了 '2026年9月22日 - 9月28日 · 28 个专注会话 · 累计 32.2h'
+     与 '2026年8月30日 - 9月28日 · 84 个会话 · 累计 128.6h'（原型样例值），
+     以及今日的 '累计 4h 35m' —— 与数据库真实值无关。 */
+  const formatDayLabel = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  };
+  const rangeActiveLabel = formatHoursMinutes(analytics?.totals?.activeMs ?? 0);
   const activeViewStats =
     curRange === 'today'
-      ? `${dayDateStr} · ${filteredSessions.length} 个专注会话 · 累计 4h 35m`
-      : curRange === '7d'
-        ? '2026年9月22日 - 9月28日 · 28 个专注会话 · 累计 32.2h'
-        : '2026年8月30日 - 9月28日 · 84 个会话 · 累计 128.6h';
+      ? `${dayDateStr} · ${filteredSessions.length} 个专注会话 · 累计 ${rangeActiveLabel}`
+      : `${formatDayLabel(range.start)} - ${formatDayLabel(range.end)} · ${filteredSessions.length} 个专注会话 · 累计 ${rangeActiveLabel}`;
 
   return (
     <div
@@ -507,133 +535,13 @@ export function HistoryPanel() {
 
       {/* 2. 三栏工作区 (Workspace Body - 100% 模数) */}
       <div className="workspace-body">
-        {/* 左侧栏：统计视图与清单分类 */}
-        <aside className="sidebar">
-          <div className="nav-section">
-            <div className="nav-section-title">
-              <span>统计视图</span>
-            </div>
-            <button
-              className={`side-item ${curRange === 'today' ? 'active' : ''}`}
-              onClick={() => handleSwitchPreset('today')}
-            >
-              <span className="side-item-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-              </span>
-              <span className="side-name">今日看板</span>
-              <span className="nav-num">4.6h</span>
-            </button>
-            <button
-              className={`side-item ${curRange === '7d' ? 'active' : ''}`}
-              onClick={() => handleSwitchPreset('7d')}
-            >
-              <span className="side-item-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                </svg>
-              </span>
-              <span className="side-name">最近 7 天</span>
-              <span className="nav-num">32.2h</span>
-            </button>
-            <button
-              className={`side-item ${curRange === '30d' ? 'active' : ''}`}
-              onClick={() => handleSwitchPreset('30d')}
-            >
-              <span className="side-item-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 20V10M18 20V4M6 20v-4" />
-                </svg>
-              </span>
-              <span className="side-name">最近 30 天</span>
-              <span className="nav-num">128.6h</span>
-            </button>
-            <button
-              className={`side-item ${curRange === 'heatmap' ? 'active' : ''}`}
-              onClick={() => handleSwitchPreset('heatmap')}
-            >
-              <span className="side-item-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="7" height="7" />
-                  <rect x="14" y="3" width="7" height="7" />
-                  <rect x="14" y="14" width="7" height="7" />
-                  <rect x="3" y="14" width="7" height="7" />
-                </svg>
-              </span>
-              <span className="side-name">心流热力全景</span>
-              <span className="nav-num">84天</span>
-            </button>
-          </div>
-
-          <div className="nav-section">
-            <div className="nav-section-title">
-              <span>清单分类</span>
-            </div>
-            <button
-              className={`side-item ${projectFilter === 'all' ? 'active' : ''}`}
-              onClick={() => handleFilterProject('all', '全部分类')}
-            >
-              <span className="project-dot" style={{ background: 'var(--accent)' }} />
-              <span className="side-name">全部分类</span>
-              <span className="nav-num">100%</span>
-            </button>
-            <button
-              className={`side-item ${projectFilter === 'dev' ? 'active' : ''}`}
-              onClick={() => handleFilterProject('dev', '工作任务')}
-            >
-              <span className="project-dot" style={{ background: '#2563EB' }} />
-              <span className="side-name">工作任务</span>
-              <span className="nav-num">55%</span>
-            </button>
-            <button
-              className={`side-item ${projectFilter === 'ui' ? 'active' : ''}`}
-              onClick={() => handleFilterProject('ui', '深度学习')}
-            >
-              <span className="project-dot" style={{ background: '#10B981' }} />
-              <span className="side-name">深度学习</span>
-              <span className="nav-num">25%</span>
-            </button>
-            <button
-              className={`side-item ${projectFilter === 'read' ? 'active' : ''}`}
-              onClick={() => handleFilterProject('read', '个人生活')}
-            >
-              <span className="project-dot" style={{ background: '#F59E0B' }} />
-              <span className="side-name">个人生活</span>
-              <span className="nav-num">12%</span>
-            </button>
-          </div>
-
-          <div className="sidebar-footer">
-            <div className="sidebar-user-pill">
-              <div className="user-avatar-mini">FL</div>
-              <span>FocusLink 统计空间</span>
-            </div>
-            <div
-              style={{
-                fontSize: '11px',
-                color: '#10B981',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: '5px',
-                  height: '5px',
-                  borderRadius: '50%',
-                  background: '#10B981',
-                }}
-              />
-              已就绪
-            </div>
-          </div>
-        </aside>
+        {/* 左侧栏：统计视图与清单分类 —— 真实数据（v1.3.17 修复写死的原型样例值） */}
+        <StatsSidebar
+          views={sidebarViews}
+          categories={sidebarCategories}
+          activeCategory={projectFilter}
+          onSelectCategory={handleSelectSidebarCategory}
+        />
 
         {/* 中间：统计画卷 (Stats Paper) */}
         <main className="stats-paper">

@@ -68,9 +68,12 @@ export function HistoryInsights({
   const rawFocus = ledgerTotals.focusMs + ledgerTotals.estimatedFocusMs;
   const rawPause = ledgerTotals.pauseMs + ledgerTotals.estimatedPauseMs;
 
-  // 若无真实数据，采用原型基准数据（保持画面完美丰满，绝无残缺）
-  const dashboardFocus = rawFocus > 0 ? rawFocus : 4.6 * 3600_000;
-  const dashboardPause = rawPause > 0 ? rawPause : 22 * 60_000;
+  /* 真实值，不再回落到原型样例。
+     2026-10-01 修复：原实现是 `rawFocus > 0 ? rawFocus : 4.6 * 3600_000` 与
+     `rawPause > 0 ? rawPause : 22 * 60_000` —— 没有数据时**凭空显示** 4.6 小时专注 /
+     22 分钟损耗，用户看到的是一份不存在的成绩单。现在没有数据就如实显示 0。 */
+  const dashboardFocus = rawFocus;
+  const dashboardPause = rawPause;
 
   const effectiveTasks = useMemo(() => {
     const merged = mergeLedgerTasks(dayLedgers);
@@ -795,13 +798,10 @@ function DonutAllocationCard({
   const colors = ['#2563EB', '#6366F1', '#10B981', '#94A3B8'];
   const circumference = 238.76; // 2 * PI * 38
 
-  const defaultCategories = [
-    { key: 'cat-1', title: '💻 工作任务', share: 55, activeMs: 151 * MINUTE, color: '#2563EB' },
-    { key: 'cat-2', title: '🎯 深度学习', share: 25, activeMs: 69 * MINUTE, color: '#6366F1' },
-    { key: 'cat-3', title: '📚 个人生活', share: 12, activeMs: 33 * MINUTE, color: '#10B981' },
-    { key: 'cat-4', title: '☕ 自由探索', share: 8, activeMs: 22 * MINUTE, color: '#94A3B8' },
-  ];
-
+  /* 没有真实分配数据时就如实为空。
+     2026-10-01 修复：这里原本放了一份原型样例分类（工作任务 55% / 深度学习 25% /
+     个人生活 12% / 自由探索 8%），于是空数据的一天会显示一份**不存在的**投入占比。
+     原型是设计稿，样例占比只是占位，不是可以渲染给用户的读数。 */
   const categories =
     allocation.items.length > 0
       ? allocation.items.map((item, i) => ({
@@ -811,7 +811,7 @@ function DonutAllocationCard({
           activeMs: item.activeMs,
           color: colors[i % colors.length],
         }))
-      : defaultCategories;
+      : [];
 
   let currentOffset = 0;
   const segments = categories.map((c) => {
@@ -1006,7 +1006,9 @@ function TopTasksLeaderboard({
                   <span className="tr-title" title={task.title}>
                     {task.title}
                   </span>
-                  <span className="tr-cat-pill">工作任务</span>
+                  {/* 2026-10-01 修复：这里原本写死 <span className="tr-cat-pill">工作任务</span>，
+                      于是每一行排行卡都顶着同一个假分类。DayLedgerTask 目前没有分类字段，
+                      所以不渲染这个标签，而不是编一个出来。 */}
                 </div>
                 <div className="tr-right">
                   <span className="tr-time">{duration(task.activeMs)}</span>

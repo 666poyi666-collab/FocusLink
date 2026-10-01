@@ -95,6 +95,11 @@ function hasClassToken(sources: string, selector: string): boolean {
   return sources.includes(selector) || sources.includes(selector.replace(/^\./, ''));
 }
 
+/** 去掉注释，只留下会执行的代码 —— 注释里允许保留被删掉的旧代码作为历史证据。 */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
 describe('统计页原型契约（FL-STATS-CONTRACT）', () => {
   const sources = readAll();
 
@@ -170,5 +175,40 @@ describe('统计页原型契约（FL-STATS-CONTRACT）', () => {
       expect(style.h, selector + ' 缺少高度').toBeTypeOf('number');
       expect(style.fontSize, selector + ' 缺少字号').toMatch(/px$/);
     }
+  });
+
+  /* ⑤ 客户端不得把原型的**样例数据**写死成界面读数。
+     2026-10-01 事故（用户报告「统计页面的数据来源有问题」）：e67767f（v1.3.15
+     「彻底剔除旧版残留」）删掉了侧栏的整套真实取数，改成写死原型样例值 ——
+     侧栏显示 今日看板 4.6h / 最近7天 32.2h / 最近30天 128.6h / 心流热力全景 84天
+     与 工作任务 55% / 深度学习 25% / 个人生活 12%，与数据库真实值无关。
+     结构测试抓不到这类问题（结构、文案、CSS 规则全都「对」），所以单独钉一条：
+     **原型的样例数字是设计稿的占位内容，不是客户端可以写死的读数。** */
+  it('客户端没有把原型样例读数写死成界面数据', () => {
+    const forbidden = [
+      { needle: '>4.6h<', what: '原型样例「今日看板 4.6h」' },
+      { needle: '>32.2h<', what: '原型样例「最近 7 天 32.2h」' },
+      { needle: '>128.6h<', what: '原型样例「最近 30 天 128.6h」' },
+      { needle: '4.6 * 3600_000', what: '原型样例 4.6 小时的兜底回落' },
+      { needle: '22 * 60_000', what: '原型样例 22 分钟损耗的兜底回落' },
+      { needle: 'share: 55', what: '原型样例分类占比 55%' },
+      { needle: '工作任务', what: '原型样例分类名' },
+      { needle: '2026年9月22日 - 9月28日', what: '原型样例日期区间' },
+      { needle: '2026年8月30日 - 9月28日', what: '原型样例日期区间' },
+    ];
+    /* 注释里允许引用被删掉的旧代码（那正是历史证据），只扫真正会执行的代码。 */
+    const found = forbidden.filter((f) => stripComments(sources).includes(f.needle));
+    expect(
+      found.map((f) => f.what + '  ← ' + f.needle),
+      '统计页把原型样例数据写死成了界面读数。原型是设计稿，样例数字只是占位；' +
+        '客户端必须从 sessions:analytics 的真实数据渲染。',
+    ).toEqual([]);
+  });
+
+  it('统计页确实从 sessions:analytics 取真实数据', () => {
+    expect(
+      sources.includes('sessions.analytics') || sources.includes("'sessions:analytics'"),
+      '统计页必须调用 sessions:analytics 拿真实数据',
+    ).toBe(true);
   });
 });
