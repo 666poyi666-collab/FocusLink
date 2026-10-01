@@ -275,32 +275,45 @@ Android `versionCode` 必须为正整数，且高于此前所有已发布或测�
 OPPO 手表 renderer 已冻结并退出新开发。`1.3.0/1306` 的设备功能验收分工以本页候选专属小节为准：
 华为本轮只安装回读，不形成胶囊或其他平板功能复验证据；Windows 安装门禁和三设备同版矩阵不变。
 
-### Windows 安装可见性门禁（2026-09-29 起，硬性）
+### Windows 安装可见性门禁（2026-09-29 起，2026-10-01 收紧，硬性）
 
-**「进程存在」不等于「应用已打开」。** 2026-09-29 的 v1.3.12 事故中，安装后进程长期存活、事件循环正常、
-每 60 秒仍在写同步心跳，但**顶层窗口数为 0**；此后每次点图标都被静默吞掉，用户侧表现为「永远打不开」，
-而当时的门禁只验证「进程已拉起运行」，因此该缺陷被完整通过。Windows 端安装验收必须回读下列**窗口事实**，
-缺一即判失败：
+**「进程存在」不等于「应用已打开」，「日志说窗口可见」也不等于「用户看得见」。**
+
+- 2026-09-29（v1.3.12）：安装后进程长期存活、每 60 秒仍在写同步心跳，但**顶层窗口数为 0**；此后每次点图标都被静默吞掉，用户侧表现为「永远打不开」。当时的门禁只验证「进程已拉起运行」。
+- 2026-10-01（v1.3.15 复发）：进程跑了 2 天，**应用自己写下了 `main window shown {"visible":true}`**，但用户在桌面上看不到窗口、`MainWindowHandle` 为 0。**日志证据为真，窗口照样不可见** —— 因此 v1.3.13 那条「日志证据与句柄二选一」的判据已被证伪。
+
+安装验收的**唯一通过条件**是下面这条命令退出码为 0：
 
 ```powershell
-# ① 进程存在 + 主窗口句柄非零
-Get-Process -Name FocusLink -IncludeUserName -ErrorAction SilentlyContinue |
-  Where-Object UserName -eq "$env:USERDOMAIN\$env:USERNAME" |
-  Select-Object Id, MainWindowHandle, MainWindowTitle, Responding
-# ② 应用自己写的呈现证据（v1.3.13 起每次呈现都会记录）
-Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd).log" |
-  Select-String 'main window shown|main window failed to become visible|first paint timed out'
+npm run smoke:window-visible
 ```
 
-- ① 必须至少有一个进程 `MainWindowHandle != 0` 且 `MainWindowTitle` 非空；或 ② 必须回读到
-  `main window shown` 且 `visible: true`。两者都为否即「安装后打不开」，不得写成「已重新拉起运行」。
-- 回读到 `main window failed to become visible` 或 `first paint timed out` 时，按
-  [INSTALLER_TROUBLESHOOTING.md](INSTALLER_TROUBLESHOOTING.md) 的 `FL-INSTALL-011` 处理。
+它从**当前桌面**独立检查「当前账户的 FocusLink 进程里至少有一个非零 `MainWindowHandle`」，并**同时**要求日志里有 `main window shown` 且 `visible: true`。**两条缺一不可**，缺一即「安装后打不开」，不得写成「已重新拉起运行」。
+
+手工对照：
+
+```powershell
+Get-Process -Name FocusLink -ErrorAction SilentlyContinue |
+  Select-Object Id, MainWindowHandle, MainWindowTitle, Responding
+# 全是 0 → 「打不开」
+
+Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd).log" |
+  Select-String 'main window shown|failed to become visible|first paint timed out|off every display|no display in this session'
+```
+
+- 回读到 `main window failed to become visible`、`first paint timed out`、`off every display` 或
+  `no display in this session` 时，按 [INSTALLER_TROUBLESHOOTING.md](INSTALLER_TROUBLESHOOTING.md) 的
+  `FL-INSTALL-011` / `FL-INSTALL-012` 处理。
 - **自动化不得代替用户拉起 GUI**：本机 agent shell 可能带 `ELECTRON_RUN_AS_NODE=1`，继承它会让 Electron
   退化为纯 Node（实测退出码 9 或静默退出 0 且不写日志）。任何脚本化拉起前必须
-  `Remove-Item Env:ELECTRON_RUN_AS_NODE`，且拉起后仍要按上面两条判据回读窗口事实，不能只看进程。
+  `Remove-Item Env:ELECTRON_RUN_AS_NODE`；**且脚本化拉起后仍必须跑 `smoke:window-visible`** ——
+  被自动化上下文拉起的进程可能落在用户看不到的桌面上，此时它在自己的上下文里「显示正常」。
+  安装完成后的首次启动，优先由用户自己从桌面或开始菜单完成。
 - 桌面图标点击路径也要验一次：在已有实例运行时再启动一次 `FocusLink.exe`，必须能让主窗口可见
   （v1.3.13 起 `second-instance` 会 `focus-existing` 或 `recreate`，并留下对应 `trigger` 证据）。
+- Android 版本必须与桌面同版递增：`android/app/build.gradle` 的 `versionName`/`versionCode` 与
+  `FocusLinkConfigTest.java` 的断言一起改。v1.3.14/v1.3.15 曾漏改，停在 `1.3.13 / 1319`，本项为硬性检查。
+
 
 每个补丁版本都在测试、三设备同版安装、CHANGELOG/实施日志、四文件发布目录和 Android APK 备份完成后推送 `main`。补丁尾号不再决定上传节奏；annotated tag、公开资产和 GitHub Release 只在用户明确要求时创建，不得因版本尾号自动发布。
 

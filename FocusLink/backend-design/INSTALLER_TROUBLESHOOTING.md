@@ -112,7 +112,44 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue   # 拉起 GU
 - `second-instance` 处理器此前只有 `if (mainWindow) { show/focus }`、没有 else：主窗口不存在时，用户每一次点图标都被静默吞掉。
 - `ready-to-show` 此前没有超时兜底：渲染进程未完成首帧时窗口永远停在 `show: false`，且不写任何日志。
 
-**验收口径（发布门禁已同步收紧）**：安装后必须回读到 `main window shown` 且 `visible: true`；`MainWindowHandle != 0` 或日志证据二者至少有一条，**进程存在本身不构成通过**。
+**验收口径（发布门禁已同步收紧）**：安装后必须**同时**回读到①应用日志里的 `main window shown` 且 `visible: true`，②在**交互桌面**上独立检查到非零 `MainWindowHandle`。二者缺一不构成通过。
+
+> **2026-10-01 修正**：本条原先写的是「日志证据与 `MainWindowHandle` 二者至少有一条」——**这条被证伪了**。v1.3.15 的事故里，应用写下了 `main window shown {"visible":true}`，但窗口在用户看不到的地方，`MainWindowHandle` 为 0。**日志证据可以为真而窗口仍然不可见**，所以两条缺一不可。集成命令：`npm run smoke:window-visible`。
+
+## FL-INSTALL-012：进程在跑、日志说「窗口已显示」，但用户看不到窗口（2026-10-01 实测复发）
+
+**症状**：安装新版本后应用打不开。进程长期存活（本次实测跑了 2 天），事件循环正常，**应用自己的日志里有 `main window shown {"trigger":"ready-to-show","visible":true}`**，但从用户桌面看不到任何窗口、`MainWindowHandle` 为 0、`EnumWindows` 也枚举不到该进程的任何顶层窗口；实例占着单实例锁，用户之后每次点图标都只拉起一个注定退出的第二实例。
+
+**与 `FL-INSTALL-011` 的区别**：011 是「窗口从未创建 / 从未显示」；012 是**窗口显示成功了，但不在用户所在的桌面上**。用户侧表现与处置一样，但判据不同 —— 012 的日志证据是「为真」的，所以**不能只靠日志**。
+
+### 一条命令的判据（v1.3.16 起）
+
+```powershell
+npm run smoke:window-visible
+```
+
+它做两件事：从**当前桌面**独立检查当前账户的 FocusLink 进程里是否至少有一个非零 `MainWindowHandle`（Windows 只给「当前桌面可见且有标题」的顶层窗口返回句柄），并回读当天日志里的窗口可见性记录。任一不满足即退出码非 0。
+
+手工对照：
+
+```powershell
+Get-Process -Name FocusLink -ErrorAction SilentlyContinue |
+  Select-Object Id, MainWindowHandle, MainWindowTitle, Responding
+# 全是 0 → 就是「打不开」，不要写成「进程已拉起运行」
+```
+
+### 处置顺序
+
+1. 确认是「无窗口」而不是「没进程」。
+2. 结束当前账户下的 `FocusLink.exe`（按 `FL-INSTALL-001` 过滤账户，不做全局强杀）。
+3. **由用户自己从桌面或开始菜单启动**；不要用后台自动化代替用户拉起 GUI。
+4. v1.3.16 起应用会自愈：窗口落在所有显示器之外时自动移回主显示器并记 `main window was off every display; recentering into the primary work area`；若整个会话一个显示器都没有，应用会记 `no display in this session; quitting to release the single-instance lock` 并主动退出，把锁让给用户的下一次点击。
+
+### 为什么会被创建在不可见的桌面上
+
+被**自动化/服务上下文**拉起的进程可能落在另一个窗口站/桌面上，此时窗口在它自己的上下文里「正常显示」，用户永远看不到。2026-09-29 与 2026-10-01 两次事故都发生在「由 agent 脚本执行 `Start-Process FocusLink.exe` 拉起」之后，而在用户自己双击桌面图标时从未复现。
+
+**因此**：发布门禁明确禁止自动化代替用户拉起 GUI；脚本化拉起前必须清 `ELECTRON_RUN_AS_NODE`，且拉起后必须跑 `smoke:window-visible`，不能只看进程。
 
 
 ## FL-INSTALL-003：卸载后仍显示旧版本

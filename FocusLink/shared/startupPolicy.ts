@@ -80,3 +80,64 @@ export function planSecondInstanceAction(input: {
   if (shouldStartHiddenToTray(false, input.argv)) return 'ignore-hidden-start';
   return input.windowExists && !input.windowDestroyed ? 'focus-existing' : 'recreate';
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   主窗口落点与交互桌面自检（FL-INSTALL-012）
+   ────────────────────────────────────────────────────────────────────────────
+   2026-10-01 复发事故：装的是 1.3.15，进程跑了 2 天，**应用自己写下
+   `main window shown {"visible":true}`**，但用户在桌面上看不到任何窗口、
+   `MainWindowHandle` 为 0、从交互桌面枚举不到该进程的任何顶层窗口。
+   即：窗口确实被「显示」了，却不在用户所在的会话/桌面上；
+   而它占着单实例锁，用户之后每次点图标都被吞掉 —— 又是「打不开」。
+
+   这说明 FL-INSTALL-011 的「必须留下可见性证据」还不够：**证据为真，
+   窗口照样不可见。** 因此补两条纯函数不变量：
+
+     3. **窗口必须落在某个显示器工作区内。** 落在所有显示器之外（换过显示器、
+        分辨率变化、被创建在异常上下文里）时要能算出「移回主显示器」的目标矩形。
+     4. **进程必须运行在交互式会话里。** Windows 上 `SESSIONNAME` 为空或
+        `Services` 表示非交互上下文（自动化/服务拉起），此时窗口永不可见，
+        必须主动退出把单实例锁让给用户自己的启动。                          */
+
+export type Rect = { x: number; y: number; width: number; height: number };
+
+export type WindowPlacementProblem = 'no-display' | 'outside-all-displays' | null;
+
+export function rectIntersects(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+export function detectWindowPlacementProblem(input: {
+  displayWorkAreas: readonly Rect[];
+  windowBounds: Rect;
+}): WindowPlacementProblem {
+  if (input.displayWorkAreas.length === 0) return 'no-display';
+  const intersects = input.displayWorkAreas.some((area) =>
+    rectIntersects(input.windowBounds, area),
+  );
+  return intersects ? null : 'outside-all-displays';
+}
+
+/** 窗口尺寸夹进工作区并居中 —— 「窗口跑到屏幕外」的自愈落点。 */
+export function centerWindowInWorkArea(input: {
+  windowSize: { width: number; height: number };
+  workArea: Rect;
+}): Rect {
+  const width = Math.min(input.windowSize.width, input.workArea.width);
+  const height = Math.min(input.windowSize.height, input.workArea.height);
+  return {
+    x: input.workArea.x + Math.round((input.workArea.width - width) / 2),
+    y: input.workArea.y + Math.round((input.workArea.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+/** Windows 会话名：交互式会话是 `Console` 或 `RDP-Tcp#N`；服务/非交互上下文为空或 `Services`。 */
+export function isInteractiveSessionName(sessionName: string | undefined): boolean {
+  if (!sessionName) return false;
+  const value = sessionName.trim();
+  if (value === '') return false;
+  if (value.toLowerCase() === 'services') return false;
+  return true;
+}

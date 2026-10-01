@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   HIDDEN_START_ARG,
   MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS,
+  centerWindowInWorkArea,
+  detectWindowPlacementProblem,
   getLoginItemSettings,
+  isInteractiveSessionName,
   planSecondInstanceAction,
   shouldAutoSelectDidaTaskSource,
   shouldForceShowAfterFirstPaintTimeout,
@@ -156,5 +159,80 @@ describe('main window visibility recovery (FL-INSTALL-011)', () => {
   it('keeps a bounded first-paint fallback window', () => {
     expect(MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS).toBeGreaterThan(0);
     expect(MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS).toBeLessThanOrEqual(10_000);
+  });
+});
+
+/* 2026-10-01 复发事故回归（FL-INSTALL-012）：
+   装的是 1.3.15，进程跑了 2 天，**应用自己写下 `main window shown {"visible":true}`**，
+   但用户桌面上看不到窗口、`MainWindowHandle` 为 0、从交互桌面枚举不到该进程的任何顶层
+   窗口 —— 即「可见性证据为真，窗口照样不可见」。它占着单实例锁，用户之后每次点图标
+   都被吞掉。以下两条把当时缺失的不变量钉死。 */
+describe('main window placement and session (FL-INSTALL-012)', () => {
+  const primary = { x: 0, y: 0, width: 3840, height: 2088 };
+
+  it('detects a window that is off every display', () => {
+    /* 正常落点：相交 → 没问题 */
+    expect(
+      detectWindowPlacementProblem({
+        displayWorkAreas: [primary],
+        windowBounds: { x: 660, y: 295, width: 1241, height: 802 },
+      }),
+    ).toBeNull();
+    /* 换过显示器 / 分辨率变小后跑到屏幕外 → 必须报出来 */
+    expect(
+      detectWindowPlacementProblem({
+        displayWorkAreas: [primary],
+        windowBounds: { x: 9000, y: 5000, width: 1241, height: 802 },
+      }),
+    ).toBe('outside-all-displays');
+    /* 完全不相交但相邻（边界刚好贴合）也算在外面 */
+    expect(
+      detectWindowPlacementProblem({
+        displayWorkAreas: [primary],
+        windowBounds: { x: 3840, y: 0, width: 800, height: 600 },
+      }),
+    ).toBe('outside-all-displays');
+    /* 一个显示器都没有（非交互上下文）→ 单独一类，调用方据此退出让锁 */
+    expect(
+      detectWindowPlacementProblem({
+        displayWorkAreas: [],
+        windowBounds: { x: 0, y: 0, width: 1241, height: 802 },
+      }),
+    ).toBe('no-display');
+  });
+
+  it('computes a recentering target inside the work area', () => {
+    const target = centerWindowInWorkArea({
+      windowSize: { width: 1241, height: 802 },
+      workArea: primary,
+    });
+    expect(target.width).toBe(1241);
+    expect(target.height).toBe(802);
+    expect(target.x).toBeGreaterThanOrEqual(0);
+    expect(target.y).toBeGreaterThanOrEqual(0);
+    expect(target.x + target.width).toBeLessThanOrEqual(primary.width);
+    expect(target.y + target.height).toBeLessThanOrEqual(primary.height);
+    /* 自愈后的落点自身必须通过落点自检，否则会来回横跳 */
+    expect(
+      detectWindowPlacementProblem({ displayWorkAreas: [primary], windowBounds: target }),
+    ).toBeNull();
+    /* 窗口比工作区还大时要夹进工作区，不能把标题栏顶到屏幕外 */
+    const clamped = centerWindowInWorkArea({
+      windowSize: { width: 9999, height: 9999 },
+      workArea: { x: 100, y: 50, width: 1280, height: 720 },
+    });
+    expect(clamped).toEqual({ x: 100, y: 50, width: 1280, height: 720 });
+  });
+
+  it('recognises non-interactive Windows sessions', () => {
+    /* 交互式：控制台会话与 RDP 会话都算 */
+    expect(isInteractiveSessionName('Console')).toBe(true);
+    expect(isInteractiveSessionName('RDP-Tcp#12')).toBe(true);
+    /* 非交互：服务上下文 / 环境变量缺失 / 空串 */
+    expect(isInteractiveSessionName('Services')).toBe(false);
+    expect(isInteractiveSessionName('services')).toBe(false);
+    expect(isInteractiveSessionName('')).toBe(false);
+    expect(isInteractiveSessionName(undefined)).toBe(false);
+    expect(isInteractiveSessionName('   ')).toBe(false);
   });
 });

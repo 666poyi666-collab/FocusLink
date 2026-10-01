@@ -1,5 +1,43 @@
 # FocusLink 实施日志
 
+## 2026-10-01 · `FL-INSTALL-20261001-WINDOW-OFFSCREEN`：「安装后打不开」复发根治（v1.3.16）
+
+- **用户报告**：让 Gemini 继续完善后，**「打不开」再次出现**。这正是 v1.3.13 说要堵死的那个病。
+- **实测事实（只读取证）**：
+  1. 机器上装的是 **1.3.15**（注册表 `DisplayVersion 1.3.15`，EXE `FileVersion 1.3.15`，安装时间 2026-09-29 17:01）。
+  2. 5 个 `FocusLink.exe` 进程自 **2026-09-29 17:03:27** 起存活约 2 天，`Responding=True`，**`MainWindowHandle` 全部为 0**。
+  3. 应用日志里**存在** `main window shown {"trigger":"ready-to-show","force":false,"visible":true,"pid":8652,...}`
+     —— 即**应用自己认为窗口已显示且可见**，但用户在桌面上看不到，从交互桌面也枚举不到该进程的任何顶层窗口。
+  4. v1.3.13 的修复本身是生效的：同日 `08:17:41` 有一条 `main window hidden on startup {"argv":["--hidden"]}`
+     （自启带 `--hidden`），随后 `08:45:55` 有一条 `main window shown {"trigger":"second-instance",...}` —— 第二实例确实把窗口救回来了。
+  5. 本次 1.3.15 的窗口自愈修复**全部仍在源码里**（`presentMainWindow` 5 处、`planSecondInstanceAction` 3 处、
+     `shouldForceShowAfterFirstPaintTimeout` 3 处、`MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS` 4 处），git 历史里 `bdfc543` / `63f5e5e` 也都在。
+     **所以这次不是修复被回退，而是修复的覆盖面不够。**
+- **根因**：
+  1. **落点**：v1.3.13 只保证「窗口会被显示」「窗口不存在时会重建」，**没有检查窗口落在哪里**。窗口落在所有显示器之外时，应用照样自报 `visible:true`。
+  2. **会话**：没有任何地方区分进程是否运行在**交互式会话**里。被自动化/服务上下文拉起时，窗口可以在另一个窗口站/桌面上「正常显示」，而用户永远看不到；实例继续占着单实例锁，用户之后每次点图标都只拉起一个注定退出的第二实例。
+  3. **判据**：v1.3.13 把验收定成「日志里有 `main window shown` 且 `visible:true`」。本次事故证明**该证据可以为真而窗口仍然不可见** —— 判据本身是错的。
+- **触发条件**：两次事故（2026-09-29 v1.3.12、2026-10-01 v1.3.15）都发生在**由 agent 脚本 `Start-Process FocusLink.exe` 拉起**之后；用户自己双击桌面图标时从未复现。
+- **修复**：
+  - `shared/startupPolicy.ts` 新增纯函数：`detectWindowPlacementProblem()`（`no-display` / `outside-all-displays`）、
+    `centerWindowInWorkArea()`、`rectIntersects()`、`isInteractiveSessionName()`。
+  - `electron/main.ts`：新增 `selfHealWindowPlacement()`，在 `presentMainWindow()` 每次呈现前执行 ——
+    窗口与所有显示器工作区都不相交时移回主显示器居中并记 `main window was off every display; recentering into the primary work area`；
+    **本会话一个显示器都没有时记 `no display in this session; quitting to release the single-instance lock` 并 `app.exit(1)`**，把单实例锁让给用户的下一次点击。
+    启动时若 `SESSIONNAME` 为空或 `Services`，记 `started outside an interactive session; the window may be invisible to the user`（只记错不硬杀，避免误伤合法的计划任务启动）。
+  - 新增 `scripts/smoke/main-window-visible.cjs` + `npm run smoke:window-visible`：**从当前桌面**独立检查至少一个进程有非零
+    `MainWindowHandle`，且日志里有 `main window shown` + `visible:true`，两条缺一即失败。
+  - `INSTALLER_TROUBLESHOOTING.md`：新增 `FL-INSTALL-012`，并**修正 `FL-INSTALL-011` 里已被证伪的验收口径**（原文写「日志证据与句柄二选一」，现改为二者缺一不可）。
+  - `TEST_AND_RELEASE.md`：Windows 安装可见性门禁升级为「必须跑 `smoke:window-visible` 且退出码为 0」，并明确「日志说可见 ≠ 用户看得见」「自动化不得代替用户拉起 GUI」。
+  - 修正 v1.3.14/v1.3.15 漏改的 Android 版本：`build.gradle` 之前停在 `versionName 1.3.13 / versionCode 1319`，本版随桌面升到 `1.3.16 / 1320`。
+- **测试与反向验证**：
+  - 新增 3 项回归（`tests/startupPolicy.test.ts` → `main window placement and session (FL-INSTALL-012)`）：落在所有显示器外必须被识别、自愈落点自身必须通过落点自检（否则来回横跳）、窗口大于工作区时必须夹进工作区、非交互会话名识别（`Console`/`RDP-Tcp#N` 为交互，`Services`/空/缺失为非交互）。
+  - `npm run smoke:window-visible` 实测：窗口正常时通过（回读 `pid=16756 handle=920024`）；进程数为 0 时**正确判失败**。
+- **门禁**：`format:check` PASS；`typecheck`（含 cloudflare worker）PASS；`lint` PASS；`npm test` PASS（**134 文件 / 1111 项**）。
+- **遗留风险（如实记录）**：
+  - 无法在不复现 Gemini 启动上下文的前提下，确证「窗口究竟落在哪个窗口站/桌面」。本轮修复覆盖了可判定的两类信号（无显示器、窗口不在任何显示器内），但**若某上下文里显示器列表正常而窗口仍在别的桌面，应用侧仍无法自证**。因此**流程面才是主防线**：自动化不得代替用户拉起 GUI + 必须跑 `smoke:window-visible`。
+  - 仓库本地 `release-v*` 目录仍有历史堆积，未在本版处理。
+
 ## 2026-09-29 · `FL-STATS-20260929-MASTERCLASS-PARITY`：统计工作台 100% 对齐设计原型、彻底剔除旧版残留、全尺寸响应式适配与交互音效完整落地（v1.3.15）
 
 - **需求与背景**：

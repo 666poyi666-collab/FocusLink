@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.16 - 2026-10-01（「安装后打不开」复发根治：主窗口落点自愈、非交互会话识别、交互桌面窗口可见性验收）
+
+### 缺陷与根因（v1.3.13 的修复不足）
+
+- **现象**：v1.3.15 安装后进程跑了 2 天，用户在桌面上看不到任何窗口，但**应用自己写下**
+  `main window shown {"trigger":"ready-to-show","visible":true,"pid":...}`。5 个进程 `MainWindowHandle` 全为 0，从交互桌面枚举不到该进程的任何顶层窗口；实例占着单实例锁，用户之后每次点图标都只是拉起一个注定退出的第二实例。
+- **根因一（代码）**：v1.3.13 只保证了「窗口会被显示」和「窗口不存在时会重建」，但**没有检查窗口到底落在哪里**。窗口落在所有显示器之外时（换显示器、分辨率变化、异常上下文），应用仍会自报 `visible:true`。
+- **根因二（代码）**：没有任何地方区分**进程是否运行在交互式会话里**。被自动化/服务上下文拉起时，窗口可以在另一个桌面上「正常显示」，用户永远看不到。
+- **根因三（流程）**：v1.3.13 把验收标准定成「日志里有 `main window shown` 且 `visible:true`」—— 本次事故证明**该证据为真、窗口照样不可见**。验收必须在交互桌面上做一次独立的窗口存在性检查。
+
+### 修复
+
+- **主窗口落点自愈**（`presentMainWindow` 每次呈现前执行，新增纯函数 `detectWindowPlacementProblem()` / `centerWindowInWorkArea()`）：窗口与所有显示器工作区都不相交时，记 `main window was off every display; recentering into the primary work area` 并移回主显示器居中。
+- **本会话无显示器时主动退出**：`screen.getAllDisplays()` 为空说明进程在非交互上下文里，窗口不可能被用户看到；此时记错并 `app.exit(1)`，**把单实例锁让给用户自己的启动**，而不是继续占着吞掉用户的点击。
+- **非交互会话识别**（新增纯函数 `isInteractiveSessionName()`）：Windows 上 `SESSIONNAME` 为空或 `Services` 时记错，把「谁把我拉起来的」写进日志，事后可查。
+- **新增交互桌面窗口可见性验收**：`npm run smoke:window-visible` 从当前桌面独立检查「至少一个 FocusLink 进程有非零 `MainWindowHandle`」并回读日志证据；这是 v1.3.13 那条「日志证据」之外的第二道判据。
+- **修正 v1.3.14/v1.3.15 遗漏的 Android 版本同步**：`android/app/build.gradle` 之前仍停在 `versionName 1.3.13 / versionCode 1319`，本版随桌面一同升到 `1.3.16 / 1320`。
+
+### 验证
+
+- `npm run format:check`、`npm run typecheck`（含 cloudflare worker）、`npm run lint` 全部 0 error 通过。
+- `npm test`：**134 个测试文件 / 1111 项**全部通过（新增 3 项：落点自检、自愈落点计算、非交互会话识别）。
+- Windows 本机：静默覆盖安装 1.3.16，回读注册表 `DisplayVersion 1.3.16` 与已安装 EXE 文件版本，并跑 `npm run smoke:window-visible` 通过（回读到非零 `MainWindowHandle` 与标题 `FocusLink`）。
+- 三设备同版矩阵见发布记录；任一设备离线时如实标记为未闭合。
+
 ## v1.3.15 - 2026-09-29（统计工作台 100% 对齐设计原型：彻底剔除旧版残留、全尺寸响应式适配、Web Audio 晶莹和弦音效与真实数据打通）
 
 ### 缺陷与根因

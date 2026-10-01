@@ -65,8 +65,12 @@ import {
   shouldStartHiddenToTray,
   shouldForceShowAfterFirstPaintTimeout,
   planSecondInstanceAction,
+  detectWindowPlacementProblem,
+  centerWindowInWorkArea,
+  isInteractiveSessionName,
   MAIN_WINDOW_FIRST_PAINT_FALLBACK_MS,
   type MainWindowShowTrigger,
+  type WindowPlacementProblem,
 } from '@shared/startupPolicy';
 import { enqueueSessionSync, runPending } from './sync/syncService.js';
 import { resolveDidaExecTarget } from './tasks/cliProvider.js';
@@ -250,6 +254,65 @@ if (!gotLock) {
 
 const isDev = !app.isPackaged;
 
+/* 启动上下文自检（FL-INSTALL-012）：把「谁把我拉起来的」写进日志。
+   2026-10-01 复发时，应用自报 `visible:true` 而用户看不到窗口 —— 事后无法判断
+   进程当时在哪个会话/桌面。SESSIONNAME 为空或 `Services` 表示非交互上下文
+   （自动化/服务拉起），此时窗口永远不可能出现在用户桌面上。
+
+   这里只记错、不强杀：真正的硬退出交给 `selfHealWindowPlacement()` 的
+   「本会话一个显示器都没有」分支 —— 那是确定可判定的信号；
+   而 SESSIONNAME 在某些合法的计划任务启动里也可能缺失，直接退出会误伤。 */
+if (process.platform === 'win32' && !isInteractiveSessionName(process.env['SESSIONNAME'])) {
+  logger.error(
+    'main',
+    'started outside an interactive session; the window may be invisible to the user',
+    {
+      sessionName: process.env['SESSIONNAME'] ?? '',
+      pid: process.pid,
+      argv: process.argv.slice(1),
+    },
+  );
+}
+
+/* 让窗口落回用户真正看得见的显示器（FL-INSTALL-012）。
+   2026-10-01 复发：应用写下 `visible:true` 而用户看不到窗口、实例却占着单实例锁。
+   这里在每次呈现前先自检落点：落在所有显示器之外就移回主显示器工作区；
+   连显示器都没有（非交互上下文）就记错并退出，把锁让给用户自己的启动。 */
+function selfHealWindowPlacement(win: BrowserWindow): WindowPlacementProblem {
+  const displays = screen.getAllDisplays();
+  const problem = detectWindowPlacementProblem({
+    displayWorkAreas: displays.map((d) => d.workArea),
+    windowBounds: win.getBounds(),
+  });
+  if (problem === null) return null;
+
+  const primary = displays.find((d) => d.id === screen.getPrimaryDisplay()?.id) ?? displays[0];
+  if (!primary) {
+    logger.error(
+      'main',
+      'no display in this session; quitting to release the single-instance lock',
+      {
+        problem,
+        pid: process.pid,
+        sessionName: process.env['SESSIONNAME'] ?? '',
+      },
+    );
+    app.exit(1);
+    return problem;
+  }
+
+  const from = win.getBounds();
+  const target = centerWindowInWorkArea({ windowSize: from, workArea: primary.workArea });
+  logger.warn('main', 'main window was off every display; recentering into the primary work area', {
+    problem,
+    from,
+    to: target,
+    pid: process.pid,
+  });
+  win.setBounds(target);
+  return problem;
+}
+
 /* 主窗口呈现的唯一入口：show / restore / focus，窗口已不在时重建，
    并且**必须留下可机检的证据**。
    安装门禁从此不接受「进程存在」当作「应用已打开」：日志里没有
@@ -270,11 +333,14 @@ function presentMainWindow(trigger: MainWindowShowTrigger, force: boolean): Brow
   }
   const win = mainWindow;
   if (!win || win.isDestroyed()) return null;
+
+  const placement = selfHealWindowPlacement(win);
+
   if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
   const visible = win.isVisible();
-  const record = { trigger, force, visible, pid: process.pid, bounds: win.getBounds() };
+  const record = { trigger, force, visible, pid: process.pid, bounds: win.getBounds(), placement };
   if (visible) {
     logger.info('main', 'main window shown', record);
   } else {
