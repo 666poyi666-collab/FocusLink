@@ -1,72 +1,105 @@
-/* 主窗口「用户真的看得见」验收（FL-INSTALL-012）
+/* 主窗口「用户真的看得见」验收（FL-INSTALL-011 / FL-INSTALL-012）
  *
- * 为什么需要它（2026-10-01 复发）：
- *   1.3.15 装上后进程跑了 2 天，应用自己写下
- *     `main window shown {"trigger":"ready-to-show","visible":true,"pid":...}`
- *   —— 证据为真，但用户在桌面上看不到任何窗口、`MainWindowHandle` 为 0、
- *   从交互桌面枚举不到该进程的任何顶层窗口。实例占着单实例锁，用户之后每次
- *   点图标都被吞掉，表现为「打不开」。
+ * 为什么需要它：
+ *   2026-09-29（v1.3.12）进程长期存活、事件循环正常，但顶层窗口数为 0；此后每次点图标
+ *   都被静默吞掉，用户侧表现为「永远打不开」。
+ *   2026-10-01（v1.3.15）进程跑了 2 天，应用自己写下
+ *     `main window shown {"trigger":"ready-to-show","visible":true}`
+ *   —— 证据为真，但用户桌面上看不到窗口、`MainWindowHandle` 为 0。
+ *   **教训：`visible:true` 是应用内部的判断，不等于用户看得见；「进程存在」更不等于
+ *   「应用已打开」。验收必须在交互桌面上独立枚举窗口。**
  *
- *   **教训：`visible:true` 是应用内部的判断，不等于用户看得见。**
- *   验收必须在**交互桌面**上做一次独立的窗口存在性检查。
+ * 2026-10-02 修正：不能再用 `Get-Process.MainWindowHandle`。
+ *   主窗口失焦会自动弹出小窗（标题 `FocusLink Mini`）后，.NET 的 `MainWindowHandle`
+ *   可能返回**小窗**的句柄 —— 于是「主窗口没显示、只有小窗」会被误判为通过。
+ *   现在改为 `EnumWindows` 逐窗口枚举，按标题精确区分主窗口与小窗。
  *
  * 判定（两条都要满足）：
- *   ① 当前账户的 FocusLink 进程里，至少有一个 `MainWindowHandle != 0`（Windows 只会
- *      给「当前桌面可见且有标题」的顶层窗口返回句柄）；
- *   ② 当天日志里有 `main window shown` 且 `visible: true`，且不晚于进程启动时间。
+ *   ① 当前账户存在一个**可见**的顶层窗口，标题恰为 `FocusLink`（小窗不算）；
+ *   ② 当天日志里有 `main window shown` 且 `visible: true`。
  *
  * 用法（在 FocusLink/ 下）：
  *   node scripts/smoke/main-window-visible.cjs
- * 退出码非 0 即为「安装后打不开」，按 INSTALLER_TROUBLESHOOTING.md 的 FL-INSTALL-012 处理。
+ * 退出码非 0 即「安装后打不开」，按 INSTALLER_TROUBLESHOOTING.md 的 FL-INSTALL-012 处理。
  */
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const LOG_DIR = path.join(process.env.APPDATA || '', 'focuslink', 'logs');
 
-function ps(command) {
-  return execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', command], {
+const PS_ENUM = `
+Add-Type @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class FLWindowEnum {
+  public delegate bool Callback(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(Callback cb, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  public static string Dump() {
+    var sb = new StringBuilder();
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p);
+      var s = new StringBuilder(512); GetWindowText(h, s, 512);
+      if (s.Length > 0) sb.Append(p + "|" + h + "|" + IsWindowVisible(h) + "|" + s.ToString().Replace("|", " ") + "\\n");
+      return true;
+    }, IntPtr.Zero);
+    return sb.ToString();
+  }
+}
+'@
+[FLWindowEnum]::Dump()
+`;
+
+function enumerateWindows() {
+  const raw = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', PS_ENUM], {
     encoding: 'utf8',
     windowsHide: true,
-  }).trim();
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [pid, handle, visible, ...rest] = line.split('|');
+      return {
+        pid: Number(pid),
+        handle: Number(handle),
+        visible: visible === 'True',
+        title: rest.join('|'),
+      };
+    });
 }
 
-function processesOfCurrentUser() {
-  /* 不用 -IncludeUserName、也不用 CIM 的 GetOwner()：两者都需要提权，
-     普通会话会直接报错。这是**只读**的可见性检查，不必按账户过滤，
-     直接看这台机器上有没有「可见的 FocusLink 主窗口」即可。 */
-  const raw = ps(
+function focusLinkPids() {
+  const raw = execFileSync(
+    'powershell',
     [
-      '$p = @(Get-Process -Name FocusLink -ErrorAction SilentlyContinue);',
-      "if ($p.Count -eq 0) { '[]' } else {",
-      '  $p | Select-Object Id,MainWindowHandle,MainWindowTitle,Responding |',
-      '    ConvertTo-Json -Compress',
-      '}',
-    ].join(' '),
-  );
-  const text = raw.trim() || '[]';
-  if (text === '[]') return [];
-  const parsed = JSON.parse(text);
-  return Array.isArray(parsed) ? parsed : [parsed];
-}
-
-function todayLogFiles() {
-  if (!fs.existsSync(LOG_DIR)) return [];
-  return fs
-    .readdirSync(LOG_DIR)
-    .filter((n) => /^focuslink-\d{4}-\d{2}-\d{2}\.log$/.test(n))
-    .map((n) => path.join(LOG_DIR, n))
-    .sort()
-    .reverse()
-    .slice(0, 2);
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "$p = @(Get-Process -Name FocusLink -ErrorAction SilentlyContinue); if ($p.Count -eq 0) { '' } else { ($p | Select-Object -ExpandProperty Id) -join ',' }",
+    ],
+    { encoding: 'utf8', windowsHide: true },
+  ).trim();
+  return raw ? raw.split(',').map(Number) : [];
 }
 
 function visibilityEvidence() {
+  if (!fs.existsSync(LOG_DIR)) return [];
+  const files = fs
+    .readdirSync(LOG_DIR)
+    .filter((n) => /^focuslink-\d{4}-\d{2}-\d{2}\.log$/.test(n))
+    .sort()
+    .reverse()
+    .slice(0, 2);
   const lines = [];
-  for (const file of todayLogFiles()) {
-    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+  for (const file of files) {
+    for (const line of fs.readFileSync(path.join(LOG_DIR, file), 'utf8').split('\n')) {
       if (
         /main window shown|failed to become visible|first paint timed out|off every display|not an interactive session|no display in this session/.test(
           line,
@@ -80,29 +113,41 @@ function visibilityEvidence() {
 }
 
 function main() {
-  const procs = processesOfCurrentUser();
-  const visible = procs.filter((p) => Number(p.MainWindowHandle) !== 0);
+  const pids = focusLinkPids();
+  const windows = enumerateWindows().filter((w) => pids.includes(w.pid));
+  const mainWindows = windows.filter((w) => w.title === 'FocusLink');
+  const miniWindows = windows.filter((w) => /FocusLink Mini/i.test(w.title));
+  const mainVisible = mainWindows.filter((w) => w.visible);
+  const miniVisible = miniWindows.filter((w) => w.visible);
   const evidence = visibilityEvidence();
 
-  console.log('[window-visible] 当前账户 FocusLink 进程：' + procs.length);
-  for (const p of procs) {
+  console.log('[window-visible] 当前账户 FocusLink 进程：' + pids.length);
+  for (const w of windows) {
+    console.log(`  pid=${w.pid} handle=${w.handle} visible=${w.visible} title="${w.title}"`);
+  }
+  if (miniVisible.length > 0) {
     console.log(
-      `  pid=${p.Id} handle=${p.MainWindowHandle} title="${p.MainWindowTitle || ''}" responding=${p.Responding}`,
+      '  （可见小窗 ' +
+        miniVisible.length +
+        ' 个：小窗不算主窗口 —— 主窗口不在前台时它本来就会自动显示）',
     );
   }
   console.log('\n[window-visible] 可见性证据（最近 6 条）：');
   for (const line of evidence.slice(-6)) console.log('  ' + line);
-  if (evidence.length === 0)
+  if (evidence.length === 0) {
     console.log('  （没有任何窗口可见性记录 —— 版本可能早于 FL-INSTALL-011）');
+  }
 
   const problems = [];
 
-  if (procs.length === 0) {
+  if (pids.length === 0) {
     problems.push('没有任何 FocusLink 进程 —— 应用根本没起来。');
-  } else if (visible.length === 0) {
+  } else if (mainVisible.length === 0) {
     problems.push(
-      '所有进程的 MainWindowHandle 都是 0 —— 进程在跑，但当前桌面上没有可见主窗口。' +
-        '这就是「打不开」：它占着单实例锁，用户点图标只会拉起一个注定退出的第二实例。',
+      '没有任何可见的顶层窗口标题为 `FocusLink`' +
+        (miniVisible.length > 0 ? '（只有小窗可见）' : '') +
+        '。进程在跑但主窗口没显示，就是「打不开」：它占着单实例锁，' +
+        '用户点图标只会拉起一个注定退出的第二实例。',
     );
   }
 
@@ -131,11 +176,11 @@ function main() {
 
   console.log(
     '\n[window-visible] 通过：pid ' +
-      visible[0].Id +
-      ' 的 MainWindowHandle=' +
-      visible[0].MainWindowHandle +
+      mainVisible[0].pid +
+      ' 的主窗口 handle=' +
+      mainVisible[0].handle +
       '，标题「' +
-      (visible[0].MainWindowTitle || '') +
+      mainVisible[0].title +
       '」。',
   );
 }
