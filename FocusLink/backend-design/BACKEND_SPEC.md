@@ -413,6 +413,8 @@ Cloudflare 外部协议 gate 是受限测试操作，不是部署入口：extern
 
 ## v1.3.20 统计 renderer 读取与关联边界
 
+v1.3.21：已激活与初次建立的 Sync v2 checkpoint 都先无 mutation 拉取，再推送；旧待发操作仅在同连接 scope、deviceId 等于本机 legacy 安装 ID 时路由到当前已认证设备，opId/payload 保留。结束 ACK 与本机账本导入是独立事实；确认结束后的导入失败仅标记 ledgerImportPending，保留 authority 状态，不造本地记录，也不把导入异常改为结束命令失败。状态变更按实际状态广播，不能对每秒 tick 发统计重取。
+
 统计详情复用 `sessions.get` / `sessions.export`，不修改计时、同步协议或数据库结构。详情 effect 以会话 ID 为依赖，清空旧 projection 并拒绝取消后的迟到响应。分类以 analytics task key/ID 与 timeline session ID 匹配，排行以任务 ID 寻找会话，不能把任务排行下标当成会话下标。
 
 已结束会话 `linkSessionTask` 只写默认任务，不自动改片段。因此 renderer 显式随后调用 `linkSegmentsBatch(..., onlyUnlinked=true)`；已经关联的片段保持原任务。独立片段走 `timer.linkTask`。两个调用不是原子事务；任一步失败都重新读取真实状态并呈现失败，不宣称全量关联成功。未增加滴答写入路径。

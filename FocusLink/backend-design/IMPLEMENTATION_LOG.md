@@ -19,6 +19,10 @@
 - **门禁**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **134 文件 / 1115 项** PASS；Windows 静默覆盖安装退出码 0，回读 `FocusLink 1.3.21` / EXE `1.3.21`。
 - **范围**：按用户指令只做 PC，Android 版本号同步到 `1325 / 1.3.21`，三设备门禁显式挂起。
 - **15:29 接续独立回读（保留与历史结论的差异）**：当前 main 为 `977d12a`，修复源码已提交；18 项结束/导入回归 PASS，EnumWindows 确認可见主窗口。会话 `772f4d04` 已在本机，active=7304449ms / pause=1828295ms / wall=9132744ms，2 个真实 segment。EXE 实为 1.3.21，但 HKCU 卸载注册表仍为 1.3.20，与上方原实施记录的完整 1.3.21 实装结论不一致；版本元数据仍 `06c1a07-dirty`。因此重新从干净源码准备 PC 安装候选，完成真正覆盖安装与回读，不用修改注册表数字伪造安装。小米/华为 ADB 当前均未连接，三设备门禁仍 FAIL。
+- **15:36 最终 PC 覆盖安装**：clean source `8ef5162`、构建时间 `2026-10-02T07:33:02.078Z`，无 dirty 后缀。format/typecheck/lint PASS；134 文件 / 1115 测试 PASS；六尺寸统计 smoke PASS；build/dist PASS。portable 独立 profile 回读 1.3.21 / 8ef5162；installer `/S /currentuser` 退出 0，HKCU `DisplayVersion=1.3.21`、EXE `FileVersion=1.3.21` / `ProductVersion=1.3.21.0`。主窗口 PID 55144 / handle 1705446 实际 visible True，当天该 PID ready-to-show 日志亦为 True。真实记录恰好 1 session / 2 segments / 1 pause，未删除或清空真实冲突。
+- **18:09 用户报告断电后的复验**：SQLite 只读 `quick_check=ok`，上述记录仍为 1/2/1，注册表/EXE 版本仍一致。重启实例 PID 20944 通过 `--hidden` 自启，所以首次可见性检查 FAIL；普通打开触发 `second-instance` 后主窗口 handle 67056 / visible True，当天该 PID 日志确认显示，不误当作记录丢失或安装失败。18:02 的 network_error 是该时刻真实失败；不据此推断持续断网，也不将第三方待确认或耐久冲突改为成功。
+- **交付副本校验**：断电后 `.tmp/pc-v1321` 的 SHA 文件全零，便携副本哈希变为 `641B224C…`；原始安装器/portable 哈希仍分别为 `E3E8D876…` / `0AC13958…`。从原包重建四文件候选，显式 Flush(true) 并逐项回读/哈希复验；恢复后的 portable 隔离启动 PASS。已安装 app.asar 与原包 app.asar SHA256 均为 `2972AEC8B86ED4B638378468280D4A51D5506EF214DD7063335620D50136A1AF`。重复诊断纳入 FL-INSTALL-013；临时诊断的加密密钥副本已通过标准清理工具删除。LFS tmp 打包前后均 0 文件 / 0 B。
+- **最终矩阵**：Windows 1.3.21 实装 PASS；小米/华为未连接，1.3.21/1325 未安装/未回读，APK 未构建或备份，三设备门禁 FAIL。四文件仅为 `.tmp/pc-v1321` PC 候选；不创建 tag/GitHub Release，不宣称完整发行完成。
 - **遗留（如实记录）**：
   - 云端仍留有那批测试记录的副本；本机游标已越过它们，不会再被拉回，但其他设备若仍在旧 scope 上仍可能看到。
   - 库里 132 条既有同步冲突无 UI 处理入口（v1.3.18 已记录）。

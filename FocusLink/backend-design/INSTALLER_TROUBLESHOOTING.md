@@ -156,6 +156,12 @@ Get-Process -Name FocusLink -ErrorAction SilentlyContinue |
 
 ## FL-INSTALL-003：卸载后仍显示旧版本
 
+## FL-INSTALL-013：断电后交付副本校验失败
+
+2026-10-02：Windows 已安装 EXE/注册表同为 1.3.21，SQLite quick_check=ok；但交付副本的 SHA 文件全零、portable 哈希改变，原始构建包哈希仍一致。这是交付文件完整性问题，不等于安装或账本失败。
+
+分别验证数据库只读 quick_check、记录三表、注册表/EXE、主窗实际可见性、已安装 app.asar 与原包，以及安装器/portable 的完整 SHA256；禁止用文件名/长度判断有效。只能从已验证原包重建损坏副本，重新生成校验文件及说明，显式刷盘并读取校验；原包也损坏时从记录的干净源码重新构建。修复后使用隔离 profile 启动 portable，不能清用户库或修改注册表数字掩盖失败。
+
 核对桌面快捷方式目标、开始菜单快捷方式目标和卸载注册项的 `InstallLocation`。它们必须指向同一个工作区 release 安装目录。不要只看文件名判断版本；同时核对安装器内的版本号和 `SHA256SUMS.txt`。
 
 ## FL-INSTALL-004：安装器退出码 `0xC0000005`
