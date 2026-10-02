@@ -115,7 +115,7 @@ export function HistoryPanel() {
     if (curRange === 'today') return getDayRange(dayCursor);
     const end = Date.now();
     const days = curRange === '7d' ? 7 : curRange === '30d' ? 30 : HEATMAP_WINDOW_DAYS;
-    return { start: getDayRange(shiftLocalDay(end, -(days - 1))).start, end };
+    return { start: getDayRange(shiftLocalDay(end, -(days - 1))).start, end: getDayRange(end).end };
   }, [curRange, dayCursor]);
 
   useEffect(() => {

@@ -408,7 +408,7 @@ function createMainWindow(): BrowserWindow {
     const settings = getSettings();
     if (settings.miniWindow.autoShowOnMainHide) {
       logger.info('main', 'main window minimized, auto-show mini window');
-      showMiniWindow();
+      showMiniWindow(false);
     }
   });
 
@@ -417,7 +417,14 @@ function createMainWindow(): BrowserWindow {
     const settings = getSettings();
     if (settings.miniWindow.autoShowOnMainHide) {
       logger.info('main', 'main window hidden, auto-show mini window');
-      showMiniWindow();
+      showMiniWindow(false);
+    }
+  });
+
+  // Switching to another application also counts as leaving the main work surface.
+  win.on('blur', () => {
+    if (!isQuitting && getSettings().miniWindow.autoShowOnMainHide) {
+      showMiniWindow(false);
     }
   });
 
@@ -968,11 +975,12 @@ function broadcastMiniSettings(settings: ReturnType<typeof getSettings>): void {
   }
 }
 
-function showMiniWindow(): void {
+function showMiniWindow(activate = true): void {
   if (!miniWindow) {
     miniWindow = createMiniWindow();
   }
-  miniWindow.show();
+  if (activate) miniWindow.show();
+  else miniWindow.showInactive();
   miniWindow.setAlwaysOnTop(true);
 }
 
@@ -1106,11 +1114,21 @@ function warmTimerWritePath(): boolean {
  * 曾经的 ~21ms 全部来自「首次惰性创建小窗」，已由启动预热消除。
  */
 function pushSnapshot(snap: TimerSnapshot): void {
+  const stateChanged = lastTimerState !== snap.state;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('tick', snap);
+    if (stateChanged) mainWindow.webContents.send('timer:state-changed', snap);
+    if (stateChanged && snap.ledgerImportPending) {
+      mainWindow.webContents.send('toast:show', {
+        id: `ledger-pending-${Date.now()}`,
+        type: 'info',
+        message: '专注已结束，记录已保存在云端，等待导入本机',
+      });
+    }
   }
   if (miniWindow && !miniWindow.isDestroyed()) {
     miniWindow.webContents.send('tick', snap);
+    if (stateChanged) miniWindow.webContents.send('timer:state-changed', snap);
   }
   // 检测状态转换：专注开始/结束时自动控制小窗
   handleTimerStateTransition(snap);
@@ -1133,7 +1151,7 @@ function handleTimerStateTransition(snap: TimerSnapshot): void {
       mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused();
     if (!mainVisible) {
       logger.info('main', 'focus started and main window not focused, auto-show mini window');
-      showMiniWindow();
+      showMiniWindow(false);
     }
   }
   // v0.1.5：移除 autoCollapseOnFocusStart 逻辑（贴边收纳不稳定，交给 UI AI 重做）

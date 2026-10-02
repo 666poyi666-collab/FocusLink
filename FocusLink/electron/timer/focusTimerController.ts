@@ -288,9 +288,31 @@ export class FocusTimerController {
     }
     if ((action === 'finish' || action === 'abort') && value.ack.completedEntityId) {
       this.accept(value, false);
-      await runDeviceSync();
+      try {
+        await runDeviceSync();
+      } catch {
+        // A confirmed finish cannot become a failed timer command because ledger delivery failed.
+        // Keep the authority's idle state; never recreate a local session from elapsed estimates.
+        if (!this.isCurrentConnection(connection)) throw new Error('实时同步连接已变更');
+        const imported = getSession(value.ack.completedEntityId);
+        logger.warn('liveFocus', 'completion confirmed; ledger sync pending', {
+          sessionId: value.ack.completedEntityId,
+          imported: Boolean(imported),
+        });
+        this.publish({
+          ...this.toTimerSnapshot(value.snapshot, Date.now()),
+          ledgerImportPending: !imported,
+        });
+        return this.snapshot;
+      }
       const imported = getSession(value.ack.completedEntityId);
-      if (!imported) throw new Error('实时会话已结束，但权威账本尚未导入本机');
+      if (!imported) {
+        this.publish({
+          ...this.toTimerSnapshot(value.snapshot, Date.now()),
+          ledgerImportPending: true,
+        });
+        return this.snapshot;
+      }
       if (imported.status === 'finished') {
         this.publish({ ...current, state: 'finished', sessionId: imported.id });
         setTimeout(
@@ -346,9 +368,22 @@ export class FocusTimerController {
           (previous.state === 'running' || previous.state === 'paused')
         ) {
           this.accept(next, false);
-          await runDeviceSync();
+          try {
+            await runDeviceSync();
+          } catch {
+            logger.warn('liveFocus', 'remote completion confirmed; ledger sync pending', {
+              sessionId: previous.sessionId,
+            });
+          }
+          if (generation !== this.generation || !this.isCurrentConnection(connection)) return;
           const imported = getSession(previous.sessionId);
-          if (!imported) throw new Error('远端实时会话已结束，但权威账本尚未导入本机');
+          if (!imported) {
+            this.publish({
+              ...this.toTimerSnapshot(next.snapshot, Date.now()),
+              ledgerImportPending: true,
+            });
+            continue;
+          }
           if (imported.status === 'finished') {
             this.publish({ ...previous, state: 'finished', sessionId: imported.id });
             setTimeout(

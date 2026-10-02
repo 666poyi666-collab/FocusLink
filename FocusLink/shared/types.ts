@@ -160,6 +160,8 @@ export type SyncStatus = 'pending' | 'synced' | 'failed' | 'skipped';
 
 /** 计时器实时快照 - 渲染进程订阅 */
 export interface TimerSnapshot {
+  /** Authority confirmed completion, but its completed ledger is not in the local projection yet. */
+  ledgerImportPending?: boolean;
   state: TimerState;
   sessionId: string | null;
   currentSegmentId: string | null;
@@ -439,7 +441,7 @@ export interface MiniWindowConfig {
   hoverToExpand: boolean;
   /** 专注开始后若小窗贴边则自动收纳（默认关） */
   autoCollapseOnFocusStart: boolean;
-  /** 主窗口最小化或隐藏到托盘时，自动显示小窗（默认开） */
+  /** 主窗口不在前台（切换应用、最小化或隐藏）时，自动显示小窗（默认开） */
   autoShowOnMainHide: boolean;
   /** 专注开始时，如果主窗口不在前台，自动显示小窗（默认开） */
   autoShowOnFocusStart: boolean;

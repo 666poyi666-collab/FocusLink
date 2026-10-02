@@ -1010,9 +1010,12 @@ export function SettingsPanel() {
               className="settings-opacity-slider"
             />
           </Row>
-          <Row label="主窗口隐藏时自动显示小窗" desc="主窗口最小化或隐藏到托盘时，自动弹出专注小窗">
+          <Row
+            label="主窗口不在前台时显示小窗"
+            desc="切换到其他应用、最小化或隐藏时自动显示，不抢占焦点（默认开启）"
+          >
             <Toggle
-              label="主窗口隐藏时自动显示小窗"
+              label="主窗口不在前台时显示小窗"
               checked={settings.miniWindow.autoShowOnMainHide}
               onChange={(v) =>
                 update({ miniWindow: { ...settings.miniWindow, autoShowOnMainHide: v } })

@@ -19,6 +19,8 @@ vi.mock('../electron/db/index.js', () => ({
 }));
 
 import { FocusTimerController } from '../electron/timer/focusTimerController';
+import { runDeviceSync } from '../electron/sync/deviceSyncService';
+import { getSession } from '../electron/db/index';
 
 function snapshot(state: TimerSnapshot['state']): TimerSnapshot {
   return {
@@ -86,11 +88,39 @@ async function flushMicrotasks(): Promise<void> {
 
 describe('desktop live focus controller', () => {
   beforeEach(() => {
+    vi.mocked(runDeviceSync).mockReset();
+    vi.mocked(getSession).mockReset();
     runtimeConnection.current = {
       endpoint: 'http://127.0.0.1:18787',
       accessToken: 'desktop-live-test-token',
       deviceId: 'desktop-test-device',
     };
+  });
+
+  it('keeps an acknowledged finish successful when local ledger import fails', async () => {
+    const local = { getSnapshot: () => snapshot('idle'), onSnapshot: vi.fn(), dispose: vi.fn() };
+    const controller = new FocusTimerController(local as never);
+    const internal = controller as unknown as { liveMode: boolean; snapshot: TimerSnapshot };
+    internal.liveMode = true;
+    internal.snapshot = { ...snapshot('running'), sessionId: 'remote-session' };
+    const response = await liveResponse('idle', 2).json();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ...response,
+          ack: { status: 'applied', errorCode: null, completedEntityId: 'remote-session' },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.mocked(runDeviceSync).mockRejectedValue(
+      new Error('canonical Sync v2 failed (contract_error)'),
+    );
+    const result = await controller.stop();
+    expect(result).toMatchObject({ state: 'idle', sessionId: null, ledgerImportPending: true });
+    expect(controller.getSnapshot().state).toBe('idle');
+    controller.dispose();
+    fetchSpy.mockRestore();
   });
 
   it('defers the live fact-source switch while a local session is active', async () => {

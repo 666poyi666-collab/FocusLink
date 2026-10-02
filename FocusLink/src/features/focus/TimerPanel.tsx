@@ -209,7 +209,10 @@ export function TimerPanel() {
     try {
       const snap = await window.focuslink.timer.stop();
       useStore.getState().setSnapshot(snap);
-      addToast('专注已结束', 'success');
+      addToast(
+        snap.ledgerImportPending ? '专注已结束，记录已保存在云端，等待导入本机' : '专注已结束',
+        snap.ledgerImportPending ? 'info' : 'success',
+      );
     } catch (e) {
       addToast('结束失败：' + (e as Error).message, 'error');
     } finally {

@@ -24,6 +24,7 @@ import {
   type SyncV2Request,
   type SyncV2Response,
 } from '@shared/sync/v2Protocol';
+import { logger } from '../logger.js';
 import { readDeviceSyncJsonResponse } from '@shared/sync/httpTransport';
 import {
   SyncV2ClientError,
@@ -151,12 +152,17 @@ async function runDesktopSyncV2WithConnection(
   };
 
   try {
-    // A new device/account always replays the authority from c0 before staging
-    // local mutations.  That prevents an old local inventory from becoming the
-    // first writer merely because this client started first.
-    if (checkpoint.state !== 'v2-active') {
-      checkpoint = await drainPages(connection, checkpoint, result, false);
-      assertDeviceSyncConnectionCurrent(connection);
+    // Always replay the authority before staging local mutations.
+    //  * A new device/account replays from c0, so an old local inventory cannot become the
+    //    first writer merely because this client started first.
+    //  * An already-active device must also pull first: the push exchange carries the pull
+    //    in the same request, so if a local mutation is rejected the confirmed cloud records
+    //    would never arrive either. 2026-10-02: a just-finished session existed in the cloud
+    //    but never reached the local ledger for exactly this reason.
+    const wasActive = checkpoint.state === 'v2-active';
+    checkpoint = await drainPages(connection, checkpoint, result, false);
+    assertDeviceSyncConnectionCurrent(connection);
+    if (!wasActive) {
       checkpoint = { ...checkpoint, state: 'v2-active', updatedAt: Date.now() };
       writeCheckpoint(connection.scope, checkpoint);
     }
@@ -184,6 +190,14 @@ async function runDesktopSyncV2WithConnection(
     return result;
   } catch (error) {
     const safe = safeSyncV2Error(error);
+    /* 保留原始错误信息。safeSyncV2Error 会把「响应/游标/ACK/change feed/格式」这一类消息
+       统一映射成 contract_error，只看错误码无法定位 —— 2026-10-02 排查「刚结束的会话
+       没有导入本机」时就卡在这里：日志只有 errorCode，看不出究竟是服务端拒绝、
+       游标单调性、还是 ACK 归属校验失败。 */
+    logger.warn('deviceSync', 'sync run failed', {
+      errorCode: safe.code,
+      reason: error instanceof Error ? error.message : String(error),
+    });
     if (isDeviceSyncConnectionCurrent(connection)) {
       setMeta(`${LAST_ERROR_PREFIX}.${connection.scope}`, safe.code);
     }
@@ -257,7 +271,7 @@ async function drainPages(
       protocolVersion: SYNC_V2_PROTOCOL_VERSION,
       deviceId: connection.deviceId,
       cursor: checkpoint.cursor,
-      mutations: claimed.items.map(stripOutboxState),
+      mutations: claimed.items.map((item) => stripOutboxState(item, connection.deviceId)),
       pullLimit: Math.min(100, SYNC_V2_MAX_PULL),
       syncEpoch: checkpoint.syncEpoch,
       cursorEpoch: checkpoint.cursorEpoch,
@@ -776,7 +790,16 @@ function isChange(value: unknown): value is SyncV2Change {
   );
 }
 
-function stripOutboxState(item: ReturnType<typeof claimV2Outbox>['items'][number]): SyncV2Mutation {
+function stripOutboxState(
+  item: ReturnType<typeof claimV2Outbox>['items'][number],
+  deviceId: string,
+): SyncV2Mutation {
+  // Pre-canonical local operations used the installation UUID. They were rejected by the
+  // authenticated adapter. Preserve operation IDs/payloads and bind only this local legacy ID
+  // to the current credential; never rewrite another canonical device or another account scope.
+  const legacyDeviceId = getMeta('deviceSync.deviceIdV1');
+  const routedDeviceId =
+    item.deviceId === legacyDeviceId && deviceId.startsWith('device-') ? deviceId : item.deviceId;
   return {
     opId: item.opId,
     entityType: item.entityType,
@@ -785,7 +808,7 @@ function stripOutboxState(item: ReturnType<typeof claimV2Outbox>['items'][number
     baseRevision: item.baseRevision,
     baseFingerprint: item.baseFingerprint,
     payload: item.payload,
-    deviceId: item.deviceId,
+    deviceId: routedDeviceId,
     accountGeneration: item.accountGeneration,
   };
 }

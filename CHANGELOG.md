@@ -1,5 +1,72 @@
 # Changelog
 
+## v1.3.21 - 2026-10-02（修复「结束专注报错且统计页看不到记录」：设备同步导入 + 主窗口失焦自动显示小窗）
+
+### 用户报告
+
+「我刚刚专注的专注结束的时候报错了，然后统计界面也没看到哦，还有就是 focouslink 主界面不在前台的时候默认开启小窗吧」。
+
+### 一、结束专注报错（根因：已确认的结束被账本投递失败拖成命令失败）
+
+`focusTimerController.ts` 原本在权威端确认结束之后执行：
+
+```ts
+await runDeviceSync();
+const imported = getSession(value.ack.completedEntityId);
+if (!imported) throw new Error('实时会话已结束，但权威账本尚未导入本机');
+```
+
+云端已经确认结束，但本机导入没跟上时，这条 throw 会让**一次已经成功的结束变成失败命令**，用户看到的就是那个报错。
+
+**修复**：结束已确认就不再因账本投递失败而失败。新增 `TimerSnapshot.ledgerImportPending`，此时如实提示「专注已结束，记录已保存在云端，等待导入本机」，而不是报错。
+
+### 二、统计页看不到刚结束的会话（根因：同步只推送不拉取 + 旧 deviceId 被服务端拒绝）
+
+实测链路（只读探针 + 直接调用 `/sync/v2/exchange`）：
+
+- 用户那条会话 `772f4d04`「第二章第一节｜直线的倾斜角与斜率」（2 小时 1 分钟）**在云端存在**，本机 `focus_sessions` 里没有。
+- 每次同步报 `contract_error`。`safeSyncV2Error` 会把「响应/游标/ACK/change feed/格式」这一类消息**统一映射成 `contract_error`**，而日志只记错误码，看不出真正原因。
+
+**修复**：
+
+1. **旧安装 UUID 形式的 deviceId 路由到已认证设备**：v0.12.x 时代的待发操作带的是安装 UUID，服务端拒绝；现在按当前凭据的设备 ID 路由，opId 与 payload 原样保留，不改写其他设备或其他账号 scope 的操作。
+2. **先拉取再推送**：推送请求本身携带拉取，一旦本地某个操作被拒，**已确认的云端记录就永远拉不下来**。现在两类 scope 都先单独拉取一次权威记录。
+3. **保留原始错误信息**：`deviceSync` 日志新增 `reason` 字段。此前只记 `errorCode`，排查时卡了很久。
+
+### 三、主窗口不在前台时自动显示小窗
+
+`main.ts` 新增 `win.on('blur')`：切换应用也算离开主工作面。小窗用 `showInactive()` 显示，**不抢焦点**，避免与主窗口互相抢焦点形成循环。
+
+### 四、统计页范围终点
+
+`HistoryPanel` 的 7/30/168 天范围终点改用 `getDayRange(end).end`，保证当天的记录落在范围内。
+
+### 五、清理 v1.3.18 遗留的过期同步账目
+
+v1.3.18 用直连 SQL 删除 32 条测试记录并手写 124 条 delete 墓碑，墓碑的 `base_revision` 写的是当时的 rev=1，而服务端已是 rev=2：
+
+- 活跃 scope 上 63 条被判 `revision_conflict`；
+- 旧 scope `806dd48c…` 上 62 条 pending 永远发不出去（应用已不同步该 scope）。
+
+这些实体在 `sync_v2_entity_state` 里已经是 `rev=2 / deleted=1`，**说明删除已经生效**，剩下的只是过期账目，却让 `deviceSync.lastErrorV2` 永远停在 `conflict_present`。已清理 `v2-purge-*` 相关行（outbox 125 → 31，冲突 164 → 132），清理前留完整备份。
+
+### 验证（实测）
+
+- **你那条会话已导入本机**：`focus_sessions` 总数 141 → 143；统计页账本实测显示
+  `2026年10月2日 · 1 个专注会话 · 累计 2 小时 1 分钟` / `10/2 08:39 – 11:11 · 2 小时 2 分钟 · 第二章第一节｜直线的倾斜角与斜率 · 已关联`。
+- **同步不再报错**：最后一条 `deviceSync` 告警停在修复前的 04:19:39Z；重启后 `lastSyncAtV2` 正常推进，游标 `ck2 → ck4`，无 `contract_error`。
+- **小窗失焦验证**：切换焦点到其他程序后 `FocusLink Mini` 由 `visible=False` 变为 `visible=True`。
+- `npm run format:check` / `typecheck`（含 cloudflare worker）/ `lint` 全部 0 error 通过。
+- `npm test`：**134 个测试文件 / 1115 项**通过。
+- Windows 本机：静默覆盖安装退出码 0，回读注册表 `DisplayName: FocusLink 1.3.21` / `DisplayVersion: 1.3.21`、EXE `FileVersion 1.3.21`。
+
+### 范围说明
+
+- 按用户指令，本版**只做 PC**；Android 版本号同步递增到 `1325 / 1.3.21`，但**未构建 APK、未执行三设备安装矩阵**，该门禁显式挂起。
+- 已知未修：云端仍留有那批测试记录的副本（本机游标已越过它们，不会再被拉回）；库里 132 条既有同步冲突无 UI 处理入口。
+
+## v1.3.20 - 2026-10-02（PC 统计响应式布局、中文排版、真实片段与任务关联）
+
 ## 1.3.20（2026-10-02，PC 统计修复候选）
 
 - 统计主体按窗口与容器宽度排版；窄窗口账本移到下方，去掉强制最小宽度。

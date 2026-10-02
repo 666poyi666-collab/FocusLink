@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fingerprintDeviceSyncValue } from '../shared/sync/deviceProtocol';
 import type { FocusSegment, FocusSession, PauseEvent } from '../shared/types';
 import type { DeviceSyncSessionBundle } from '../shared/sync/deviceProtocol';
-import type { FocusLedgerV2, FocusMetadataV2 } from '../shared/sync/v2Protocol';
+import type { FocusLedgerV2, FocusMetadataV2, SyncV2OutboxItem } from '../shared/sync/v2Protocol';
 
 const harness = vi.hoisted(() => ({
   meta: new Map<string, string>(),
@@ -30,6 +30,7 @@ const harness = vi.hoisted(() => ({
   repairCalls: 0,
   paths: [] as string[],
   connectionCurrent: true,
+  claimed: [] as SyncV2OutboxItem[],
 }));
 
 vi.mock('../electron/db/index.js', () => ({
@@ -65,7 +66,7 @@ vi.mock('../electron/sync/deviceSyncService.js', () => ({
 
 vi.mock('../electron/sync/v2OutboxStore.js', () => ({
   migrateLegacyV2State: vi.fn(),
-  claimV2Outbox: vi.fn(() => ({ leaseId: 'lease', items: [] })),
+  claimV2Outbox: vi.fn(() => ({ leaseId: 'lease', items: harness.claimed.splice(0) })),
   discardPendingV2MutationsForEntity: vi.fn((_scope: string, entityId: string) => {
     harness.discarded.push(entityId);
     return 0;
@@ -141,6 +142,7 @@ describe('desktop canonical Sync v2 boundary', () => {
     harness.repairCalls = 0;
     harness.paths = [];
     harness.connectionCurrent = true;
+    harness.claimed = [];
   });
 
   it('uses only canonical v2 status/exchange routes and never falls back', async () => {
@@ -158,6 +160,53 @@ describe('desktop canonical Sync v2 boundary', () => {
     expect(harness.paths.some((path) => path.includes('/v1/') || path.includes('/sync/push'))).toBe(
       false,
     );
+  });
+
+  it('routes legacy installation outbox IDs through the authenticated device without changing opId', async () => {
+    harness.meta.set('deviceSync.deviceIdV1', 'legacy-installation-uuid');
+    harness.claimed = [
+      {
+        opId: 'original-delete-op',
+        entityType: 'focus_ledger_v2',
+        entityId: 'old-session',
+        kind: 'delete',
+        baseRevision: 1,
+        baseFingerprint: null,
+        payload: null,
+        deviceId: 'legacy-installation-uuid',
+        accountGeneration: 1,
+      } as SyncV2OutboxItem,
+    ];
+    const sent: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (String(input).endsWith('/status')) return json(status(0));
+        const request = JSON.parse(String(init?.body));
+        sent.push(request);
+        return json({
+          ...page('c0'),
+          acks: request.mutations.map((m: Record<string, unknown>) => ({
+            opId: m.opId,
+            entityType: m.entityType,
+            entityId: m.entityId,
+            status: 'applied',
+            revision: 2,
+            fingerprint: 'a'.repeat(64),
+            errorCode: null,
+          })),
+        });
+      }),
+    );
+    await runDesktopSyncV2();
+    expect(sent[0].mutations).toEqual([]);
+    expect(sent[1].mutations).toEqual([
+      expect.objectContaining({
+        opId: 'original-delete-op',
+        deviceId: 'device-desktop1',
+        payload: null,
+      }),
+    ]);
   });
 
   it('records a fixed authentication failure and never includes the device credential', async () => {
@@ -240,24 +289,29 @@ describe('desktop canonical Sync v2 boundary', () => {
     const remote = { ...payload, title: '平板版本', updatedByDeviceId: 'device-tablet1' };
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: string | URL | Request) => {
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const path = new URL(String(input)).pathname;
         if (path === '/sync/v2/status') return json(status(8));
-        return json({
-          ...page('c8'),
-          changes: [
-            {
-              changeSeq: 8,
-              entityType: 'focus_metadata_v2',
-              entityId: 'session-1',
-              revision: 7,
-              fingerprint: fingerprintDeviceSyncValue(remote),
-              deleted: false,
-              payload: remote,
-              sourceDeviceId: 'device-tablet1',
-            },
-          ],
-        });
+        /* 真实服务端只返回请求游标之后的变更，同一 changeSeq 不会重发。
+           同步流程会先单独拉取一次已确认记录，因此这里必须按游标应答；
+           否则同一 changeSeq 会被发两次，触发「change feed 非严格单调」。 */
+        const request = JSON.parse(String(init?.body ?? '{}')) as { cursor?: string | null };
+        const changes =
+          request.cursor === 'c7'
+            ? [
+                {
+                  changeSeq: 8,
+                  entityType: 'focus_metadata_v2',
+                  entityId: 'session-1',
+                  revision: 7,
+                  fingerprint: fingerprintDeviceSyncValue(remote),
+                  deleted: false,
+                  payload: remote,
+                  sourceDeviceId: 'device-tablet1',
+                },
+              ]
+            : [];
+        return json({ ...page('c8'), changes });
       }),
     );
 

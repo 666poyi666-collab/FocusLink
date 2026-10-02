@@ -1,5 +1,29 @@
 # FocusLink 实施日志
 
+## 2026-10-02 · `FL-SYNC-20261002-LEDGER-IMPORT`：结束专注报错与统计页缺记录根治（v1.3.21）
+
+- **用户报告**：「我刚刚专注的专注结束的时候报错了，然后统计界面也没看到哦，还有就是 focouslink 主界面不在前台的时候默认开启小窗吧」。
+- **本条目接续 ChatGPT(Codex) 未完成的改动**：Codex 在改到一半时额度用尽，工作区留下 9 个未提交文件；其中同步修复方向正确，但把 `tests/desktopV2Sync.test.ts` 的既有用例「stores a same-revision different-fingerprint response as a conflict」改红了。
+- **测试变红的真实原因（已定位）**：`assertResponseMatchesRequest` 要求变更流严格单调（`changeSeq <= lastChangeSeq` 即抛「change feed 非严格单调」）。同步流程新增「先单独拉取一次」后，测试里那个**无论游标都返回同一页**的假服务端把 `changeSeq: 8` 发了两次，于是断言触发，再被 `safeSyncV2Error` 默认映射成 `contract_error`。**是 mock 不真实，不是实现错**。已把假服务端改为按请求游标应答（真实服务端只返回游标之后的变更），并把服务端两个分支里重复的「先拉取」合并为一次。
+- **报错根因**：`focusTimerController` 在权威端确认结束后 `await runDeviceSync()`，随后 `if (!imported) throw new Error('实时会话已结束，但权威账本尚未导入本机')` —— **一次已经成功的结束会因为本机导入没跟上而变成失败命令**。修复：新增 `TimerSnapshot.ledgerImportPending`，此时如实提示「专注已结束，记录已保存在云端，等待导入本机」。
+- **缺记录根因（只读探针实证）**：
+  - 用户那条会话 `772f4d04`「第二章第一节｜直线的倾斜角与斜率」在云端存在（`/sync/v2/exchange` 直接拉到，changeSeq 690），本机 `focus_sessions` 没有。
+  - 同步每次报 `contract_error`，但日志只记错误码；`classifySyncV2Error` 把含「响应/游标/ACK/change feed/格式」的消息统一映射成 `contract_error`，无法定位。
+  - 根因一：v0.12.x 时代写入的待发操作带**安装 UUID 形式的 deviceId**，服务端拒绝 → 整个 exchange 失败。修复：`stripOutboxState(item, deviceId)` 把「等于本机 legacy 安装 UUID 且当前是 `device-` 前缀」的 deviceId 路由到已认证设备，opId 与 payload 原样保留，不改写其他设备/账号 scope。
+  - 根因二：推送请求自身携带拉取，**本地任一操作被拒，已确认的云端记录就永远拉不下来**。修复：两类 scope 都先单独拉取一次权威记录。
+  - 诊断改进：`deviceSync` 日志新增 `reason` 字段保留原始错误信息。
+- **实测结果**：`focus_sessions` 141 → 143；统计页账本实测显示 `2026年10月2日 · 1 个专注会话 · 累计 2 小时 1 分钟` 与 `10/2 08:39 – 11:11 · 2 小时 2 分钟 · 第二章第一节｜直线的倾斜角与斜率 · 已关联`。最后一条 `deviceSync` 告警停在修复前 04:19:39Z，重启后 `lastSyncAtV2` 正常推进、游标 `ck2 → ck4`、无 `contract_error`。
+- **主窗口失焦开小窗**：`main.ts` 新增 `win.on('blur')`（切换应用也算离开主工作面），小窗用 `showInactive()` 显示不抢焦点。实测：切换焦点后 `FocusLink Mini` 由 `visible=False` 变为 `visible=True`。
+- **顺带修正**：`HistoryPanel` 的 7/30/168 天范围终点改用 `getDayRange(end).end`，保证当天记录落在范围内。
+- **清理 v1.3.18 遗留账目**：v1.3.18 用直连 SQL 删除测试记录并手写 124 条墓碑，`base_revision` 停留在 rev=1 而服务端已是 rev=2 → 活跃 scope 63 条 `revision_conflict`、旧 scope 62 条 pending 永远发不出去。这些实体在 `sync_v2_entity_state` 已是 `rev=2 / deleted=1`，**删除实际已生效**，剩余只是过期账目，却让 `lastErrorV2` 永远停在 `conflict_present`。清理 `v2-purge-*` 相关行（outbox 125 → 31，冲突 164 → 132），清理前完整备份。
+- **门禁**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **134 文件 / 1115 项** PASS；Windows 静默覆盖安装退出码 0，回读 `FocusLink 1.3.21` / EXE `1.3.21`。
+- **范围**：按用户指令只做 PC，Android 版本号同步到 `1325 / 1.3.21`，三设备门禁显式挂起。
+- **遗留（如实记录）**：
+  - 云端仍留有那批测试记录的副本；本机游标已越过它们，不会再被拉回，但其他设备若仍在旧 scope 上仍可能看到。
+  - 库里 132 条既有同步冲突无 UI 处理入口（v1.3.18 已记录）。
+  - 统计页右上角「今日时序谱带」在窄宽度下文字重叠（截图可见），未修。
+
+
 
 ## 2026-10-02 · `FL-STATS-20261002-RESPONSIVE-LEDGER`：PC 统计布局、中文层级与真实片段关联（v1.3.20 候选）
 
