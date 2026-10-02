@@ -77,8 +77,8 @@ export function mergeLedgerTasks(dayLedgers: readonly DayLedgerAnalytics[]): Day
 /** ms -> 原型的紧凑小时口径（"4.6h" / "0h"），用于侧栏 nav-num。 */
 export function formatCompactHours(ms: number): string {
   const safe = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (safe <= 0) return '0h';
-  return `${(safe / 3_600_000).toFixed(1)}h`;
+  if (safe <= 0) return '0时';
+  return `${(safe / 3_600_000).toFixed(1)}时`;
 }
 
 /** ms -> 原型工具栏的「累计 4h 35m」口径。 */
@@ -86,8 +86,8 @@ export function formatHoursMinutes(ms: number): string {
   const totalMinutes = Math.floor((Number.isFinite(ms) ? Math.max(0, ms) : 0) / 60_000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes}m`;
-  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  if (hours <= 0) return `${minutes} 分钟`;
+  return minutes === 0 ? `${hours} 小时` : `${hours} 小时 ${minutes} 分钟`;
 }
 
 export interface StatsSidebarCategory {

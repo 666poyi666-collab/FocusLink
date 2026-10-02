@@ -2,11 +2,15 @@
 // 100% 对齐设计原型：今日心流全景仪表、24h精力节律分布、清单分类占比、重点任务排行、24周心流热力矩阵。
 // 彻底移除旧版时间轴与冗余轨道，纯粹沉浸呈现。
 import React, { useMemo, useState, type CSSProperties } from 'react';
-import type { SessionAnalyticsDaily, SessionAnalyticsResult } from '@shared/ipc/api';
+import type {
+  SessionAnalyticsDaily,
+  SessionAnalyticsHourly,
+  SessionAnalyticsResult,
+} from '@shared/ipc/api';
 import type { DayLedgerAnalytics, DayLedgerTask } from '@shared/dayLedgerAnalytics';
 import { buildDashboardTaskAllocation } from '@shared/dashboardPresentation';
 import { formatMinutes } from '../../lib/time';
-import { HEATMAP_WEEKS, ledgerTotalsOf, mergeLedgerTasks } from './statsLedgerModel';
+import { HEATMAP_WEEKS } from './statsLedgerModel';
 import {
   isSameLocalDay,
   type RangePreset,
@@ -16,6 +20,7 @@ import {
 
 export interface HistoryInsightsProps {
   summary: SessionSummary;
+  heatmapDaily?: SessionAnalyticsDaily[];
   range: TimeRange;
   analytics: SessionAnalyticsResult | null;
   slideDirection: -1 | 0 | 1;
@@ -24,7 +29,7 @@ export interface HistoryInsightsProps {
   taskQuery?: string;
   activePeriod?: number;
   onPeriodClick?: (idx: number) => void;
-  onTaskSelect?: (index: number) => void;
+  onTaskSelect?: (taskId: string | null, title: string) => void;
   onTaskHover?: (index: number | null) => void;
   hoveredTaskIndex?: number | null;
   multiDayMode?: boolean;
@@ -38,13 +43,14 @@ function duration(ms: number): string {
 
 function axisDuration(ms: number): string {
   const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes} 分钟`;
   const hours = minutes / 60;
-  return `${hours >= 10 || Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)}h`;
+  return `${hours >= 10 || Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)} 小时`;
 }
 
 export function HistoryInsights({
   summary,
+  heatmapDaily,
   range,
   analytics,
   slideDirection,
@@ -64,24 +70,12 @@ export function HistoryInsights({
       ) ?? dayLedgers[0])
     : dayLedgers.at(-1);
 
-  const ledgerTotals = ledgerTotalsOf(dayLedgers);
-  const rawFocus = ledgerTotals.focusMs + ledgerTotals.estimatedFocusMs;
-  const rawPause = ledgerTotals.pauseMs + ledgerTotals.estimatedPauseMs;
-
-  /* 真实值，不再回落到原型样例。
-     2026-10-01 修复：原实现是 `rawFocus > 0 ? rawFocus : 4.6 * 3600_000` 与
-     `rawPause > 0 ? rawPause : 22 * 60_000` —— 没有数据时**凭空显示** 4.6 小时专注 /
-     22 分钟损耗，用户看到的是一份不存在的成绩单。现在没有数据就如实显示 0。 */
-  const dashboardFocus = rawFocus;
-  const dashboardPause = rawPause;
-
-  const effectiveTasks = useMemo(() => {
-    /* 2026-10-02 修复：这里原本在无数据时回落到 4 个**原型示例任务**
-       （proto-1..proto-4：Q3 季度重点业务复盘 / 设计并实现 FocusLink 任务页 4K 纯净…
-       各带 80/80/65/50 分钟的假时长）。原型是设计稿，示例任务不是可以渲染给用户的账本。
-       没有真实任务就如实为空。 */
-    return mergeLedgerTasks(dayLedgers);
-  }, [dayLedgers]);
+  const dashboardFocus = analytics?.totals.activeMs ?? 0;
+  const dashboardPause = analytics?.totals.pauseMs ?? 0;
+  const effectiveTasks = useMemo<DayLedgerTask[]>(
+    () => (analytics?.tasks ?? []).map((task) => ({ ...task, estimated: false })),
+    [analytics?.tasks],
+  );
 
   // 计算连续打卡天数
   const streakDays = useMemo(() => {
@@ -103,12 +97,12 @@ export function HistoryInsights({
      于是**今天专注 0 分钟也会显示「较昨日增加 42 分钟」**。现在没有可比对的昨日数据
      就返回 0（既不显示凭空增长，也不误报下降）。 */
   const yesterdayDiff = useMemo(() => {
-    if (!analytics?.daily || analytics.daily.length < 2) return 0;
+    if (!singleDay || !analytics?.daily || analytics.daily.length < 2) return null;
     const todayDaily = analytics.daily[analytics.daily.length - 1];
     const yestDaily = analytics.daily[analytics.daily.length - 2];
     if (!todayDaily || !yestDaily) return 0;
     return todayDaily.activeMs - yestDaily.activeMs;
-  }, [analytics?.daily]);
+  }, [analytics?.daily, singleDay]);
 
   /* 目标达成率。
      2026-10-02 修复：原实现是 `... || 91` —— 达成率算出来是 0 时，`0` 是 falsy，
@@ -137,7 +131,7 @@ export function HistoryInsights({
   return (
     <section
       className="history-insights stats-dashboard"
-      aria-label="专注统计 Dashboard"
+      aria-label="专注统计"
       style={{ '--stats-shift': `${slideDirection * 7}px` } as CSSProperties}
     >
       <div className="stats-dashboard-grid" id="statsDashboardGrid">
@@ -167,7 +161,8 @@ export function HistoryInsights({
         >
           <RhythmChartCard
             multiDay={multiDayMode}
-            ledger={selectedLedger}
+            daily={analytics?.daily ?? []}
+            hourly={analytics?.hourly ?? []}
             activePeriod={activePeriod}
             onPeriodClick={onPeriodClick}
           />
@@ -203,7 +198,7 @@ export function HistoryInsights({
           id="tileHeatmap"
           onMouseMove={handleCardMouseMove}
         >
-          <FlowHeatmapCard daily={analytics?.daily ?? []} />
+          <FlowHeatmapCard daily={heatmapDaily ?? analytics?.daily ?? []} />
         </div>
       </div>
     </section>
@@ -326,12 +321,12 @@ function HeroFocusCard({
             <div className="hero-time-massive" id="heroTimeValWrap">
               <span id="heroTimeVal">
                 {focusH}
-                <span className="time-unit">h</span> {focusM}
-                <span className="time-unit">m</span>
+                <span className="time-unit">小时</span> {focusM}
+                <span className="time-unit">分钟</span>
               </span>
             </div>
             <div className="hero-target-row" id="heroTargetVal">
-              / 目标 {targetH}h {String(targetM).padStart(2, '0')}m
+              / 参考目标 {targetH} 小时 {targetM > 0 ? `${targetM} 分钟` : ''}
             </div>
             {/* 2026-10-02 修复：原实现无论增减都渲染「较昨日 +X」加绿色上箭头，
                 下降时也显示成增长。现在按真实符号分三态：增长 / 下降 / 持平。 */}
@@ -473,7 +468,7 @@ function HeroFocusCard({
             <span>推进任务</span>
           </div>
           <span className="cap-val" id="capTasks">
-            {effectiveTasks.length} 个 (完成 {Math.min(effectiveTasks.length, 5)} 项)
+            {effectiveTasks.filter((task) => task.taskId).length} 个
           </span>
         </div>
 
@@ -491,7 +486,7 @@ function HeroFocusCard({
             <span>连续打卡</span>
           </div>
           <span className="cap-val" style={{ color: 'var(--warning, #F59E0B)' }} id="capStreak">
-            {streakDays} 天 (历史最佳)
+            {streakDays} 天
           </span>
         </div>
       </div>
@@ -505,11 +500,11 @@ function HeroFocusCard({
    于是无论今天有没有专注，时段胶囊永远显示 2 小时 10 分钟 / 1 小时 45 分钟 / 40 分钟。
    现在 `defMs` 已删除，数值由真实 `hourlyData` 按小时区间求和得到。 */
 const PERIOD_CONFIG = [
-  { name: '深夜时段', range: '0-7h', start: 0, end: 6 },
-  { name: '黄金上午', range: '7-12h', start: 7, end: 11 },
-  { name: '沉浸下午', range: '12-18h', start: 12, end: 17 },
-  { name: '晚间收尾', range: '18-22h', start: 18, end: 21 },
-  { name: '深夜休整', range: '22-24h', start: 22, end: 23 },
+  { name: '深夜时段', range: '00–07时', start: 0, end: 6 },
+  { name: '黄金上午', range: '07–12时', start: 7, end: 11 },
+  { name: '沉浸下午', range: '12–18时', start: 12, end: 17 },
+  { name: '晚间收尾', range: '18–22时', start: 18, end: 21 },
+  { name: '深夜休整', range: '22–24时', start: 22, end: 23 },
 ];
 
 /* 2026-10-02 修复：这里原本是 24 小时的**原型示例数据**（8 点 15m、9 点 45m/5m …）。
@@ -518,39 +513,23 @@ const EMPTY_HOURLY = Array.from({ length: 24 }, (_, h) => ({ h, f: 0, p: 0 }));
 
 /* 2026-10-02 修复：这里原本是 7 天的**原型示例数据**（周一 270m、周二 310m …）。
    没有真实数据时应当如实为空。 */
-const EMPTY_WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((label) => ({
-  label,
-  f: 0,
-  p: 0,
-}));
 
 function RhythmChartCard({
   multiDay,
-  ledger,
+  daily,
+  hourly,
   activePeriod = -1,
   onPeriodClick,
 }: {
   multiDay: boolean;
-  ledger?: DayLedgerAnalytics;
+  hourly: SessionAnalyticsHourly[];
+  daily: SessionAnalyticsDaily[];
   activePeriod?: number;
   onPeriodClick?: (idx: number) => void;
 }) {
-  const hourlyData = useMemo(() => {
-    if (!ledger || ledger.intervals.length === 0) return EMPTY_HOURLY;
-    const list = Array.from({ length: 24 }, (_, h) => ({ h, f: 0, p: 0 }));
-    for (const inv of ledger.intervals) {
-      if (inv.kind === 'gap') continue;
-      const sh = new Date(inv.startedAt).getHours();
-      const eh = new Date(inv.endedAt).getHours();
-      const durM = Math.round(inv.durationMs / MINUTE);
-      const span = Math.max(1, eh - sh + 1);
-      for (let h = sh; h <= Math.min(23, eh); h++) {
-        if (inv.kind === 'focus') list[h].f += Math.round(durM / span);
-        else if (inv.kind === 'pause') list[h].p += Math.round(durM / span);
-      }
-    }
-    return list;
-  }, [ledger]);
+  const hourlyData = hourly.length
+    ? hourly.map((hour) => ({ h: hour.hour, f: hour.activeMs / MINUTE, p: hour.pauseMs / MINUTE }))
+    : EMPTY_HOURLY;
 
   /* 五个自然时段的真实专注时长：把 hourlyData（分钟）按区间求和后换算成毫秒。
      2026-10-02 修复前这里用的是原型写死的 defMs，永远不看真实数据。 */
@@ -565,6 +544,12 @@ function RhythmChartCard({
     [hourlyData],
   );
 
+  const dailyBars = daily.map((day) => ({
+    label: day.date.slice(5).replace('-', '/'),
+    f: day.activeMs / MINUTE,
+    p: day.pauseMs / MINUTE,
+  }));
+  const dailyMax = Math.max(360, ...dailyBars.map((day) => day.f + day.p));
   return (
     <>
       <div className="section-head">
@@ -579,9 +564,7 @@ function RhythmChartCard({
             >
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
-            {multiDay
-              ? '自然日心流投入对比 (Daily Focus Trends)'
-              : '24 小时精力节律时钟分布 (Chronological Rhythm)'}
+            {multiDay ? '自然日专注对比' : '24 小时精力节律时钟分布'}
           </h3>
           <p id="chartHeaderSub">
             {multiDay
@@ -621,14 +604,18 @@ function RhythmChartCard({
         <div className="rhythm-grid-lines">
           <div className="rhythm-grid-line rhythm-target-guide">
             <span className="rhythm-grid-tag" id="rhythmGridGuideTag">
-              {multiDay ? '基准 5h/天' : '基准 45m/h'}
+              {multiDay ? `刻度 ${Math.round(dailyMax / 60)} 小时` : '45 分钟'}
             </span>
           </div>
           <div className="rhythm-grid-line">
-            <span className="rhythm-grid-tag">30m</span>
+            <span className="rhythm-grid-tag">
+              {multiDay ? `${Math.round(dailyMax / 120)} 小时` : '30 分钟'}
+            </span>
           </div>
           <div className="rhythm-grid-line">
-            <span className="rhythm-grid-tag">15m</span>
+            <span className="rhythm-grid-tag">
+              {multiDay ? `${Math.round(dailyMax / 240)} 小时` : '15 分钟'}
+            </span>
           </div>
         </div>
 
@@ -669,14 +656,15 @@ function RhythmChartCard({
                     )}
                     <div className="bar-time-lbl">{showLbl}</div>
                     <div className="bar-hover-tip">
-                      {hourStr} · 专注 {item.f}m {item.p ? `· 暂停 ${item.p}m` : ''}
+                      {hourStr} · 专注 {duration(item.f * MINUTE)}{' '}
+                      {item.p ? `· 暂停 ${duration(item.p * MINUTE)}` : ''}
                     </div>
                   </div>
                 );
               })
-            : EMPTY_WEEK_DAYS.map((item, idx) => {
-                const fPct = Math.min(100, Math.round((item.f / 360) * 100));
-                const pPct = Math.min(100, Math.round((item.p / 360) * 100));
+            : dailyBars.map((item, idx) => {
+                const fPct = Math.min(100, Math.round((item.f / dailyMax) * 100));
+                const pPct = Math.min(100, Math.round((item.p / dailyMax) * 100));
                 const h = (item.f / 60).toFixed(1);
                 return (
                   <div key={idx} className="bar-col">
@@ -686,7 +674,7 @@ function RhythmChartCard({
                     </div>
                     <div className="bar-time-lbl">{item.label}</div>
                     <div className="bar-hover-tip">
-                      {item.label} · 专注 {h}h · 暂停 {item.p}m
+                      {item.label} · 专注 {h} 小时 · 暂停 {duration(item.p * MINUTE)}
                     </div>
                   </div>
                 );
@@ -832,10 +820,10 @@ function DonutAllocationCard({
             </svg>
             <div className="donut-center-metric" id="donutCenterBox">
               <span className="d-big" id="donutCenterVal">
-                {hoveredItem ? hoveredItem.dur : `${(totalActive / 3600_000).toFixed(1)}h`}
+                {hoveredItem ? hoveredItem.pct : `${(totalActive / 3600_000).toFixed(1)}`}
               </span>
               <span className="d-lbl" id="donutCenterLbl">
-                {hoveredItem ? `${hoveredItem.name} (${hoveredItem.pct})` : '总专注投入'}
+                {hoveredItem ? '投入占比' : '专注小时'}
               </span>
             </div>
           </div>
@@ -895,7 +883,7 @@ function TopTasksLeaderboard({
   tasks: DayLedgerTask[];
   query?: string;
   hoveredIndex?: number | null;
-  onTaskSelect?: (idx: number) => void;
+  onTaskSelect?: (taskId: string | null, title: string) => void;
   onTaskHover?: (idx: number | null) => void;
 }) {
   const keyword = (query ?? '').trim().toLowerCase();
@@ -919,7 +907,7 @@ function TopTasksLeaderboard({
               <line x1="12" y1="20" x2="12" y2="4" />
               <line x1="6" y1="20" x2="6" y2="14" />
             </svg>
-            重点任务专注排行 (Top Focused Tasks)
+            重点任务专注排行
           </h3>
           <p>周期内投入精力最多的关键事务 · 相对时长可视化</p>
         </div>
@@ -935,7 +923,7 @@ function TopTasksLeaderboard({
             <div
               className="task-rank-card"
               key={task.key}
-              onClick={() => onTaskSelect?.(idx)}
+              onClick={() => onTaskSelect?.(task.taskId, task.title)}
               onMouseEnter={() => onTaskHover?.(idx)}
               onMouseLeave={() => onTaskHover?.(null)}
               style={
@@ -959,15 +947,6 @@ function TopTasksLeaderboard({
                 </div>
                 <div className="tr-right">
                   <span className="tr-time">{duration(task.activeMs)}</span>
-                  <span className={`tr-status-pill ${idx === 1 ? 'active' : 'done'}`}>
-                    {idx === 1 ? (
-                      <>
-                        <span className="tr-pulse-dot" /> 专注中
-                      </>
-                    ) : (
-                      '✓ 已完成'
-                    )}
-                  </span>
                 </div>
               </div>
               <div className="tr-bar-track">
@@ -1010,7 +989,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
         const curDate = new Date(endDate);
         const dayIdx = w * 7 + (6 - d);
         curDate.setDate(endDate.getDate() - dayIdx);
-        const dateStr = curDate.toISOString().slice(0, 10);
+        const dateStr = `${curDate.getFullYear()}-${String(curDate.getMonth() + 1).padStart(2, '0')}-${String(curDate.getDate()).padStart(2, '0')}`;
         const match = map.get(dateStr) ?? { activeMs: 0, sessionCount: 0 };
         const mins = Math.round(match.activeMs / MINUTE);
 
@@ -1049,7 +1028,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
               <rect x="14" y="14" width="7" height="7" />
               <rect x="3" y="14" width="7" height="7" />
             </svg>
-            心流节律活动热力 (24 周心流矩阵 (近半年))
+            心流节律活动热力
           </h3>
           <p>记录过去 168 天每一个自然日的心流密度 · 见证时间积累的力量</p>
         </div>

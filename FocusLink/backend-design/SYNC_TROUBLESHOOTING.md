@@ -309,3 +309,11 @@ Windows 日志在 `%APPDATA%\focuslink\logs\focuslink-YYYY-MM-DD.log`。只提�
 - 每轮同步改动前先读 `IMPLEMENTATION_LOG.md` 顶部当前版本 Bug/事故、相关 `FL-SYNC-*` 条目和完整 `TEST_AND_RELEASE.md`；禁止另建平行 Bug 日志或一次性故障报告。
 - 跨设备、滴答清单、番茄 To-do 三条同步链路的成功状态不能互相冒充。
 - 任何“已同步”结论都必须有对应服务的确认；网络不可达只能显示“未同步/同步失败”。
+
+## FL-SYNC-016：统计页已关联会话，但片段仍显示未关联
+
+这是本地关联层级问题，不等于设备传输失败或滴答写入失败。`timer.linkSessionTask` 对已结束会话只更新会话默认任务；片段自己的 taskId 不会自动修改。诊断时分别读取 `sessions.get` 的 session 默认任务与每个 segment.taskId，不能只看标题或任意历史 lastError。
+
+v1.3.20 PC 统计页关联会话后显式执行 `linkSegmentsBatch(..., onlyUnlinked=true)`；已有片段关联保持原值。独立片段更换走 `timer.linkTask`。取消选择器不发 mutation。两次会话调用不是原子事务，若第二步失败，应重新读取当前状态，保留已经成功的会话默认关联并显示失败；不得为了补关联清空同步冲突、重置设备身份或覆盖其他已关联片段。
+
+重复诊断以 `npm run smoke:stats` 的隔离 renderer 为起点，真实端只读核对会话与片段。完成本地关联不能宣称已经同步到滴答清单或其他设备。

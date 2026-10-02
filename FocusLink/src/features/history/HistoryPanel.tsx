@@ -1,9 +1,11 @@
-// 历史与统计工作台：100% 对齐设计原型 (统计页原型.html)
+// 历史与统计工作台：以真实账本与可用宽度组织统计、筛选和会话详情。
 // 包含 42px 沉浸式标题栏、三栏弹性响应式工作区、5 大核心卡贴画卷、横向连续账本流、
 // Web Audio 晶莹和弦音效、鼠标感应镜面高光、双向高光联动与外观弹窗。
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../../styles/stats-workbench.css';
-import { formatClock, formatDuration, formatMinutes } from '../../lib/time';
+import { SessionLedger } from './SessionLedger';
+import { createPortal } from 'react-dom';
+import { useStore } from '../../app/store';
 import {
   getDayRange,
   shiftLocalDay,
@@ -12,39 +14,21 @@ import {
   type TimeRange,
 } from './historyStats';
 import type { FocusSession } from '@shared/types';
-import type { SessionAnalyticsResult } from '@shared/ipc/api';
+import type { SessionAnalyticsDaily, SessionAnalyticsResult } from '@shared/ipc/api';
 import { HistoryInsights } from './HistoryInsights';
 import { StatsSidebar, type StatsSidebarView } from './StatsSidebar';
 import { TaskPicker } from '../tasks/TaskPicker';
 import type { Task } from '@shared/types';
 import {
   HEATMAP_WINDOW_DAYS,
-  buildStatsSidebarCategories,
   formatCompactHours,
   formatHoursMinutes,
-  ledgerTotalsOf,
   summarizeRangeWindows,
   type StatsRangeWindows,
   type StatsSidebarCategory,
 } from './statsLedgerModel';
 
 type StatsPreset = RangePreset | 'heatmap';
-
-interface ProtoSession {
-  id: number | string;
-  clock: string;
-  title: string;
-  project: string;
-  projectKey: string;
-  /** 是否已关联任务。用于账本里显示「关联任务」入口（v1.3.19）。 */
-  linked: boolean;
-  dur: string;
-  segCount: number;
-  pauseCount: number;
-  meta: string;
-  track: Array<{ type: 'focus' | 'pause'; width: number; lbl: string }>;
-  segments: Array<{ type: 'focus' | 'pause'; name: string; time: string; dur: string }>;
-}
 
 // Web Audio API 晶莹和弦音效合成器
 function playWebAudioChime(kind: 'kpi' | 'click') {
@@ -84,7 +68,7 @@ export function HistoryPanel() {
   const [dayCursor, setDayCursor] = useState<number>(() => Date.now());
   const [taskQuery, setTaskQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState<string>('all');
-  const [curSelectedSession, setCurSelectedSession] = useState(0);
+  const [curSelectedSession, setCurSelectedSession] = useState<string | null>(null);
   const [activePeriod, setActivePeriod] = useState<number>(-1);
   const [hoveredTaskIdx, setHoveredTaskIdx] = useState<number | null>(null);
 
@@ -93,7 +77,24 @@ export function HistoryPanel() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const [font, setFont] = useState<'sans' | 'serif'>('sans');
   const [cardSkin, setCardSkin] = useState<'ceramic' | 'frosted' | 'titanium'>('ceramic');
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const attributes = {
+      'data-pal': palette,
+      'data-theme': themeMode,
+      'data-font': font,
+      'data-skin': cardSkin,
+      'data-sound': soundEnabled ? 'on' : 'off',
+    };
+    const previous = Object.keys(attributes).map((key) => [key, root.getAttribute(key)] as const);
+    Object.entries(attributes).forEach(([key, value]) => root.setAttribute(key, value));
+    return () =>
+      previous.forEach(([key, value]) =>
+        value === null ? root.removeAttribute(key) : root.setAttribute(key, value),
+      );
+  }, [palette, themeMode, font, cardSkin, soundEnabled]);
 
   // 外观弹出菜单
   const [menuOpen, setMenuOpen] = useState(false);
@@ -101,35 +102,29 @@ export function HistoryPanel() {
   const appearanceBtnRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // 浮动通知队列
-  const [toasts, setToasts] = useState<Array<{ id: number; msg: string; fade: boolean }>>([]);
-
-  const showToast = useCallback((msg: string) => {
-    playWebAudioChime('click');
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, msg, fade: false }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, fade: true } : t)));
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 200);
-    }, 2000);
-  }, []);
+  const addToast = useStore((state) => state.addToast);
+  const showToast = useCallback((message: string) => addToast(message, 'info'), [addToast]);
 
   // 监听真实数据（若有）
   /* 关联任务后要重新拉取 analytics；令牌必须声明在下面的 effect 之前。 */
   const [analyticsReloadToken, setAnalyticsReloadToken] = useState(0);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [heatmapDaily, setHeatmapDaily] = useState<SessionAnalyticsDaily[]>([]);
   const [analytics, setAnalytics] = useState<SessionAnalyticsResult | null>(null);
   const range = useMemo<TimeRange>(() => {
     if (curRange === 'today') return getDayRange(dayCursor);
     const end = Date.now();
-    const days = curRange === '7d' ? 7 : curRange === '30d' ? 30 : 84;
-    return { start: end - days * 86_400_000, end };
+    const days = curRange === '7d' ? 7 : curRange === '30d' ? 30 : HEATMAP_WINDOW_DAYS;
+    return { start: getDayRange(shiftLocalDay(end, -(days - 1))).start, end };
   }, [curRange, dayCursor]);
 
   useEffect(() => {
     let cancelled = false;
+    let requestId = 0;
+    setAnalytics(null);
+    setAnalyticsError(null);
     const loadAnalytics = async () => {
+      const id = ++requestId;
       try {
         if (window.focuslink?.sessions?.analytics) {
           const res = await window.focuslink.sessions.analytics({
@@ -138,10 +133,11 @@ export function HistoryPanel() {
             timelineStart: range.start,
             timelineEnd: range.end,
           });
-          if (!cancelled) setAnalytics(res);
+          if (!cancelled && id === requestId) setAnalytics(res);
         }
       } catch (err) {
-        console.error('Failed to load session analytics:', err);
+        if (!cancelled && id === requestId)
+          setAnalyticsError(err instanceof Error ? err.message : '读取统计失败');
       }
     };
 
@@ -171,35 +167,50 @@ export function HistoryPanel() {
      此前 linkSessionTask 只在专注页、且只对**进行中**的会话可用；已结束的会话
      在任何界面都没有关联入口。主进程的 ensureNotLiveSession() 证明已结束会话
      本来就可以关联，所以这纯粹是 UI 缺口。 */
-  const [linkTarget, setLinkTarget] = useState<{ sessionId: string; label: string } | null>(null);
+  const [linkTarget, setLinkTarget] = useState<{
+    sessionId: string;
+    label: string;
+    segmentId?: string;
+    taskId?: string | null;
+  } | null>(null);
   const [sidebarWindows, setSidebarWindows] = useState<StatsRangeWindows | null>(null);
-  const [sidebarCategories, setSidebarCategories] = useState<StatsSidebarCategory[]>([]);
+  const sidebarCategories = useMemo<StatsSidebarCategory[]>(() => {
+    const tasks = analytics?.tasks ?? [];
+    const total = tasks.reduce((sum, task) => sum + task.activeMs, 0);
+    return tasks
+      .filter((task) => task.activeMs > 0)
+      .map((task, index) => ({
+        key: task.key,
+        label: task.title,
+        activeMs: task.activeMs,
+        percent: total > 0 ? Math.round((task.activeMs / total) * 100) : 0,
+        color: ['#2563eb', '#6366f1', '#10b981', '#f59e0b'][index % 4],
+      }));
+  }, [analytics?.tasks]);
   /* 侧栏的点击回调要引用下面才定义的 handleSwitchPreset，用 ref 避开定义顺序问题。 */
   const handleSwitchPresetRef = useRef<(mode: StatsPreset) => void>(() => {});
 
   useEffect(() => {
     let cancelled = false;
+    let requestId = 0;
     const loadSidebar = async () => {
+      const id = ++requestId;
       try {
         if (!window.focuslink?.sessions?.analytics) return;
         const now = new Date();
         const end = Date.now();
         const start =
-          new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 29 * 86_400_000;
+          new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() -
+          (HEATMAP_WINDOW_DAYS - 1) * 86_400_000;
         const res = await window.focuslink.sessions.analytics({
           start,
           end,
           timelineStart: start,
           timelineEnd: end,
         });
-        if (cancelled) return;
-        const ledgers = res.dayLedgers ?? [];
-        setSidebarWindows(summarizeRangeWindows(res.daily ?? []));
-        const totalFocus = Math.max(
-          0,
-          ledgerTotalsOf(ledgers).focusMs + ledgerTotalsOf(ledgers).estimatedFocusMs,
-        );
-        setSidebarCategories(buildStatsSidebarCategories(ledgers, totalFocus, 3));
+        if (cancelled || id !== requestId) return;
+        setSidebarWindows(summarizeRangeWindows(res.daily.slice(-30)));
+        setHeatmapDaily(res.daily);
       } catch (err) {
         console.error('Failed to load sidebar analytics:', err);
       }
@@ -213,7 +224,7 @@ export function HistoryPanel() {
       cancelled = true;
       unsub?.();
     };
-  }, []);
+  }, [analyticsReloadToken]);
 
   const sidebarViews = useMemo<StatsSidebarView[]>(
     () => [
@@ -253,77 +264,27 @@ export function HistoryPanel() {
     [sidebarWindows, curRange],
   );
 
-  // 会话列表数据投影
-  const sessions = useMemo<ProtoSession[]>(() => {
-    /* 没有真实会话就如实为空。
-       2026-10-01 修复：原实现在这里回落 `DEFAULT_SESSIONS`（一整份原型样例会话：
-       工作任务/深度学习/个人生活、写死的时长与片段），于是空数据的一天会渲染出
-       一份**不存在的**会话账本。原型是设计稿，样例会话不是可以渲染给用户的数据。
-       常量本身保留，只用于测试与故事板参考。 */
-    if (!analytics?.sessions || analytics.sessions.length === 0) {
-      return [];
-    }
-    return analytics.sessions.map((s: FocusSession, idx: number) => {
-      /* 分类键必须用**真实任务名**，否则侧栏「清单分类」的筛选点不动任何会话。
-         原实现把 projectKey 硬编码成 'dev'/'all'，与真实分类永远对不上。 */
-      const label = s.defaultTaskTitle || s.title || '未关联';
-      const linked = Boolean(s.defaultTaskId || s.defaultTaskTitle);
-      const dur = formatMinutes(s.activeElapsedMs);
-      const clock = `${formatClock(s.startedAt)} - ${s.endedAt ? formatClock(s.endedAt) : '进行中'}`;
-      const title = s.title || s.defaultTaskTitle || '专注会话';
-      const meta = `起止：${formatClock(s.startedAt)} - ${s.endedAt ? formatClock(s.endedAt) : '进行中'} · 自然历时 ${formatDuration(s.wallElapsedMs || s.activeElapsedMs)}`;
-      return {
-        id: s.id || idx,
-        clock,
-        title,
-        project: label,
-        projectKey: label,
-        linked,
-        dur,
-        segCount: 1,
-        pauseCount: s.pauseElapsedMs > 0 ? 1 : 0,
-        meta,
-        track: [
-          {
-            type: 'focus',
-            width: Math.min(
-              100,
-              Math.max(
-                10,
-                Math.round((s.activeElapsedMs / (s.activeElapsedMs + s.pauseElapsedMs || 1)) * 100),
-              ),
-            ),
-            lbl: `专注 ${dur}`,
-          },
-          ...(s.pauseElapsedMs > 0
-            ? [
-                {
-                  type: 'pause' as const,
-                  width: Math.min(
-                    30,
-                    Math.round((s.pauseElapsedMs / (s.activeElapsedMs + s.pauseElapsedMs)) * 100),
-                  ),
-                  lbl: `${formatMinutes(s.pauseElapsedMs)}`,
-                },
-              ]
-            : []),
-        ],
-        segments: [{ type: 'focus', name: `片段 1 · ${title}`, time: clock, dur }],
-      };
-    });
-  }, [analytics?.sessions]);
-
-  // 过滤后的会话流（根据搜索框与分类）
   const filteredSessions = useMemo(() => {
-    const q = taskQuery.trim().toLowerCase();
-    return sessions.filter((s) => {
-      const matchCat = projectFilter === 'all' || s.projectKey === projectFilter;
-      const matchQ = !q || s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q);
-      return matchCat && matchQ;
+    const query = taskQuery.trim().toLowerCase();
+    return (analytics?.sessions ?? []).filter((session: FocusSession) => {
+      const timeline = (analytics?.timeline ?? []).filter(
+        (item) => item.sessionId === session.id && item.kind === 'focus',
+      );
+      const matchesCategory =
+        projectFilter === 'all' ||
+        timeline.some((item) =>
+          item.taskId
+            ? item.taskId === analytics?.tasks.find((task) => task.key === projectFilter)?.taskId
+            : `unlinked:${item.title}` === projectFilter,
+        );
+      const matchesQuery =
+        !query ||
+        [session.title, session.defaultTaskTitle, ...timeline.map((item) => item.title)].some(
+          (title) => title?.toLowerCase().includes(query),
+        );
+      return matchesCategory && matchesQuery;
     });
-  }, [sessions, projectFilter, taskQuery]);
-
-  const activeSession = filteredSessions[curSelectedSession] || filteredSessions[0] || sessions[0];
+  }, [analytics, projectFilter, taskQuery]);
 
   // 快捷键 Ctrl+K 搜索聚焦
   useEffect(() => {
@@ -382,27 +343,22 @@ export function HistoryPanel() {
   const handleSwitchPreset = (mode: StatsPreset) => {
     playWebAudioChime('click');
     setCurRange(mode);
+    setProjectFilter('all');
+    setCurSelectedSession(null);
     if (mode === 'heatmap') {
       const el = document.getElementById('tileHeatmap');
       el?.scrollIntoView({ behavior: 'smooth' });
-      showToast('已定位至 24 周心流活动矩阵');
+
       return;
     }
-    const titles: Record<string, string> = {
-      today: '今日心流看板',
-      '7d': '最近 7 天精力全景',
-      '30d': '最近 30 天心流沉淀',
-    };
-    showToast(`已切换至${titles[mode] ?? '心流看板'}`);
   };
   handleSwitchPresetRef.current = handleSwitchPreset;
 
   // 切换清单分类
-  const handleFilterProject = (catKey: string, name: string) => {
+  const handleFilterProject = (catKey: string) => {
     playWebAudioChime('click');
     setProjectFilter(catKey);
-    setCurSelectedSession(0);
-    showToast(`已筛选清单：${name}`);
+    setCurSelectedSession(null);
   };
 
   /* 侧栏「清单分类」点击：把真实分类名交给筛选。
@@ -413,53 +369,55 @@ export function HistoryPanel() {
     setLinkTarget(null);
     if (!task || !target) return;
     try {
-      await window.focuslink.timer.linkSessionTask(
-        target.sessionId,
-        task.id,
-        task.source,
-        task.title,
-      );
+      if (target.segmentId) {
+        await window.focuslink.timer.linkTask(target.segmentId, task.id, task.source, task.title);
+      } else {
+        await window.focuslink.timer.linkSessionTask(
+          target.sessionId,
+          task.id,
+          task.source,
+          task.title,
+        );
+        // 已结束会话的默认任务不会自动修改片段；只补关联尚未关联的片段。
+        await window.focuslink.timer.linkSegmentsBatch(
+          target.sessionId,
+          task.id,
+          task.source,
+          task.title,
+          true,
+        );
+      }
       playWebAudioChime('click');
       showToast(`已关联「${target.label}」→ ${task.title}`);
       setAnalyticsReloadToken((token) => token + 1);
     } catch (err) {
+      setAnalyticsReloadToken((token) => token + 1);
       showToast('关联失败：' + (err as Error).message);
     }
   };
 
   const handleSelectSidebarCategory = (key: string) => {
     if (key === 'all') {
-      handleFilterProject('all', '全部分类');
+      handleFilterProject('all');
       return;
     }
-    const category = sidebarCategories.find((item) => item.key === key);
-    handleFilterProject(key, category?.label ?? key);
+    handleFilterProject(key);
   };
 
   // 前后日期导航
   const handleStepDate = (d: number) => {
     playWebAudioChime('click');
     setDayCursor((cur) => shiftLocalDay(cur, d));
-    const nextDate = new Date(shiftLocalDay(dayCursor, d));
-    showToast(
-      `已切换至 ${nextDate.getFullYear()}年${nextDate.getMonth() + 1}月${nextDate.getDate()}日`,
-    );
   };
 
-  // 导出账本
   const handleExportDataReport = () => {
-    playWebAudioChime('click');
-    showToast('已导出 FocusLink 时间账本 (CSV & JSON)');
-  };
-
-  // 复制 Markdown
-  const handleCopySessionRecord = (s: ProtoSession) => {
-    playWebAudioChime('click');
-    const md = `### [FocusLink 会话记录]\n- **任务**：${s.title}\n- **起止**：${s.clock}\n- **有效专注**：${s.dur}\n- **所属清单**：${s.project}\n- **片段数**：${s.segCount} 段\n- **暂停**：${s.pauseCount} 次`;
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(md);
-    }
-    showToast('会话结构化 Markdown 已复制');
+    const blob = new Blob([JSON.stringify(analytics, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `FocusLink-时间账本-${new Date(range.start).toLocaleDateString('sv-SE')}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // 时段高亮
@@ -467,20 +425,22 @@ export function HistoryPanel() {
     playWebAudioChime('click');
     if (activePeriod === idx) {
       setActivePeriod(-1);
-      showToast('已重置时段高亮');
     } else {
       setActivePeriod(idx);
-      const names = ['深夜时段', '黄金上午', '沉浸下午', '晚间收尾', '深夜休整'];
-      showToast(`时段聚焦：${names[idx]}`);
     }
   };
 
   // 任务选择联动
-  const handleTaskSelect = (idx: number) => {
-    playWebAudioChime('click');
-    setCurSelectedSession(idx);
-    const cardEl = document.querySelectorAll('.session-card')[idx] as HTMLElement | null;
-    cardEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const handleTaskSelect = (taskId: string | null, title: string) => {
+    const match = filteredSessions.find((session) =>
+      (analytics?.timeline ?? []).some(
+        (item) =>
+          item.sessionId === session.id &&
+          item.kind === 'focus' &&
+          (taskId ? item.taskId === taskId : !item.taskId && item.title === title),
+      ),
+    );
+    if (match) setCurSelectedSession(match.id);
   };
 
   const dayDate = new Date(dayCursor);
@@ -491,7 +451,9 @@ export function HistoryPanel() {
       ? '今日心流看板'
       : curRange === '7d'
         ? '最近 7 天精力全景'
-        : '最近 30 天心流沉淀';
+        : curRange === '30d'
+          ? '最近 30 天心流沉淀'
+          : '心流热力全景';
 
   /* 页头读数必须来自当前范围的真实 analytics。
      2026-10-01 修复：这里原本写死了 '2026年9月22日 - 9月28日 · 28 个专注会话 · 累计 32.2h'
@@ -504,8 +466,8 @@ export function HistoryPanel() {
   const rangeActiveLabel = formatHoursMinutes(analytics?.totals?.activeMs ?? 0);
   const activeViewStats =
     curRange === 'today'
-      ? `${dayDateStr} · ${filteredSessions.length} 个专注会话 · 累计 ${rangeActiveLabel}`
-      : `${formatDayLabel(range.start)} - ${formatDayLabel(range.end)} · ${filteredSessions.length} 个专注会话 · 累计 ${rangeActiveLabel}`;
+      ? `${dayDateStr} · ${analytics?.sessions.length ?? 0} 个专注会话 · 累计 ${rangeActiveLabel}`
+      : `${formatDayLabel(range.start)} - ${formatDayLabel(range.end)} · ${analytics?.sessions.length ?? 0} 个专注会话 · 累计 ${rangeActiveLabel}`;
 
   return (
     <div
@@ -538,7 +500,7 @@ export function HistoryPanel() {
               ref={searchInputRef}
               type="text"
               id="globalSearchInput"
-              placeholder="快速查找专注记录、任务或标签..."
+              placeholder="搜索会话或任务"
               value={taskQuery}
               onChange={(e) => setTaskQuery(e.target.value)}
             />
@@ -549,7 +511,7 @@ export function HistoryPanel() {
         <div className="titlebar-right">
           <div className="sync-badge">
             <i />
-            <span>本地同步就绪</span>
+            <span>本地时间账本</span>
           </div>
           <button
             ref={appearanceBtnRef}
@@ -587,19 +549,32 @@ export function HistoryPanel() {
             </div>
 
             <div className="list-toolbar-actions">
-              <button className="btn-tool" onClick={() => handleStepDate(-1)} title="前一天">
+              <button
+                disabled={curRange !== 'today'}
+                className="btn-tool"
+                onClick={() => handleStepDate(-1)}
+                title="前一天"
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
                 前一天
               </button>
-              <button className="btn-tool" onClick={() => handleStepDate(1)} title="后一天">
+              <button
+                disabled={
+                  curRange !== 'today' ||
+                  getDayRange(dayCursor).start >= getDayRange(Date.now()).start
+                }
+                className="btn-tool"
+                onClick={() => handleStepDate(1)}
+                title="后一天"
+              >
                 后一天
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
-              <button className="btn-tool" onClick={handleExportDataReport}>
+              <button disabled={!analytics} className="btn-tool" onClick={handleExportDataReport}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                 </svg>
@@ -609,7 +584,26 @@ export function HistoryPanel() {
           </div>
 
           <div className="stats-scroll-area">
+            {analyticsError ? (
+              <div role="alert" className="ledger-empty">
+                读取统计失败：{analyticsError}{' '}
+                <button
+                  className="btn-tool"
+                  type="button"
+                  onClick={() => setAnalyticsReloadToken((token) => token + 1)}
+                >
+                  重试
+                </button>
+              </div>
+            ) : (
+              !analytics && (
+                <div role="status" className="ledger-empty">
+                  正在读取统计…
+                </div>
+              )
+            )}
             <HistoryInsights
+              heatmapDaily={heatmapDaily}
               summary={summarizeAnalyticsRange(
                 analytics?.daily ?? [],
                 analytics?.sessions?.length ?? 0,
@@ -629,200 +623,27 @@ export function HistoryPanel() {
           </div>
         </main>
 
-        {/* 3. 右侧：会话详情面板 (100% 对齐横向时间展示) */}
-        <aside className="detail-pane">
-          <div className="detail-head-bar">
-            <div className="detail-head-title">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                style={{ width: '14px', height: '14px', color: 'var(--accent)' }}
-              >
-                <path d="M12 8v4l3 3" />
-                <circle cx="12" cy="12" r="10" />
-              </svg>
-              会话时间账本
-            </div>
-            <span
-              style={{
-                fontSize: '11px',
-                fontFamily: 'var(--font-num)',
-                color: 'var(--text-tertiary)',
-              }}
-              id="sessionBadgeCount"
-            >
-              {filteredSessions.length} 轮记录
-            </span>
-          </div>
-
-          {/* 会话流列表 */}
-          <div className="session-card-stream" id="sessionCardStream">
-            {filteredSessions.map((s, idx) => {
-              const isActive = idx === curSelectedSession;
-              const isHoverLinked = hoveredTaskIdx === idx;
-              return (
-                <div
-                  key={s.id}
-                  className={`session-card ${isActive ? 'active' : ''}`}
-                  onClick={() => {
-                    playWebAudioChime('click');
-                    setCurSelectedSession(idx);
-                  }}
-                  style={
-                    isHoverLinked
-                      ? { transform: 'translateX(4px)', borderColor: 'var(--accent)' }
-                      : undefined
-                  }
-                >
-                  <div className="sc-top">
-                    <span className="sc-time-pill">{s.clock}</span>
-                    <span className="sc-dur">{s.dur}</span>
-                  </div>
-                  <div className="sc-title">{s.title}</div>
-                  <div className="sc-meta">
-                    <span>{s.project}</span>
-                    <span>
-                      · {s.segCount}片段 · {s.pauseCount}暂停
-                    </span>
-                    {/* v1.3.19：未关联的已结束会话此前没有任何补关联入口 */}
-                    {!s.linked && (
-                      <button
-                        type="button"
-                        className="sc-link-btn"
-                        title="把这个会话关联到一个任务"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLinkTarget({ sessionId: String(s.id), label: s.title });
-                        }}
-                      >
-                        关联任务
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* 选中会话详情 (横向多段时序图) */}
-          {activeSession && (
-            <div className="card-widget deep-dive-box" id="deepDiveBox">
-              <div className="dd-head">
-                <h4 id="ddTitle">{activeSession.title}</h4>
-                <p id="ddMeta">{activeSession.meta}</p>
-              </div>
-
-              <div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: 'var(--text-tertiary)',
-                    marginBottom: '4px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span>连续时序轨 (Chronological Track)</span>
-                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-num)' }}>
-                    有效专注 {activeSession.dur}
-                  </span>
-                </div>
-                <div className="horiz-flow-track" id="ddTrack">
-                  {activeSession.track.map((t, i) => (
-                    <div
-                      key={i}
-                      className={t.type === 'focus' ? 'hf-seg-focus' : 'hf-seg-pause'}
-                      style={{ width: `${t.width}%` }}
-                    >
-                      {t.lbl}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: 'var(--text-tertiary)',
-                    marginBottom: '6px',
-                  }}
-                >
-                  片段流水明细 (Segments & Pauses)
-                </div>
-                <div className="segment-mini-list" id="ddSegmentList">
-                  {activeSession.segments.map((seg, i) => (
-                    <div className="seg-mini-row" key={i}>
-                      <div className="seg-row-top">
-                        <div className="seg-name-wrap">
-                          <span className={`seg-dot ${seg.type}`} />
-                          <span className="seg-name-txt">{seg.name}</span>
-                        </div>
-                        <span
-                          className="seg-dur-txt"
-                          style={{
-                            color: seg.type === 'focus' ? 'var(--accent)' : 'var(--pause-color)',
-                          }}
-                        >
-                          {seg.dur}
-                        </span>
-                      </div>
-                      <div className="seg-time-sub">{seg.time}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  borderTop: '1px solid var(--border-row)',
-                  paddingTop: '10px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span
-                  style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}
-                  id="ddProjectLabel"
-                >
-                  所属清单：{activeSession.project}
-                </span>
-                <button
-                  className="btn-tool"
-                  style={{ height: '25px', fontSize: '11px' }}
-                  onClick={() => handleCopySessionRecord(activeSession)}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    style={{ width: '12px', height: '12px' }}
-                  >
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                  复制 Markdown
-                </button>
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {/* 浮动通知容器 */}
-      <div className="app-toast-container" id="toastContainer">
-        {toasts.map((t) => (
-          <div key={t.id} className={`app-toast ${t.fade ? 'fade-out' : ''}`}>
-            <span style={{ color: 'var(--accent)', fontWeight: 700, marginRight: '4px' }}>✓</span>
-            <span>{t.msg}</span>
-          </div>
-        ))}
+        <SessionLedger
+          sessions={filteredSessions}
+          selectedId={curSelectedSession}
+          onSelect={setCurSelectedSession}
+          onLink={(session, segmentId) =>
+            setLinkTarget({
+              sessionId: session.id,
+              label: session.title || '专注会话',
+              segmentId,
+              taskId: session.defaultTaskId,
+            })
+          }
+          reloadToken={analyticsReloadToken}
+          notify={showToast}
+          filterLabel={
+            projectFilter === 'all'
+              ? undefined
+              : sidebarCategories.find((category) => category.key === projectFilter)?.label
+          }
+          onResetFilter={() => setProjectFilter('all')}
+        />
       </div>
 
       {/* 外观弹出菜单 (与任务页同源) */}
@@ -841,10 +662,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setPalette('linear');
             setMenuOpen(false);
-            showToast('色彩基调：Linear 纯净白 (电光蓝)');
+            showToast('色彩基调：纯净白');
           }}
         >
-          ● Linear 纯净白 (电光蓝)
+          ● 纯净白
         </div>
         <div
           className="ctx-menu-item"
@@ -854,10 +675,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setPalette('rose');
             setMenuOpen(false);
-            showToast('色彩基调：高级粉 (Rose 典雅粉)');
+            showToast('色彩基调：典雅粉');
           }}
         >
-          ● 高级粉 (Rose 典雅粉)
+          ● 典雅粉
         </div>
         <div
           className="ctx-menu-item"
@@ -867,10 +688,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setPalette('contrast');
             setMenuOpen(false);
-            showToast('色彩基调：极致对比 (Sharp Black)');
+            showToast('色彩基调：高对比');
           }}
         >
-          ● 极致对比 (Sharp Black)
+          ● 高对比
         </div>
 
         <div className="ctx-divider" />
@@ -912,10 +733,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setFont('sans');
             setMenuOpen(false);
-            showToast('字体：Noto Sans SC (无衬线)');
+            showToast('字体：无衬线体');
           }}
         >
-          无衬线体 (Noto Sans SC)
+          无衬线体
         </div>
         <div
           className="ctx-menu-item"
@@ -925,14 +746,14 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setFont('serif');
             setMenuOpen(false);
-            showToast('字体：Noto Serif SC (衬线)');
+            showToast('字体：衬线体');
           }}
         >
-          衬线体 (Noto Serif SC)
+          衬线体
         </div>
 
         <div className="ctx-divider" />
-        <div className="ctx-menu-title">卡贴质感外观 (Card Skin)</div>
+        <div className="ctx-menu-title">卡片外观</div>
         <div
           className="ctx-menu-item"
           data-skin="ceramic"
@@ -941,10 +762,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setCardSkin('ceramic');
             setMenuOpen(false);
-            showToast('卡贴外观：已切换至 ▫️ 纯白陶瓷 (Pure Ceramic)');
+            showToast('卡贴外观：已切换至 ▫️ 纯白陶瓷');
           }}
         >
-          ▫️ 纯白陶瓷 (Pure Ceramic)
+          ▫️ 纯白陶瓷
         </div>
         <div
           className="ctx-menu-item"
@@ -954,10 +775,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setCardSkin('frosted');
             setMenuOpen(false);
-            showToast('卡贴外观：已切换至 🪟 微光磨砂 (Frosted Glass)');
+            showToast('卡贴外观：已切换至 🪟 微光磨砂');
           }}
         >
-          🪟 微光磨砂 (Frosted Glass)
+          🪟 微光磨砂
         </div>
         <div
           className="ctx-menu-item"
@@ -967,10 +788,10 @@ export function HistoryPanel() {
             playWebAudioChime('click');
             setCardSkin('titanium');
             setMenuOpen(false);
-            showToast('卡贴外观：已切换至 ⚙️ 极客钛金 (Titanium Sheen)');
+            showToast('卡贴外观：已切换至 ⚙️ 钛金');
           }}
         >
-          ⚙️ 极客钛金 (Titanium Sheen)
+          ⚙️ 钛金
         </div>
 
         <div className="ctx-divider" />
@@ -988,14 +809,18 @@ export function HistoryPanel() {
         </div>
       </div>
       {/* v1.3.19：账本补关联任务的任务选择器（TaskPicker 以当前焦点元素为锚点自定位） */}
-      {linkTarget && (
-        <TaskPicker
-          title={`关联任务 · ${linkTarget.label}`}
-          onPick={(task) => {
-            void handleLinkSessionTask(task);
-          }}
-        />
-      )}
+      {linkTarget &&
+        createPortal(
+          <TaskPicker
+            allowCompleted
+            selectedTaskId={linkTarget.taskId}
+            title={`关联任务 · ${linkTarget.label}`}
+            onPick={(task) => {
+              void handleLinkSessionTask(task);
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }

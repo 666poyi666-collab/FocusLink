@@ -125,11 +125,7 @@ export function StatsSidebar({
       <div className="sidebar-footer">
         <div className="sidebar-user-pill">
           <div className="user-avatar-mini">FL</div>
-          <span>FocusLink 统计空间</span>
-        </div>
-        <div className="stats-sidebar-status">
-          <i />
-          已就绪
+          <span>专注统计</span>
         </div>
       </div>
     </aside>

@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.3.5（Windows 已装，三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.3.20（PC 统计修复，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -410,3 +410,9 @@ Cloudflare 外部协议 gate 是受限测试操作，不是部署入口：extern
 - 小窗变化：同步 shared 常量、settings 迁移、Electron bounds、CSS 和 smoke；不把数字复制到文档以外的多处代码。
 - 统计/生命周期变化：覆盖详情 request id、tick 渲染边界、renderer 恢复预算、Error 序列化和托盘监听幂等性。
 - 发布变化：执行 [TEST_AND_RELEASE.md](TEST_AND_RELEASE.md) 的全部门禁并推送 `main`；只有用户明确要求时才创建公开 tag 和 GitHub Release。
+
+## v1.3.20 统计 renderer 读取与关联边界
+
+统计详情复用 `sessions.get` / `sessions.export`，不修改计时、同步协议或数据库结构。详情 effect 以会话 ID 为依赖，清空旧 projection 并拒绝取消后的迟到响应。分类以 analytics task key/ID 与 timeline session ID 匹配，排行以任务 ID 寻找会话，不能把任务排行下标当成会话下标。
+
+已结束会话 `linkSessionTask` 只写默认任务，不自动改片段。因此 renderer 显式随后调用 `linkSegmentsBatch(..., onlyUnlinked=true)`；已经关联的片段保持原任务。独立片段走 `timer.linkTask`。两个调用不是原子事务；任一步失败都重新读取真实状态并呈现失败，不宣称全量关联成功。未增加滴答写入路径。

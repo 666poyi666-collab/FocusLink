@@ -72,3 +72,9 @@
 - [ ] 在根目录 [CHANGELOG.md](../../CHANGELOG.md) 的新版本段落记录用户可见变化。
 - [ ] 从 [.github/RELEASE_NOTES_TEMPLATE.md](../../.github/RELEASE_NOTES_TEMPLATE.md) 生成对应根级 `release-v*/RELEASE_NOTES.md`。
 - [ ] 按 [../backend-design/TEST_AND_RELEASE.md](../backend-design/TEST_AND_RELEASE.md) 完成打包和 GitHub Release；不得只推 tag 不建 Release。
+
+## v1.3.20 PC 统计检查
+
+- [ ] 运行 `npm run smoke:stats`，覆盖窗口/DPI、长标题、账本不遮挡下方图表、筛选无提示、取消不写入、会话和片段关联。
+- [ ] 真实 Windows 统计页面检查中文层级、会话列表/详情滚动与空态；synthetic renderer 不冒充真实数据库验收。
+- [ ] 会话默认任务关联后，仅补关联未关联片段；已有片段任务不被覆盖，完成任务仍可选择。
