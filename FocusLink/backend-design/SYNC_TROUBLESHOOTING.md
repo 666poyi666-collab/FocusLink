@@ -317,3 +317,11 @@ Windows 日志在 `%APPDATA%\focuslink\logs\focuslink-YYYY-MM-DD.log`。只提�
 v1.3.20 PC 统计页关联会话后显式执行 `linkSegmentsBatch(..., onlyUnlinked=true)`；已有片段关联保持原值。独立片段更换走 `timer.linkTask`。取消选择器不发 mutation。两次会话调用不是原子事务，若第二步失败，应重新读取当前状态，保留已经成功的会话默认关联并显示失败；不得为了补关联清空同步冲突、重置设备身份或覆盖其他已关联片段。
 
 重复诊断以 `npm run smoke:stats` 的隔离 renderer 为起点，真实端只读核对会话与片段。完成本地关联不能宣称已经同步到滴答清单或其他设备。
+
+## FL-SYNC-017：实时专注已结束，但本机统计缺记录
+
+先独立读取云端 authority 的 live state 与 completed session，再只读本机同一 sessionId；云端 finished、本机缺失是导入待确认，不能报成计时结束失败，也不能用快照时长伪造本地会话。2026-10-02 的 `772f4d04` 云端包含两个 segment/一次 pause，而 PC exchange 持续 `contract_error`。
+
+检查已认证设备 ID 与待发 mutation.deviceId：历史安装 UUID 的操作会被 canonical adapter 拒绝。v1.3.21 仅将同 scope、本机 legacy ID 的操作路由到当前已认证设备，保留 opId/payload；其他设备身份不得重写。先无 mutation 拉取，再推送，避免任意旧操作阻断新会话投影。诊断与验收不得删除真实记录或清空冲突来伪造成功。
+
+已确认结束后若导入失败，呈现“专注已结束，记录已保存在云端，等待导入本机”；重试通过原同步路径导入一次，核对 session、segments、pauses 三表和统计请求范围。transport、身份鉴权、耐久冲突与第三方待投递分别记录；滴答或番茄未确认不代表本地/FocusLink 云端记录丢失。

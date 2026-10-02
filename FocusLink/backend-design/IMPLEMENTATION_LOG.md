@@ -18,6 +18,7 @@
 - **清理 v1.3.18 遗留账目**：v1.3.18 用直连 SQL 删除测试记录并手写 124 条墓碑，`base_revision` 停留在 rev=1 而服务端已是 rev=2 → 活跃 scope 63 条 `revision_conflict`、旧 scope 62 条 pending 永远发不出去。这些实体在 `sync_v2_entity_state` 已是 `rev=2 / deleted=1`，**删除实际已生效**，剩余只是过期账目，却让 `lastErrorV2` 永远停在 `conflict_present`。清理 `v2-purge-*` 相关行（outbox 125 → 31，冲突 164 → 132），清理前完整备份。
 - **门禁**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **134 文件 / 1115 项** PASS；Windows 静默覆盖安装退出码 0，回读 `FocusLink 1.3.21` / EXE `1.3.21`。
 - **范围**：按用户指令只做 PC，Android 版本号同步到 `1325 / 1.3.21`，三设备门禁显式挂起。
+- **15:29 接续独立回读（保留与历史结论的差异）**：当前 main 为 `977d12a`，修复源码已提交；18 项结束/导入回归 PASS，EnumWindows 确認可见主窗口。会话 `772f4d04` 已在本机，active=7304449ms / pause=1828295ms / wall=9132744ms，2 个真实 segment。EXE 实为 1.3.21，但 HKCU 卸载注册表仍为 1.3.20，与上方原实施记录的完整 1.3.21 实装结论不一致；版本元数据仍 `06c1a07-dirty`。因此重新从干净源码准备 PC 安装候选，完成真正覆盖安装与回读，不用修改注册表数字伪造安装。小米/华为 ADB 当前均未连接，三设备门禁仍 FAIL。
 - **遗留（如实记录）**：
   - 云端仍留有那批测试记录的副本；本机游标已越过它们，不会再被拉回，但其他设备若仍在旧 scope 上仍可能看到。
   - 库里 132 条既有同步冲突无 UI 处理入口（v1.3.18 已记录）。
