@@ -7,6 +7,9 @@ const path = require('node:path');
 // 从 package.json 读取版本，避免多处硬编码不同步
 const root = path.resolve(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+if (!/^\d+\.\d+\.[0-9]$/.test(pkg.version)) {
+  throw new Error('版本规则：补丁 0–9 后进入下一 minor，不允许 patch >= 10');
+}
 const APP_VERSION = pkg.version;
 const APP_RELEASE_DIR = `release-v${APP_VERSION.replace(/\./g, '')}`;
 

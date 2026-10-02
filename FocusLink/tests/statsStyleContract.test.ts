@@ -146,7 +146,17 @@ describe('统计页原型契约（FL-STATS-CONTRACT）', () => {
   });
 
   /* ③ 文案：用户确认过的界面语言不能缺 */
-  it.each(contract.requiredTexts)('客户端源码包含原型文案「%s」', (text) => {
+  // 2026-10-02 user explicitly replaced the promotional prototype vocabulary.
+  const currentTexts = contract.requiredTexts.map(
+    (text) =>
+      (
+        ({
+          心流热力全景: '每日记录',
+          今日心流看板: '今日统计',
+        }) as Record<string, string>
+      )[text] ?? text,
+  );
+  it.each(currentTexts)('客户端源码包含当前文案「%s」', (text) => {
     expect(sources.includes(text), `原型文案「${text}」在客户端源码里找不到。`).toBe(true);
   });
 

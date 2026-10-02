@@ -121,6 +121,8 @@ For dida sync changes, also run a real temporary dida task test:
 
 ## Release Rules
 
+- User version cadence (2026-10-02): start the current UI iteration at `1.5.0`, then `1.5.1` through `1.5.9`, then `1.6.0`. Patch numbers are limited to `0`–`9`; do not continue `1.3.22` or produce `1.5.10`. Preserve old version entries as history.
+
 - Follow `FocusLink/backend-design/TEST_AND_RELEASE.md`; its gates are mandatory.
 - Push every change and every version to GitHub `main` as it lands. The former five-version (`0`/`5`) checkpoint cadence is removed (user directive, 2026-07-26); do not hold source back locally.
 - Every patch still requires a completed CHANGELOG entry, the device install matrix, a four-file local release directory, and a backed-up Android APK.

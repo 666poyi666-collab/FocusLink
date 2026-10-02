@@ -12,23 +12,29 @@ const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { HistoryPanel } from './src/features/history/HistoryPanel';
+import { TaskWorkspace } from './src/features/tasks/TaskWorkspace';
+import { DEFAULT_SETTINGS } from './shared/types';
 import { useStore } from './src/app/store';
 import { buildSessionAnalytics } from './shared/sessionAnalytics';
 import './src/styles/main.css';
 const day = new Date().setHours(0,0,0,0);
 const longTitle = '第一章第四节｜空间向量的应用：长标题、多个片段与跨清单任务关联验收';
 const tasks = [{id:'task-1',title:longTitle,source:'local',projectId:'p1',status:0,children:[],priority:0},{id:'task-2',title:'已完成的复习任务',source:'local',projectId:'p1',status:2,children:[],priority:0}];
+tasks[0].children = [10,2,1].map((number,index)=>({id:'child-'+number,parentId:'task-1',title:'循环'+number,source:'local',projectId:'p1',status:'0',isCompleted:false,priority:number===2?3:0,sortOrder:index+1,dueDate:number===10?null:day+number*86400000,children:[],tags:[],content:null}));
 const sessions = Array.from({length:6},(_,i)=>({id:'session-'+i,title:i===0?longTitle:'专注会话 '+i,status:'finished',startedAt:day+(8+i)*3600000,endedAt:day+(9+i)*3600000,activeElapsedMs:2700000,pauseElapsedMs:900000,wallElapsedMs:3600000,defaultTaskId:i===1?'task-1':null,defaultTaskTitle:i===1?longTitle:null,defaultTaskSource:i===1?'local':null,note:null,createdAt:day,updatedAt:day,segmentCount:2,linkedSegmentCount:i===1?2:0}));
 const segments = sessions.flatMap(s=>[0,1].map((n)=>({id:s.id+'-seg-'+n,sessionId:s.id,taskId:s.defaultTaskId,taskSource:s.defaultTaskSource,title:s.defaultTaskTitle||s.title,startedAt:s.startedAt+n*1800000,endedAt:s.startedAt+n*1800000+1350000,activeElapsedMs:1350000,note:null,cloudFocusId:null,tomatodoSubject:null,createdAt:day,updatedAt:day})));
 const pauses = sessions.map(s=>({id:s.id+'-pause',sessionId:s.id,segmentId:s.id+'-seg-0',pauseStartedAt:s.startedAt+1350000,pauseEndedAt:s.startedAt+2250000,durationMs:900000,reason:null,createdAt:day,updatedAt:day}));
 window.smokeCalls=[];
 window.focuslink={
- sessions:{analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录'},
+ sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录'},
  timer:{linkSessionTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['session',id,taskId]);Object.assign(sessions.find(s=>s.id===id),{defaultTaskId:taskId,defaultTaskSource:source,defaultTaskTitle:title});},linkSegmentsBatch:async(id,taskId,source,title,onlyUnlinked)=>{window.smokeCalls.push(['batch',id,taskId,onlyUnlinked]);segments.filter(s=>s.sessionId===id&&(!onlyUnlinked||!s.taskId)).forEach(s=>Object.assign(s,{taskId,taskSource:source,title}));},linkTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['segment',id,taskId]);Object.assign(segments.find(s=>s.id===id),{taskId,taskSource:source,title});}},
- tasks:{refresh:async()=>({ok:true,data:{provider:'focuslink-local',tasks,projects:[{id:'p1',name:'学习',color:'#2563eb'}]}})},on:()=>()=>{},
+ tasks:{refresh:async()=>({ok:true,data:{provider:'focuslink-local',tasks,projects:[{id:'p1',name:'学习',color:'#2563eb'}]}}),reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks[0].children.forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
 };
-useStore.setState({ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
-createRoot(document.getElementById('root')).render(<div className="app-shell view-history"><div className="window-controls"><span className="window-drag-region"/><button>−</button><button>□</button><button>×</button></div><main className="app-stage"><HistoryPanel/></main></div>);
+useStore.setState({settings:DEFAULT_SETTINGS,ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
+const reactRoot=createRoot(document.getElementById('root'));
+const render=(view)=>reactRoot.render(<div className={'app-shell view-'+view}><div className="window-controls"><span className="window-drag-region"/><button>−</button><button>□</button><button>×</button></div><main className="app-stage">{view==='tasks'?<TaskWorkspace/>:<HistoryPanel/>}</main></div>);
+window.showTasks=()=>render('tasks');
+render('history');
 `;
 
 async function connect(url) {
@@ -164,7 +170,7 @@ async function main() {
         const appearance=document.querySelector('#appearanceBtn').getBoundingClientRect(), controls=document.querySelector('.window-controls').getBoundingClientRect();
         const input=document.querySelector('#globalSearchInput'), ir=input.getBoundingClientRect();
         const stats=document.querySelector('#statsDashboardGrid').getBoundingClientRect(), ledger=document.querySelector('.detail-pane').getBoundingClientRect();
-        return {pageOverflow:page.scrollWidth-page.clientWidth,workspaceOverflow:workspace.scrollWidth-workspace.clientWidth,ringContained:d.left>=r.left&&d.right<=r.right&&d.top>=r.top&&d.bottom<=r.bottom,donutOverflow:donut.scrollWidth-donut.clientWidth,ledgerBelowStats:ledger.top>=stats.bottom,toolbarReachable:appearance.right<=controls.left&&document.elementFromPoint(ir.left+ir.width/2,ir.top+ir.height/2)===input};
+        return {pageOverflow:page.scrollWidth-page.clientWidth,workspaceOverflow:workspace.scrollWidth-workspace.clientWidth,ringContained:d.left>=r.left&&d.right<=r.right&&d.top>=r.top&&d.bottom<=r.bottom,donutOverflow:donut.scrollWidth-donut.clientWidth,ledgerVisible:ledger.width>=260&&ledger.top<innerHeight&&ledger.bottom<=innerHeight+1,ledgerEntry:!!document.querySelector('.ledger-toggle'),outerBorder:getComputedStyle(document.querySelector('.stats-dashboard')).borderTopWidth,barText:document.querySelector('#spectrumBar').textContent.trim(),toolbarReachable:appearance.right<=controls.left&&document.elementFromPoint(ir.left+ir.width/2,ir.top+ir.height/2)===input};
       })()`);
       assert.ok(
         metrics.pageOverflow <= 1 && metrics.workspaceOverflow <= 1,
@@ -178,11 +184,18 @@ async function main() {
         metrics.toolbarReachable,
         'native window controls/drag surface must not cover appearance or search',
       );
-      if (width < 1400)
+      assert.equal(metrics.outerBorder, '0px', 'no rectangular frame around rounded cards');
+      assert.equal(
+        metrics.barText,
+        '',
+        'narrow timeline intervals must not contain clipped labels',
+      );
+      if (width >= 980)
         assert.ok(
-          metrics.ledgerBelowStats,
-          'stacked ledger must follow all statistics without covering lower charts',
+          metrics.ledgerVisible,
+          'ledger must be visible beside statistics at common widths',
         );
+      else assert.ok(metrics.ledgerEntry, 'narrow windows must have a first-screen ledger entry');
       const screenshot = await cdp.send('Page.captureScreenshot', { captureBeyondViewport: false });
       fs.writeFileSync(
         path.join(out, `${width}-${height}.png`),
@@ -190,6 +203,14 @@ async function main() {
       );
       console.log(`PASS ${width}×${height} @${scale}: no horizontal overflow, ring contained`);
     }
+    await cdp.evaluate(`document.querySelector('.ledger-toggle').click()`);
+    await delay(100);
+    assert.ok(
+      await cdp.evaluate(
+        `document.querySelector('.detail-pane').getBoundingClientRect().width > 260`,
+      ),
+      'drawer opens on narrow windows',
+    );
     await cdp.evaluate(
       `document.querySelectorAll('.stats-sidebar .nav-section')[1].querySelectorAll('button')[1].click()`,
     );
@@ -270,6 +291,142 @@ async function main() {
       'empty search must not show an unrelated detail',
     );
     console.log('PASS filter, cancel, session/segment association and real multi-day chart');
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1.25,
+      mobile: false,
+    });
+    await cdp.evaluate('window.showTasks()');
+    await delay(250);
+    assert.deepEqual(
+      await cdp.evaluate(
+        `Array.from(document.querySelectorAll('[data-subtask-id]')).map(node=>node.dataset.subtaskId)`,
+      ),
+      ['child-1', 'child-2', 'child-10'],
+      'natural subtask order',
+    );
+    await cdp.evaluate(
+      `(() => {const select=document.querySelector('select[aria-label="子任务排序"]');select.value='date-desc';select.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    );
+    await delay(100);
+    assert.deepEqual(
+      await cdp.evaluate(
+        `Array.from(document.querySelectorAll('[data-subtask-id]')).map(node=>node.dataset.subtaskId)`,
+      ),
+      ['child-2', 'child-1', 'child-10'],
+      'dates descending, undated last',
+    );
+    await cdp.evaluate(
+      `(() => {const select=document.querySelector('select[aria-label="子任务排序"]');select.value='manual';select.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    );
+    await delay(100);
+    await cdp.evaluate(
+      `document.querySelector('[data-subtask-id="child-10"] button[aria-label^="下移"]').click()`,
+    );
+    await delay(100);
+    assert.deepEqual(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='reorder').at(-1)[1]`),
+      ['child-2', 'child-10', 'child-1'],
+      'manual order uses durable API and sibling IDs only',
+    );
+    const divider = await cdp.evaluate(
+      `(() => {const r=document.querySelector('.workspace-divider-left').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+150,width:document.querySelector('.task-workspace-root .sidebar').getBoundingClientRect().width};})()`,
+    );
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x: divider.x,
+      y: divider.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: divider.x + 45,
+      y: divider.y,
+      button: 'left',
+      buttons: 1,
+    });
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: divider.x + 45,
+      y: divider.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await delay(100);
+    assert.ok(
+      await cdp.evaluate(
+        `document.querySelector('.task-workspace-root .sidebar').getBoundingClientRect().width > ${divider.width + 30}`,
+      ),
+      'pointer drag actually resizes pane',
+    );
+    const savedWidth = await cdp.evaluate(
+      `JSON.parse(localStorage.getItem('focuslink.task.columns')).left`,
+    );
+    await cdp.evaluate(
+      `document.querySelector('.task-workspace-root .tasks-scroll-area').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:1150,clientY:690}))`,
+    );
+    await delay(220);
+    assert.ok(
+      await cdp.evaluate(
+        `(() => {const r=document.querySelector('.appearance-menu').getBoundingClientRect();return r.height<300&&r.right<=innerWidth&&r.bottom<=innerHeight;})()`,
+      ),
+      'compact appearance menu clamped inside viewport',
+    );
+    const menuShot = await cdp.send('Page.captureScreenshot', { captureBeyondViewport: false });
+    fs.writeFileSync(path.join(out, 'tasks-appearance.png'), Buffer.from(menuShot.data, 'base64'));
+    await cdp.evaluate(
+      `document.querySelector('.appearance-menu [data-app-theme="dark"]').click()`,
+    );
+    await delay(100);
+    assert.equal(
+      await cdp.evaluate(`document.querySelector('.task-workspace-root').dataset.theme`),
+      'dark',
+      'appearance controls apply theme',
+    );
+    await cdp.evaluate(
+      `document.querySelector('.appearance-menu [data-app-theme="light"]').click()`,
+    );
+    await delay(100);
+    await cdp.evaluate(
+      `document.querySelector('.task-paper').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0}))`,
+    );
+    await delay(100);
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.appearance-menu')`),
+      false,
+      'outside left pointer closes menu',
+    );
+    await cdp.send('Page.reload');
+    await delay(300);
+    await cdp.evaluate('window.showTasks()');
+    await delay(250);
+    assert.equal(
+      await cdp.evaluate(`JSON.parse(localStorage.getItem('focuslink.task.columns')).left`),
+      savedWidth,
+      'width survives reload',
+    );
+    for (const width of [1280, 1024, 980]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 800,
+        deviceScaleFactor: 1.25,
+        mobile: false,
+      });
+      await delay(100);
+      assert.ok(
+        await cdp.evaluate(
+          `document.querySelector('.workspace-body').scrollWidth <= document.querySelector('.workspace-body').clientWidth+1`,
+        ),
+        'task columns fit resized window',
+      );
+      const shot = await cdp.send('Page.captureScreenshot', { captureBeyondViewport: false });
+      fs.writeFileSync(path.join(out, 'tasks-' + width + '.png'), Buffer.from(shot.data, 'base64'));
+    }
+    console.log(
+      'PASS natural/date/manual subtask order, compact menu dismissal, pointer resize and persistence',
+    );
   } finally {
     if (cdp) {
       await cdp.send('Browser.close').catch(() => {});

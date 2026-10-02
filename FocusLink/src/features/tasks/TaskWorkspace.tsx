@@ -11,6 +11,8 @@ import { resolveThemeAppearance } from '@shared/theme';
 import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
 import '../../styles/task-workbench.css';
+import { useWorkspaceColumns } from '../../ui/WorkspaceColumns';
+import { readTaskSort, sortTasks, TASK_SORT_OPTIONS, type TaskSort } from './taskSort';
 
 const DAY_MS = 86_400_000;
 
@@ -300,8 +302,8 @@ function formatDuration(ms?: number | null): string {
   const totalMin = Math.round(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h > 0) return `${h}h${m > 0 ? `${m}m` : ''}`;
-  return `${m}m`;
+  if (h > 0) return `${h}小时${m > 0 ? `${m}分` : ''}`;
+  return `${m}分`;
 }
 
 interface CustomSmartView {
@@ -350,6 +352,22 @@ export function TaskWorkspace() {
   });
 
   // 任务页外观来自设置：与全局主题解耦，重启后保持。
+  const columns = useWorkspaceColumns('focuslink.task.columns', { left: 200, right: 340 });
+  const [taskSort, setTaskSort] = useState<TaskSort>(() =>
+    readTaskSort('focuslink.task.sort', 'manual'),
+  );
+  const [subtaskSort, setSubtaskSort] = useState<TaskSort>(() =>
+    readTaskSort('focuslink.subtask.sort', 'name'),
+  );
+  const [reorderingSubtasks, setReorderingSubtasks] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem('focuslink.task.sort', taskSort);
+      localStorage.setItem('focuslink.subtask.sort', subtaskSort);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [taskSort, subtaskSort]);
   const taskAppearance = resolveTaskWorkspaceAppearance(settings?.taskWorkspaceAppearance);
   const updateTaskAppearance = useCallback(
     async (patch: Partial<TaskWorkspaceAppearance>) => {
@@ -373,7 +391,7 @@ export function TaskWorkspace() {
       const saved = localStorage.getItem('focuslink_task_sound');
       if (saved !== null) return saved === 'true';
     } catch {}
-    return true;
+    return false;
   });
 
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
@@ -457,6 +475,16 @@ export function TaskWorkspace() {
     y: number;
   }>({ open: false, x: 0, y: 0 });
   const appearanceMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!appearanceMenu.open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!appearanceMenuRef.current?.contains(event.target as Node)) {
+        setAppearanceMenu({ open: false, x: 0, y: 0 });
+      }
+    };
+    window.addEventListener('pointerdown', dismiss, true);
+    return () => window.removeEventListener('pointerdown', dismiss, true);
+  }, [appearanceMenu.open]);
 
   // Smart view modal
   const [smartModalOpen, setSmartModalOpen] = useState(false);
@@ -635,6 +663,33 @@ export function TaskWorkspace() {
     if (!selectedTaskId) return null;
     return tasks.find((t) => t.id === selectedTaskId) || null;
   }, [tasks, selectedTaskId]);
+  const sortedSubtasks = useMemo(
+    () => sortTasks(currentTask?.children || [], subtaskSort),
+    [currentTask, subtaskSort],
+  );
+  const reorderSubtasks = async (sourceId: string, targetId: string) => {
+    if (!currentTask || reorderingSubtasks || subtaskSort !== 'manual') return;
+    const children = [...sortedSubtasks];
+    const from = children.findIndex((task) => task.id === sourceId);
+    const to = children.findIndex((task) => task.id === targetId);
+    if (from < 0 || to < 0 || from === to) return;
+    const [moved] = children.splice(from, 1);
+    children.splice(to, 0, moved);
+    const next = children.map((task, index) => ({ ...task, sortOrder: index + 1 }));
+    const parentId = currentTask.id;
+    setReorderingSubtasks(true);
+    setTasks((previous) =>
+      previous.map((task) => (task.id === parentId ? { ...task, children: next } : task)),
+    );
+    try {
+      await window.focuslink.tasks.reorder(next.map((task) => task.id));
+    } catch {
+      addToast('子任务顺序保存失败，已重新读取', 'error');
+      await refresh();
+    } finally {
+      setReorderingSubtasks(false);
+    }
+  };
 
   // Smart Views Definition
   const nowMidnight = useMemo(() => getNowMidnight(), []);
@@ -757,8 +812,8 @@ export function TaskWorkspace() {
     });
 
     return {
-      uncompletedTasks: uncompleted,
-      completedTasks: completed,
+      uncompletedTasks: sortTasks(uncompleted, taskSort),
+      completedTasks: sortTasks(completed, taskSort),
       activeTitle: title,
       activeIcon: iconNode,
     };
@@ -772,6 +827,7 @@ export function TaskWorkspace() {
     searchQuery,
     nowMidnight,
     taskFocusMap,
+    taskSort,
   ]);
 
   // Mutations
@@ -964,8 +1020,8 @@ export function TaskWorkspace() {
     setTaskContextMenu({ open: false, taskId: null, x: 0, y: 0 });
     setProjContextMenu({ open: false, projectId: null, x: 0, y: 0 });
     const M = 8;
-    const mw = 210;
-    const mh = 420;
+    const mw = 320;
+    const mh = 280;
     const left = Math.max(M, Math.min(x, window.innerWidth - mw - M));
     const top = Math.max(M, Math.min(y, window.innerHeight - mh - M));
     setAppearanceMenu({ open: true, x: Math.round(left), y: Math.round(top) });
@@ -1335,13 +1391,18 @@ export function TaskWorkspace() {
             title="点击立即刷新同步"
           >
             <i style={{ backgroundColor: refreshing ? '#3B82F6' : '#10B981' }} />
-            <span>{refreshing ? '正在同步...' : '本地同步就绪'}</span>
+            <span>{refreshing ? '正在刷新…' : '本地任务'}</span>
           </div>
         </div>
       </header>
 
       {/* 工作区三栏主体 */}
-      <div className="workspace-body" onContextMenu={handleWorkspaceContextMenu}>
+      <div
+        className="workspace-body"
+        ref={columns.ref}
+        style={columns.style}
+        onContextMenu={handleWorkspaceContextMenu}
+      >
         {/* 1. 左侧栏 (Sidebar) */}
         <aside className="sidebar">
           <div className="nav-section">
@@ -1501,6 +1562,7 @@ export function TaskWorkspace() {
           </div>
         </aside>
 
+        {columns.divider('left', '调整任务清单栏宽度')}
         {/* 2. 中间：任务列表 (Task Paper) */}
         <main className="task-paper">
           <div className="list-toolbar">
@@ -1516,6 +1578,18 @@ export function TaskWorkspace() {
               </span>
             </div>
             <div className="list-toolbar-actions">
+              <select
+                className="workspace-sort"
+                aria-label="任务排序"
+                value={taskSort}
+                onChange={(event) => setTaskSort(event.target.value as TaskSort)}
+              >
+                {TASK_SORT_OPTIONS.map(([mode, label]) => (
+                  <option key={mode} value={mode}>
+                    {mode === 'manual' ? '现有顺序' : label}
+                  </option>
+                ))}
+              </select>
               <button className="btn-tool" onClick={() => refresh()}>
                 <span dangerouslySetInnerHTML={{ __html: ICONS.clock }} />
                 <span>刷新</span>
@@ -1550,7 +1624,7 @@ export function TaskWorkspace() {
                     fontSize: '13px',
                   }}
                 >
-                  已全部完成，尽情享受专注心流时光 ☕
+                  当前视图没有待办任务
                 </div>
               ) : (
                 uncompletedTasks.map((t) => renderTaskEntry(t))
@@ -1597,6 +1671,7 @@ export function TaskWorkspace() {
           </div>
         </main>
 
+        {columns.divider('right', '调整任务详情栏宽度')}
         {/* 3. 右侧：详情面板 (Detail Pane) */}
         <aside className="detail-pane">
           {!currentTask ? (
@@ -1609,7 +1684,7 @@ export function TaskWorkspace() {
             <>
               <div className="detail-top-nav">
                 <span className={`status-pill ${currentTask.isCompleted ? 'done' : ''}`}>
-                  {currentTask.isCompleted ? '● 已完成' : '● 进行中'}
+                  {currentTask.isCompleted ? '● 已完成' : '● 待办'}
                 </span>
                 <button
                   className="btn-close-detail"
@@ -1775,6 +1850,18 @@ export function TaskWorkspace() {
               <div className="subtasks-block">
                 <div className="subtasks-header-row">
                   <span>子任务清单</span>
+                  <select
+                    className="workspace-sort"
+                    aria-label="子任务排序"
+                    value={subtaskSort}
+                    onChange={(event) => setSubtaskSort(event.target.value as TaskSort)}
+                  >
+                    {TASK_SORT_OPTIONS.map(([mode, label]) => (
+                      <option key={mode} value={mode}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                   {(currentTask.children || []).length > 0 ? (
                     <span style={{ color: 'var(--text-secondary)', fontSize: '11.5px' }}>
                       {(currentTask.children || []).filter((c) => c.isCompleted).length} /{' '}
@@ -1803,10 +1890,63 @@ export function TaskWorkspace() {
                 )}
 
                 <div className="subtask-items-flow">
-                  {(currentTask.children || []).map((sub) => {
+                  {sortedSubtasks.map((sub, subIndex) => {
                     const isEditing = editingSubtaskKey === sub.id;
                     return (
-                      <div key={sub.id} className="subtask-item">
+                      <div
+                        key={sub.id}
+                        className="subtask-item"
+                        data-subtask-id={sub.id}
+                        onDragOver={(event) => {
+                          if (subtaskSort === 'manual' && !reorderingSubtasks)
+                            event.preventDefault();
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          void reorderSubtasks(
+                            event.dataTransfer.getData('application/focuslink-subtask'),
+                            sub.id,
+                          );
+                        }}
+                      >
+                        {subtaskSort === 'manual' && (
+                          <div className="subtask-order-controls">
+                            <button
+                              type="button"
+                              draggable={!reorderingSubtasks}
+                              aria-label={`拖动排序：${sub.title}`}
+                              title="拖动排序"
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData('application/focuslink-subtask', sub.id);
+                                event.dataTransfer.effectAllowed = 'move';
+                              }}
+                            >
+                              ⋮⋮
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`上移：${sub.title}`}
+                              disabled={subIndex === 0 || reorderingSubtasks}
+                              onClick={() =>
+                                void reorderSubtasks(sub.id, sortedSubtasks[subIndex - 1].id)
+                              }
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`下移：${sub.title}`}
+                              disabled={
+                                subIndex === sortedSubtasks.length - 1 || reorderingSubtasks
+                              }
+                              onClick={() =>
+                                void reorderSubtasks(sub.id, sortedSubtasks[subIndex + 1].id)
+                              }
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        )}
                         <button
                           className={`subtask-check ${springPopSubtaskId === sub.id ? 'spring-pop' : ''}`}
                           role="checkbox"
@@ -1882,11 +2022,11 @@ export function TaskWorkspace() {
                 <div className="f-card-header">
                   <div className="f-card-label">
                     <span dangerouslySetInnerHTML={{ __html: ICONS.clock }} />
-                    <span>累计专注时间</span>
+                    <span>累计专注</span>
                   </div>
                   <div className="f-card-metric">
                     <span className="f-total-time">
-                      {formatDuration(taskFocusMap.get(currentTask.id)?.totalMs) || '0m'}
+                      {formatDuration(taskFocusMap.get(currentTask.id)?.totalMs) || '0分'}
                     </span>
                     <span className="f-session-tag">
                       {(taskFocusMap.get(currentTask.id)?.sessions.length || 0) > 0
@@ -1894,7 +2034,7 @@ export function TaskWorkspace() {
                             (taskFocusMap.get(currentTask.id)?.totalMs || 0) /
                               60000 /
                               (taskFocusMap.get(currentTask.id)?.sessions.length || 1),
-                          )}m`
+                          )}分`
                         : '暂无记录'}
                     </span>
                   </div>
@@ -1937,7 +2077,7 @@ export function TaskWorkspace() {
                     }}
                   >
                     <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                      点击下方「开始专注」开启本任务首个 25m 番茄钟
+                      开始专注后，在这里查看时间记录
                     </span>
                   </div>
                 )}
@@ -1975,12 +2115,11 @@ export function TaskWorkspace() {
               <div className="detail-dock-bar">
                 <button
                   className="btn-action-focus"
-                  title="开始专注 (25m)"
+                  title="开始专注"
                   onClick={() => handleStartFocus(currentTask)}
                 >
                   <span dangerouslySetInnerHTML={{ __html: ICONS.play }} />
                   <span className="dock-label">开始专注</span>
-                  <span className="dock-focus-dur"> (25m)</span>
                 </button>
                 <button
                   className="btn-action-done"
@@ -2584,7 +2723,6 @@ export function TaskWorkspace() {
               <span dangerouslySetInnerHTML={{ __html: ICONS.play }} />
               <span>开始专注</span>
             </div>
-            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>25m</span>
           </div>
 
           <div
@@ -2945,168 +3083,181 @@ export function TaskWorkspace() {
         </div>
       )}
 
-      {/* 9. 任务页空白处右键：外观自定义菜单（复用 ctx-menu 组件与同一套外观/行为） */}
       {appearanceMenu.open && (
         <div
           className="ctx-menu appearance-menu active"
           role="menu"
-          aria-label="外观自定义"
+          aria-label="外观设置"
           ref={appearanceMenuRef}
-          style={{ top: `${appearanceMenu.y}px`, left: `${appearanceMenu.x}px` }}
-          onClick={(e) => e.stopPropagation()}
+          style={{ top: appearanceMenu.y, left: appearanceMenu.x }}
+          onClick={(event) => event.stopPropagation()}
           onKeyDown={handleAppearanceMenuKeyDown}
         >
-          <div className="ctx-menu-label">外观自定义</div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-theme="light"
-            aria-checked={themeMode === 'light'}
-            onClick={() => void applyAppearanceTheme('light')}
-          >
-            <div className="item-left">
-              <span>浅色主题</span>
+          <div className="appearance-menu-heading">
+            <strong>外观</strong>
+            <button
+              type="button"
+              aria-label="关闭外观菜单"
+              onClick={() => setAppearanceMenu({ open: false, x: 0, y: 0 })}
+            >
+              ×
+            </button>
+          </div>
+          <div className="appearance-control-row">
+            <span>主题</span>
+            <div role="group" aria-label="主题">
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-theme="light"
+                aria-checked={themeMode === 'light'}
+                onClick={() => void applyAppearanceTheme('light')}
+              >
+                浅色
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-theme="dark"
+                aria-checked={themeMode === 'dark'}
+                onClick={() => void applyAppearanceTheme('dark')}
+              >
+                深色
+              </button>
             </div>
           </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-theme="dark"
-            aria-checked={themeMode === 'dark'}
-            onClick={() => void applyAppearanceTheme('dark')}
-          >
-            <div className="item-left">
-              <span>深色主题</span>
+          <div className="appearance-control-row">
+            <span>色彩</span>
+            <div role="group" aria-label="色彩">
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-pal="linear"
+                aria-checked={taskAppearance.palette === 'linear'}
+                onClick={() => void updateTaskAppearance({ palette: 'linear' })}
+              >
+                素白
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-pal="rose"
+                aria-checked={taskAppearance.palette === 'rose'}
+                onClick={() => void updateTaskAppearance({ palette: 'rose' })}
+              >
+                浅粉
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-pal="contrast"
+                aria-checked={taskAppearance.palette === 'contrast'}
+                onClick={() => void updateTaskAppearance({ palette: 'contrast' })}
+              >
+                高对比
+              </button>
             </div>
           </div>
-          <div className="ctx-menu-divider" />
-          <div className="ctx-menu-label">色彩基调</div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-pal="linear"
-            aria-checked={taskAppearance.palette === 'linear'}
-            onClick={() => void updateTaskAppearance({ palette: 'linear' })}
-          >
-            <div className="item-left">
-              <span>Linear 纯净白</span>
+          <div className="appearance-control-row">
+            <span>字体</span>
+            <div role="group" aria-label="字体">
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-font="sans"
+                aria-checked={taskAppearance.font === 'sans'}
+                onClick={() => void updateTaskAppearance({ font: 'sans' })}
+              >
+                无衬线
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-font="serif"
+                aria-checked={taskAppearance.font === 'serif'}
+                onClick={() => void updateTaskAppearance({ font: 'serif' })}
+              >
+                衬线
+              </button>
             </div>
           </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-pal="rose"
-            aria-checked={taskAppearance.palette === 'rose'}
-            onClick={() => void updateTaskAppearance({ palette: 'rose' })}
-          >
-            <div className="item-left">
-              <span>高级粉调高对比</span>
+          <div className="appearance-control-row">
+            <span>间距</span>
+            <div role="group" aria-label="间距">
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-density="compact"
+                aria-checked={taskAppearance.density === 'compact'}
+                onClick={() => void updateTaskAppearance({ density: 'compact' })}
+              >
+                紧凑
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-density="default"
+                aria-checked={taskAppearance.density === 'default'}
+                onClick={() => void updateTaskAppearance({ density: 'default' })}
+              >
+                标准
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-density="relaxed"
+                aria-checked={taskAppearance.density === 'relaxed'}
+                onClick={() => void updateTaskAppearance({ density: 'relaxed' })}
+              >
+                宽松
+              </button>
             </div>
           </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-pal="contrast"
-            aria-checked={taskAppearance.palette === 'contrast'}
-            onClick={() => void updateTaskAppearance({ palette: 'contrast' })}
-          >
-            <div className="item-left">
-              <span>锐利黑白对比</span>
-            </div>
-          </div>
-          <div className="ctx-menu-divider" />
-          <div className="ctx-menu-label">字体</div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-font="sans"
-            aria-checked={taskAppearance.font === 'sans'}
-            onClick={() => void updateTaskAppearance({ font: 'sans' })}
-          >
-            <div className="item-left">
-              <span>无衬线（默认）</span>
-            </div>
-          </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-font="serif"
-            aria-checked={taskAppearance.font === 'serif'}
-            onClick={() => void updateTaskAppearance({ font: 'serif' })}
-          >
-            <div className="item-left">
-              <span>衬线（Noto Serif）</span>
-            </div>
-          </div>
-          <div className="ctx-menu-divider" />
-          <div className="ctx-menu-label">密度</div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-density="default"
-            aria-checked={taskAppearance.density === 'default'}
-            onClick={() => void updateTaskAppearance({ density: 'default' })}
-          >
-            <div className="item-left">
-              <span>标准</span>
-            </div>
-          </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-density="compact"
-            aria-checked={taskAppearance.density === 'compact'}
-            onClick={() => void updateTaskAppearance({ density: 'compact' })}
-          >
-            <div className="item-left">
-              <span>紧凑</span>
-            </div>
-          </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-density="relaxed"
-            aria-checked={taskAppearance.density === 'relaxed'}
-            onClick={() => void updateTaskAppearance({ density: 'relaxed' })}
-          >
-            <div className="item-left">
-              <span>宽松</span>
-            </div>
-          </div>
-          <div className="ctx-menu-divider" />
-          <div className="ctx-menu-label">音效</div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-sound="on"
-            aria-checked={sound === true}
-            onClick={() => setSound(true)}
-          >
-            <div className="item-left">
-              <span>开启（晶莹触感）</span>
-            </div>
-          </div>
-          <div
-            className="ctx-menu-item"
-            role="menuitemradio"
-            tabIndex={0}
-            data-app-sound="off"
-            aria-checked={sound === false}
-            onClick={() => setSound(false)}
-          >
-            <div className="item-left">
-              <span>静音</span>
+          <div className="appearance-control-row">
+            <span>音效</span>
+            <div role="group" aria-label="音效">
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-sound="on"
+                aria-checked={sound}
+                onClick={() => setSound(true)}
+              >
+                开启
+              </button>
+              <button
+                type="button"
+                className="ctx-menu-item"
+                role="menuitemradio"
+                tabIndex={0}
+                data-app-sound="off"
+                aria-checked={!sound}
+                onClick={() => setSound(false)}
+              >
+                关闭
+              </button>
             </div>
           </div>
         </div>

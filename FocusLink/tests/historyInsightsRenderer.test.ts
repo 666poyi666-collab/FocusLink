@@ -7,7 +7,7 @@ import { HistoryInsights } from '../src/features/history/HistoryInsights';
 import { summarizeAnalyticsRange } from '../src/features/history/historyStats';
 
 describe('desktop history insights presentation', () => {
-  it('renders the 5 masterclass prototype tiles with high-fidelity components', () => {
+  it('renders empty real-data cards without arbitrary target scores', () => {
     const selectedStart = new Date(2026, 6, 21, 0, 0, 0, 0).getTime();
     const selectedEnd = new Date(2026, 6, 21, 23, 59, 59, 999).getTime();
     const analytics = buildSessionAnalytics(
@@ -39,18 +39,18 @@ describe('desktop history insights presentation', () => {
     expect(markup).toContain('id="tileHeatmap"');
 
     // 验证 卡贴一：全景仪表与胶囊
-    expect(markup).toContain('hero-dial-svg');
-    expect(markup).toContain('今日累计专注');
-    expect(markup).toContain('专注纯度');
-    expect(markup).toContain('推进任务');
-    expect(markup).toContain('连续打卡');
+    expect(markup).not.toContain('hero-dial-svg');
+    expect(markup).not.toContain('参考目标');
+    expect(markup).toContain('专注时长');
+    expect(markup).toContain('关联任务');
+    expect(markup).toContain('连续记录');
 
     // 验证 卡贴二：24h精力节律与5大时段胶囊
-    expect(markup).toContain('24 小时精力节律时钟分布');
+    expect(markup).toContain('按小时分布');
     expect(markup).toContain('bars-row');
     expect(markup).toContain('period-capsule-row');
-    expect(markup).toContain('黄金上午');
-    expect(markup).toContain('沉浸下午');
+    expect(markup).toContain('上午');
+    expect(markup).toContain('下午');
 
     // 验证 卡贴三：分类占比
     expect(markup).toContain('清单分类投入占比');
@@ -61,7 +61,7 @@ describe('desktop history insights presentation', () => {
     expect(markup).toContain('leaderboard-container');
 
     // 验证 卡贴五：心流热力矩阵
-    expect(markup).toContain('心流节律活动热力');
+    expect(markup).toContain('每日记录');
     expect(markup).toContain('heatmap-strip-wrap');
   });
 
@@ -124,9 +124,10 @@ describe('desktop history insights presentation', () => {
       }),
     );
     expect(markup).toContain('跨午夜复习');
-    expect(markup).toContain('今日累计专注');
+    expect(markup).toContain('专注时长');
+    expect(markup).toContain('00:00–00:20');
     expect(markup).toContain('清单分类投入占比');
-    expect(markup).toContain('24 小时精力节律时钟分布');
+    expect(markup).toContain('按小时分布');
   });
 
   it('renders single-day focus session data with tasks and spectrum', () => {
@@ -199,7 +200,10 @@ describe('desktop history insights presentation', () => {
 
     expect(markup).toContain('结构化复习');
     expect(markup).toContain('spectrum-bar-wrap');
-    expect(markup).toContain('hero-focus-gauge-box');
+    expect(markup).toContain('focus-summary');
+    const spectrum = markup.match(/id="spectrumBar"[^>]*>([\s\S]*?)<\/div>/)?.[1];
+    expect(spectrum).toContain('aria-label="专注');
+    expect(spectrum).not.toMatch(/>\d+ 分钟</);
   });
 
   it('renders clean dashboard when no sessions exist', () => {

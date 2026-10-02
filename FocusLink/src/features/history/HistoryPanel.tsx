@@ -1,6 +1,5 @@
 // 历史与统计工作台：以真实账本与可用宽度组织统计、筛选和会话详情。
-// 包含 42px 沉浸式标题栏、三栏弹性响应式工作区、5 大核心卡贴画卷、横向连续账本流、
-// Web Audio 晶莹和弦音效、鼠标感应镜面高光、双向高光联动与外观弹窗。
+// 可调整的三栏工作区、窄窗口账本入口、真实图表与任务关联。
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../../styles/stats-workbench.css';
 import { SessionLedger } from './SessionLedger';
@@ -19,6 +18,7 @@ import { HistoryInsights } from './HistoryInsights';
 import { StatsSidebar, type StatsSidebarView } from './StatsSidebar';
 import { TaskPicker } from '../tasks/TaskPicker';
 import type { Task } from '@shared/types';
+import { useWorkspaceColumns } from '../../ui/WorkspaceColumns';
 import {
   HEATMAP_WINDOW_DAYS,
   formatCompactHours,
@@ -63,6 +63,8 @@ function playWebAudioChime(kind: 'kpi' | 'click') {
 }
 
 export function HistoryPanel() {
+  const columns = useWorkspaceColumns('focuslink.stats.columns', { left: 168, right: 300 });
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   // 状态变量
   const [curRange, setCurRange] = useState<StatsPreset>('today');
   const [dayCursor, setDayCursor] = useState<number>(() => Date.now());
@@ -76,7 +78,6 @@ export function HistoryPanel() {
   const [palette, setPalette] = useState<'linear' | 'rose' | 'contrast'>('linear');
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const [font, setFont] = useState<'sans' | 'serif'>('sans');
-  const [cardSkin, setCardSkin] = useState<'ceramic' | 'frosted' | 'titanium'>('ceramic');
   const [soundEnabled, setSoundEnabled] = useState(false);
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export function HistoryPanel() {
       'data-pal': palette,
       'data-theme': themeMode,
       'data-font': font,
-      'data-skin': cardSkin,
+      'data-skin': 'ceramic',
       'data-sound': soundEnabled ? 'on' : 'off',
     };
     const previous = Object.keys(attributes).map((key) => [key, root.getAttribute(key)] as const);
@@ -94,7 +95,7 @@ export function HistoryPanel() {
       previous.forEach(([key, value]) =>
         value === null ? root.removeAttribute(key) : root.setAttribute(key, value),
       );
-  }, [palette, themeMode, font, cardSkin, soundEnabled]);
+  }, [palette, themeMode, font, soundEnabled]);
 
   // 外观弹出菜单
   const [menuOpen, setMenuOpen] = useState(false);
@@ -155,7 +156,7 @@ export function HistoryPanel() {
 
   /* ── 侧栏真实读数（v1.3.17 修复：此前是写死的原型样例值）──────────────────
      2026-10-01 事故：侧栏显示 今日看板 4.6h / 最近7天 32.2h / 最近30天 128.6h /
-     心流热力全景 84天，以及 工作任务 55% / 深度学习 25% / 个人生活 12% ——
+     每日记录 84天，以及 工作任务 55% / 深度学习 25% / 个人生活 12% ——
      这些**全部是统计页原型里的样例数字**，被 e67767f（v1.3.15「彻底剔除旧版残留」）
      连取数逻辑一起换掉了。用户看到的就是「数据来源有问题」。
 
@@ -254,7 +255,7 @@ export function HistoryPanel() {
       },
       {
         id: 'heatmap',
-        label: '心流热力全景',
+        label: '每日记录',
         value: `${HEATMAP_WINDOW_DAYS}天`,
         active: curRange === 'heatmap',
         onSelect: () => handleSwitchPresetRef.current('heatmap'),
@@ -300,15 +301,6 @@ export function HistoryPanel() {
   }, []);
 
   // 鼠标移动高光跟随
-  const handleContainerMouseMove = (e: React.MouseEvent<HTMLElement>) => {
-    const card = (e.target as HTMLElement).closest('.card-widget') as HTMLElement | null;
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    card.style.setProperty('--mouse-x', `${x}px`);
-    card.style.setProperty('--mouse-y', `${y}px`);
-  };
 
   // 外观操作
   const openAppearanceAt = (x: number, y: number) => {
@@ -448,12 +440,12 @@ export function HistoryPanel() {
 
   const activeViewTitle =
     curRange === 'today'
-      ? '今日心流看板'
+      ? '今日统计'
       : curRange === '7d'
         ? '最近 7 天精力全景'
         : curRange === '30d'
           ? '最近 30 天心流沉淀'
-          : '心流热力全景';
+          : '每日记录';
 
   /* 页头读数必须来自当前范围的真实 analytics。
      2026-10-01 修复：这里原本写死了 '2026年9月22日 - 9月28日 · 28 个专注会话 · 累计 32.2h'
@@ -475,11 +467,11 @@ export function HistoryPanel() {
       data-pal={palette}
       data-theme={themeMode}
       data-font={font}
-      data-skin={cardSkin}
+      data-skin="ceramic"
       data-sound={soundEnabled ? 'on' : 'off'}
       onContextMenu={handleRightClick}
       onClick={() => setMenuOpen(false)}
-      onMouseMove={handleContainerMouseMove}
+      data-ledger-open={ledgerOpen}
     >
       {/* 1. 42px 沉浸式标题栏 (100% 对齐任务页) */}
       <header className="app-titlebar">
@@ -529,7 +521,7 @@ export function HistoryPanel() {
       </header>
 
       {/* 2. 三栏工作区 (Workspace Body - 100% 模数) */}
-      <div className="workspace-body">
+      <div className="workspace-body" ref={columns.ref} style={columns.style}>
         {/* 左侧栏：统计视图与清单分类 —— 真实数据（v1.3.17 修复写死的原型样例值） */}
         <StatsSidebar
           views={sidebarViews}
@@ -539,6 +531,7 @@ export function HistoryPanel() {
         />
 
         {/* 中间：统计画卷 (Stats Paper) */}
+        {columns.divider('left', '调整统计导航栏宽度')}
         <main className="stats-paper">
           <div className="list-toolbar">
             <div className="list-title-group">
@@ -549,6 +542,14 @@ export function HistoryPanel() {
             </div>
 
             <div className="list-toolbar-actions">
+              <button
+                type="button"
+                className="btn-tool ledger-toggle"
+                aria-expanded={ledgerOpen}
+                onClick={() => setLedgerOpen((open) => !open)}
+              >
+                会话账本 · {filteredSessions.length}
+              </button>
               <button
                 disabled={curRange !== 'today'}
                 className="btn-tool"
@@ -623,6 +624,17 @@ export function HistoryPanel() {
           </div>
         </main>
 
+        {columns.divider('right', '调整会话账本宽度')}
+        {ledgerOpen && (
+          <button
+            type="button"
+            className="ledger-drawer-close"
+            onClick={() => setLedgerOpen(false)}
+            aria-label="关闭会话账本"
+          >
+            关闭账本
+          </button>
+        )}
         <SessionLedger
           sessions={filteredSessions}
           selectedId={curSelectedSession}
@@ -753,48 +765,6 @@ export function HistoryPanel() {
         </div>
 
         <div className="ctx-divider" />
-        <div className="ctx-menu-title">卡片外观</div>
-        <div
-          className="ctx-menu-item"
-          data-skin="ceramic"
-          aria-checked={cardSkin === 'ceramic'}
-          onClick={() => {
-            playWebAudioChime('click');
-            setCardSkin('ceramic');
-            setMenuOpen(false);
-            showToast('卡贴外观：已切换至 ▫️ 纯白陶瓷');
-          }}
-        >
-          ▫️ 纯白陶瓷
-        </div>
-        <div
-          className="ctx-menu-item"
-          data-skin="frosted"
-          aria-checked={cardSkin === 'frosted'}
-          onClick={() => {
-            playWebAudioChime('click');
-            setCardSkin('frosted');
-            setMenuOpen(false);
-            showToast('卡贴外观：已切换至 🪟 微光磨砂');
-          }}
-        >
-          🪟 微光磨砂
-        </div>
-        <div
-          className="ctx-menu-item"
-          data-skin="titanium"
-          aria-checked={cardSkin === 'titanium'}
-          onClick={() => {
-            playWebAudioChime('click');
-            setCardSkin('titanium');
-            setMenuOpen(false);
-            showToast('卡贴外观：已切换至 ⚙️ 钛金');
-          }}
-        >
-          ⚙️ 钛金
-        </div>
-
-        <div className="ctx-divider" />
         <div
           className="ctx-menu-item"
           id="soundMenuItem"
@@ -805,7 +775,7 @@ export function HistoryPanel() {
             showToast(`音效：${!soundEnabled ? '开启' : '关闭'}`);
           }}
         >
-          🔔 晶莹和弦音效：{soundEnabled ? '开' : '关'}
+          音效：{soundEnabled ? '开' : '关'}
         </div>
       </div>
       {/* v1.3.19：账本补关联任务的任务选择器（TaskPicker 以当前焦点元素为锚点自定位） */}

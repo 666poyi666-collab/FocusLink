@@ -1,0 +1,32 @@
+.workspace-divider {
+  position: relative;
+  width: 6px;
+  min-width: 6px;
+  touch-action: none;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 3;
+  background: transparent;
+  -webkit-app-region: no-drag;
+}
+.workspace-divider::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  inset: 0 auto 0 2px;
+  background: var(--border-subtle, #e5e7eb);
+  transition: background 120ms;
+}
+.workspace-divider:hover::after,
+.workspace-divider:focus-visible::after {
+  background: var(--accent, #2563eb);
+}
+.workspace-divider:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: -2px;
+}
+@media (max-width: 979px) {
+  .stats-page .workspace-divider {
+    display: none;
+  }
+}

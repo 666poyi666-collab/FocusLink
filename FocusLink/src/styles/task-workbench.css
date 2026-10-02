@@ -2467,3 +2467,197 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 :where(.task-workspace-root) .subtask-item {
   min-height: var(--subtask-h);
 }
+
+/* The three panes share the same adjustable, keyboard-accessible dividers as statistics. */
+.task-workspace-root .workspace-body {
+  grid-template-columns: var(--workspace-left, 200px) 6px minmax(0, 1fr) 6px var(
+      --workspace-right,
+      340px
+    );
+  min-height: 0;
+  overflow: hidden;
+}
+.task-workspace-root .sidebar {
+  border-right: 0;
+  min-width: 0;
+}
+.task-workspace-root .detail-pane {
+  border-left: 0;
+  min-width: 0;
+}
+.task-workspace-root .list-toolbar {
+  gap: 10px;
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 52px;
+}
+.task-workspace-root .list-title-group {
+  min-width: 0;
+}
+.task-workspace-root .list-title-group h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-workspace-root .list-toolbar-actions {
+  flex-wrap: wrap;
+}
+.workspace-sort {
+  font: inherit;
+  font-size: 12px;
+  min-height: 30px;
+  max-width: 150px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xs, 5px);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  -webkit-app-region: no-drag;
+}
+.task-workspace-root .subtasks-header-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-workspace-root .subtask-items-flow {
+  min-width: 0;
+}
+.task-workspace-root .subtask-item {
+  gap: 8px;
+}
+.task-workspace-root .subtask-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.task-workspace-root .subtask-order-controls {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.task-workspace-root .subtask-order-controls button {
+  padding: 2px 4px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+.task-workspace-root .subtask-order-controls button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.task-workspace-root .subtask-order-controls button[draggable='true'] {
+  cursor: grab;
+}
+.task-workspace-root .ctx-menu.appearance-menu {
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  animation: none;
+}
+.task-workspace-root .appearance-menu-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0 6px;
+}
+.task-workspace-root .appearance-menu-heading button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 20px;
+}
+.task-workspace-root .appearance-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+.task-workspace-root .appearance-control-row > span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.task-workspace-root .appearance-control-row > div {
+  display: flex;
+  gap: 4px;
+}
+.task-workspace-root .appearance-control-row .ctx-menu-item {
+  width: auto;
+  height: 30px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  justify-content: center;
+  background: var(--bg-hover);
+  font-size: 12px;
+}
+.task-workspace-root .appearance-control-row .ctx-menu-item[aria-checked='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.task-workspace-root .appearance-control-row .ctx-menu-item::after {
+  display: none;
+}
+.task-workspace-root .task-entry,
+.task-workspace-root .task-entry:hover {
+  box-shadow: none;
+}
+.task-workspace-root .status-pill {
+  background: transparent;
+  padding: 0;
+}
+.task-workspace-root .app-titlebar {
+  padding-right: 124px;
+  -webkit-app-region: drag;
+}
+.task-workspace-root .cmd-search-box,
+.task-workspace-root .app-titlebar button {
+  -webkit-app-region: no-drag;
+}
+.app-shell.view-tasks .window-drag-region {
+  height: 0;
+}
+.task-workspace-root .detail-heading {
+  min-height: 48px;
+  height: 72px;
+  max-height: 120px;
+  resize: vertical;
+  font-family: inherit;
+  font-weight: 600;
+}
+.task-workspace-root .detail-dock-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.task-workspace-root .detail-dock-bar button {
+  min-width: 0;
+  width: auto;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.task-workspace-root .detail-dock-bar .btn-action-del {
+  width: 32px;
+}
+.task-workspace-root .focus-stat-header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-workspace-root .f-session-tag {
+  white-space: nowrap;
+}
+@supports (field-sizing: content) {
+  .task-workspace-root .detail-heading {
+    field-sizing: content;
+    height: auto;
+    overflow-y: auto;
+  }
+}

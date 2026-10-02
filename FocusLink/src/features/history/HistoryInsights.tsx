@@ -1,7 +1,5 @@
-// 统计工作台：固定 12 栅格 5 大核心卡贴画卷 (The 5 Fixed Masterclass Cards)
-// 100% 对齐设计原型：今日心流全景仪表、24h精力节律分布、清单分类占比、重点任务排行、24周心流热力矩阵。
-// 彻底移除旧版时间轴与冗余轨道，纯粹沉浸呈现。
-import React, { useMemo, useState, type CSSProperties } from 'react';
+// 真实账本统计：概览、时间线、按小时/自然日分布、任务分配和每日记录。
+import { useMemo, useState, type CSSProperties } from 'react';
 import type {
   SessionAnalyticsDaily,
   SessionAnalyticsHourly,
@@ -39,13 +37,6 @@ const MINUTE = 60_000;
 
 function duration(ms: number): string {
   return formatMinutes(Math.max(0, ms));
-}
-
-function axisDuration(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes} 分钟`;
-  const hours = minutes / 60;
-  return `${hours >= 10 || Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)} 小时`;
 }
 
 export function HistoryInsights({
@@ -107,26 +98,10 @@ export function HistoryInsights({
   /* 目标达成率。
      2026-10-02 修复：原实现是 `... || 91` —— 达成率算出来是 0 时，`0` 是 falsy，
      于是**没有专注的一天会显示 91% 达成率**。改成如实显示 0。 */
-  const targetMs = singleDay ? 5 * 3600_000 : Math.max(1, dayLedgers.length) * 5 * 3600_000;
-  const targetRate = Math.min(100, Math.round((dashboardFocus / targetMs) * 100));
 
   /* 纯度计算。
      2026-10-02 修复：原实现在无数据时回落 `'92.6'`（原型样例纯度），
      即空数据的一天会显示一份不存在的成绩。改成如实显示 0.0。 */
-  const purity =
-    dashboardFocus + dashboardPause > 0
-      ? ((dashboardFocus / (dashboardFocus + dashboardPause)) * 100).toFixed(1)
-      : '0.0';
-
-  // 鼠标移动高光跟随
-  const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const card = e.currentTarget;
-    const rect = card.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    card.style.setProperty('--mouse-x', `${x}px`);
-    card.style.setProperty('--mouse-y', `${y}px`);
-  };
 
   return (
     <section
@@ -135,29 +110,24 @@ export function HistoryInsights({
       style={{ '--stats-shift': `${slideDirection * 7}px` } as CSSProperties}
     >
       <div className="stats-dashboard-grid" id="statsDashboardGrid">
-        {/* 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD)
+        {/* 卡贴一：专注概览 (THE FOCUS HERO CARD)
             注意 summaryCount 传的是真实 `summary.count`：
             2026-10-02 修复前是 `summary.count || 4`，会话数为 0 时回落成 4，
             空数据的一天会显示「4 个专注会话」。0 是合法值，不该被当缺省。 */}
         <HeroFocusCard
-          targetRate={targetRate}
           dashboardFocus={dashboardFocus}
           dashboardPause={dashboardPause}
-          targetMs={targetMs}
           yesterdayDiff={yesterdayDiff}
           summaryCount={summary.count}
-          purity={purity}
           effectiveTasks={effectiveTasks}
           streakDays={streakDays}
           selectedLedger={selectedLedger}
-          onMouseMove={handleCardMouseMove}
         />
 
-        {/* 卡贴二：24 小时精力节律时钟分布 (24h Chronological Rhythm) */}
+        {/* 卡贴二：按小时分布 (24h Chronological Rhythm) */}
         <div
           className="card-widget dashboard-card-tile span-12 section-panel anim-in-2"
           id="tileRhythm"
-          onMouseMove={handleCardMouseMove}
         >
           <RhythmChartCard
             multiDay={multiDayMode}
@@ -172,7 +142,6 @@ export function HistoryInsights({
         <div
           className="card-widget dashboard-card-tile span-5 section-panel anim-in-3"
           id="tileDonut"
-          onMouseMove={handleCardMouseMove}
         >
           <DonutAllocationCard tasks={effectiveTasks} totalActive={dashboardFocus} />
         </div>
@@ -181,7 +150,6 @@ export function HistoryInsights({
         <div
           className="card-widget dashboard-card-tile span-7 section-panel anim-in-4"
           id="tileRanking"
-          onMouseMove={handleCardMouseMove}
         >
           <TopTasksLeaderboard
             tasks={effectiveTasks}
@@ -193,11 +161,7 @@ export function HistoryInsights({
         </div>
 
         {/* 卡贴五：心流活跃热力 (24 周心流矩阵 (近半年)) */}
-        <div
-          className="card-widget dashboard-card-tile span-12 section-panel"
-          id="tileHeatmap"
-          onMouseMove={handleCardMouseMove}
-        >
+        <div className="card-widget dashboard-card-tile span-12 section-panel" id="tileHeatmap">
           <FlowHeatmapCard daily={heatmapDaily ?? analytics?.daily ?? []} />
         </div>
       </div>
@@ -205,306 +169,120 @@ export function HistoryInsights({
   );
 }
 
-/** 🌟 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD) */
+/** 🌟 卡贴一：专注概览 (THE FOCUS HERO CARD) */
 function HeroFocusCard({
-  targetRate,
   dashboardFocus,
   dashboardPause,
-  targetMs,
   yesterdayDiff,
   summaryCount,
-  purity,
   effectiveTasks,
   streakDays,
   selectedLedger,
-  onMouseMove,
 }: {
-  targetRate: number;
   dashboardFocus: number;
   dashboardPause: number;
-  targetMs: number;
   yesterdayDiff: number | null;
   summaryCount: number;
-  purity: string;
   effectiveTasks: DayLedgerTask[];
   streakDays: number;
   selectedLedger?: DayLedgerAnalytics;
-  onMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
-  const arcLength = 251.3;
-  const strokeOffset = arcLength * (1 - targetRate / 100);
-
-  // 格式化时间
-  const focusH = Math.floor(dashboardFocus / 3600_000);
-  const focusM = Math.floor((dashboardFocus % 3600_000) / 60_000);
-  const targetH = Math.floor(targetMs / 3600_000);
-  const targetM = Math.floor((targetMs % 3600_000) / 60_000);
-
-  // 时序谱带数据
-  const intervals = selectedLedger?.intervals?.filter((i) => i.kind !== 'gap') ?? [];
-  const baseStart = 8 * 3600_000;
-  const baseTotal = 14 * 3600_000; // 08:00 - 22:00 = 14h
-
-  const spectrumBlocks =
-    intervals.length > 0
-      ? intervals.map((inv) => {
-          const startOfDay = selectedLedger?.dayStartedAt ?? new Date().setHours(0, 0, 0, 0);
-          const relStart = Math.max(0, inv.startedAt - startOfDay - baseStart);
-          const left = Math.min(100, Math.max(0, (relStart / baseTotal) * 100));
-          const width = Math.min(100 - left, Math.max(1.5, (inv.durationMs / baseTotal) * 100));
-          return {
-            kind: inv.kind as 'focus' | 'pause',
-            left,
-            width,
-            title: `${inv.kind === 'focus' ? '专注' : '暂停'} · ${duration(inv.durationMs)}`,
-            lbl: width > 5 ? duration(inv.durationMs) : '',
-          };
-        })
-      : /* 2026-10-02 修复：这里原本回落到 7 段原型示例区间（09:15 精读《深度工作》、
-           重构 LocalTaskProvider、任务页 4K 纯净设计…）。没有真实区间就如实为空。 */
-        [];
-
+  const dayStart = selectedLedger?.dayStartedAt ?? new Date().setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const dayMs = dayEnd.getTime() - dayStart;
+  const intervals = selectedLedger?.intervals.filter((interval) => interval.kind !== 'gap') ?? [];
   return (
-    <div
-      className="card-widget dashboard-card-tile span-12 hero-focus-card anim-in-1"
-      id="tileHero"
-      onMouseMove={onMouseMove}
-    >
+    <div className="card-widget dashboard-card-tile span-12 hero-focus-card" id="tileHero">
       <div className="hero-top-grid">
-        <div className="hero-focus-gauge-box">
-          <div className="hero-dial-wrap" title={`今日专注目标进度：${targetRate}%`}>
-            <svg
-              viewBox="0 0 100 100"
-              className="hero-dial-svg"
-              style={{ width: '96px', height: '96px', transform: 'rotate(-90deg)' }}
-            >
-              <circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-hover)" strokeWidth="8" />
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="8"
-                strokeLinecap="round"
-                id="heroDialArc"
-                strokeDasharray="251.3"
-                strokeDashoffset={strokeOffset}
-                style={{
-                  transition: 'stroke-dashoffset 0.85s cubic-bezier(0.16, 1, 0.3, 1)',
-                  filter: 'drop-shadow(0 2px 6px var(--accent-soft))',
-                }}
-              />
-            </svg>
-            <div className="dial-center-content">
-              <span className="dial-rate-big" id="heroRateText">
-                {targetRate}%
-              </span>
-              <span className="dial-rate-lbl">达成率</span>
-            </div>
-          </div>
-
-          <div className="hero-dial-details">
-            <span className="hero-stat-badge">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                style={{ width: '11px', height: '11px' }}
-              >
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              今日累计专注
-            </span>
-            <div className="hero-time-massive" id="heroTimeValWrap">
-              <span id="heroTimeVal">
-                {focusH}
-                <span className="time-unit">小时</span> {focusM}
-                <span className="time-unit">分钟</span>
-              </span>
-            </div>
-            <div className="hero-target-row" id="heroTargetVal">
-              / 参考目标 {targetH} 小时 {targetM > 0 ? `${targetM} 分钟` : ''}
-            </div>
-            {/* 2026-10-02 修复：原实现无论增减都渲染「较昨日 +X」加绿色上箭头，
-                下降时也显示成增长。现在按真实符号分三态：增长 / 下降 / 持平。 */}
-            {yesterdayDiff !== null && yesterdayDiff !== 0 ? (
-              <div
-                className={`hero-delta-pill ${yesterdayDiff > 0 ? 'positive' : 'negative'}`}
-                id="heroDiffText"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  style={{ width: '11px', height: '11px' }}
-                >
-                  {yesterdayDiff > 0 ? (
-                    <polyline points="18 15 12 9 6 15" />
-                  ) : (
-                    <polyline points="6 9 12 15 18 9" />
-                  )}
-                </svg>
-                较昨日 {yesterdayDiff > 0 ? '+' : '−'}
-                {axisDuration(Math.abs(yesterdayDiff))}
-              </div>
-            ) : yesterdayDiff === 0 ? (
-              <div className="hero-delta-pill" id="heroDiffText">
-                与昨日持平
-              </div>
-            ) : (
-              <div className="hero-delta-pill positive" id="heroDiffText">
-                完成 {summaryCount} 轮
-              </div>
-            )}
+        <div className="focus-summary">
+          <span className="summary-label">专注时长</span>
+          <div className="hero-time-massive">{duration(dashboardFocus)}</div>
+          <div className="summary-secondary">
+            {summaryCount} 次专注
+            {yesterdayDiff !== null && yesterdayDiff !== 0
+              ? ' · 较昨日' +
+                (yesterdayDiff > 0 ? '增加 ' : '减少 ') +
+                duration(Math.abs(yesterdayDiff))
+              : ''}
           </div>
         </div>
-
-        {/* 连续时序谱带 (08:00 - 22:00) */}
         <div className="hero-spectrum-box">
           <div className="spectrum-head">
-            <span className="spectrum-title">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                style={{ width: '13px', height: '13px', color: 'var(--accent)' }}
-              >
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
-              今日时序谱带 (08:00 - 22:00)
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div className="spectrum-legend">
-                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '2px',
-                      background: 'var(--accent)',
-                    }}
-                  />
-                  专注
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '2px',
-                      background: 'var(--pause-color)',
-                    }}
-                  />
-                  暂停
-                </span>
-              </div>
+            <span className="spectrum-title">当天时间线</span>
+            <div className="spectrum-legend">
+              <span>专注</span>
+              <span>暂停</span>
             </div>
           </div>
-
-          <div className="spectrum-bar-wrap" id="spectrumBar">
-            {spectrumBlocks.map((b, i) => (
-              <div
-                key={i}
-                className={`spectrum-block ${b.kind}`}
-                style={{ left: `${b.left}%`, width: `${b.width}%` }}
-                title={b.title}
-              >
-                {b.lbl}
-              </div>
+          <div className="spectrum-bar-wrap" id="spectrumBar" aria-label="当天专注与暂停时间线">
+            {intervals.map((interval, index) => {
+              const start = Math.max(dayStart, interval.startedAt);
+              const end = Math.min(dayEnd.getTime(), interval.endedAt);
+              if (end <= start) return null;
+              const label =
+                (interval.kind === 'focus' ? '专注' : '暂停') +
+                ' · ' +
+                new Date(start).toLocaleTimeString('zh-CN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }) +
+                '–' +
+                new Date(end).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) +
+                ' · ' +
+                duration(end - start);
+              return (
+                <span
+                  key={index}
+                  role="img"
+                  tabIndex={0}
+                  aria-label={label}
+                  title={label}
+                  className={'spectrum-block ' + interval.kind}
+                  style={{
+                    left: ((start - dayStart) / dayMs) * 100 + '%',
+                    width: ((end - start) / dayMs) * 100 + '%',
+                  }}
+                />
+              );
+            })}
+          </div>
+          <div className="spectrum-ticks-row">
+            {['00:00', '06:00', '12:00', '18:00', '24:00'].map((time) => (
+              <span key={time}>{time}</span>
             ))}
           </div>
-
-          <div className="spectrum-ticks-row">
-            <span>08:00</span>
-            <span>10:00</span>
-            <span>12:00</span>
-            <span>14:00</span>
-            <span>16:00</span>
-            <span>18:00</span>
-            <span>20:00</span>
-            <span>22:00</span>
-          </div>
         </div>
       </div>
-
-      {/* 下半区：三项关键质感指标胶囊 */}
-      <div className="hero-bottom-capsules">
-        <div className="hero-cap-item">
-          <div className="cap-left">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              style={{ color: 'var(--success, #10B981)' }}
-            >
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <polyline points="22 4 12 14.01 9 11.01" />
-            </svg>
-            <span>专注纯度</span>
-          </div>
-          <span className="cap-val" style={{ color: 'var(--success, #10B981)' }} id="capPurity">
-            {purity}% · 损耗 {duration(dashboardPause)}
-          </span>
+      <dl className="summary-facts">
+        <div>
+          <dt>暂停</dt>
+          <dd>{duration(dashboardPause)}</dd>
         </div>
-
-        <div className="hero-cap-item">
-          <div className="cap-left">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              style={{ color: 'var(--accent)' }}
-            >
-              <path d="M9 11l3 3L22 4" />
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-            </svg>
-            <span>推进任务</span>
-          </div>
-          <span className="cap-val" id="capTasks">
-            {effectiveTasks.filter((task) => task.taskId).length} 个
-          </span>
+        <div>
+          <dt>关联任务</dt>
+          <dd>{effectiveTasks.filter((task) => task.taskId).length} 个</dd>
         </div>
-
-        <div className="hero-cap-item">
-          <div className="cap-left">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              style={{ color: 'var(--warning, #F59E0B)' }}
-            >
-              <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
-            </svg>
-            <span>连续打卡</span>
-          </div>
-          <span className="cap-val" style={{ color: 'var(--warning, #F59E0B)' }} id="capStreak">
-            {streakDays} 天
-          </span>
+        <div>
+          <dt>连续记录</dt>
+          <dd>{streakDays} 天</dd>
         </div>
-      </div>
+      </dl>
     </div>
   );
 }
 
-/** 🌟 卡贴二：24 小时精力节律时钟分布 (Chronological Rhythm) */
-/* 2026-10-02 修复：这五项原本各带一个 `defMs`（黄金上午 130 分钟、沉浸下午 105 分钟、
-   晚间收尾 40 分钟），而渲染处直接写 `duration(p.defMs)` —— **从来不看真实数据**。
+/** 🌟 卡贴二：按小时分布 (Chronological Rhythm) */
+/* 2026-10-02 修复：这五项原本各带一个 `defMs`（上午 130 分钟、下午 105 分钟、
+   晚间 40 分钟），而渲染处直接写 `duration(p.defMs)` —— **从来不看真实数据**。
    于是无论今天有没有专注，时段胶囊永远显示 2 小时 10 分钟 / 1 小时 45 分钟 / 40 分钟。
    现在 `defMs` 已删除，数值由真实 `hourlyData` 按小时区间求和得到。 */
 const PERIOD_CONFIG = [
-  { name: '深夜时段', range: '00–07时', start: 0, end: 6 },
-  { name: '黄金上午', range: '07–12时', start: 7, end: 11 },
-  { name: '沉浸下午', range: '12–18时', start: 12, end: 17 },
-  { name: '晚间收尾', range: '18–22时', start: 18, end: 21 },
-  { name: '深夜休整', range: '22–24时', start: 22, end: 23 },
+  { name: '凌晨', range: '00–07时', start: 0, end: 6 },
+  { name: '上午', range: '07–12时', start: 7, end: 11 },
+  { name: '下午', range: '12–18时', start: 12, end: 17 },
+  { name: '晚间', range: '18–22时', start: 18, end: 21 },
+  { name: '深夜', range: '22–24时', start: 22, end: 23 },
 ];
 
 /* 2026-10-02 修复：这里原本是 24 小时的**原型示例数据**（8 点 15m、9 点 45m/5m …）。
@@ -564,12 +342,10 @@ function RhythmChartCard({
             >
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
-            {multiDay ? '自然日专注对比' : '24 小时精力节律时钟分布'}
+            {multiDay ? '自然日专注对比' : '按小时分布'}
           </h3>
           <p id="chartHeaderSub">
-            {multiDay
-              ? '呈现周期内每个自然日的累计专注与损耗对比'
-              : '按小时呈现每个自然时段的专注与暂停沉淀，洞察全天精力高峰'}
+            {multiDay ? '呈现周期内每个自然日的累计专注与损耗对比' : '每小时的专注与暂停时长'}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1028,9 +804,9 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
               <rect x="14" y="14" width="7" height="7" />
               <rect x="3" y="14" width="7" height="7" />
             </svg>
-            心流节律活动热力
+            每日记录
           </h3>
-          <p>记录过去 168 天每一个自然日的心流密度 · 见证时间积累的力量</p>
+          <p>最近 168 天的专注记录</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div className="hm-legend-row">

@@ -1,6 +1,6 @@
 {
   "name": "focuslink",
-  "version": "1.3.21",
+  "version": "1.5.0",
   "description": "FocusLink - 本地优先的任务、专注与多端时间账本工作台",
   "author": "FocusLink",
   "main": "dist-electron/main.js",
@@ -61,7 +61,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.{ts,js,mjs,cjs}\" \"mobile/**/*.{html,js,json,webmanifest,ts,tsx}\" \"*.config.ts\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.{ts,js,mjs,cjs}\" \"mobile/**/*.{html,js,json,webmanifest,ts,tsx}\" \"*.config.ts\"",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"mobile/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"*.config.ts\"",
-    "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\" \"mobile/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"*.config.ts\""
+    "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\" \"mobile/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"*.config.ts\"",
+    "version:next": "node --experimental-strip-types scripts/build/next-release-version.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.6.8",
