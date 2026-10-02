@@ -15,6 +15,9 @@
 - **原生窗口补验**：安装前只读观察发现原生右上角窗口按钮与统计顶栏占用同一区域；统计顶栏保留 124px 控制区，改由自身背景提供拖动区并把搜索/按钮标为 no-drag。隔离 renderer 增加真实 window-controls 结构与 `elementFromPoint` 点击可达检查，避免只测原型而漏掉 Electron 外壳遮挡。
 - **桌面操作停止**：用户物理 Esc 停止 Computer Use 后，立即停止桌面鼠标/窗口输入。随后用户明确答复“继续静默安装，停止鼠标控制”；后续只通过安装命令、注册表、文件版本与窗口可见性脚本验收，不再执行鼠标输入。
 - **构建元数据过程**：首轮发现六个更早 release 的 notes/SHA 文件已经在本地删除但未记录 Git（此前清理历史目录遗留）；按只保留最近三个目录的规则提交这些已发生的删除，源码构建恢复 clean commit。一次候选 dist 的 PowerShell 参数 `-c.directories.output` 被拆开而失败，改为完整 `--config.directories.output` 后可正常打包；不是安装器或应用启动失败。
+- **10:35 Windows 实装回读**：最终安装包来自 clean source `ef68759`（构建时间 `2026-10-02T02:30:07.066Z`），`/S /currentuser` 退出码 0；HKCU `DisplayName=FocusLink 1.3.20` / `DisplayVersion=1.3.20`，已安装 EXE `FileVersion=1.3.20` / `ProductVersion=1.3.20.0`。安装前实际探测注册表为 `1.3.1`、EXE 为 `1.3.19`，与上一条历史记录的注册表 `1.3.19` 不一致；保留两项事实，本轮安装已统一回读。
+- **10:37 启动独立核验**：首次 hidden shell 启动仅显示小窗，当前日志曾记录 `main window failed to become visible`；既有 `smoke:window-visible` 因接受 Mini 标题并倒序读取两天日志仍输出 PASS，此结果不作为主窗口验收。随后普通 shell 打开现有 EXE，当前 PID 21420 在当天 10:36:02 记录 `second-instance visible:true`；只读 `EnumWindows` 实际枚举同 PID 的 `FocusLink` 主窗口 handle 330220 / visible True，与 Mini handle 4654644 分开验证。未再执行鼠标或原生窗口输入。当前 `deviceSync contract_error`、本地模式待同步队列及历史时长不一致保留原状，未将本地关联成功解释成云同步成功。
+- **最终候选验证/交付**：`format:check` / `typecheck` / `lint` / 1113 项测试 / `build` / `dist` PASS；portable 在独立临时 profile 隐藏启动，renderer 回读 `1.3.20` / `ef68759`、preload 可用与 root 内容存在后，通过自身 quit 退出，未访问生产 profile。PC 四文件候选保存在 `.tmp/pc-v1320`（安装器、portable、SHA256SUMS、RELEASE_NOTES）；复制后校验哈希一致，打包后 LFS tmp 0 文件 / 0 B。小米/华为仍未连接，APK 未构建/备份，三设备和正式发行门禁仍 FAIL，不创建 tag 或 GitHub Release。
 - **历史遗留仍未处理**：v1.3.18/19 记录的长时间挂起会话、dida CLI 缺失时删除受阻、Sync v2 冲突缺乏处理入口；本次未删真实记录，也未清理冲突来伪造关联/同步成功。
 
 ## 2026-10-02 · `FL-STATS-20261002-REAL-PERIODS`：统计页时段胶囊/较昨日改真实计算 + 账本关联任务入口（v1.3.19）

@@ -118,6 +118,8 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue   # 拉起 GU
 
 ## FL-INSTALL-012：进程在跑、日志说「窗口已显示」，但用户看不到窗口（2026-10-01 实测复发）
 
+**2026-10-02 10:37 补充证据（v1.3.20）**：既有 `smoke:window-visible` 会接受 `FocusLink Mini` 的非零句柄，且两天日志按文件倒序拼接后可能引用旧成功记录。本次首启当天日志明确 `visible:false`，脚本仍输出 PASS，因此不能直接采信。复核应只取本次主进程 PID / 启动之后的日志，并以只读 `EnumWindows` 枚举同 PID、标题恰为 `FocusLink`、`IsWindowVisible=True` 的主窗口；小窗单独统计。普通打开后当前 PID 21420 的主窗口 330220 可见，当天 `second-instance visible:true`，此独立回读通过。脚本判据缺口尚未修改；后续使用必须补做这项独立核验。
+
 **症状**：安装新版本后应用打不开。进程长期存活（本次实测跑了 2 天），事件循环正常，**应用自己的日志里有 `main window shown {"trigger":"ready-to-show","visible":true}`**，但从用户桌面看不到任何窗口、`MainWindowHandle` 为 0、`EnumWindows` 也枚举不到该进程的任何顶层窗口；实例占着单实例锁，用户之后每次点图标都只拉起一个注定退出的第二实例。
 
 **与 `FL-INSTALL-011` 的区别**：011 是「窗口从未创建 / 从未显示」；012 是**窗口显示成功了，但不在用户所在的桌面上**。用户侧表现与处置一样，但判据不同 —— 012 的日志证据是「为真」的，所以**不能只靠日志**。
