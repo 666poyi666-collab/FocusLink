@@ -3432,3 +3432,14 @@ html:not([data-skin]) .card-widget:hover {
 .stats-page .ledger-filter .sc-link-btn {
   margin: 0;
 }
+.stats-page .app-titlebar {
+  padding-right: 124px;
+  -webkit-app-region: drag;
+}
+.stats-page .cmd-search-box,
+.stats-page .app-titlebar button {
+  -webkit-app-region: no-drag;
+}
+.app-shell.view-history .window-drag-region {
+  height: 0;
+}

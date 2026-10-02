@@ -12,6 +12,9 @@
 - **保留过程事实**：首轮仅测横向溢出时漏掉窄屏账本覆盖下方图表；人工检查 1280 截图发现后增加纵向顺序断言，修复 flex shrink/grid rows，六尺寸复验通过。首次复跑浏览器 smoke 读到上次 profile 的旧 DevToolsActivePort 导致 ECONNREFUSED；改为每次唯一 profile 后通过。这两项是验收/隔离环境问题，不属于生产云连接故障。
 - **安装矩阵（打包前）**：Windows 当前仍为旧安装，1.3.20 候选待覆盖并回读；小米与华为 `adb devices -l` 均未连接，1.3.20/1324 **未安装/未回读，门禁 FAIL**；OPPO 不在范围。版本常量与 Android versionName/versionCode 已同步，但 Android 本轮未构建。只准备 PC 安装候选，不创建 tag/GitHub Release，不宣称三设备迭代完成。
 - **LFS 卫生**：打包前 `.git/lfs/tmp` 0 文件 / 0 B；只读 Git 检查禁用 LFS filter 并排除 release 资产，未提交发布 EXE。
+- **原生窗口补验**：安装前只读观察发现原生右上角窗口按钮与统计顶栏占用同一区域；统计顶栏保留 124px 控制区，改由自身背景提供拖动区并把搜索/按钮标为 no-drag。隔离 renderer 增加真实 window-controls 结构与 `elementFromPoint` 点击可达检查，避免只测原型而漏掉 Electron 外壳遮挡。
+- **桌面操作停止**：用户物理 Esc 停止 Computer Use 后，立即停止桌面鼠标/窗口输入。随后用户明确答复“继续静默安装，停止鼠标控制”；后续只通过安装命令、注册表、文件版本与窗口可见性脚本验收，不再执行鼠标输入。
+- **构建元数据过程**：首轮发现六个更早 release 的 notes/SHA 文件已经在本地删除但未记录 Git（此前清理历史目录遗留）；按只保留最近三个目录的规则提交这些已发生的删除，源码构建恢复 clean commit。一次候选 dist 的 PowerShell 参数 `-c.directories.output` 被拆开而失败，改为完整 `--config.directories.output` 后可正常打包；不是安装器或应用启动失败。
 - **历史遗留仍未处理**：v1.3.18/19 记录的长时间挂起会话、dida CLI 缺失时删除受阻、Sync v2 冲突缺乏处理入口；本次未删真实记录，也未清理冲突来伪造关联/同步成功。
 
 ## 2026-10-02 · `FL-STATS-20261002-REAL-PERIODS`：统计页时段胶囊/较昨日改真实计算 + 账本关联任务入口（v1.3.19）

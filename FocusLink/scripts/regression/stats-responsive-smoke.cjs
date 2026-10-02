@@ -28,7 +28,7 @@ window.focuslink={
  tasks:{refresh:async()=>({ok:true,data:{provider:'focuslink-local',tasks,projects:[{id:'p1',name:'学习',color:'#2563eb'}]}})},on:()=>()=>{},
 };
 useStore.setState({ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
-createRoot(document.getElementById('root')).render(<div className="app-shell view-history"><main className="app-stage"><HistoryPanel/></main></div>);
+createRoot(document.getElementById('root')).render(<div className="app-shell view-history"><div className="window-controls"><span className="window-drag-region"/><button>−</button><button>□</button><button>×</button></div><main className="app-stage"><HistoryPanel/></main></div>);
 `;
 
 async function connect(url) {
@@ -161,8 +161,10 @@ async function main() {
         const page=document.querySelector('.stats-page'), workspace=document.querySelector('.workspace-body');
         const donut=document.querySelector('.donut-center-metric'), ring=document.querySelector('.donut-svg-wrap');
         const d=donut.getBoundingClientRect(),r=ring.getBoundingClientRect();
+        const appearance=document.querySelector('#appearanceBtn').getBoundingClientRect(), controls=document.querySelector('.window-controls').getBoundingClientRect();
+        const input=document.querySelector('#globalSearchInput'), ir=input.getBoundingClientRect();
         const stats=document.querySelector('#statsDashboardGrid').getBoundingClientRect(), ledger=document.querySelector('.detail-pane').getBoundingClientRect();
-        return {pageOverflow:page.scrollWidth-page.clientWidth,workspaceOverflow:workspace.scrollWidth-workspace.clientWidth,ringContained:d.left>=r.left&&d.right<=r.right&&d.top>=r.top&&d.bottom<=r.bottom,donutOverflow:donut.scrollWidth-donut.clientWidth,ledgerBelowStats:ledger.top>=stats.bottom};
+        return {pageOverflow:page.scrollWidth-page.clientWidth,workspaceOverflow:workspace.scrollWidth-workspace.clientWidth,ringContained:d.left>=r.left&&d.right<=r.right&&d.top>=r.top&&d.bottom<=r.bottom,donutOverflow:donut.scrollWidth-donut.clientWidth,ledgerBelowStats:ledger.top>=stats.bottom,toolbarReachable:appearance.right<=controls.left&&document.elementFromPoint(ir.left+ir.width/2,ir.top+ir.height/2)===input};
       })()`);
       assert.ok(
         metrics.pageOverflow <= 1 && metrics.workspaceOverflow <= 1,
@@ -171,6 +173,10 @@ async function main() {
       assert.ok(
         metrics.ringContained && metrics.donutOverflow <= 1,
         'donut center must remain inside the ring',
+      );
+      assert.ok(
+        metrics.toolbarReachable,
+        'native window controls/drag surface must not cover appearance or search',
       );
       if (width < 1400)
         assert.ok(
