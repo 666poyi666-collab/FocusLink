@@ -98,12 +98,15 @@ export function HistoryInsights({
     return streak;
   }, [analytics?.daily]);
 
-  // 计算较昨日增减
+  /* 计算较昨日增减。
+     2026-10-02 修复：原实现在「只有一天数据」或「取不到昨日」时 `return 42 * MINUTE`，
+     于是**今天专注 0 分钟也会显示「较昨日增加 42 分钟」**。现在没有可比对的昨日数据
+     就返回 0（既不显示凭空增长，也不误报下降）。 */
   const yesterdayDiff = useMemo(() => {
-    if (!analytics?.daily || analytics.daily.length < 2) return 42 * MINUTE;
+    if (!analytics?.daily || analytics.daily.length < 2) return 0;
     const todayDaily = analytics.daily[analytics.daily.length - 1];
     const yestDaily = analytics.daily[analytics.daily.length - 2];
-    if (!todayDaily || !yestDaily) return 42 * MINUTE;
+    if (!todayDaily || !yestDaily) return 0;
     return todayDaily.activeMs - yestDaily.activeMs;
   }, [analytics?.daily]);
 
@@ -330,8 +333,13 @@ function HeroFocusCard({
             <div className="hero-target-row" id="heroTargetVal">
               / 目标 {targetH}h {String(targetM).padStart(2, '0')}m
             </div>
-            {yesterdayDiff !== null ? (
-              <div className="hero-delta-pill positive" id="heroDiffText">
+            {/* 2026-10-02 修复：原实现无论增减都渲染「较昨日 +X」加绿色上箭头，
+                下降时也显示成增长。现在按真实符号分三态：增长 / 下降 / 持平。 */}
+            {yesterdayDiff !== null && yesterdayDiff !== 0 ? (
+              <div
+                className={`hero-delta-pill ${yesterdayDiff > 0 ? 'positive' : 'negative'}`}
+                id="heroDiffText"
+              >
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -339,9 +347,18 @@ function HeroFocusCard({
                   strokeWidth="2.5"
                   style={{ width: '11px', height: '11px' }}
                 >
-                  <polyline points="18 15 12 9 6 15" />
+                  {yesterdayDiff > 0 ? (
+                    <polyline points="18 15 12 9 6 15" />
+                  ) : (
+                    <polyline points="6 9 12 15 18 9" />
+                  )}
                 </svg>
-                较昨日 +{axisDuration(yesterdayDiff)}
+                较昨日 {yesterdayDiff > 0 ? '+' : '−'}
+                {axisDuration(Math.abs(yesterdayDiff))}
+              </div>
+            ) : yesterdayDiff === 0 ? (
+              <div className="hero-delta-pill" id="heroDiffText">
+                与昨日持平
               </div>
             ) : (
               <div className="hero-delta-pill positive" id="heroDiffText">
@@ -483,12 +500,16 @@ function HeroFocusCard({
 }
 
 /** 🌟 卡贴二：24 小时精力节律时钟分布 (Chronological Rhythm) */
+/* 2026-10-02 修复：这五项原本各带一个 `defMs`（黄金上午 130 分钟、沉浸下午 105 分钟、
+   晚间收尾 40 分钟），而渲染处直接写 `duration(p.defMs)` —— **从来不看真实数据**。
+   于是无论今天有没有专注，时段胶囊永远显示 2 小时 10 分钟 / 1 小时 45 分钟 / 40 分钟。
+   现在 `defMs` 已删除，数值由真实 `hourlyData` 按小时区间求和得到。 */
 const PERIOD_CONFIG = [
-  { name: '深夜时段', range: '0-7h', start: 0, end: 6, defMs: 0 },
-  { name: '黄金上午', range: '7-12h', start: 7, end: 11, defMs: 130 * MINUTE },
-  { name: '沉浸下午', range: '12-18h', start: 12, end: 17, defMs: 105 * MINUTE },
-  { name: '晚间收尾', range: '18-22h', start: 18, end: 21, defMs: 40 * MINUTE },
-  { name: '深夜休整', range: '22-24h', start: 22, end: 23, defMs: 0 },
+  { name: '深夜时段', range: '0-7h', start: 0, end: 6 },
+  { name: '黄金上午', range: '7-12h', start: 7, end: 11 },
+  { name: '沉浸下午', range: '12-18h', start: 12, end: 17 },
+  { name: '晚间收尾', range: '18-22h', start: 18, end: 21 },
+  { name: '深夜休整', range: '22-24h', start: 22, end: 23 },
 ];
 
 /* 2026-10-02 修复：这里原本是 24 小时的**原型示例数据**（8 点 15m、9 点 45m/5m …）。
@@ -530,6 +551,19 @@ function RhythmChartCard({
     }
     return list;
   }, [ledger]);
+
+  /* 五个自然时段的真实专注时长：把 hourlyData（分钟）按区间求和后换算成毫秒。
+     2026-10-02 修复前这里用的是原型写死的 defMs，永远不看真实数据。 */
+  const periodFocusMs = useMemo(
+    () =>
+      PERIOD_CONFIG.map(
+        (p) =>
+          hourlyData
+            .filter((item) => item.h >= p.start && item.h <= p.end)
+            .reduce((sum, item) => sum + item.f, 0) * MINUTE,
+      ),
+    [hourlyData],
+  );
 
   return (
     <>
@@ -660,11 +694,12 @@ function RhythmChartCard({
         </div>
       </div>
 
-      {/* 五大自然时段胶囊 */}
+      {/* 五大自然时段胶囊 —— 数值来自真实 hourlyData 按小时区间求和 */}
       {!multiDay && (
         <div className="period-capsule-row" id="periodRow">
           {PERIOD_CONFIG.map((p, idx) => {
             const isActive = activePeriod === idx;
+            const focusMs = periodFocusMs[idx] ?? 0;
             return (
               <div
                 key={idx}
@@ -679,7 +714,7 @@ function RhythmChartCard({
                   className="period-cap-val"
                   style={isActive ? { color: 'var(--accent)' } : undefined}
                 >
-                  {duration(p.defMs)}
+                  {duration(focusMs)}
                 </div>
               </div>
             );

@@ -1,5 +1,26 @@
 # FocusLink 实施日志
 
+## 2026-10-02 · `FL-STATS-20261002-REAL-PERIODS`：统计页时段胶囊/较昨日改真实计算 + 账本关联任务入口（v1.3.19）
+
+- **用户报告（带截图）**：① 今天专注 0 分钟，却显示「较昨日增加 42 分钟」与「黄金上午 2 小时 10 分钟 / 沉浸下午 1 小时 45 分钟 / 晚间收尾 40 分钟」；② 右侧会话时间账本里未关联的会话，没有任何补关联入口。
+- **根因一（数据）**：
+  - `yesterdayDiff` 有两处 `return 42 * MINUTE`（`analytics.daily.length < 2` 与取不到昨日时）→ 今天 0 分钟也显示增长 42 分钟。且渲染处无论增减都输出绿色「较昨日 +X」，下降也显示成增长，CSS 里也没有 `.hero-delta-pill.negative`。
+  - `PERIOD_CONFIG` 每项带 `defMs`（130/105/40 分钟），渲染处直接 `duration(p.defMs)` —— **从不读真实数据**，五项胶囊是常量。
+- **修复一**：`defMs` 删除，胶囊数值由真实 `hourlyData` 按小时区间求和（`periodFocusMs`）；`yesterdayDiff` 无昨日数据时返回 0，并按符号分三态渲染（增长/下降/持平），补 `.hero-delta-pill.negative` 样式。
+- **根因二（功能缺口）**：`linkSessionTask` 只在 `src/features/focus/TimerPanel.tsx:248` 被调用，且 `handlePickSession` / `handlePickSegment` 都要求 `snapshot.sessionId` / `currentSegmentId`（**会话进行中**）。
+  **已结束的会话在任何界面都没有关联入口。** 而主进程 `FocusTimerController.linkSessionTask` 是 `ensureNotLiveSession(args[0])` 后转 `this.local.linkSessionTask(...)` —— 已结束会话本就可关联，纯 UI 缺口。
+- **修复二**：账本里未关联的会话卡新增「关联任务」按钮（`ProtoSession` 增加 `linked` 标记，由 `defaultTaskId || defaultTaskTitle` 判定）；点击复用既有 `src/features/tasks/TaskPicker.tsx`（以 `document.activeElement` 为锚点自定位）；选中后 `timer.linkSessionTask` → `analyticsReloadToken` 触发重取。新增 `.sc-link-btn` 样式。
+- **实测验证**：
+  - 时段胶囊：同一天 `沉浸下午 = 1 小时 45 分钟`、其余 0 分钟，与当天真实区间吻合（此前五项全是常量）。
+  - 较昨日：0 分钟时显示 `与昨日持平`。
+  - 关联端到端：2 个未关联会话各带按钮 → 点击后选择器打开（搜索框 + 6 个真实任务）→ 选中「第一章第四节｜空间向量的应用」→ **按钮 2 → 1，会话分类变为真实任务名，关联生效**。
+- **门禁**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **134 文件 / 1113 项** PASS；原型契约 **36/36** PASS（新增 `42 * MINUTE`、`defMs` 两条钉子，累计 15 条）；Windows 静默覆盖安装退出码 0，回读 `DisplayVersion 1.3.19`。
+- **范围**：按用户指令只做 PC，Android 版本号同步到 `1323 / 1.3.19`，三设备门禁显式挂起。
+- **遗留（未修，如实记录）**：
+  - 库里仍有若干**真实**会话自然历时异常长（如 `0a3e8fe8` 专注 0.25h / wall 54.81h、`61605714` 专注 0.87h / wall 49.47h、`8f584919` 23.84h 纯专注）。不是测试数据，而是会话被长时间挂着不结束，会让暂停损耗/观察空档失真。需要陈旧会话自动收束策略。
+  - v1.3.18 记录的两个删除缺陷仍在：dida CLI 缺失时无法删除会话；Sync v2 冲突无 UI 处理入口。
+
+
 ## 2026-10-02 · `FL-STATS-20261002-NO-FIXTURE`：统计页零样例兜底 + 清理真实库里的验收测试记录（v1.3.18）
 
 - **用户报告**：「我看还是有些测试数据没有删除啊，全部给我解决吧」。

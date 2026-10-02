@@ -15,6 +15,8 @@ import type { FocusSession } from '@shared/types';
 import type { SessionAnalyticsResult } from '@shared/ipc/api';
 import { HistoryInsights } from './HistoryInsights';
 import { StatsSidebar, type StatsSidebarView } from './StatsSidebar';
+import { TaskPicker } from '../tasks/TaskPicker';
+import type { Task } from '@shared/types';
 import {
   HEATMAP_WINDOW_DAYS,
   buildStatsSidebarCategories,
@@ -34,6 +36,8 @@ interface ProtoSession {
   title: string;
   project: string;
   projectKey: string;
+  /** 是否已关联任务。用于账本里显示「关联任务」入口（v1.3.19）。 */
+  linked: boolean;
   dur: string;
   segCount: number;
   pauseCount: number;
@@ -113,6 +117,8 @@ export function HistoryPanel() {
   }, []);
 
   // 监听真实数据（若有）
+  /* 关联任务后要重新拉取 analytics；令牌必须声明在下面的 effect 之前。 */
+  const [analyticsReloadToken, setAnalyticsReloadToken] = useState(0);
   const [analytics, setAnalytics] = useState<SessionAnalyticsResult | null>(null);
   const range = useMemo<TimeRange>(() => {
     if (curRange === 'today') return getDayRange(dayCursor);
@@ -149,7 +155,7 @@ export function HistoryPanel() {
       cancelled = true;
       unsub?.();
     };
-  }, [range]);
+  }, [range, analyticsReloadToken]);
 
   /* ── 侧栏真实读数（v1.3.17 修复：此前是写死的原型样例值）──────────────────
      2026-10-01 事故：侧栏显示 今日看板 4.6h / 最近7天 32.2h / 最近30天 128.6h /
@@ -161,6 +167,11 @@ export function HistoryPanel() {
      窗口，不随页头范围抖动（原型该列同样是范围无关的静态总览）。
      `summarizeRangeWindows` 要求 daily 是截止今天的连续自然日序列，所以这里必须
      用 start=今天-29天 / end=今天 请求，不能复用页头那份 analytics。 */
+  /* 账本里给「未关联」的已结束会话补关联任务（v1.3.19）。
+     此前 linkSessionTask 只在专注页、且只对**进行中**的会话可用；已结束的会话
+     在任何界面都没有关联入口。主进程的 ensureNotLiveSession() 证明已结束会话
+     本来就可以关联，所以这纯粹是 UI 缺口。 */
+  const [linkTarget, setLinkTarget] = useState<{ sessionId: string; label: string } | null>(null);
   const [sidebarWindows, setSidebarWindows] = useState<StatsRangeWindows | null>(null);
   const [sidebarCategories, setSidebarCategories] = useState<StatsSidebarCategory[]>([]);
   /* 侧栏的点击回调要引用下面才定义的 handleSwitchPreset，用 ref 避开定义顺序问题。 */
@@ -256,6 +267,7 @@ export function HistoryPanel() {
       /* 分类键必须用**真实任务名**，否则侧栏「清单分类」的筛选点不动任何会话。
          原实现把 projectKey 硬编码成 'dev'/'all'，与真实分类永远对不上。 */
       const label = s.defaultTaskTitle || s.title || '未关联';
+      const linked = Boolean(s.defaultTaskId || s.defaultTaskTitle);
       const dur = formatMinutes(s.activeElapsedMs);
       const clock = `${formatClock(s.startedAt)} - ${s.endedAt ? formatClock(s.endedAt) : '进行中'}`;
       const title = s.title || s.defaultTaskTitle || '专注会话';
@@ -266,6 +278,7 @@ export function HistoryPanel() {
         title,
         project: label,
         projectKey: label,
+        linked,
         dur,
         segCount: 1,
         pauseCount: s.pauseElapsedMs > 0 ? 1 : 0,
@@ -394,6 +407,26 @@ export function HistoryPanel() {
 
   /* 侧栏「清单分类」点击：把真实分类名交给筛选。
      原实现写死 dev/ui/read 三个假键，与真实分类永远对不上。 */
+  /** 账本里选中一个任务后，把已结束的会话关联到它。 */
+  const handleLinkSessionTask = async (task: Task | null) => {
+    const target = linkTarget;
+    setLinkTarget(null);
+    if (!task || !target) return;
+    try {
+      await window.focuslink.timer.linkSessionTask(
+        target.sessionId,
+        task.id,
+        task.source,
+        task.title,
+      );
+      playWebAudioChime('click');
+      showToast(`已关联「${target.label}」→ ${task.title}`);
+      setAnalyticsReloadToken((token) => token + 1);
+    } catch (err) {
+      showToast('关联失败：' + (err as Error).message);
+    }
+  };
+
   const handleSelectSidebarCategory = (key: string) => {
     if (key === 'all') {
       handleFilterProject('all', '全部分类');
@@ -653,6 +686,20 @@ export function HistoryPanel() {
                     <span>
                       · {s.segCount}片段 · {s.pauseCount}暂停
                     </span>
+                    {/* v1.3.19：未关联的已结束会话此前没有任何补关联入口 */}
+                    {!s.linked && (
+                      <button
+                        type="button"
+                        className="sc-link-btn"
+                        title="把这个会话关联到一个任务"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLinkTarget({ sessionId: String(s.id), label: s.title });
+                        }}
+                      >
+                        关联任务
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -940,6 +987,15 @@ export function HistoryPanel() {
           🔔 晶莹和弦音效：{soundEnabled ? '开' : '关'}
         </div>
       </div>
+      {/* v1.3.19：账本补关联任务的任务选择器（TaskPicker 以当前焦点元素为锚点自定位） */}
+      {linkTarget && (
+        <TaskPicker
+          title={`关联任务 · ${linkTarget.label}`}
+          onPick={(task) => {
+            void handleLinkSessionTask(task);
+          }}
+        />
+      )}
     </div>
   );
 }

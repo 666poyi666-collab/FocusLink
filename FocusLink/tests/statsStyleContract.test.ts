@@ -199,6 +199,8 @@ describe('统计页原型契约（FL-STATS-CONTRACT）', () => {
       { needle: "'92.6'", what: '原型样例专注纯度 92.6% 的兜底' },
       { needle: 'streak || 14', what: '原型样例连续打卡 14 天的兜底（0 是 falsy）' },
       { needle: 'summary.count || 4', what: '原型样例 4 个专注会话的兜底（0 是 falsy）' },
+      { needle: '42 * MINUTE', what: '原型样例「较昨日增加 42 分钟」的兜底' },
+      { needle: 'defMs', what: '原型样例时段时长（黄金上午 130m / 沉浸下午 105m / 晚间收尾 40m）' },
       { needle: '工作任务', what: '原型样例分类名' },
       { needle: '2026年9月22日 - 9月28日', what: '原型样例日期区间' },
       { needle: '2026年8月30日 - 9月28日', what: '原型样例日期区间' },

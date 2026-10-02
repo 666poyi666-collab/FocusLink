@@ -1606,6 +1606,17 @@ button {
   background: rgba(16, 185, 129, 0.15);
   border-color: rgba(52, 211, 153, 0.25);
 }
+/* 2026-10-02 新增：下降态。此前只有 positive，导致「较昨日下降」也渲染成绿色增长。 */
+.hero-delta-pill.negative {
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+[data-theme='dark'] .hero-delta-pill.negative {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(248, 113, 113, 0.25);
+}
 
 /* ── 2. 24 小时自然节律去牢笼柱状图 (Airy Rhythm Chart) ── */
 .rhythm-chart-box {
@@ -2237,6 +2248,23 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 2026-10-02 新增：账本里给「未关联」的已结束会话补关联任务的入口。
+   此前 linkSessionTask 只在专注页、且只对进行中的会话可用。 */
+.sc-link-btn {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sc-link-btn:hover {
+  border-color: var(--accent);
 }
 .sc-meta {
   font-size: 10.5px;
