@@ -192,6 +192,13 @@ describe('统计页原型契约（FL-STATS-CONTRACT）', () => {
       { needle: '4.6 * 3600_000', what: '原型样例 4.6 小时的兜底回落' },
       { needle: '22 * 60_000', what: '原型样例 22 分钟损耗的兜底回落' },
       { needle: 'share: 55', what: '原型样例分类占比 55%' },
+      {
+        needle: '|| 91',
+        what: '原型样例达成率 91% 的兜底（0 是 falsy，会让空数据的一天显示 91%）',
+      },
+      { needle: "'92.6'", what: '原型样例专注纯度 92.6% 的兜底' },
+      { needle: 'streak || 14', what: '原型样例连续打卡 14 天的兜底（0 是 falsy）' },
+      { needle: 'summary.count || 4', what: '原型样例 4 个专注会话的兜底（0 是 falsy）' },
       { needle: '工作任务', what: '原型样例分类名' },
       { needle: '2026年9月22日 - 9月28日', what: '原型样例日期区间' },
       { needle: '2026年8月30日 - 9月28日', what: '原型样例日期区间' },

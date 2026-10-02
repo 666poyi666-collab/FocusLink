@@ -76,54 +76,26 @@ export function HistoryInsights({
   const dashboardPause = rawPause;
 
   const effectiveTasks = useMemo(() => {
-    const merged = mergeLedgerTasks(dayLedgers);
-    if (merged.length > 0) return merged;
-    // 原型默认重点任务
-    return [
-      {
-        key: 'proto-1',
-        taskId: 't1',
-        title: 'Q3 季度重点业务复盘与跨部门协作交付物整理汇报',
-        activeMs: 80 * MINUTE,
-        segmentCount: 1,
-        estimated: false,
-      },
-      {
-        key: 'proto-2',
-        taskId: 't2',
-        title: '设计并实现 FocusLink 任务页 4K 纯净网膜级交互设计规范',
-        activeMs: 80 * MINUTE,
-        segmentCount: 1,
-        estimated: false,
-      },
-      {
-        key: 'proto-3',
-        taskId: 't3',
-        title: '精读《深度工作》(Deep Work)：沉浸式专注与心流建立策略',
-        activeMs: 65 * MINUTE,
-        segmentCount: 1,
-        estimated: false,
-      },
-      {
-        key: 'proto-4',
-        taskId: 't4',
-        title: '重构 LocalTaskProvider 数据库写入与排序幂等迁移',
-        activeMs: 50 * MINUTE,
-        segmentCount: 1,
-        estimated: false,
-      },
-    ] as DayLedgerTask[];
+    /* 2026-10-02 修复：这里原本在无数据时回落到 4 个**原型示例任务**
+       （proto-1..proto-4：Q3 季度重点业务复盘 / 设计并实现 FocusLink 任务页 4K 纯净…
+       各带 80/80/65/50 分钟的假时长）。原型是设计稿，示例任务不是可以渲染给用户的账本。
+       没有真实任务就如实为空。 */
+    return mergeLedgerTasks(dayLedgers);
   }, [dayLedgers]);
 
   // 计算连续打卡天数
   const streakDays = useMemo(() => {
-    if (!analytics?.daily || analytics.daily.length === 0) return 14;
+    /* 2026-10-02 修复：这里原本有**两处**凭空兜底 —— 无数据时 `return 14`，
+       以及末尾的 `return streak || 14`（算出来是 0 时 `0` 为 falsy，又回落成 14）。
+       于是一个今天完全没专注的日子会显示「连续打卡 14 天 (历史最佳)」。
+       现在如实返回真实连续天数。 */
+    if (!analytics?.daily || analytics.daily.length === 0) return 0;
     let streak = 0;
     for (let i = analytics.daily.length - 1; i >= 0; i--) {
       if (analytics.daily[i].activeMs > 0) streak++;
       else if (streak > 0) break;
     }
-    return streak || 14;
+    return streak;
   }, [analytics?.daily]);
 
   // 计算较昨日增减
@@ -135,15 +107,19 @@ export function HistoryInsights({
     return todayDaily.activeMs - yestDaily.activeMs;
   }, [analytics?.daily]);
 
-  // 目标达成率
+  /* 目标达成率。
+     2026-10-02 修复：原实现是 `... || 91` —— 达成率算出来是 0 时，`0` 是 falsy，
+     于是**没有专注的一天会显示 91% 达成率**。改成如实显示 0。 */
   const targetMs = singleDay ? 5 * 3600_000 : Math.max(1, dayLedgers.length) * 5 * 3600_000;
-  const targetRate = Math.min(100, Math.round((dashboardFocus / targetMs) * 100)) || 91;
+  const targetRate = Math.min(100, Math.round((dashboardFocus / targetMs) * 100));
 
-  // 纯度计算
+  /* 纯度计算。
+     2026-10-02 修复：原实现在无数据时回落 `'92.6'`（原型样例纯度），
+     即空数据的一天会显示一份不存在的成绩。改成如实显示 0.0。 */
   const purity =
     dashboardFocus + dashboardPause > 0
       ? ((dashboardFocus / (dashboardFocus + dashboardPause)) * 100).toFixed(1)
-      : '92.6';
+      : '0.0';
 
   // 鼠标移动高光跟随
   const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -162,14 +138,17 @@ export function HistoryInsights({
       style={{ '--stats-shift': `${slideDirection * 7}px` } as CSSProperties}
     >
       <div className="stats-dashboard-grid" id="statsDashboardGrid">
-        {/* 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD) */}
+        {/* 卡贴一：今日心流全景仪表 (THE FOCUS HERO CARD)
+            注意 summaryCount 传的是真实 `summary.count`：
+            2026-10-02 修复前是 `summary.count || 4`，会话数为 0 时回落成 4，
+            空数据的一天会显示「4 个专注会话」。0 是合法值，不该被当缺省。 */}
         <HeroFocusCard
           targetRate={targetRate}
           dashboardFocus={dashboardFocus}
           dashboardPause={dashboardPause}
           targetMs={targetMs}
           yesterdayDiff={yesterdayDiff}
-          summaryCount={summary.count || 4}
+          summaryCount={summary.count}
           purity={purity}
           effectiveTasks={effectiveTasks}
           streakDays={streakDays}
@@ -283,51 +262,9 @@ function HeroFocusCard({
             lbl: width > 5 ? duration(inv.durationMs) : '',
           };
         })
-      : [
-          {
-            kind: 'focus',
-            left: 8.9,
-            width: 8.3,
-            title: '09:15 - 10:25 专注 (1h 05m) · 精读《深度工作》',
-            lbl: '1h05m',
-          },
-          { kind: 'pause', left: 17.3, width: 1.8, title: '10:25 - 10:40 暂停休息 (15m)', lbl: '' },
-          {
-            kind: 'focus',
-            left: 19.1,
-            width: 6.0,
-            title: '10:40 - 11:30 专注 (50m) · 重构 LocalTaskProvider',
-            lbl: '50m',
-          },
-          {
-            kind: 'focus',
-            left: 45.2,
-            width: 5.4,
-            title: '14:20 - 15:05 专注 (45m) · 业务数据汇总结算',
-            lbl: '45m',
-          },
-          {
-            kind: 'pause',
-            left: 50.6,
-            width: 0.7,
-            title: '15:05 - 15:10 暂停 (5m) · 休息喝水',
-            lbl: '',
-          },
-          {
-            kind: 'focus',
-            left: 51.3,
-            width: 4.2,
-            title: '15:10 - 15:45 专注 (35m) · 协作看板对齐联调',
-            lbl: '35m',
-          },
-          {
-            kind: 'focus',
-            left: 58.3,
-            width: 9.5,
-            title: '16:10 - 17:30 专注 (1h 20m) · 任务页 4K 纯净设计',
-            lbl: '1h20m',
-          },
-        ];
+      : /* 2026-10-02 修复：这里原本回落到 7 段原型示例区间（09:15 精读《深度工作》、
+           重构 LocalTaskProvider、任务页 4K 纯净设计…）。没有真实区间就如实为空。 */
+        [];
 
   return (
     <div
@@ -554,42 +491,17 @@ const PERIOD_CONFIG = [
   { name: '深夜休整', range: '22-24h', start: 22, end: 23, defMs: 0 },
 ];
 
-const PROTOTYPE_HOURLY = [
-  { h: 0, f: 0, p: 0 },
-  { h: 1, f: 0, p: 0 },
-  { h: 2, f: 0, p: 0 },
-  { h: 3, f: 0, p: 0 },
-  { h: 4, f: 0, p: 0 },
-  { h: 5, f: 0, p: 0 },
-  { h: 6, f: 0, p: 0 },
-  { h: 7, f: 0, p: 0 },
-  { h: 8, f: 15, p: 0 },
-  { h: 9, f: 45, p: 5 },
-  { h: 10, f: 50, p: 5 },
-  { h: 11, f: 30, p: 0 },
-  { h: 12, f: 0, p: 0 },
-  { h: 13, f: 10, p: 0 },
-  { h: 14, f: 40, p: 5 },
-  { h: 15, f: 45, p: 0 },
-  { h: 16, f: 50, p: 0 },
-  { h: 17, f: 30, p: 5 },
-  { h: 18, f: 0, p: 0 },
-  { h: 19, f: 20, p: 0 },
-  { h: 20, f: 20, p: 2 },
-  { h: 21, f: 0, p: 0 },
-  { h: 22, f: 0, p: 0 },
-  { h: 23, f: 0, p: 0 },
-];
+/* 2026-10-02 修复：这里原本是 24 小时的**原型示例数据**（8 点 15m、9 点 45m/5m …）。
+   没有真实区间时应当如实为空 —— 生成全 0 的 24 小时序列，而不是画一份假节律。 */
+const EMPTY_HOURLY = Array.from({ length: 24 }, (_, h) => ({ h, f: 0, p: 0 }));
 
-const PROTOTYPE_WEEK_DAYS = [
-  { label: '周一', f: 270, p: 25 },
-  { label: '周二', f: 310, p: 20 },
-  { label: '周三', f: 285, p: 15 },
-  { label: '周四', f: 330, p: 30 },
-  { label: '周五', f: 240, p: 10 },
-  { label: '周六', f: 220, p: 15 },
-  { label: '周日', f: 275, p: 22 },
-];
+/* 2026-10-02 修复：这里原本是 7 天的**原型示例数据**（周一 270m、周二 310m …）。
+   没有真实数据时应当如实为空。 */
+const EMPTY_WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((label) => ({
+  label,
+  f: 0,
+  p: 0,
+}));
 
 function RhythmChartCard({
   multiDay,
@@ -603,7 +515,7 @@ function RhythmChartCard({
   onPeriodClick?: (idx: number) => void;
 }) {
   const hourlyData = useMemo(() => {
-    if (!ledger || ledger.intervals.length === 0) return PROTOTYPE_HOURLY;
+    if (!ledger || ledger.intervals.length === 0) return EMPTY_HOURLY;
     const list = Array.from({ length: 24 }, (_, h) => ({ h, f: 0, p: 0 }));
     for (const inv of ledger.intervals) {
       if (inv.kind === 'gap') continue;
@@ -728,7 +640,7 @@ function RhythmChartCard({
                   </div>
                 );
               })
-            : PROTOTYPE_WEEK_DAYS.map((item, idx) => {
+            : EMPTY_WEEK_DAYS.map((item, idx) => {
                 const fPct = Math.min(100, Math.round((item.f / 360) * 100));
                 const pPct = Math.min(100, Math.round((item.p / 360) * 100));
                 const h = (item.f / 60).toFixed(1);

@@ -1,5 +1,60 @@
 # FocusLink 实施日志
 
+## 2026-10-02 · `FL-STATS-20261002-NO-FIXTURE`：统计页零样例兜底 + 清理真实库里的验收测试记录（v1.3.18）
+
+- **用户报告**：「我看还是有些测试数据没有删除啊，全部给我解决吧」。
+- **两类问题（都已处理）**：
+
+### 一、界面里仍在渲染的原型样例兜底
+
+v1.3.17 只清了侧栏与分类占比。全量审计后 `HistoryInsights` 仍有 9 处「无数据即回落原型样例」：
+`effectiveTasks`（`proto-1`~`proto-4` 示例任务）、`streakDays`（**两处**：`return 14` 与 `return streak || 14`）、
+`targetRate`（`|| 91` —— **达成率 0 时 `0` 是 falsy，空数据的一天显示 91%**）、`purity`（`'92.6'`）、
+`summaryCount`（`|| 4`）、全天时序谱带（7 段原型区间）、`PROTOTYPE_HOURLY`、`PROTOTYPE_WEEK_DAYS`、
+排行卡写死的「工作任务」标签。另有 `DEFAULT_SESSIONS`（一整份原型样例会话）已整体删除。
+
+全部改为如实为空 / 为 0；`EMPTY_HOURLY` / `EMPTY_WEEK_DAYS` 为生成的零值序列。
+实测空态：页头 `0 个专注会话 · 累计 0m`、达成率 `0%`、纯度 `0.0% · 损耗 0 分钟`、推进任务 `0 个`、连续打卡 `0 天`。
+
+### 二、真实数据库里的 32 条验收/冒烟测试记录
+
+- **量级**：32 条（占会话 18%），有效专注 46.9h（占 29%）。
+- **判据必须是标题、不能是 id 前缀**：`live_` / `mobile_` 是手机端与手表端创建**真实**会话的命名方式
+  （`src/mobile/MobileApp.tsx:1836,2361`、`src/mobile/WatchApp.tsx:396`）。实证反例：
+  `live_78cb5f8e`「高二暑第一节」1.22h、`mobile_f2fbfb74`「自由专注」4.69h 都是真实记录；
+  而 `ca209d9d-…`（普通 UUID）标题是 `Day3 | 阶段3：第5节平行关系`，是测试记录。
+  **按前缀删会同时删掉真实数据。**
+- **为什么不能走应用自身的删除路径**（`sessions:delete` → `deleteDesktopSessionWithV2Tombstone`）：
+  ① dida CLI 未安装时拒绝（`spawn dida ENOENT`）；② 实体存在未解决的 Sync v2 冲突时拒绝静默删除，
+  而 UI 里没有任何冲突处理入口。先手工清掉这些实体上的 64 条 open 冲突后仍然被 dida 门槛拦住。
+  因此按 `deleteDesktopSessionWithV2Tombstone()` 的同一套语义手工执行：**先写 delete 墓碑，再删本地行**。
+- **执行结果**：会话 173 → 141；删除 54 段、29 暂停、126 条 `sync_v2_entity_state`、31 条 `sync_v2_conflicts`、
+  227 条 `sync_v2_operation_history`、62 条 `remote_writeback_queue`；**写入 124 条 delete 墓碑**到 `sync_v2_outbox`。
+  清理前在库同目录留完整备份（`backup-before-testdata-purge-*`）。
+- **清理后**：168 天窗口有效专注 160.44h → **113.52h**。
+
+### 新增工具与闸门
+
+- `scripts/maintenance/purge-test-records.cjs`：默认只列计划、`--apply` 才执行、执行前强制备份，
+  内置**反向校验**（真实记录含 `live_`/`mobile_` 前缀者被误判即退出码 1）。复跑结果：会话 141、判定 0 条、反向校验通过。
+- 原型契约测试新增 4 条样例字面量钉子（`|| 91`、`'92.6'`、`streak || 14`、`summary.count || 4`），累计 13 条。
+
+### 门禁
+
+`format:check` / `typecheck`（含 worker）/ `lint` 全部 PASS；`npm test` **134 文件 / 1113 项** PASS；
+原型契约 **36/36** PASS；Windows 静默覆盖安装退出码 0，回读 `DisplayVersion 1.3.18`。
+
+### 范围与遗留
+
+- 按用户指令本轮**只做 PC**；Android 版本号同步到 `1322 / 1.3.18`，未构建 APK、三设备门禁显式挂起。
+- **两个产品缺陷未修**（本轮只记录）：dida CLI 缺失时无法删除会话；Sync v2 冲突无 UI 处理入口，
+  导致「有冲突的记录永远删不掉」。这两条是「测试记录清理不掉」的直接原因。
+- **仍未解决**：库里还有若干**真实**会话的自然历时异常长（如 `0a3e8fe8` 专注 0.25h 但 wall 54.81h、
+  `61605714` 专注 0.87h 但 wall 49.47h、`8f584919` 23.84h 纯专注）。这些不是测试数据，
+  而是「会话被长时间挂着不结束」造成的，会让暂停损耗/观察空档严重失真（当前 pause 总量仍是 active 的 5 倍）。
+  需要的是陈旧会话自动收束策略，属下一轮范围。
+
+
 ## 2026-10-01 · `FL-STATS-20261001-FAKE-DATA`：统计页数据来源修复（v1.3.17）
 
 - **用户报告**：「现在统计页面的数据来源有问题啊」。
