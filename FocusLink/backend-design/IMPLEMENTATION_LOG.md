@@ -8,6 +8,8 @@
 - **任务**：主任务提供现有/自然名称/日期正逆/优先级；子任务另外可手动自定义。名称数字按循环1/2/10排列，日期无值置后。子任务手动拖动或上/下移，复用本地 tasks.reorder，原 ID/parentId 不变，失败刷新并反馈。外观菜单五行紧凑选择，capture pointerdown 关闭菜单外点击、Esc 与关闭按钮；主题/字体/色彩/密度设置复用原持久化入口。移除没有实际倒计时的“25m”提示和未完成任务的“进行中”假状态。
 - **截至 18:50 的验证**：typecheck/lint PASS；头less Edge 合成 IPC 验证六尺寸（640–1920、DPR1/1.25/1.5）、三组任务宽度（980/1024/1280），账本首屏、无整体边框、无条内溢出文字、真实关联/取消、真实多日柱图、菜单视口/关闭/主题应用、子任务名称/日期/手动 API、分栏实际 pointer 拖动与重载偏好 PASS。数据仅存在隔离 renderer，不创建用户测试任务。原型测试的旧宣传文案与表盘断言按本次用户要求更新，保留真实值/跨午夜/空态检查；第一次全量 1119 测试中仅这三条旧表盘/文案断言失败，更新后定向 45 项 PASS，待最终全量复验。
 - **安装矩阵（构建前）**：Windows 仍为 1.3.21，1.5.0 待候选覆盖安装；小米/华为 ADB 当前均未连接，1.5.0/1326 未安装/未回读，三设备门禁 FAIL，Android APK 未构建。只准备 PC 安装候选，不建立 tag/GitHub Release；OPPO 仍退役。LFS tmp 0 文件 / 0 B。历史真实异常长会话、既有云冲突与第三方待确认均保持原状，本次不删用户数据。
+- **最终验证/Windows 实装（19:00，Asia/Shanghai）**：format:check/typecheck/lint PASS，135 文件 / 1119 测试 PASS；六组统计尺寸/DPR、三组任务宽度与上述交互 smoke PASS。build/dist 从 clean source `0ecdba2` 生成 1.5.0（`2026-10-02T10:57:04.932Z`，无 dirty）；portable 独立 profile 启动回读匹配。安装前 local active sessions=0；`/S /currentuser` 退出 0，HKCU DisplayVersion=1.5.0，EXE FileVersion=1.5.0/ProductVersion=1.5.0.0。当前 PID 34528 主窗口 handle 132598 与 mini handle 132542 分别可见，当天该 PID ready-to-show=True。只通过命令与只读窗口枚举，不控制鼠标。
+- **数据/资产回读**：SQLite quick_check=ok，用户 `772f4d04` 专注记录恰好一份且 2 个 segment，未清数据/冲突。已安装 app.asar 与构建原包 SHA256 同为 `21947B3CD91561263A0A9F7796B1BB7E1C8E4D3B4CFFFE9461995C07922B5299`；四文件候选位于 `.tmp/pc-v150`，写后 Flush(true) 并回读，installer SHA256 `4BAA7D83BA306FAFAA30837F0FB2FC58F7142970030F1BD1C9D35B2A250FB049`、portable `71FC0493EBE32A0B6BBD6E43F3F1C8D4DC82E2DB92C848DE0BF804421016D795`。LFS tmp 打包后仍 0 文件 / 0 B；小米/华为仍未连接，三设备/Android APK 备份门禁仍 FAIL，不宣称完整发行完成。
 
 ## 2026-10-02 · `FL-SYNC-20261002-LEDGER-IMPORT`：结束专注报错与统计页缺记录根治（v1.3.21）
 

@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.5.0（账本导入修复，三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.5.0（renderer 分栏/排序与版本策略，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -412,6 +412,8 @@ Cloudflare 外部协议 gate 是受限测试操作，不是部署入口：extern
 - 发布变化：执行 [TEST_AND_RELEASE.md](TEST_AND_RELEASE.md) 的全部门禁并推送 `main`；只有用户明确要求时才创建公开 tag 和 GitHub Release。
 
 ## v1.3.20 统计 renderer 读取与关联边界
+
+v1.5.0：列宽和显示排序存于各 renderer 的独立本机偏好，不声称跨设备同步；子任务自定义顺序复用 `tasks.reorder` 的 local provider 边界，提交同一父任务的 sibling ID 数组，保留 parentId/任务正文，失败后重新读取。不新增排序服务或 SQLite 表。版本下一步由 `releaseVersionPolicy.ts` 按 patch 0–9 计算，build guard 拒绝 patch≥10，Android versionCode 保持单调。
 
 v1.3.21：已激活与初次建立的 Sync v2 checkpoint 都先无 mutation 拉取，再推送；旧待发操作仅在同连接 scope、deviceId 等于本机 legacy 安装 ID 时路由到当前已认证设备，opId/payload 保留。结束 ACK 与本机账本导入是独立事实；确认结束后的导入失败仅标记 ledgerImportPending，保留 authority 状态，不造本地记录，也不把导入异常改为结束命令失败。状态变更按实际状态广播，不能对每秒 tick 发统计重取。
 
