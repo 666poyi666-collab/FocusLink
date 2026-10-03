@@ -6,6 +6,8 @@
 - **修复**：新增/重命名清单改为 Portal 应用内表单，名称验证、请求中禁用、失败保留输入、Esc/取消/点击遮罩关闭、焦点返回；复用原本地 createProject/updateProject API。主任务整行/柄支持 before/after 拖动与 Alt+上下键，自动排序状态下拖动转为自定义；merge 可见组到完整根任务顺序，隐藏根任务不移动、children/parentId/日期保留，禁止跨完成组和跨父级混排；复用原 reorder API。快捷创建不传日期、失败保留标题；无日期任务在日期智能视图创建后转全部任务，不能为了显示而编造今天截止。旧任务日期不清除。
 - **隔离验证**：synthetic IPC 实测空清单名零写入、失败保留输入并重试成功、新清单可见、新任务所属清单与无日期参数、主任务 DragEvent 实际改变顺序/调用持久 API/刷新后保持。临时 SQLite 实测真实 local project/create/reorder，关闭重开后日期与子任务归属保留；临时 DB 自动清理，用户 DB 无测试任务。定向 8 项 PASS；最终全量/安装待回读。
 - **门禁/范围**：候选版本 1.5.1、Android code 1327；只变更 PC renderer，计时器/设备同步/dida/TomaToDo/mini 两态常量未改。Windows 1.5.0 待覆盖；小米/华为仍需 ADB 当轮探测并实际安装，缺失即门禁 FAIL；不以历史成功记录充当本轮实装。准备 PC 候选，不创建 tag/GitHub Release。重复诊断见 FL-INSTALL-014。
+- **最终验证/实装（09:05，Asia/Shanghai）**：format:check/typecheck/lint PASS，136 文件 / 1123 测试 PASS，完整多尺寸交互 smoke PASS。clean source `51f5da5` 构建 `2026-10-03T00:58:21.060Z`，build/dist PASS；portable 版本/提交回读一致，并在独立空 userData 下，通过实际 Electron renderer→IPC→SQLite 创建清单/无日期任务、主任务拖动后的数据库回读，临时 profile 已用标准工具删除，生产库无测试写入。安装前 active local sessions=0；installer `/S /currentuser` 退出 0，HKCU DisplayVersion=1.5.1，EXE FileVersion=1.5.1/ProductVersion=1.5.1.0。PID 41868 主窗口 handle 5048944 实际 visible True，当天该 PID ready-to-show=True；不控制鼠标。
+- **数据/交付**：SQLite quick_check=ok、用户记录 `772f4d04` 仍恰好一份。已安装 app.asar 与原构建包 SHA256 同为 `46AB260C2211C4252909A4C4E2E8BC1D0C43D81B3EEA8A6EAEEF675C4B7CD86A`。`.tmp/pc-v151` 四文件候选经 Flush(true)/读回/哈希校验；installer `065F68A7949B9609C1CC05A4D4BDBA2C9E68CA0DDBF056D21A4C125946B3E79A`，portable `6110DFB49D06C348580638EAE9CC75FD717B975E27E08C55F750355E3023C5C2`。LFS tmp 前后均 0 文件 / 0 B。Windows 实装 PASS；小米/华为 ADB 未连接，1.5.1/1327 未安装/未回读，APK 未构建/备份，三设备门禁 FAIL，不宣称完整发行完成。
 
 ## 2026-10-02 · `FL-UI-20261002-WORKSPACE`：可调整分栏、统计去装饰与任务排序（v1.5.0 候选）
 
