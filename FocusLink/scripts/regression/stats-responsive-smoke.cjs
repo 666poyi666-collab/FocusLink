@@ -25,16 +25,19 @@ tasks[0].children = [10,2,1].map((number,index)=>({id:'child-'+number,parentId:'
 const sessions = Array.from({length:6},(_,i)=>({id:'session-'+i,title:i===0?longTitle:'专注会话 '+i,status:'finished',startedAt:day+(8+i)*3600000,endedAt:day+(9+i)*3600000,activeElapsedMs:2700000,pauseElapsedMs:900000,wallElapsedMs:3600000,defaultTaskId:i===1?'task-1':null,defaultTaskTitle:i===1?longTitle:null,defaultTaskSource:i===1?'local':null,note:null,createdAt:day,updatedAt:day,segmentCount:2,linkedSegmentCount:i===1?2:0}));
 const segments = sessions.flatMap(s=>[0,1].map((n)=>({id:s.id+'-seg-'+n,sessionId:s.id,taskId:s.defaultTaskId,taskSource:s.defaultTaskSource,title:s.defaultTaskTitle||s.title,startedAt:s.startedAt+n*1800000,endedAt:s.startedAt+n*1800000+1350000,activeElapsedMs:1350000,note:null,cloudFocusId:null,tomatodoSubject:null,createdAt:day,updatedAt:day})));
 const pauses = sessions.map(s=>({id:s.id+'-pause',sessionId:s.id,segmentId:s.id+'-seg-0',pauseStartedAt:s.startedAt+1350000,pauseEndedAt:s.startedAt+2250000,durationMs:900000,reason:null,createdAt:day,updatedAt:day}));
+tasks.push({id:'task-3',title:'今天到期的复盘',source:'local',projectId:'p1',status:0,children:[],priority:0,dueDate:day,startDate:null,sortOrder:3,tags:[],content:null});
+window.slowRefresh=0;
 window.smokeCalls=[];
 window.focuslink={
  sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录'},
  timer:{linkSessionTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['session',id,taskId]);Object.assign(sessions.find(s=>s.id===id),{defaultTaskId:taskId,defaultTaskSource:source,defaultTaskTitle:title});},linkSegmentsBatch:async(id,taskId,source,title,onlyUnlinked)=>{window.smokeCalls.push(['batch',id,taskId,onlyUnlinked]);segments.filter(s=>s.sessionId===id&&(!onlyUnlinked||!s.taskId)).forEach(s=>Object.assign(s,{taskId,taskSource:source,title}));},linkTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['segment',id,taskId]);Object.assign(segments.find(s=>s.id===id),{taskId,taskSource:source,title});}},
- tasks:{refresh:async()=>({ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}}),reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
+ tasks:{refresh:async()=>{if(window.slowRefresh)await new Promise(resolve=>setTimeout(resolve,window.slowRefresh));return {ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}};},reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
 };
 useStore.setState({settings:DEFAULT_SETTINGS,ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
 const reactRoot=createRoot(document.getElementById('root'));
 const render=(view)=>reactRoot.render(<div className={'app-shell view-'+view}><div className="window-controls"><span className="window-drag-region"/><button>−</button><button>□</button><button>×</button></div><main className="app-stage">{view==='tasks'?<TaskWorkspace/>:<HistoryPanel/>}</main></div>);
 window.showTasks=()=>render('tasks');
+window.showHistory=()=>render('history');
 render('history');
 `;
 
@@ -298,8 +301,34 @@ async function main() {
       deviceScaleFactor: 1.25,
       mobile: false,
     });
+    await cdp.evaluate('window.slowRefresh=700');
     await cdp.evaluate('window.showTasks()');
-    await delay(250);
+    await delay(150);
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.task-loading-list')`),
+      true,
+      'cold load shows skeleton rows',
+    );
+    assert.equal(
+      await cdp.evaluate(`document.body.textContent.includes('当前视图没有待办任务')`),
+      false,
+      'cold load must not flash the empty state',
+    );
+    assert.ok(
+      await cdp.evaluate(
+        `document.querySelector('.list-stats-text').textContent.includes('正在载入任务')`,
+      ),
+      'header reports loading instead of 0 counts',
+    );
+    const loadingShot = await cdp.send('Page.captureScreenshot', { captureBeyondViewport: false });
+    fs.writeFileSync(path.join(out, 'tasks-loading.png'), Buffer.from(loadingShot.data, 'base64'));
+    await delay(750);
+    await cdp.evaluate('window.slowRefresh=0');
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.task-loading-list')`),
+      false,
+      'skeleton clears once data lands',
+    );
     assert.deepEqual(
       await cdp.evaluate(
         `Array.from(document.querySelectorAll('[data-subtask-id]')).map(node=>node.dataset.subtaskId)`,
@@ -526,9 +555,67 @@ async function main() {
       [...before.slice(1), before[0]],
       'saved root order survives refetch',
     );
+    assert.equal(
+      await cdp.evaluate(
+        `getComputedStyle(document.querySelector('.task-entry')).borderBottomWidth`,
+      ),
+      '0px',
+      'task rows must not draw divider lines',
+    );
+    assert.deepEqual(
+      await cdp.evaluate(
+        `(() => {const row=document.querySelector('.task-entry[data-task-id="task-1"]');const el=row&&row.querySelector('.meta-pill.project');return el?{text:el.textContent.trim(),projectId:el.dataset.projectId,dot:!!el.querySelector('.project-color-dot')}:null;})()`,
+      ),
+      { text: '学习', projectId: 'p1', dot: true },
+      'task row shows the list it belongs to',
+    );
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.sidebar .side-item')).find(button=>button.textContent.includes('学习')).click()`,
+    );
+    await delay(120);
+    assert.equal(
+      await cdp.evaluate(
+        `!!document.querySelector('.task-entry[data-task-id="task-1"] .meta-pill.project')`,
+      ),
+      false,
+      'list label hidden while that list is the active filter',
+    );
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.sidebar .side-item')).find(button=>button.textContent.includes('全部任务')).click()`,
+    );
+    await delay(120);
+    const todayChip = await cdp.evaluate(
+      `(() => {const el=document.querySelector('.task-entry[data-task-id="task-3"] .meta-pill.date.is-today');if(!el)return null;const style=getComputedStyle(el);return {text:el.textContent.trim(),bg:style.backgroundColor,fg:style.color};})()`,
+    );
+    assert.equal(todayChip && todayChip.text, '今天截止');
+    assert.equal(todayChip.bg, 'rgb(180, 83, 9)', 'today badge uses the solid strong background');
+    assert.equal(todayChip.fg, 'rgb(255, 255, 255)', 'today badge uses readable foreground');
     console.log(
       'PASS project validation/retry/create, undated task creation and persistent root drag ordering',
     );
+    console.log('PASS single-row cards, list label, prominent today badge and no divider lines');
+    // 切页不再闪空态：慢刷新下重新挂载必须立刻用缓存渲染。
+    await cdp.evaluate('window.slowRefresh=700');
+    await cdp.evaluate('window.showHistory()');
+    await delay(200);
+    await cdp.evaluate('window.showTasks()');
+    await delay(120);
+    const warm = await cdp.evaluate(
+      `({rows:document.querySelectorAll('.task-entry').length,skeleton:!!document.querySelector('.task-loading-list'),empty:document.body.textContent.includes('当前视图没有待办任务'),header:document.querySelector('.list-stats-text').textContent.trim()})`,
+    );
+    assert.ok(warm.rows > 0, 'page switch renders cached rows immediately');
+    assert.equal(warm.skeleton, false, 'page switch must not show the skeleton again');
+    assert.equal(warm.empty, false, 'page switch must not flash the empty state');
+    assert.equal(
+      warm.header.includes('正在载入'),
+      false,
+      'page switch shows real counts immediately',
+    );
+    await delay(800);
+    await cdp.evaluate('window.slowRefresh=0');
+    const rowsShot = await cdp.send('Page.captureScreenshot', { captureBeyondViewport: false });
+    fs.writeFileSync(path.join(out, 'tasks-rows.png'), Buffer.from(rowsShot.data, 'base64'));
+    console.log('PASS page switch reuses the cached task snapshot without an empty flash');
   } finally {
     if (cdp) {
       await cdp.send('Browser.close').catch(() => {});

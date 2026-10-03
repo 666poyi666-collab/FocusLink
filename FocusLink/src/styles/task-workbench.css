@@ -49,6 +49,11 @@ html[data-pal='linear'],
   --badge-today-bg: rgba(217, 119, 6, 0.08);
   --badge-range: #2563eb;
   --badge-range-bg: rgba(37, 99, 235, 0.08);
+  /* 到期/逾期改为实心高对比标签：浅色下与白字组合仍满足正文级对比。 */
+  --badge-late-strong-bg: #b91c1c;
+  --badge-late-strong-fg: #ffffff;
+  --badge-today-strong-bg: #b45309;
+  --badge-today-strong-fg: #ffffff;
 
   /* 打勾专用自适应主题变量 (纯净白：科技沉浸电光蓝) */
   --check-bg: #2563eb;
@@ -133,6 +138,10 @@ html[data-pal='contrast'],
   --badge-today-bg: rgba(0, 0, 0, 0.08);
   --badge-range: #000000;
   --badge-range-bg: rgba(0, 0, 0, 0.08);
+  --badge-late-strong-bg: #000000;
+  --badge-late-strong-fg: #ffffff;
+  --badge-today-strong-bg: #000000;
+  --badge-today-strong-fg: #ffffff;
 
   /* 打勾专用自适应主题变量 (锐利黑白高对比 - 浅色：曜石黑圆底、雪白对勾) */
   --check-bg: #000000;
@@ -290,6 +299,11 @@ html.dark[data-pal='contrast'],
   --text-secondary: #e4e4e7;
   --text-tertiary: #a1a1aa;
   --text-disabled: #71717a;
+  /* 深色高对比下浅色用的曜黑实心标签会没入背景，这里翻转为纯白底、曜黑字。 */
+  --badge-late-strong-bg: #ffffff;
+  --badge-late-strong-fg: #000000;
+  --badge-today-strong-bg: #ffffff;
+  --badge-today-strong-fg: #000000;
 
   /* 深色锐利黑白高对比打勾令牌：纯白圆底、曜黑对勾 */
   --check-bg: #ffffff;
@@ -833,7 +847,9 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   position: relative;
   contain: layout paint style;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-row);
+  /* 行间不再画分割线：每行本身是圆角卡片，悬停/选中态负责分隔。
+     改为 2px 间距，保持扫描节奏但不出现横向边界。 */
+  margin-bottom: 2px;
 }
 .task-entry:hover {
   background: var(--bg-hover);
@@ -952,9 +968,13 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 8px;
   margin-right: 12px;
 }
 .entry-title {
+  /* 允许被清单标签挤压并保留省略号，长标题不再把标签顶出行外。 */
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 13.5px;
   color: var(--text-primary);
   overflow: hidden;
@@ -1082,12 +1102,18 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-primary);
 }
 .meta-pill.date.is-late {
-  color: var(--badge-late);
-  background: var(--badge-late-bg);
+  color: var(--badge-late-strong-fg);
+  background: var(--badge-late-strong-bg);
+  font-weight: 600;
 }
 .meta-pill.date.is-today {
-  color: var(--badge-today);
-  background: var(--badge-today-bg);
+  color: var(--badge-today-strong-fg);
+  background: var(--badge-today-strong-bg);
+  font-weight: 600;
+}
+.meta-pill.date.is-late:hover,
+.meta-pill.date.is-today:hover {
+  filter: brightness(0.94);
 }
 .meta-pill.date.is-range {
   color: #2563eb;
@@ -1096,6 +1122,62 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .meta-pill.date.is-scheduled {
   color: #7c3aed;
   background: rgba(124, 58, 237, 0.08);
+}
+
+/* 所属清单标签：中性胶囊 + 清单色点，紧跟在任务名右侧；与到期标签区分层级。 */
+.meta-pill.project {
+  flex: none;
+  max-width: 132px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  font-weight: 500;
+}
+.meta-pill.project .project-color-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+.task-entry.is-done .meta-pill.project {
+  color: var(--text-tertiary);
+  opacity: 0.75;
+}
+
+/* 首次加载骨架：只占位，不冒充空态，也不做循环动画（reduced-motion 安全）。 */
+/* 类名带 task-loading- 前缀：legacy-support.css 里已有旧的 .task-skeleton-row（自带下边框），
+   这里不能复用同名类，否则骨架行会被画上分割线。 */
+.task-loading-list {
+  padding: 6px 0;
+}
+.task-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 42px;
+  margin-bottom: 2px;
+  padding: 0 10px;
+}
+.task-loading-circle {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--bg-active);
+}
+.task-loading-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bg-active);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* 底部快速录入任务框 (与任务行 / 详情控件同一节奏；吸附底部，滚动时不漂浮重叠遮挡列表项) */

@@ -331,16 +331,34 @@ interface SchedulerDraft {
   draftRepeat: 'none' | 'daily' | 'workday' | 'weekly' | 'monthly' | 'custom_3';
 }
 
+type TaskWorkspaceSession = { id: string; defaultTaskId?: string | null; activeElapsedMs?: number };
+
+/**
+ * 切换页面时任务页整体卸载。把上一次成功加载的快照留在模块作用域：
+ * 重新挂载先用它同步渲染，再后台刷新，避免先闪一帧「0 待办 / 未选择任何任务」。
+ * 只保存 renderer 已经拿到的数据，不新增缓存层，也不改变 IPC 时序。
+ */
+interface TaskWorkspaceSnapshot {
+  tasks: Task[];
+  projects: Project[];
+  sessions: TaskWorkspaceSession[];
+  selectedTaskId: string | null;
+}
+let taskWorkspaceSnapshot: TaskWorkspaceSnapshot | null = null;
+
 export function TaskWorkspace() {
   const { setSnapshot, addToast, settings } = useStore();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [sessions, setSessions] = useState<
-    Array<{ id: string; defaultTaskId?: string | null; activeElapsedMs?: number }>
-  >([]);
+  const [tasks, setTasks] = useState<Task[]>(() => taskWorkspaceSnapshot?.tasks ?? []);
+  const [projects, setProjects] = useState<Project[]>(() => taskWorkspaceSnapshot?.projects ?? []);
+  const [sessions, setSessions] = useState<TaskWorkspaceSession[]>(
+    () => taskWorkspaceSnapshot?.sessions ?? [],
+  );
   const [viewId, setViewId] = useState<string>('all');
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
+    () => taskWorkspaceSnapshot?.selectedTaskId ?? null,
+  );
+  const [tasksLoaded, setTasksLoaded] = useState(() => Boolean(taskWorkspaceSnapshot));
   const [completedCollapsed, setCompletedCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -530,7 +548,11 @@ export function TaskWorkspace() {
 
   // Load Data
   const refresh = useCallback(async () => {
-    if (!window.focuslink?.tasks) return;
+    if (!window.focuslink?.tasks) {
+      // 没有 IPC 时也必须退出骨架态，否则加载指示会永久停留。
+      setTasksLoaded(true);
+      return;
+    }
     setRefreshing(true);
     try {
       const [res, sessList] = await Promise.all([
@@ -543,10 +565,11 @@ export function TaskWorkspace() {
         const assembled = assembleTaskTree(res.data.tasks);
         setTasks(assembled);
         setProjects(res.data.projects);
-        if (!selectedTaskId && assembled.length > 0) {
-          const firstUncompleted = assembled.find((t) => !t.isCompleted);
-          setSelectedTaskId(firstUncompleted ? firstUncompleted.id : assembled[0].id);
-        }
+        setSelectedTaskId((current) =>
+          current && assembled.some((task) => task.id === current)
+            ? current
+            : (assembled.find((t) => !t.isCompleted)?.id ?? assembled[0]?.id ?? null),
+        );
       }
       if (sessList) {
         setSessions(sessList);
@@ -554,13 +577,20 @@ export function TaskWorkspace() {
     } catch (e) {
       console.error('Failed to load tasks', e);
     } finally {
+      // 无论成功或失败都结束骨架态，避免加载指示无限停留。
+      setTasksLoaded(true);
       setRefreshing(false);
     }
-  }, [selectedTaskId]);
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // 每次快照变化都写回模块缓存，供下一次挂载同步复用。
+  useEffect(() => {
+    taskWorkspaceSnapshot = { tasks, projects, sessions, selectedTaskId };
+  }, [tasks, projects, sessions, selectedTaskId]);
 
   // Global click outside to dismiss popovers
   useEffect(() => {
@@ -1428,6 +1458,19 @@ export function TaskWorkspace() {
     0: { text: '无优先级', icon: '⚪', cls: 'p0' },
   };
 
+  // 首次加载（或缓存未命中）时用骨架行占位，绝不先渲染「没有任务」的空态。
+  const pendingList = (
+    <div className="task-loading-list" role="status" aria-live="polite">
+      <span className="visually-hidden">正在载入任务…</span>
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="task-loading-row" aria-hidden="true">
+          <span className="task-loading-circle" />
+          <span className="task-loading-bar" style={{ width: `${54 - index * 6}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div
       className={`task-workspace-root app-window ${themeMode === 'dark' ? 'dark' : ''}`}
@@ -1518,7 +1561,7 @@ export function TaskWorkspace() {
                       dangerouslySetInnerHTML={{ __html: sv.icon }}
                     />
                     <span className="nav-name">{sv.name}</span>
-                    <span className="nav-num">{count}</span>
+                    <span className="nav-num">{tasksLoaded ? count : '—'}</span>
                   </button>
                 );
               })}
@@ -1552,7 +1595,7 @@ export function TaskWorkspace() {
                       dangerouslySetInnerHTML={{ __html: ICONS.star }}
                     />
                     <span className="nav-name">{csv.name}</span>
-                    <span className="nav-num">{count}</span>
+                    <span className="nav-num">{tasksLoaded ? count : '—'}</span>
                   </button>
                 );
               })}
@@ -1605,7 +1648,7 @@ export function TaskWorkspace() {
                   >
                     {renderProjectBadge(p)}
                     <span className="nav-name">{p.name}</span>
-                    <span className="nav-num">{count}</span>
+                    <span className="nav-num">{tasksLoaded ? count : '—'}</span>
                   </button>
                 );
               })}
@@ -1650,9 +1693,11 @@ export function TaskWorkspace() {
                 <h2>{activeTitle}</h2>
               </div>
               <span className="list-stats-text">
-                {viewId === 'done'
-                  ? `共 ${completedTasks.length} 项已完成任务`
-                  : `${uncompletedTasks.length} 待办 · ${completedTasks.length} 已完成`}
+                {!tasksLoaded
+                  ? '正在载入任务…'
+                  : viewId === 'done'
+                    ? `共 ${completedTasks.length} 项已完成任务`
+                    : `${uncompletedTasks.length} 待办 · ${completedTasks.length} 已完成`}
               </span>
             </div>
             <div className="list-toolbar-actions">
@@ -1678,7 +1723,9 @@ export function TaskWorkspace() {
           <div className="tasks-scroll-area">
             {/* 未完成任务区域 (黄金分割 1/2 沉底) */}
             <div className="uncompleted-group">
-              {viewId === 'done' ? (
+              {!tasksLoaded ? (
+                pendingList
+              ) : viewId === 'done' ? (
                 completedTasks.length === 0 ? (
                   <div
                     style={{
@@ -1757,7 +1804,7 @@ export function TaskWorkspace() {
             <div
               style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}
             >
-              未选择任何任务
+              {tasksLoaded ? '未选择任何任务' : '正在载入任务…'}
             </div>
           ) : (
             <>
@@ -3418,6 +3465,11 @@ export function TaskWorkspace() {
     const dateMeta = formatDateMeta(t);
     const focusDuration = taskFocusMap.get(t.id)?.totalMs || 0;
     const focusStr = formatDuration(focusDuration);
+    // 任务所属清单标签：当前视图已经按该清单筛选时不重复显示。
+    const rowProject = t.projectId
+      ? (projects.find((project) => project.id === t.projectId) ?? null)
+      : null;
+    const showRowProject = Boolean(rowProject) && projectId !== rowProject?.id;
 
     return (
       <div
@@ -3551,6 +3603,19 @@ export function TaskWorkspace() {
             >
               {t.title}
               <span className="strike-laser" />
+            </span>
+          )}
+          {showRowProject && rowProject && (
+            <span
+              className="meta-pill project"
+              data-project-id={rowProject.id}
+              title={`所在清单：${rowProject.name}`}
+            >
+              <span
+                className="project-color-dot"
+                style={{ background: rowProject.color ?? 'var(--p-color, #71717a)' }}
+              />
+              {rowProject.name}
             </span>
           )}
         </div>

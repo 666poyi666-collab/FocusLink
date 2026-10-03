@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.5.1（renderer 清单/排序/日期入口修复，三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.5.2（renderer 内存快照与展示层修复，不改 IPC/数据库/同步，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -422,3 +422,8 @@ v1.3.21：已激活与初次建立的 Sync v2 checkpoint 都先无 mutation 拉�
 统计详情复用 `sessions.get` / `sessions.export`，不修改计时、同步协议或数据库结构。详情 effect 以会话 ID 为依赖，清空旧 projection 并拒绝取消后的迟到响应。分类以 analytics task key/ID 与 timeline session ID 匹配，排行以任务 ID 寻找会话，不能把任务排行下标当成会话下标。
 
 已结束会话 `linkSessionTask` 只写默认任务，不自动改片段。因此 renderer 显式随后调用 `linkSegmentsBatch(..., onlyUnlinked=true)`；已经关联的片段保持原任务。独立片段走 `timer.linkTask`。两个调用不是原子事务；任一步失败都重新读取真实状态并呈现失败，不宣称全量关联成功。未增加滴答写入路径。
+
+## v1.5.2 任务页内存快照边界
+
+任务页切换视图时会整体卸载，renderer 在模块作用域保留最近一次成功加载的 `{ tasks, projects, sessions, selectedTaskId }` 快照，用于重新挂载时的同步首帧渲染。这是 renderer 表示层缓存：不落盘、不新增 IPC、不改变 `tasks.refresh` 的调用时机与返回结构，也不参与设备同步；后台刷新成功后照常覆盖快照，失败时保留快照并结束骨架态。自动选中任务从「refresh 以 selectedTaskId 为依赖」改为函数式更新，避免每次选择都重新拉取整棵任务树。展示层只新增清单标签与到期标签样式，任务、清单、日期写入口径与 v1.5.1 一致。
+

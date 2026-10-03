@@ -76,6 +76,14 @@
 - [ ] 从 [.github/RELEASE_NOTES_TEMPLATE.md](../../.github/RELEASE_NOTES_TEMPLATE.md) 生成对应根级 `release-v*/RELEASE_NOTES.md`。
 - [ ] 按 [../backend-design/TEST_AND_RELEASE.md](../backend-design/TEST_AND_RELEASE.md) 完成打包和 GitHub Release；不得只推 tag 不建 Release。
 
+## v1.5.2 任务页加载与行信息检查
+
+- [ ] 在真实应用里从专注/统计切回任务页：列表、标题栏计数与右侧详情立刻使用上一次快照渲染，不出现空态文案或 0 计数的一帧。
+- [ ] 首次加载（无快照）显示骨架行与「正在载入任务…」，侧栏计数显示 `—`；加载失败也会结束骨架态。
+- [ ] 任务行标题右侧有清单标签（色点 + 名称），按该清单筛选时不重复显示；长标题省略而不是把标签挤出。
+- [ ] 今天截止/逾期是实心高对比标签；浅色、深色、高对比三套配色都检查前景与背景对比。
+- [ ] 任务行没有横向分割线（含骨架行）；行间只有 2px 间距，悬停与选中态是圆角卡片。
+
 ## v1.5.1 任务页检查
 
 - [ ] `npm run smoke:stats` 覆盖清单表单校验/失败重试/创建、无日期创建和主任务持久拖动排序；synthetic renderer 不冒充真实数据库验收。
