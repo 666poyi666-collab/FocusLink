@@ -1,5 +1,21 @@
 # FocusLink 实施日志
 
+## 2026-10-03 · `FL-UI-20261003-NATIVE-CONFIRM-FREEZE`：删除操作冻结整个应用（原生 confirm 阻塞 renderer，v1.5.3）
+
+- **用户报告**：「你到底做了什么，现在都点不动，而且很差劲」；14:46 任务页完全无法点击。
+- **现场证据**：当天日志 `06:46:03Z / 06:46:35Z / 06:46:38Z / 06:47:00Z` 连续 `[renderer] renderer became unresponsive {"kind":"main"}`，`06:46:08Z` 有一次 `reloading renderer after health failure`（recoveryAttempt 1），之后**仍然** unresponsive；`06:47:00Z` 之后主进程不再写日志。重启新进程后立即恢复。历史日志中 `2026-09-28` 也有一次同类事件，但 10-03 的 5 次集中在 14:46–14:47。
+- **复现与根因（CDP 实测）**：把 CDP 挂到运行中的 renderer 后点击详情栏「删除任务」：
+  - `Page.javascriptDialogOpening {"type":"confirm","message":"确认删除任务「数学一本通选必一第一章第一节」？"}`；
+  - 紧接着 `Runtime.evaluate` 全部超时，`Debugger.pause` 也超时 → renderer 主线程被原生模态彻底阻塞（watchdog 同时记录 `MISS 1/2` 与 `pause request failed`）；
+  - 同期 `EnumWindows` 枚举到 `class=#32770 title=[focuslink]` 的可见原生对话框窗口。
+  - 结论：`TaskWorkspace` 的删除任务／删除清单、`SettingsPanel` 的删除设备仍调用 `window.confirm`。打包后的 Electron 里这是浏览器侧模态：阻塞 renderer 主线程；窗口隐藏或不在前台时对话框可能不可见，用户侧就是「点不动」；`webContents.reload()` 也解不开（对话框不属于页面），所以自动恢复同样失败。
+- **修复**：三处删除确认改用既有 `src/ui/ConfirmDialog.tsx`（danger 语义、`.btn-danger`、默认聚焦「取消」、Esc 取消、焦点归还、Tab 焦点圈）。`handleDeleteTask` 只登记待确认请求，确认后执行一次 `tasks.remove`；清单删除确认后调用 `tasks.deleteProject(project.id)`（保留既有契约字符串）；设备删除确认后调用 `deviceSync.revokeDevice`。未新增 IPC，未改计时、同步协议、数据库或 `miniWindowLayout`。
+- **守卫**：新增 `tests/rendererNativeDialogGuard.test.ts`——桌面 renderer（不含 `src/mobile/` 的 WebView 分支）出现原生 `confirm`/`alert`/`prompt` 即失败（先剥块注释与行注释，避免注释误报），并断言任务页与设置页确实渲染 `<ConfirmDialog>`。`smoke:stats` 新增删除链路断言：弹窗出现、`window.nativeDialogCalls` 全程为 0、取消不写库且任务仍在、确认只调用一次 remove 且行消失。
+- **验证（15:0x，Asia/Shanghai）**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **137 文件 / 1125 项** PASS；`npm run smoke:stats` 12 条 PASS（含删除链路）。clean source `67a17a9` 构建无 `-dirty`；portable 与**已安装** EXE 都在独立 `--user-data-dir` profile 通过真实 IPC 删除链路：`{"deleteFlow":"PASS","dialog":"in-app","nativeDialogs":0,"rowsBefore":2,"rowsAfter":1}`，另有清单表单、无日期任务、拖动排序、清单标签、实心到期标签、行无分割线断言。
+- **实装**：installer `/S /currentuser` 退出 0；HKCU `DisplayName/DisplayVersion=1.5.3`、EXE 与卸载器 1.5.3、**已安装 app.asar 与构建包 SHA256 同为 `F3F50E7E318AB06F3D4830D05B5E1CB3F8516AB725CD8813E374E7B3F15FD692`**；`npm run smoke:window-visible` 退出 0。四文件候选在 `.tmp/pc-v153`（复制后 Flush(true) 并回读哈希）；installer `C3EC8E65…`、portable `0C57AC8B…`；LFS tmp 0 文件 / 0 B；隔离验收 profile 已用标准工具删除。
+- **教训**：1.5.2 的验收覆盖了新建/拖动/展示/切页，但**从未点击删除按钮**，因此漏掉这条只在打包环境出现的死锁。原生对话框禁令与删除链路断言现已进入硬门禁（`FRONTEND_SPEC.md` v1.5.3 节 + 守卫测试 + smoke）。
+- **数据/门禁**：用户库 `pragma quick_check=ok`，144 sessions / 5 清单 / 43 任务、`772f4d04` 记录原样，隔离验收未写生产库。小米与华为 `adb devices -l` 无设备，1.5.3/1329 未安装未回读，APK 未构建/备份，**三设备同版门禁 FAIL**；无 tag、无 GitHub Release。
+
 ## 2026-10-03 · `FL-TASK-20261003-PAGE-FLASH`：任务页切页闪烁、清单标签与到期标签（v1.5.2）
 
 - **用户证据**：两张运行截图。第二张显示从专注切回任务页时先渲染「当前视图没有待办任务」「0 待办 · 0 已完成」「未选择任何任务」，标题栏还在「正在刷新…」；第一张用红笔划掉了任务行之间的横向分割线。文字要求：切页不要白屏/加载闪一下；任务旁显示所处清单标签；今天截止换更醒目的颜色。
