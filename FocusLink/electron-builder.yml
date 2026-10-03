@@ -8,7 +8,7 @@ directories:
   # 以及仓库「只保留最新三个 release-v*」的约定都不一致。
   # 因此这里与 shared/version.ts 的 APP_RELEASE_DIR 一样是**手工同步点**：
   # 升版本时必须同时改这两处，并确认 `npm run dist:win` 的 appOutDir 落在正确目录。
-  output: ../release-v153
+  output: ../release-v154
   buildResources: build
 files:
   - dist/**/*

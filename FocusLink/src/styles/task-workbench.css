@@ -2706,6 +2706,17 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .app-shell.view-tasks .window-drag-region {
   height: 0;
 }
+/* 任务页标题栏是 42px，而 .window-controls 只有 30px（按钮 29px）：
+   按钮下方会留下一条 12px 的拖动区（-webkit-app-region: drag），
+   鼠标点低几像素就从「按按钮」变成「拖窗口」，用户侧表现为「最小化/最大化/关闭点不动」。
+   让控制区跟随标题栏高度，右上角整块都可点，图标也与标题栏内容同一中线。 */
+.app-shell.view-tasks .window-controls {
+  height: 42px;
+  border-bottom: 0;
+}
+.app-shell.view-tasks .window-controls button {
+  height: 42px;
+}
 .task-workspace-root .detail-heading {
   min-height: 48px;
   height: 72px;

@@ -3443,6 +3443,14 @@ html:not([data-skin]) .card-widget:hover {
 .app-shell.view-history .window-drag-region {
   height: 0;
 }
+/* 同任务页：统计页标题栏 42px，控制区必须跟着长高，否则按钮下方 12px 是拖动区。 */
+.app-shell.view-history .window-controls {
+  height: 42px;
+  border-bottom: 0;
+}
+.app-shell.view-history .window-controls button {
+  height: 42px;
+}
 
 /* Neutral cards, a readable timeline and an always-reachable ledger. */
 .stats-page .stats-dashboard,

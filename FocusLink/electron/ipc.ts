@@ -811,8 +811,14 @@ export function registerIpc(
   ipcMain.on('window:minimize-to-tray', () => window.hide());
   ipcMain.on('window:minimize', () => window.minimize());
   ipcMain.on('window:toggle-maximize', () => {
-    if (window.isMaximized()) window.unmaximize();
-    else window.maximize();
+    // 最大化/还原此前没有任何日志，用户报「按钮点不动」时无法判断命令到底有没有到。
+    if (window.isMaximized()) {
+      window.unmaximize();
+      logger.info('window', 'maximize toggled', { maximized: false });
+    } else {
+      window.maximize();
+      logger.info('window', 'maximize toggled', { maximized: true });
+    }
   });
   ipcMain.handle('window:set-full-screen', (_event, enabled: boolean) => {
     window.setFullScreen(Boolean(enabled));

@@ -40,7 +40,7 @@ window.focuslink={
 };
 useStore.setState({settings:DEFAULT_SETTINGS,ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
 const reactRoot=createRoot(document.getElementById('root'));
-const render=(view)=>reactRoot.render(<div className={'app-shell view-'+view}><div className="window-controls"><span className="window-drag-region"/><button>−</button><button>□</button><button>×</button></div><main className="app-stage">{view==='tasks'?<TaskWorkspace/>:<HistoryPanel/>}</main></div>);
+const render=(view)=>reactRoot.render(<div className={'app-shell view-'+view}><div className="window-controls"><span className="window-drag-region"/><button aria-label="最小化">−</button><button aria-label="最大化或还原">□</button><button aria-label="关闭">×</button></div><main className="app-stage">{view==='tasks'?<TaskWorkspace/>:<HistoryPanel/>}</main></div>);
 window.showTasks=()=>render('tasks');
 window.showHistory=()=>render('history');
 render('history');
@@ -177,9 +177,11 @@ async function main() {
         const donut=document.querySelector('.donut-center-metric'), ring=document.querySelector('.donut-svg-wrap');
         const d=donut.getBoundingClientRect(),r=ring.getBoundingClientRect();
         const appearance=document.querySelector('#appearanceBtn').getBoundingClientRect(), controls=document.querySelector('.window-controls').getBoundingClientRect();
+        const titlebar=document.querySelector('.app-titlebar'), tb=titlebar?titlebar.getBoundingClientRect():null;
+        const minBtn=document.querySelector('.window-controls button[aria-label="最小化"]'), mb=minBtn?minBtn.getBoundingClientRect():null;
         const input=document.querySelector('#globalSearchInput'), ir=input.getBoundingClientRect();
         const stats=document.querySelector('#statsDashboardGrid').getBoundingClientRect(), ledger=document.querySelector('.detail-pane').getBoundingClientRect();
-        return {pageOverflow:page.scrollWidth-page.clientWidth,workspaceOverflow:workspace.scrollWidth-workspace.clientWidth,ringContained:d.left>=r.left&&d.right<=r.right&&d.top>=r.top&&d.bottom<=r.bottom,donutOverflow:donut.scrollWidth-donut.clientWidth,ledgerVisible:ledger.width>=260&&ledger.top<innerHeight&&ledger.bottom<=innerHeight+1,ledgerEntry:!!document.querySelector('.ledger-toggle'),outerBorder:getComputedStyle(document.querySelector('.stats-dashboard')).borderTopWidth,barText:document.querySelector('#spectrumBar').textContent.trim(),toolbarReachable:appearance.right<=controls.left&&document.elementFromPoint(ir.left+ir.width/2,ir.top+ir.height/2)===input};
+        return {pageOverflow:page.scrollWidth-page.clientWidth,workspaceOverflow:workspace.scrollWidth-workspace.clientWidth,ringContained:d.left>=r.left&&d.right<=r.right&&d.top>=r.top&&d.bottom<=r.bottom,donutOverflow:donut.scrollWidth-donut.clientWidth,ledgerVisible:ledger.width>=260&&ledger.top<innerHeight&&ledger.bottom<=innerHeight+1,ledgerEntry:!!document.querySelector('.ledger-toggle'),outerBorder:getComputedStyle(document.querySelector('.stats-dashboard')).borderTopWidth,barText:document.querySelector('#spectrumBar').textContent.trim(),toolbarReachable:appearance.right<=controls.left&&document.elementFromPoint(ir.left+ir.width/2,ir.top+ir.height/2)===input,captionFillsTitlebar:!tb||Math.abs(controls.bottom-tb.bottom)<=1,captionDeadStrip:tb&&mb?Math.round(tb.bottom-mb.bottom):0};
       })()`);
       assert.ok(
         metrics.pageOverflow <= 1 && metrics.workspaceOverflow <= 1,
@@ -192,6 +194,16 @@ async function main() {
       assert.ok(
         metrics.toolbarReachable,
         'native window controls/drag surface must not cover appearance or search',
+      );
+      assert.equal(
+        metrics.captionDeadStrip,
+        0,
+        'caption buttons must fill the titlebar height (no drag strip under them)',
+      );
+      assert.equal(
+        metrics.captionFillsTitlebar,
+        true,
+        'window controls must reach the titlebar bottom edge',
       );
       assert.equal(metrics.outerBorder, '0px', 'no rectangular frame around rounded cards');
       assert.equal(
@@ -566,6 +578,16 @@ async function main() {
       ),
       '0px',
       'task rows must not draw divider lines',
+    );
+    // 任务页标题栏 42px：右上角整块必须是按钮，不能留一条会拖窗口的死带。
+    const caption = await cdp.evaluate(
+      `(() => {const t=document.querySelector('.app-titlebar').getBoundingClientRect();const c=document.querySelector('.window-controls').getBoundingClientRect();const b=document.querySelector('.window-controls button[aria-label="最小化"]').getBoundingClientRect();return {deadStrip: Math.round(t.bottom-b.bottom), controlsReach: Math.round(c.bottom-t.bottom), buttonHeight: Math.round(b.height), titlebarHeight: Math.round(t.height)};})()`,
+    );
+    assert.equal(caption.deadStrip, 0, 'task view: caption button must reach the titlebar bottom');
+    assert.equal(caption.controlsReach, 0, 'task view: window controls must fill the titlebar');
+    assert.ok(
+      caption.buttonHeight >= caption.titlebarHeight - 2,
+      'task view: caption button height must match the titlebar',
     );
     assert.deepEqual(
       await cdp.evaluate(
