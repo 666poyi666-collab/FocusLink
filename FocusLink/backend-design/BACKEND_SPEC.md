@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.5.0（renderer 分栏/排序与版本策略，三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.5.1（renderer 清单/排序/日期入口修复，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -412,6 +412,8 @@ Cloudflare 外部协议 gate 是受限测试操作，不是部署入口：extern
 - 发布变化：执行 [TEST_AND_RELEASE.md](TEST_AND_RELEASE.md) 的全部门禁并推送 `main`；只有用户明确要求时才创建公开 tag 和 GitHub Release。
 
 ## v1.3.20 统计 renderer 读取与关联边界
+
+v1.5.1：任务创建只传用户指定的选项；未传 dueDate/startDate 时 local provider 保持 null，不能从智能视图推导今天截止。主任务 renderer 将可见排序组插回完整根任务槽位，reorder 请求保留完整根 ID 顺序、不写 children/parentId/日期；跨完成组/跨父级拒绝。createProject/updateProject API 不变，表单只替代不受支持的 renderer prompt。
 
 v1.5.0：列宽和显示排序存于各 renderer 的独立本机偏好，不声称跨设备同步；子任务自定义顺序复用 `tasks.reorder` 的 local provider 边界，提交同一父任务的 sibling ID 数组，保留 parentId/任务正文，失败后重新读取。不新增排序服务或 SQLite 表。版本下一步由 `releaseVersionPolicy.ts` 按 patch 0–9 计算，build guard 拒绝 patch≥10，Android versionCode 保持单调。
 

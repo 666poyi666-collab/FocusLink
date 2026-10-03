@@ -32,3 +32,37 @@ export function readTaskSort(key: string, fallback: TaskSort): TaskSort {
     return fallback;
   }
 }
+
+/** Reorder the currently displayed sibling group while preserving hidden roots and all children. */
+export function moveVisibleTask(
+  tasks: readonly Task[],
+  visibleIds: readonly string[],
+  sourceId: string,
+  targetId: string,
+  after: boolean,
+): Task[] | null {
+  const visible = [...visibleIds];
+  const source = tasks.find((task) => task.id === sourceId);
+  const target = tasks.find((task) => task.id === targetId);
+  if (
+    !source ||
+    !target ||
+    sourceId === targetId ||
+    !visible.includes(sourceId) ||
+    !visible.includes(targetId) ||
+    new Set(visible).size !== visible.length ||
+    (source.parentId ?? null) !== (target.parentId ?? null) ||
+    Boolean(source.isCompleted) !== Boolean(target.isCompleted)
+  )
+    return null;
+  visible.splice(visible.indexOf(sourceId), 1);
+  visible.splice(visible.indexOf(targetId) + (after ? 1 : 0), 0, sourceId);
+  const ordered = sortTasks(tasks, 'manual');
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  if (visible.some((id) => !byId.has(id))) return null;
+  let index = 0;
+  const result = ordered.map((task) =>
+    visibleIds.includes(task.id) ? byId.get(visible[index++])! : task,
+  );
+  return result.map((task, position) => ({ ...task, sortOrder: position + 1 }));
+}

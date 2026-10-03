@@ -1,5 +1,12 @@
 # FocusLink 实施日志
 
+## 2026-10-03 · `FL-TASK-20261003-CREATE-ORDER`：清单创建、主任务拖动与新任务无日期（v1.5.1 候选）
+
+- **用户证据/根因**：任务页无法添加清单，主任务缺少拖动排序，创建新任务自动出现今天截止。createProject/rename 在 renderer 使用原生 prompt；create 的 prompt 位于 try 外，打包环境不能可靠显示且错误没有反馈。快捷创建明确写 `dueDate:nowMidnight`；1.5.0 只有子任务实现手动排序，主任务只有显示排序选项。
+- **修复**：新增/重命名清单改为 Portal 应用内表单，名称验证、请求中禁用、失败保留输入、Esc/取消/点击遮罩关闭、焦点返回；复用原本地 createProject/updateProject API。主任务整行/柄支持 before/after 拖动与 Alt+上下键，自动排序状态下拖动转为自定义；merge 可见组到完整根任务顺序，隐藏根任务不移动、children/parentId/日期保留，禁止跨完成组和跨父级混排；复用原 reorder API。快捷创建不传日期、失败保留标题；无日期任务在日期智能视图创建后转全部任务，不能为了显示而编造今天截止。旧任务日期不清除。
+- **隔离验证**：synthetic IPC 实测空清单名零写入、失败保留输入并重试成功、新清单可见、新任务所属清单与无日期参数、主任务 DragEvent 实际改变顺序/调用持久 API/刷新后保持。临时 SQLite 实测真实 local project/create/reorder，关闭重开后日期与子任务归属保留；临时 DB 自动清理，用户 DB 无测试任务。定向 8 项 PASS；最终全量/安装待回读。
+- **门禁/范围**：候选版本 1.5.1、Android code 1327；只变更 PC renderer，计时器/设备同步/dida/TomaToDo/mini 两态常量未改。Windows 1.5.0 待覆盖；小米/华为仍需 ADB 当轮探测并实际安装，缺失即门禁 FAIL；不以历史成功记录充当本轮实装。准备 PC 候选，不创建 tag/GitHub Release。重复诊断见 FL-INSTALL-014。
+
 ## 2026-10-02 · `FL-UI-20261002-WORKSPACE`：可调整分栏、统计去装饰与任务排序（v1.5.0 候选）
 
 - **输入/版本**：用户提供七张带圈注截图，要求按十个补丁一轮，当前从 1.5.0 起（1.5.1–1.5.9 后 1.6.0）；同步 versionCode 1326，旧版本保留历史。AGENTS/测试发布规范写入新规则；next-release policy 与构建 patch≤9 守卫防止再次形成 1.3.22/1.5.10。

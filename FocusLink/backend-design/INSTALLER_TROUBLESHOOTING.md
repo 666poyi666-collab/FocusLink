@@ -154,6 +154,10 @@ Get-Process -Name FocusLink -ErrorAction SilentlyContinue |
 **因此**：发布门禁明确禁止自动化代替用户拉起 GUI；脚本化拉起前必须清 `ELECTRON_RUN_AS_NODE`，且拉起后必须跑 `smoke:window-visible`，不能只看进程。
 
 
+## FL-INSTALL-014：打包任务页点新增清单无反应
+
+先检查 renderer 是否调用原生 prompt，尤其是 try 外的调用；不要把无对话框当成数据库创建失败或 cloud 掉线。任务页应使用应用内 Portal 表单，通过本地 createProject/updateProject IPC 写入，错误可见且输入保留。隔离验收覆盖空名称零 mutation、失败重试、取消零 mutation、成功清单出现；真实 local provider 在临时 DB 回读。不调用生产 create 来试验、不依赖宿主浏览器原生弹窗。
+
 ## FL-INSTALL-013：断电后交付副本校验失败
 
 2026-10-02：Windows 已安装 EXE/注册表同为 1.3.21，SQLite quick_check=ok；但交付副本的 SHA 文件全零、portable 哈希改变，原始构建包哈希仍一致。这是交付文件完整性问题，不等于安装或账本失败。

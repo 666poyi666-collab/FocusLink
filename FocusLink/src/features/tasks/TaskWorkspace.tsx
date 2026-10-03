@@ -11,8 +11,15 @@ import { resolveThemeAppearance } from '@shared/theme';
 import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
 import '../../styles/task-workbench.css';
+import { createPortal } from 'react-dom';
 import { useWorkspaceColumns } from '../../ui/WorkspaceColumns';
-import { readTaskSort, sortTasks, TASK_SORT_OPTIONS, type TaskSort } from './taskSort';
+import {
+  moveVisibleTask,
+  readTaskSort,
+  sortTasks,
+  TASK_SORT_OPTIONS,
+  type TaskSort,
+} from './taskSort';
 
 const DAY_MS = 86_400_000;
 
@@ -360,6 +367,20 @@ export function TaskWorkspace() {
     readTaskSort('focuslink.subtask.sort', 'name'),
   );
   const [reorderingSubtasks, setReorderingSubtasks] = useState(false);
+  const [reorderingTasks, setReorderingTasks] = useState(false);
+  const draggedTask = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
+  const [projectDialog, setProjectDialog] = useState<{ id: string | null } | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectPending, setProjectPending] = useState(false);
+  const [quickPending, setQuickPending] = useState(false);
+  const projectOpener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!projectDialog) return;
+    const opener = projectOpener.current;
+    return () => opener?.focus();
+  }, [projectDialog]);
   useEffect(() => {
     try {
       localStorage.setItem('focuslink.task.sort', taskSort);
@@ -575,10 +596,11 @@ export function TaskWorkspace() {
       setTaskContextMenu({ open: false, taskId: null, x: 0, y: 0 });
       setProjContextMenu({ open: false, projectId: null, x: 0, y: 0 });
       setAppearanceMenu({ open: false, x: 0, y: 0 });
+      if (!projectPending) setProjectDialog(null);
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, []);
+  }, [projectPending]);
 
   // 浮层视口硬夹取（按真实渲染尺寸二次校正）。
   // 两个坑：
@@ -873,20 +895,25 @@ export function TaskWorkspace() {
   };
 
   const handleQuickAdd = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !quickPending) {
       const val = quickInput.trim();
       if (!val) return;
-      setQuickInput('');
+      setQuickPending(true);
       playCheckChime(true, sound);
       try {
         const created = await window.focuslink.tasks.create(val, projectId ?? undefined, {
-          dueDate: nowMidnight,
           priority: 0,
         });
         setTasks((prev) => [created, ...prev]);
         setSelectedTaskId(created.id);
+        setQuickInput('');
+        setSearchQuery('');
+        if (!projectId) setViewId('all');
       } catch (err) {
         console.error('Failed to create task', err);
+        addToast('新任务创建失败，请重试', 'error');
+      } finally {
+        setQuickPending(false);
       }
     }
   };
@@ -1282,22 +1309,73 @@ export function TaskWorkspace() {
   };
 
   // Project Creation
-  const handleCreateProject = async () => {
-    const name = prompt('输入新建清单分类名称：', '新项目分类');
-    if (!name || !name.trim()) return;
-    const randomColor = COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)];
+  const openProjectDialog = (project?: Project) => {
+    projectOpener.current = document.activeElement as HTMLElement | null;
+    setProjectName(project?.name ?? '');
+    setProjectError(null);
+    setProjectDialog({ id: project?.id ?? null });
+  };
+  const handleCreateProject = () => openProjectDialog();
+  const submitProject = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = projectName.trim();
+    if (!projectDialog || projectPending) return;
+    if (!name) {
+      setProjectError('请输入清单名称');
+      return;
+    }
+    setProjectPending(true);
+    setProjectError(null);
     try {
-      const created = await window.focuslink.tasks.createProject(
-        name.trim(),
-        randomColor,
-        'folder',
-      );
-      setProjects((prev) => [...prev, created]);
-      setProjectId(created.id);
-      setViewId('all');
-      addToast(`清单「${name.trim()}」已创建`, 'success');
+      if (projectDialog.id) {
+        await window.focuslink.tasks.updateProject(projectDialog.id, { name });
+        setProjects((previous) =>
+          previous.map((project) =>
+            project.id === projectDialog.id ? { ...project, name } : project,
+          ),
+        );
+      } else {
+        const created = await window.focuslink.tasks.createProject(
+          name,
+          COLOR_PALETTE[projects.length % COLOR_PALETTE.length],
+          'folder',
+        );
+        setProjects((previous) => [...previous, created]);
+        setProjectId(created.id);
+        setViewId('all');
+      }
+      setProjectDialog(null);
+      projectOpener.current?.focus();
     } catch (e) {
       console.error('Failed to create project', e);
+      setProjectError('清单保存失败，请重试；输入的名称已保留');
+    } finally {
+      setProjectPending(false);
+    }
+  };
+
+  const reorderRootTasks = async (sourceId: string, targetId: string, after: boolean) => {
+    if (reorderingTasks) return;
+    const source = tasks.find((task) => task.id === sourceId);
+    const visible = source?.isCompleted ? completedTasks : uncompletedTasks;
+    const next = moveVisibleTask(
+      tasks,
+      visible.map((task) => task.id),
+      sourceId,
+      targetId,
+      after,
+    );
+    if (!next) return;
+    setReorderingTasks(true);
+    setTaskSort('manual');
+    setTasks(next);
+    try {
+      await window.focuslink.tasks.reorder(next.map((task) => task.id));
+    } catch {
+      addToast('任务顺序保存失败，已重新读取', 'error');
+      await refresh();
+    } finally {
+      setReorderingTasks(false);
     }
   };
 
@@ -1586,7 +1664,7 @@ export function TaskWorkspace() {
               >
                 {TASK_SORT_OPTIONS.map(([mode, label]) => (
                   <option key={mode} value={mode}>
-                    {mode === 'manual' ? '现有顺序' : label}
+                    {label}
                   </option>
                 ))}
               </select>
@@ -1663,6 +1741,7 @@ export function TaskWorkspace() {
             <input
               type="text"
               placeholder="添加任务…"
+              disabled={quickPending}
               value={quickInput}
               onChange={(e) => setQuickInput(e.target.value)}
               onKeyDown={handleQuickAdd}
@@ -2863,17 +2942,7 @@ export function TaskWorkspace() {
               if (!pId) return;
               const p = projects.find((x) => x.id === pId);
               setProjContextMenu({ open: false, projectId: null, x: 0, y: 0 });
-              if (p) {
-                const newName = prompt('输入新的清单名称：', p.name);
-                if (newName && newName.trim()) {
-                  setProjects((prev) =>
-                    prev.map((item) =>
-                      item.id === pId ? { ...item, name: newName.trim() } : item,
-                    ),
-                  );
-                  void window.focuslink.tasks.updateProject(pId, { name: newName.trim() });
-                }
-              }
+              if (p) openProjectDialog(p);
             }}
           >
             <div className="item-left">
@@ -3083,6 +3152,83 @@ export function TaskWorkspace() {
         </div>
       )}
 
+      {projectDialog &&
+        createPortal(
+          <div
+            className={`task-workspace-root project-dialog-overlay ${themeMode === 'dark' ? 'dark' : ''}`}
+            data-theme={themeMode}
+            data-pal={taskAppearance.palette}
+            data-task-font={taskAppearance.font}
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget && !projectPending) {
+                setProjectDialog(null);
+                projectOpener.current?.focus();
+              }
+            }}
+          >
+            <form
+              className="project-dialog-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="project-dialog-title"
+              onSubmit={submitProject}
+              onKeyDown={(event) => {
+                if (event.key !== 'Tab') return;
+                const items = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLElement>(
+                    'input:not(:disabled), button:not(:disabled)',
+                  ),
+                );
+                const first = items[0],
+                  last = items.at(-1);
+                if (event.shiftKey && document.activeElement === first) {
+                  event.preventDefault();
+                  last?.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first?.focus();
+                }
+              }}
+            >
+              <h3 id="project-dialog-title">{projectDialog.id ? '重命名清单' : '新建清单'}</h3>
+              <label htmlFor="project-dialog-name">清单名称</label>
+              <input
+                id="project-dialog-name"
+                autoFocus
+                maxLength={120}
+                value={projectName}
+                disabled={projectPending}
+                onChange={(event) => {
+                  setProjectName(event.target.value);
+                  setProjectError(null);
+                }}
+                aria-describedby={projectError ? 'project-dialog-error' : undefined}
+              />
+              {projectError && (
+                <p id="project-dialog-error" role="alert">
+                  {projectError}
+                </p>
+              )}
+              <div className="project-dialog-actions">
+                <button
+                  type="button"
+                  className="btn-tool"
+                  disabled={projectPending}
+                  onClick={() => {
+                    setProjectDialog(null);
+                    projectOpener.current?.focus();
+                  }}
+                >
+                  取消
+                </button>
+                <button type="submit" className="btn-tool" disabled={projectPending}>
+                  {projectPending ? '保存中…' : projectDialog.id ? '保存' : '创建'}
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
       {appearanceMenu.open && (
         <div
           className="ctx-menu appearance-menu active"
@@ -3278,6 +3424,49 @@ export function TaskWorkspace() {
         key={t.id}
         className={`task-entry ${t.isCompleted ? 'is-done' : ''} ${restoredTaskId === t.id ? 'just-restored' : ''}`}
         data-task-id={t.id}
+        data-drop-position={
+          dropTarget?.id === t.id ? (dropTarget.after ? 'after' : 'before') : undefined
+        }
+        draggable={!isEditing && !reorderingTasks}
+        onDragStart={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest('input, textarea, button') && !target.closest('.task-drag-handle')) {
+            event.preventDefault();
+            return;
+          }
+          draggedTask.current = t.id;
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('application/focuslink-task', t.id);
+          event.dataTransfer.setData('taskId', t.id);
+        }}
+        onDragOver={(event) => {
+          if (!draggedTask.current || draggedTask.current === t.id || reorderingTasks) return;
+          const source = tasks.find((task) => task.id === draggedTask.current);
+          if (
+            !source ||
+            Boolean(source.isCompleted) !== Boolean(t.isCompleted) ||
+            (source.parentId ?? null) !== (t.parentId ?? null)
+          )
+            return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          const rect = event.currentTarget.getBoundingClientRect();
+          setDropTarget({ id: t.id, after: event.clientY > rect.top + rect.height / 2 });
+        }}
+        onDragEnd={() => {
+          draggedTask.current = null;
+          setDropTarget(null);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          const source =
+            event.dataTransfer.getData('application/focuslink-task') || draggedTask.current;
+          const rect = event.currentTarget.getBoundingClientRect();
+          if (source)
+            void reorderRootTasks(source, t.id, event.clientY > rect.top + rect.height / 2);
+          draggedTask.current = null;
+          setDropTarget(null);
+        }}
         aria-selected={isSelected}
         onAnimationEnd={(e) => {
           if (e.animationName === 'restoreFlash') {
@@ -3298,6 +3487,25 @@ export function TaskWorkspace() {
           });
         }}
       >
+        <button
+          type="button"
+          className="task-drag-handle"
+          title="拖动排序；Alt+方向键移动"
+          aria-label={`拖动排序：${t.title}`}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+            const visible = t.isCompleted ? completedTasks : uncompletedTasks;
+            const index = visible.findIndex((task) => task.id === t.id);
+            const target = visible[index + (event.key === 'ArrowUp' ? -1 : 1)];
+            if (target) {
+              event.preventDefault();
+              void reorderRootTasks(t.id, target.id, event.key === 'ArrowDown');
+            }
+          }}
+        >
+          ⋮⋮
+        </button>
         {/* 打勾圆圈 */}
         <button
           className={`task-check-circle ${springPopTaskId === t.id ? 'spring-pop' : ''}`}

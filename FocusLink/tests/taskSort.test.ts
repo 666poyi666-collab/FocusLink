@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../shared/types';
-import { sortTasks } from '../src/features/tasks/taskSort';
+import { moveVisibleTask, sortTasks } from '../src/features/tasks/taskSort';
 import { nextReleaseVersion } from '../shared/releaseVersionPolicy';
 const tasks = [
   { id: '10', title: '循环10', sortOrder: 1, dueDate: null, priority: 0 },
@@ -21,6 +21,41 @@ describe('task sorting keeps identity and sibling membership', () => {
     expect(sortTasks(tasks, 'manual').map((task) => task.id)).toEqual(['10', '2', '1']);
   });
 });
+describe('manual root task movement', () => {
+  it('moves the visible group while keeping hidden tasks in their slots and children unchanged', () => {
+    const children = [{ id: 'child', parentId: '10', title: '保留子任务' }] as Task[];
+    const full = [{ ...tasks[0], children }, { ...tasks[1] }, { ...tasks[2] }];
+    const result = moveVisibleTask(full, ['10', '1'], '1', '10', false)!;
+    expect(result.map((task) => task.id)).toEqual(['1', '2', '10']);
+    expect(result.find((task) => task.id === '10')?.children).toBe(children);
+    expect(full.map((task) => task.id)).toEqual(['10', '2', '1']);
+  });
+  it('respects a displayed automatic sort as the baseline before switching to manual', () => {
+    const result = moveVisibleTask(tasks, ['1', '2', '10'], '1', '10', true)!;
+    expect(result.map((task) => task.id)).toEqual(['2', '10', '1']);
+    expect(result.map((task) => task.dueDate)).toEqual([200, null, 100]);
+  });
+  it('rejects cross-parent, cross-completion, missing and duplicate IDs', () => {
+    expect(
+      moveVisibleTask(
+        [
+          { ...tasks[0], parentId: 'p1' },
+          { ...tasks[1], parentId: 'p2' },
+        ],
+        ['10', '2'],
+        '10',
+        '2',
+        true,
+      ),
+    ).toBeNull();
+    expect(
+      moveVisibleTask([{ ...tasks[0], isCompleted: true }, tasks[1]], ['10', '2'], '10', '2', true),
+    ).toBeNull();
+    expect(moveVisibleTask(tasks, ['10', '2'], 'absent', '2', false)).toBeNull();
+    expect(moveVisibleTask(tasks, ['10', '2', '2'], '10', '2', false)).toBeNull();
+  });
+});
+
 describe('ten-patch release cadence', () => {
   it('advances only 0–9 patches before the next minor', () => {
     expect(nextReleaseVersion('1.5.0')).toBe('1.5.1');

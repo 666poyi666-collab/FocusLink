@@ -20,6 +20,7 @@ import './src/styles/main.css';
 const day = new Date().setHours(0,0,0,0);
 const longTitle = '第一章第四节｜空间向量的应用：长标题、多个片段与跨清单任务关联验收';
 const tasks = [{id:'task-1',title:longTitle,source:'local',projectId:'p1',status:0,children:[],priority:0},{id:'task-2',title:'已完成的复习任务',source:'local',projectId:'p1',status:2,children:[],priority:0}];
+const projects=[{id:'p1',name:'学习',color:'#2563eb'}];
 tasks[0].children = [10,2,1].map((number,index)=>({id:'child-'+number,parentId:'task-1',title:'循环'+number,source:'local',projectId:'p1',status:'0',isCompleted:false,priority:number===2?3:0,sortOrder:index+1,dueDate:number===10?null:day+number*86400000,children:[],tags:[],content:null}));
 const sessions = Array.from({length:6},(_,i)=>({id:'session-'+i,title:i===0?longTitle:'专注会话 '+i,status:'finished',startedAt:day+(8+i)*3600000,endedAt:day+(9+i)*3600000,activeElapsedMs:2700000,pauseElapsedMs:900000,wallElapsedMs:3600000,defaultTaskId:i===1?'task-1':null,defaultTaskTitle:i===1?longTitle:null,defaultTaskSource:i===1?'local':null,note:null,createdAt:day,updatedAt:day,segmentCount:2,linkedSegmentCount:i===1?2:0}));
 const segments = sessions.flatMap(s=>[0,1].map((n)=>({id:s.id+'-seg-'+n,sessionId:s.id,taskId:s.defaultTaskId,taskSource:s.defaultTaskSource,title:s.defaultTaskTitle||s.title,startedAt:s.startedAt+n*1800000,endedAt:s.startedAt+n*1800000+1350000,activeElapsedMs:1350000,note:null,cloudFocusId:null,tomatodoSubject:null,createdAt:day,updatedAt:day})));
@@ -28,7 +29,7 @@ window.smokeCalls=[];
 window.focuslink={
  sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录'},
  timer:{linkSessionTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['session',id,taskId]);Object.assign(sessions.find(s=>s.id===id),{defaultTaskId:taskId,defaultTaskSource:source,defaultTaskTitle:title});},linkSegmentsBatch:async(id,taskId,source,title,onlyUnlinked)=>{window.smokeCalls.push(['batch',id,taskId,onlyUnlinked]);segments.filter(s=>s.sessionId===id&&(!onlyUnlinked||!s.taskId)).forEach(s=>Object.assign(s,{taskId,taskSource:source,title}));},linkTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['segment',id,taskId]);Object.assign(segments.find(s=>s.id===id),{taskId,taskSource:source,title});}},
- tasks:{refresh:async()=>({ok:true,data:{provider:'focuslink-local',tasks,projects:[{id:'p1',name:'学习',color:'#2563eb'}]}}),reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks[0].children.forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
+ tasks:{refresh:async()=>({ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}}),reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
 };
 useStore.setState({settings:DEFAULT_SETTINGS,ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
 const reactRoot=createRoot(document.getElementById('root'));
@@ -426,6 +427,107 @@ async function main() {
     }
     console.log(
       'PASS natural/date/manual subtask order, compact menu dismissal, pointer resize and persistence',
+    );
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.sidebar .btn-add-section')).find(button=>button.title.includes('清单')).click()`,
+    );
+    await delay(80);
+    assert.equal(
+      await cdp.evaluate(`document.activeElement.id`),
+      'project-dialog-name',
+      'project form autofocus',
+    );
+    await cdp.evaluate(`document.querySelector('.project-dialog-panel').requestSubmit()`);
+    await delay(50);
+    assert.ok(
+      await cdp.evaluate(`!!document.querySelector('#project-dialog-error')`),
+      'empty project name rejected',
+    );
+    assert.equal(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='createProject').length`),
+      0,
+      'empty name does not write',
+    );
+    await cdp.evaluate(
+      `document.querySelector('.project-dialog-panel button[type=button]').click()`,
+    );
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.sidebar .btn-add-section')).find(button=>button.title.includes('清单')).click()`,
+    );
+    await delay(80);
+    await cdp.evaluate(
+      `(() => {window.failProjectCreate=true;const input=document.querySelector('#project-dialog-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'  自建清单  ');input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await delay(50);
+    await cdp.evaluate(`document.querySelector('.project-dialog-panel').requestSubmit()`);
+    await delay(80);
+    assert.ok(
+      await cdp.evaluate(
+        `!!document.querySelector('#project-dialog-error')&&document.querySelector('#project-dialog-name').value.includes('自建清单')`,
+      ),
+      'failed project write retains input',
+    );
+    await cdp.evaluate(
+      `window.failProjectCreate=false;document.querySelector('.project-dialog-panel').requestSubmit()`,
+    );
+    await delay(100);
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.project-dialog-panel')`),
+      false,
+      'successful create closes form',
+    );
+    assert.ok(
+      await cdp.evaluate(`document.querySelector('.sidebar').textContent.includes('自建清单')`),
+      'new project visible',
+    );
+    await cdp.evaluate(
+      `(() => {const input=document.querySelector('.quick-create-bar input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'无日期新任务');input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await delay(50);
+    await cdp.evaluate(
+      `document.querySelector('.quick-create-bar input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
+    );
+    await delay(100);
+    const create = await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='create').at(-1)`);
+    assert.equal(create[2], 'project-1', 'new task belongs to newly created project');
+    assert.equal(create[3].dueDate, undefined, 'no automatic due date');
+    assert.equal(create[3].startDate, undefined, 'no automatic start date');
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.sidebar .side-item')).find(button=>button.textContent.includes('全部任务')).click()`,
+    );
+    await delay(80);
+    const before = await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.task-entry')).map(node=>node.dataset.taskId)`,
+    );
+    await cdp.evaluate(
+      `(() => {const rows=Array.from(document.querySelectorAll('.task-entry'));const source=rows[0],target=rows.at(-1),rect=target.getBoundingClientRect(),data=new DataTransfer();source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:data}));target.dispatchEvent(new DragEvent('dragover',{bubbles:true,dataTransfer:data,clientY:rect.bottom-1}));target.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:data,clientY:rect.bottom-1}));source.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:data}));})()`,
+    );
+    await delay(100);
+    assert.deepEqual(
+      await cdp.evaluate(
+        `Array.from(document.querySelectorAll('.task-entry')).map(node=>node.dataset.taskId)`,
+      ),
+      [...before.slice(1), before[0]],
+      'root drag changes actual row order',
+    );
+    assert.deepEqual(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='reorder').at(-1)[1]`),
+      [...before.slice(1), before[0]],
+      'root drag persists complete root ordering',
+    );
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('.list-toolbar-actions button')).find(button=>button.textContent.includes('刷新')).click()`,
+    );
+    await delay(100);
+    assert.deepEqual(
+      await cdp.evaluate(
+        `Array.from(document.querySelectorAll('.task-entry')).map(node=>node.dataset.taskId)`,
+      ),
+      [...before.slice(1), before[0]],
+      'saved root order survives refetch',
+    );
+    console.log(
+      'PASS project validation/retry/create, undated task creation and persistent root drag ordering',
     );
   } finally {
     if (cdp) {
