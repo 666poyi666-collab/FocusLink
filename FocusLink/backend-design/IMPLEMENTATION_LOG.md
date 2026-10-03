@@ -1,5 +1,17 @@
 # FocusLink 实施日志
 
+## 2026-10-03 · `FL-UI-20261003-CAPTION-DEADSTRIP`：任务/统计页窗口按钮下方 13px 拖动死带（v1.5.4）
+
+- **用户报告**：「现在缩小键点不了等等bug」——最小化等窗口按钮点不动。
+- **先排除的假设（都实测过，均正常）**：隔离实例里真实点击三个窗口按钮，`Win32` 状态显示最大化 `IsZoomed=True`、还原后 `IsZoomed=False`、最小化 `IsIconic=True` 且小窗自动出现；最小化→恢复连续 3 轮、关闭到托盘→再显示→再最小化全部通过；任务页同样通过。四个页面（14/20/18/31 个可交互控件）加小窗 4 个按钮的 `elementFromPoint` 命中检查全部通过，没有遮挡；小窗「收起」实测 256×70 → 184×44 生效；一轮浏览+交互+重载没有任何 renderer 异常。
+- **用户 16:42 现场日志**：该时刻**没有任何窗口命令到达主进程**（最小化/关闭都会写日志），只有 `mini window bounds saved {256×70, x:174}`；说明那次点击没有落在按钮上。
+- **根因（实测几何）**：任务页与统计页标题栏是 `42px`（`.app-titlebar` 且带 `-webkit-app-region: drag`），而 `.window-controls` 只有 `30px`、按钮 `29px`。于是按钮下方留下 **13px 的拖动带**：鼠标点低几像素就从「按按钮」变成拖动窗口（Chromium 的非客户区命中优先于 DOM），DOM 层 `elementFromPoint` 仍显示按钮，所以此前所有 DOM 审计都发现不了。实测对照：修复前 `titlebar=42 / controls=30 / button=29 / deadStrip=13`，修复后 `42 / 42 / 42 / 0`。专注页与设置页标题栏本身就是 30px，无此问题。
+- **修复**：`.app-shell.view-tasks` 与 `.app-shell.view-history` 下的 `.window-controls` 高度改为 42px、去掉多余底边，按钮同高 42px；悬停高亮填满按钮，图标与标题栏内容同一中线，与 Windows 11 标题栏一致。另在 `electron/ipc.ts` 为最大化/还原补 `maximize toggled` 日志（此前该路径无任何记录，用户报「点不动」时无法判断命令是否到达）。
+- **回归断言**：`smoke:stats` 在任务页与统计页各加一条——窗口控制区底边与标题栏底边差值必须为 0、最小化按钮高度必须等于标题栏高度（修复前该断言会以 `deadStrip=13` 失败）；`elementFromPoint` 命中检查保留。
+- **验证（16:5x，Asia/Shanghai）**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **137 文件 / 1125 项** PASS；`smoke:stats` 12 条 PASS。clean source `731f2c4` 构建无 `-dirty`；installer `/S /currentuser` 退出 0，HKCU `DisplayName/DisplayVersion=1.5.4`、EXE 1.5.4、已安装 app.asar 与构建包同为 `C7436A8D…`；`smoke:window-visible` 退出 0；**已安装 EXE 实测 caption 几何 titlebar=42/controls=42/button=42/deadStrip=0**；独立 profile 真机 IPC 复验清单表单、无日期任务、拖动排序、清单标签、实心到期标签、行无分割线、删除走应用内弹窗且原生对话框计数 0。
+- **方法论记录**：合成鼠标事件（CDP `Input.dispatchMouseEvent`）**不能**触发原生窗口拖动，所以「点低变拖动」这条只能在真实鼠标下复现；判断依据是 CSS `-webkit-app-region` 几何 + Win32 窗口状态，而不是 DOM 命中测试。四文件候选 `.tmp/pc-v154`；installer `ABBB9B51…`、portable `B3891271…`；LFS tmp 0 文件 / 0 B；隔离 profile 已清理。
+- **数据/门禁**：用户库 `pragma quick_check=ok`，144 sessions / 5 清单 / 43 任务、`772f4d04` 原样。小米与华为无设备，1.5.4/1330 未安装未回读，APK 未构建/备份，**三设备同版门禁 FAIL**；无 tag、无 GitHub Release。
+
 ## 2026-10-03 · `FL-UI-20261003-NATIVE-CONFIRM-FREEZE`：删除操作冻结整个应用（原生 confirm 阻塞 renderer，v1.5.3）
 
 - **用户报告**：「你到底做了什么，现在都点不动，而且很差劲」；14:46 任务页完全无法点击。
