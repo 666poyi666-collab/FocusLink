@@ -1,5 +1,18 @@
 # FocusLink 实施日志
 
+## 2026-10-03 · `FL-TASK-20261003-HANDOVER-VERIFY`：接管 Codex 1.5.1 候选、独立复验三项任务页修复并闭合 Windows 安装门禁
+
+- **输入与范围**：用户指令「读取并且接管 chatgpt 工作」。上一个 ChatGPT(Codex) 会话在 1.5.1 收尾时额度用尽；接管时工作区 `main` 为 `8971a66`（源码提交 `51f5da5` + 记录提交），`git status` 干净、无未提交残留。本轮不重写已实现的功能，只做独立复验、安装门禁闭合与如实记录；未升版本（无源码行为变更），保持候选 1.5.1 / Android 1327。
+- **交付物复验**：`.tmp/pc-v151` 四文件哈希与 `SHA256SUMS.txt` 一致，installer `065F68A7949B9609C1CC05A4D4BDBA2C9E68CA0DDBF056D21A4C125946B3E79A`、portable `6110DFB49D06C348580638EAE9CC75FD717B975E27E08C55F750355E3023C5C2`；两者与上一轮记录相同。
+- **安装门禁异常（两个事实都保留）**：09:42 只读探测 HKCU 卸载项为 `DisplayName="FocusLink 1.3.21"` / `DisplayVersion=1.3.21`，用 `RegQueryInfoKey` 读该键最后写入时间为 `2026-10-02 12:30:46`；同一时刻安装目录的 `FocusLink.exe` 与 `Uninstall FocusLink.exe` 都是 1.5.1。上一轮记录声称 09:05 已回读为 1.5.1。两个事实并不互相取消：注册表确实停在旧版本，二进制确实是 1.5.1，不能引用历史日志当作当前证据。
+- **闭合动作**：确认 `focus_sessions` 无 `active` 记录后，对同一已验证安装包执行 `/S /currentuser`（未设置 `FOCUSLINK_INSTALLER_SKIP_CLOSE`），退出码 0，回读 `DisplayName="FocusLink 1.5.1"`、`DisplayVersion=1.5.1`、EXE/卸载器 1.5.1。**未手工改写注册表数字**。安装器模板 DisplayName 为 `${productName} ${version}`，一次完成的安装必然写入当前版本。
+- **两次反证实验（均不能复现旧注册表）**：① 同版本 1.5.1 再静默覆盖一次，注册表更新为 1.5.1；② 应用正在运行时静默安装，注册表仍更新为 1.5.1（该键最后写入 `2026-10-03 09:53:31.634`）。因此「同版重装跳过写注册表」和「应用运行导致漏写」都被证伪；NSIS 中 `installApplicationFiles`（复制约 500 MB 载荷）在 `registryAddInstallInfo`（写 DisplayName/DisplayVersion/EstimatedSize）之前，**只有在这两步之间中断**才会同时产出「新二进制 + 旧注册表」，本轮无法证明上一轮是否在此中断，按未证实保留。可复用诊断已固化为 `FL-INSTALL-015`。
+- **启动可见性门禁**：安装后拉起应用并执行 `npm run smoke:window-visible` 退出 0——pid 47428 主窗口 handle 1311770、标题「FocusLink」；pid 9176 的 `Default IME` 与 Mini 窗口均不计入主窗口。同日日志 `FocusLink version: 1.5.1 {"commit":"51f5da5"}`，与已安装 EXE 一致。
+- **真实已安装 EXE 的功能复验**：用独立 `--user-data-dir` profile 启动**已安装**的 `FocusLink.exe`，经 CDP → 真实 renderer IPC → SQLite 回读：应用内清单表单成功创建清单；连续新建两个任务 `dueDate`/`startDate` 均为 `null`；主任务拖动后 `sortOrder` 持久、强制刷新后回读一致。probe 输出 `{"tasks":"PASS","projectForm":true,"undatedCreation":true,"dragPersisted":true}`；生产 profile 未被写入，隔离 profile 已用项目标准清理工具删除。
+- **门禁结果（2026-10-03 10:00 前，Asia/Shanghai）**：`format:check` PASS；`typecheck`（含 `tsconfig.worker.json`）PASS；`lint` PASS；`npm test` **136 文件 / 1123 项** PASS；`npm run smoke:stats` 六组尺寸与 DPI、筛选/取消/会话与片段关联/真实多日柱图、子任务名称日期手动排序/紧凑菜单关闭/分栏指针拖动与持久化、清单校验重试创建/无日期创建/主任务拖动排序全部 PASS。
+- **数据只读核对**：用户库 `pragma quick_check=ok`；144 sessions / 346 segments / 280 pauses / 4 projects / 37 cached tasks；真实清单（收件箱、数学一本通选必一、物理、语文）与真实任务标题原样，无隔离验收残留；`772f4d04` 记录仍在。
+- **门禁未闭合（如实报告）**：小米与华为 `adb devices -l` 本轮无设备，1.5.1/1327 未安装、未回读，APK 未构建或备份，**三设备同版门禁 FAIL**；无 tag、无 GitHub Release，不宣称正式发行。既有 `sync_v2_conflicts=132`、`sync_queue=56`（当前 `syncMode=local-only`）、dida 与番茄待确认保持原状，本轮不清冲突、不把本地成功写成云端成功。`.git/lfs/tmp` 全流程 0 文件 / 0 B。
+
 ## 2026-10-03 · `FL-TASK-20261003-CREATE-ORDER`：清单创建、主任务拖动与新任务无日期（v1.5.1 候选）
 
 - **用户证据/根因**：任务页无法添加清单，主任务缺少拖动排序，创建新任务自动出现今天截止。createProject/rename 在 renderer 使用原生 prompt；create 的 prompt 位于 try 外，打包环境不能可靠显示且错误没有反馈。快捷创建明确写 `dueDate:nowMidnight`；1.5.0 只有子任务实现手动排序，主任务只有显示排序选项。

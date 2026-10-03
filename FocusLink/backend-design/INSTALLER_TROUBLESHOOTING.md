@@ -158,6 +158,26 @@ Get-Process -Name FocusLink -ErrorAction SilentlyContinue |
 
 先检查 renderer 是否调用原生 prompt，尤其是 try 外的调用；不要把无对话框当成数据库创建失败或 cloud 掉线。任务页应使用应用内 Portal 表单，通过本地 createProject/updateProject IPC 写入，错误可见且输入保留。隔离验收覆盖空名称零 mutation、失败重试、取消零 mutation、成功清单出现；真实 local provider 在临时 DB 回读。不调用生产 create 来试验、不依赖宿主浏览器原生弹窗。
 
+## FL-INSTALL-015：卸载注册表版本比已安装 EXE 旧（2026-10-03 实测）
+
+现象：控制面板／设置里的 FocusLink 版本落后于实际运行的程序。2026-10-03 09:42 只读实测：HKCU 卸载项 `DisplayName="FocusLink 1.3.21"`、`DisplayVersion=1.3.21`，而 `%LOCALAPPDATA%\Programs\FocusLink\FocusLink.exe` 与 `Uninstall FocusLink.exe` 都是 1.5.1。这是本机登记信息陈旧，既不等于应用文件损坏，也不等于安装失败。
+
+先取证，再决定动作：
+
+1. 同时读两个版本，不要只看其中一个：
+
+```powershell
+Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+  Where-Object DisplayName -Like '*FocusLink*' | Select-Object DisplayName,DisplayVersion
+(Get-Item "$env:LOCALAPPDATA\Programs\FocusLink\FocusLink.exe").VersionInfo |
+  Select-Object FileVersion,ProductVersion
+```
+
+2. 用 `RegQueryInfoKey` 的 `lpftLastWriteTime` 读该键的**最后写入时间**（PowerShell 的注册表提供程序不暴露它）。它能区分「安装器从未写过这个键」和「读错了键或注册表视图」：卸载键 GUID 由 appId 派生、跨版本稳定，`DisplayName` 模板是 `${productName} ${version}` —— 一次跑完的安装必然把当前版本写进去。键名可从上面第一条命令的 `PSChildName` 取得。
+3. 对照 `build/installer.nsh` 的执行顺序：`installApplicationFiles`（复制约 500 MB 载荷）在 `registryAddInstallInfo`（写 DisplayName／DisplayVersion／EstimatedSize）**之前**。只有在这两步之间被中断，才会同时出现「新二进制 + 旧注册表」。本机已实测：「同版本重装」与「应用正在运行时静默安装」都**会**正常更新注册表，不要预设它们能解释旧值。
+
+处理：确认安装前 `focus_sessions` 没有 `active` 记录后，用工作区内已校验 SHA256 的安装包重新执行 `/S /currentuser`（不要设置 `FOCUSLINK_INSTALLER_SKIP_CLOSE`），退出码 0 后回读 `DisplayName`／`DisplayVersion` 与 EXE／卸载器文件版本，三者必须一致；再拉起应用并跑 `npm run smoke:window-visible`。**禁止**手工 `reg add` 数字去凑一致，也**禁止**把历史日志里的「已回读」当作当前证据——安装结论只能来自当次实际探测。
+
 ## FL-INSTALL-013：断电后交付副本校验失败
 
 2026-10-02：Windows 已安装 EXE/注册表同为 1.3.21，SQLite quick_check=ok；但交付副本的 SHA 文件全零、portable 哈希改变，原始构建包哈希仍一致。这是交付文件完整性问题，不等于安装或账本失败。

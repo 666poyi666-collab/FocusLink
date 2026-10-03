@@ -76,6 +76,13 @@
 - [ ] 从 [.github/RELEASE_NOTES_TEMPLATE.md](../../.github/RELEASE_NOTES_TEMPLATE.md) 生成对应根级 `release-v*/RELEASE_NOTES.md`。
 - [ ] 按 [../backend-design/TEST_AND_RELEASE.md](../backend-design/TEST_AND_RELEASE.md) 完成打包和 GitHub Release；不得只推 tag 不建 Release。
 
+## v1.5.1 任务页检查
+
+- [ ] `npm run smoke:stats` 覆盖清单表单校验/失败重试/创建、无日期创建和主任务持久拖动排序；synthetic renderer 不冒充真实数据库验收。
+- [ ] 用**已安装**的 `FocusLink.exe` 在独立 `--user-data-dir` profile 走真实 IPC：清单创建成功、新任务 `dueDate`/`startDate` 为 `null`、拖动后 `sortOrder` 刷新回读一致。
+- [ ] 任务页不得再出现宿主原生 `prompt`：新建与重命名清单使用应用内 Portal 表单，取消、空名称和请求失败都不写库且保留输入。
+- [ ] 覆盖安装后同时核对卸载键版本、已安装 EXE 版本与主窗口可见性（见 [FL-INSTALL-015](../backend-design/INSTALLER_TROUBLESHOOTING.md)），不把历史日志里的「已回读」当作当前证据。
+
 ## v1.3.20 PC 统计检查
 
 - [ ] 运行 `npm run smoke:stats`，覆盖窗口/DPI、长标题、账本不遮挡下方图表、筛选无提示、取消不写入、会话和片段关联。
