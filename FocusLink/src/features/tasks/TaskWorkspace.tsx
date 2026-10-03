@@ -12,6 +12,7 @@ import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
 import '../../styles/task-workbench.css';
 import { createPortal } from 'react-dom';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { useWorkspaceColumns } from '../../ui/WorkspaceColumns';
 import {
   moveVisibleTask,
@@ -333,6 +334,9 @@ interface SchedulerDraft {
 
 type TaskWorkspaceSession = { id: string; defaultTaskId?: string | null; activeElapsedMs?: number };
 
+type PendingDeleteRequest =
+  { kind: 'task'; id: string; title: string } | { kind: 'project'; id: string; name: string };
+
 /**
  * 切换页面时任务页整体卸载。把上一次成功加载的快照留在模块作用域：
  * 重新挂载先用它同步渲染，再后台刷新，避免先闪一帧「0 待办 / 未选择任何任务」。
@@ -389,6 +393,9 @@ export function TaskWorkspace() {
   const draggedTask = useRef<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const [projectDialog, setProjectDialog] = useState<{ id: string | null } | null>(null);
+  // 原生 confirm()/alert() 在打包后的 Electron 里会阻塞整个 renderer（实测点击删除即冻结），
+  // 删除确认统一走应用内 ConfirmDialog；这里只保存待确认的删除请求。
+  const [pendingDelete, setPendingDelete] = useState<PendingDeleteRequest | null>(null);
   const [projectName, setProjectName] = useState('');
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projectPending, setProjectPending] = useState(false);
@@ -948,10 +955,13 @@ export function TaskWorkspace() {
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
+  const handleDeleteTask = (taskId: string) => {
     const t = tasks.find((x) => x.id === taskId);
     if (!t) return;
-    if (!confirm(`确认删除任务「${t.title}」？`)) return;
+    setPendingDelete({ kind: 'task', id: taskId, title: t.title });
+  };
+
+  const performDeleteTask = async (taskId: string) => {
     setTasks((prev) => prev.filter((x) => x.id !== taskId));
     if (selectedTaskId === taskId) {
       setSelectedTaskId(tasks.length > 1 ? tasks.filter((x) => x.id !== taskId)[0].id : null);
@@ -1382,6 +1392,12 @@ export function TaskWorkspace() {
     } finally {
       setProjectPending(false);
     }
+  };
+
+  const performDeleteProject = (project: Project) => {
+    setProjects((prev) => prev.filter((item) => item.id !== project.id));
+    if (projectId === project.id) setProjectId(null);
+    void window.focuslink.tasks.deleteProject(project.id);
   };
 
   const reorderRootTasks = async (sourceId: string, targetId: string, after: boolean) => {
@@ -3009,12 +3025,7 @@ export function TaskWorkspace() {
               if (!pId) return;
               const p = projects.find((x) => x.id === pId);
               setProjContextMenu({ open: false, projectId: null, x: 0, y: 0 });
-              if (p && confirm(`确认删除清单「${p.name}」？关联任务将移至收件箱。`)) {
-                setProjects((prev) => prev.filter((item) => item.id !== pId));
-                if (projectId === pId) setProjectId(null);
-                const project = p;
-                void window.focuslink.tasks.deleteProject(project.id);
-              }
+              if (p) setPendingDelete({ kind: 'project', id: pId, name: p.name });
             }}
           >
             <div className="item-left">
@@ -3455,6 +3466,33 @@ export function TaskWorkspace() {
           </div>
         </div>
       )}
+
+      {/* 删除确认：应用内弹窗，绝不能退回原生 confirm()（会阻塞 renderer） */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        danger
+        title={pendingDelete?.kind === 'project' ? '删除清单' : '删除任务'}
+        description={
+          pendingDelete?.kind === 'project'
+            ? `「${pendingDelete.name}」将被删除，其中的关联任务会移到收件箱。此操作不可撤销。`
+            : pendingDelete?.kind === 'task'
+              ? `「${pendingDelete.title}」将从本地任务库删除。此操作不可撤销。`
+              : undefined
+        }
+        confirmLabel="删除"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const request = pendingDelete;
+          setPendingDelete(null);
+          if (!request) return;
+          if (request.kind === 'task') {
+            void performDeleteTask(request.id);
+            return;
+          }
+          const project = projects.find((item) => item.id === request.id);
+          if (project) performDeleteProject(project);
+        }}
+      />
     </div>
   );
 

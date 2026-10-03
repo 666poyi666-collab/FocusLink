@@ -28,10 +28,15 @@ const pauses = sessions.map(s=>({id:s.id+'-pause',sessionId:s.id,segmentId:s.id+
 tasks.push({id:'task-3',title:'今天到期的复盘',source:'local',projectId:'p1',status:0,children:[],priority:0,dueDate:day,startDate:null,sortOrder:3,tags:[],content:null});
 window.slowRefresh=0;
 window.smokeCalls=[];
+// 原生对话框记录器：桌面 renderer 一旦调用 confirm/alert/prompt 就会被断言抓住。
+window.nativeDialogCalls=[];
+window.confirm=(message)=>{window.nativeDialogCalls.push(['confirm',String(message)]);return false;};
+window.alert=(message)=>{window.nativeDialogCalls.push(['alert',String(message)]);};
+window.prompt=(message)=>{window.nativeDialogCalls.push(['prompt',String(message)]);return null;};
 window.focuslink={
  sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录'},
  timer:{linkSessionTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['session',id,taskId]);Object.assign(sessions.find(s=>s.id===id),{defaultTaskId:taskId,defaultTaskSource:source,defaultTaskTitle:title});},linkSegmentsBatch:async(id,taskId,source,title,onlyUnlinked)=>{window.smokeCalls.push(['batch',id,taskId,onlyUnlinked]);segments.filter(s=>s.sessionId===id&&(!onlyUnlinked||!s.taskId)).forEach(s=>Object.assign(s,{taskId,taskSource:source,title}));},linkTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['segment',id,taskId]);Object.assign(segments.find(s=>s.id===id),{taskId,taskSource:source,title});}},
- tasks:{refresh:async()=>{if(window.slowRefresh)await new Promise(resolve=>setTimeout(resolve,window.slowRefresh));return {ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}};},reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
+ tasks:{refresh:async()=>{if(window.slowRefresh)await new Promise(resolve=>setTimeout(resolve,window.slowRefresh));return {ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}};},reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},remove:async(id)=>{window.smokeCalls.push(['remove',id]);const index=tasks.findIndex(task=>task.id===id);if(index>=0)tasks.splice(index,1);},deleteProject:async(id)=>{window.smokeCalls.push(['deleteProject',id]);const index=projects.findIndex(project=>project.id===id);if(index>=0)projects.splice(index,1);},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
 };
 useStore.setState({settings:DEFAULT_SETTINGS,ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
 const reactRoot=createRoot(document.getElementById('root'));
@@ -616,6 +621,69 @@ async function main() {
     const rowsShot = await cdp.send('Page.captureScreenshot', { captureBeyondViewport: false });
     fs.writeFileSync(path.join(out, 'tasks-rows.png'), Buffer.from(rowsShot.data, 'base64'));
     console.log('PASS page switch reuses the cached task snapshot without an empty flash');
+    // 删除确认必须走应用内弹窗：原生 confirm 会阻塞打包后的 renderer（2026-10-03 冻结事故）。
+    await cdp.evaluate(
+      `(() => {const row=Array.from(document.querySelectorAll('.task-entry')).find(node=>node.querySelector('.entry-title')?.textContent.includes('无日期新任务'));row.click();return true})()`,
+    );
+    await delay(150);
+    assert.equal(
+      await cdp.evaluate('window.nativeDialogCalls.length'),
+      0,
+      'no native dialog before delete',
+    );
+    await cdp.evaluate(`document.querySelector('button[title="删除任务"]').click()`);
+    await delay(250);
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.confirm-shell')`),
+      true,
+      'delete opens the in-app confirm dialog',
+    );
+    assert.equal(
+      await cdp.evaluate('window.nativeDialogCalls.length'),
+      0,
+      'delete must never call a native confirm/alert/prompt',
+    );
+    await cdp.evaluate(`document.querySelector('.confirm-shell .btn-outline').click()`);
+    await delay(350);
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.confirm-shell')`),
+      false,
+      'cancel closes the dialog',
+    );
+    assert.equal(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='remove').length`),
+      0,
+      'cancel must not delete anything',
+    );
+    assert.equal(
+      await cdp.evaluate(
+        `Array.from(document.querySelectorAll('.entry-title')).some(node=>node.textContent.includes('无日期新任务'))`,
+      ),
+      true,
+      'cancelled task still listed',
+    );
+    await cdp.evaluate(`document.querySelector('button[title="删除任务"]').click()`);
+    await delay(250);
+    await cdp.evaluate(`document.querySelector('.confirm-shell .btn-danger').click()`);
+    await delay(500);
+    assert.equal(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='remove').length`),
+      1,
+      'confirmed delete calls the durable remove API exactly once',
+    );
+    assert.equal(
+      await cdp.evaluate(
+        `Array.from(document.querySelectorAll('.entry-title')).some(node=>node.textContent.includes('无日期新任务'))`,
+      ),
+      false,
+      'confirmed delete removes the row',
+    );
+    assert.equal(
+      await cdp.evaluate('window.nativeDialogCalls.length'),
+      0,
+      'delete flow used no native dialog at all',
+    );
+    console.log('PASS delete confirmation uses the in-app dialog and never blocks the renderer');
   } finally {
     if (cdp) {
       await cdp.send('Browser.close').catch(() => {});

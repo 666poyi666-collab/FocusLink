@@ -22,6 +22,7 @@ import { normalizeFocusLinkPairingCode } from '@shared/sync/pairingProtocol';
 import { resolveFontProfile, resolveTimerStyle } from '@shared/theme';
 import { groupManagedDevices, managedDeviceKindLabel } from '@shared/deviceRosterPolicy';
 import { motion } from 'framer-motion';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { Icon } from '../../ui/Icon';
 import { TimerDial } from '../focus/TimerDial';
 import {
@@ -202,6 +203,7 @@ export function SettingsPanel() {
   const deviceSyncSaving = deviceSyncBusyAction !== null;
   const [deviceSyncRunning, setDeviceSyncRunning] = useState(false);
   const [managedDevices, setManagedDevices] = useState<DeviceSyncManagedDevice[]>([]);
+  const [revokeTarget, setRevokeTarget] = useState<DeviceSyncManagedDevice | null>(null);
   const [devicePairingCode, setDevicePairingCode] = useState('');
   const [devicePairingOffer, setDevicePairingOffer] = useState<{
     code: string;
@@ -331,7 +333,11 @@ export function SettingsPanel() {
       addToast('不能从设备列表删除当前设备，请使用“退出此设备同步”', 'info');
       return;
     }
-    if (!window.confirm(`删除“${device.displayName}”？它将停止访问 FocusLink 同步。`)) return;
+    // 原生 window.confirm 在打包 Electron 里会阻塞 renderer（与任务页同一问题），改走应用内弹窗。
+    setRevokeTarget(device);
+  };
+
+  const performRevokeDevice = async (device: DeviceSyncManagedDevice) => {
     setDeviceSyncBusyAction('revoke');
     try {
       await window.focuslink.deviceSync.revokeDevice(device.deviceId);
@@ -1595,6 +1601,25 @@ export function SettingsPanel() {
           </div>
         </div>
       </div>
+
+      {/* 删除设备确认：原生 window.confirm 会阻塞打包后的 renderer，统一走应用内弹窗。 */}
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        danger
+        title="删除设备"
+        description={
+          revokeTarget
+            ? `删除“${revokeTarget.displayName}”？它将停止访问 FocusLink 同步。`
+            : undefined
+        }
+        confirmLabel="删除"
+        onCancel={() => setRevokeTarget(null)}
+        onConfirm={() => {
+          const target = revokeTarget;
+          setRevokeTarget(null);
+          if (target) void performRevokeDevice(target);
+        }}
+      />
     </div>
   );
 }

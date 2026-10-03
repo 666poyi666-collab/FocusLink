@@ -76,6 +76,12 @@
 - [ ] 从 [.github/RELEASE_NOTES_TEMPLATE.md](../../.github/RELEASE_NOTES_TEMPLATE.md) 生成对应根级 `release-v*/RELEASE_NOTES.md`。
 - [ ] 按 [../backend-design/TEST_AND_RELEASE.md](../backend-design/TEST_AND_RELEASE.md) 完成打包和 GitHub Release；不得只推 tag 不建 Release。
 
+## v1.5.3 删除与原生对话框检查
+
+- [ ] 桌面 renderer 不得出现原生 `confirm`/`alert`/`prompt`；`npx vitest run tests/rendererNativeDialogGuard.test.ts` 必须通过。
+- [ ] 删除任务、删除清单、删除设备都弹应用内 `ConfirmDialog`：默认焦点在「取消」、Esc 取消、取消不写库、确认只写一次。
+- [ ] 在**已安装**的应用里真的点一次删除按钮：弹窗出现，且弹窗期间应用仍然响应（原生对话框会阻塞 renderer，表现是整个应用点不动）。
+
 ## v1.5.2 任务页加载与行信息检查
 
 - [ ] 在真实应用里从专注/统计切回任务页：列表、标题栏计数与右侧详情立刻使用上一次快照渲染，不出现空态文案或 0 计数的一帧。

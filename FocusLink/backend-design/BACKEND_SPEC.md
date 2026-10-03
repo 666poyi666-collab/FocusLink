@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.5.2（renderer 内存快照与展示层修复，不改 IPC/数据库/同步，三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.5.3（renderer 确认弹窗与原生对话框守卫，不改 IPC/数据库/同步，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -425,5 +425,10 @@ v1.3.21：已激活与初次建立的 Sync v2 checkpoint 都先无 mutation 拉�
 
 ## v1.5.2 任务页内存快照边界
 
-任务页切换视图时会整体卸载，renderer 在模块作用域保留最近一次成功加载的 `{ tasks, projects, sessions, selectedTaskId }` 快照，用于重新挂载时的同步首帧渲染。这是 renderer 表示层缓存：不落盘、不新增 IPC、不改变 `tasks.refresh` 的调用时机与返回结构，也不参与设备同步；后台刷新成功后照常覆盖快照，失败时保留快照并结束骨架态。自动选中任务从「refresh 以 selectedTaskId 为依赖」改为函数式更新，避免每次选择都重新拉取整棵任务树。展示层只新增清单标签与到期标签样式，任务、清单、日期写入口径与 v1.5.1 一致。
+任务页切换视图时会整体卸载，renderer 在模块作用域保留最近一次成功加载的 `{ tasks, projects, sessions, selectedTaskId }` 快照，用于重新挂载时的同步首帧渲染。
+
+## v1.5.3 renderer 确认弹窗边界
+
+删除确认从原生对话框改为应用内弹窗后语义不变：确认才调用一次 `tasks.remove` / `tasks.deleteProject` / `deviceSync.revokeDevice`，取消不发任何写请求；删除清单仍由主进程把关联任务移到收件箱。renderer 不新增 IPC 通道，也不改变失败重试与 toast 反馈。原生对话框禁令由 `tests/rendererNativeDialogGuard.test.ts` 固化，避免「删除即假死」这类只在打包环境出现的缺陷回归。
+这是 renderer 表示层缓存：不落盘、不新增 IPC、不改变 `tasks.refresh` 的调用时机与返回结构，也不参与设备同步；后台刷新成功后照常覆盖快照，失败时保留快照并结束骨架态。自动选中任务从「refresh 以 selectedTaskId 为依赖」改为函数式更新，避免每次选择都重新拉取整棵任务树。展示层只新增清单标签与到期标签样式，任务、清单、日期写入口径与 v1.5.1 一致。
 
