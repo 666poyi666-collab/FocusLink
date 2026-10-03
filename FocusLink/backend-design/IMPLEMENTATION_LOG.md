@@ -1,5 +1,15 @@
 # FocusLink 实施日志
 
+## 2026-10-03 · `FL-TASK-20261003-PAGE-FLASH`：任务页切页闪烁、清单标签与到期标签（v1.5.2）
+
+- **用户证据**：两张运行截图。第二张显示从专注切回任务页时先渲染「当前视图没有待办任务」「0 待办 · 0 已完成」「未选择任何任务」，标题栏还在「正在刷新…」；第一张用红笔划掉了任务行之间的横向分割线。文字要求：切页不要白屏/加载闪一下；任务旁显示所处清单标签；今天截止换更醒目的颜色。
+- **根因**：`App.tsx` 按 `view === 'tasks'` 条件渲染并按 key 重挂载，任务页的 `tasks/projects/sessions/selectedTaskId` 全在组件内 state，重挂载即回到空数组，而 `refresh()` 要等一次 IPC 往返，于是先画一帧空态；`refresh` 的依赖是 `selectedTaskId`，每次选择任务都会重建回调并重取整棵树。行间分割线来自 `.task-entry { border-bottom: 1px solid var(--border-row) }`；另外 legacy-support.css 里已有自带下边框的 `.task-skeleton-row`，新骨架类名起初与它撞名（骨架行被画上分割线），已改为 `task-loading-*`。今天截止原本是 `rgba(217,119,6,0.08)` 淡底加橙色字，视觉重量低于其紧急度。
+- **实现**：renderer 模块作用域保存最近一次成功加载快照 `{tasks, projects, sessions, selectedTaskId}`，重挂载同步首帧渲染后再后台刷新；首次加载/无快照时渲染 6 行骨架与「正在载入任务…」，标题栏与侧栏计数在加载完成前显示 `—`；`refresh` 去掉 `selectedTaskId` 依赖，自动选中改函数式更新。任务行在标题右侧显示所属清单标签（清单色点 + 名称，上限 132px），已按该清单筛选时隐藏。今天截止/逾期改为实心高对比标签，新增 `--badge-today-strong-*` / `--badge-late-strong-*` 令牌：浅色 `#b45309` / `#b91c1c` 配白字，高对比配色用黑白，深色高对比翻转为白底黑字。删除 `.task-entry` 的 `border-bottom`，改为 2px 行距，悬停/选中态继续用圆角高亮分隔。未改 IPC、数据库、计时、同步协议、dida 写入或 `miniWindowLayout` 两态常量。
+- **验证（10:20 前后，Asia/Shanghai）**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **136 文件 / 1123 项** PASS；`npm run smoke:stats` 新增断言全绿——冷启动骨架且不出现空态文案、切页在 700ms 慢刷新下立即渲染真实行与真实计数、清单标签显示与筛选该清单时隐藏、行 `border-bottom-width=0px`、今天标签 `rgb(180,83,9)` 配白字。
+- **打包/实装**：clean source `dc1d43c`（`version.generated.ts` 无 `-dirty`），build/dist PASS，installer `592F86EDD5285B68380B0459B50AB1408C9439FAD2CC5965E1B923AC1189F709`、portable `E370F6E529BD99B4859990B9CE9010510BF82B18ECECCCD7A08A64DCD408DDA7`。portable 与**已安装** `FocusLink.exe` 都在独立 `--user-data-dir` profile 通过真实 IPC：清单表单创建、无日期任务、拖动排序持久；展示层断言 `chip=隔离验收清单`、`todayBadge=rgb(180, 83, 9)`、`rowBorder=0px`。installer `/S /currentuser` 退出 0；HKCU `DisplayName/DisplayVersion=1.5.2`、EXE 与卸载器 1.5.2；**已安装 app.asar 与构建包 app.asar SHA256 同为 `4ACB07C0AE70C9745CEC1E689CFA86D361C6866EED5B34F058AD8CBC2A791434`**；主窗口可见性门禁 `npm run smoke:window-visible` 退出 0。四文件候选在 `.tmp/pc-v152`（复制后 Flush(true) 并逐项哈希回读）；LFS tmp 全流程 0 文件 / 0 B；隔离验收 profile 已用项目标准清理工具删除。
+- **数据**：用户库只读 `pragma quick_check=ok`；验收脚本全部使用隔离 profile，生产库未被写入测试任务，真实清单与专注记录原样。
+- **门禁未闭合（如实报告）**：小米与华为 `adb devices -l` 无设备，1.5.2/1328 未安装未回读，APK 未构建/备份，**三设备同版门禁 FAIL**；无 tag、无 GitHub Release，不宣称正式发行。既有 `sync_v2_conflicts` 与 local-only 待发队列保持原状，本轮不清冲突、不伪造同步成功。
+
 ## 2026-10-03 · `FL-TASK-20261003-HANDOVER-VERIFY`：接管 Codex 1.5.1 候选、独立复验三项任务页修复并闭合 Windows 安装门禁
 
 - **输入与范围**：用户指令「读取并且接管 chatgpt 工作」。上一个 ChatGPT(Codex) 会话在 1.5.1 收尾时额度用尽；接管时工作区 `main` 为 `8971a66`（源码提交 `51f5da5` + 记录提交），`git status` 干净、无未提交残留。本轮不重写已实现的功能，只做独立复验、安装门禁闭合与如实记录；未升版本（无源码行为变更），保持候选 1.5.1 / Android 1327。
