@@ -647,6 +647,10 @@ export function HistoryPanel() {
               taskId: session.defaultTaskId,
             })
           }
+          onDeleted={(sessionId) => {
+            setCurSelectedSession((current) => (current === sessionId ? null : current));
+            setAnalyticsReloadToken((token) => token + 1);
+          }}
           reloadToken={analyticsReloadToken}
           notify={showToast}
           filterLabel={

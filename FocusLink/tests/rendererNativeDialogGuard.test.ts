@@ -59,7 +59,7 @@ describe('desktop renderer window dialog guard', () => {
     expect(violations).toEqual([]);
   });
 
-  it('routes destructive task and device confirmations through ConfirmDialog', () => {
+  it('routes destructive task, device and stats-record confirmations through ConfirmDialog', () => {
     const taskWorkspace = readFileSync(
       path.join(srcRoot, 'features', 'tasks', 'TaskWorkspace.tsx'),
       'utf8',
@@ -68,9 +68,18 @@ describe('desktop renderer window dialog guard', () => {
       path.join(srcRoot, 'features', 'settings', 'SettingsPanel.tsx'),
       'utf8',
     );
+    /* v1.5.5：统计页第三栏恢复删除记录后，它也必须走同一个应用内弹窗。
+       该入口在 v1.3.15 曾被整段删除，删除链路断言见
+       tests/statsLedgerDelete.test.ts 与 smoke:stats。 */
+    const ledger = readFileSync(
+      path.join(srcRoot, 'features', 'history', 'SessionLedger.tsx'),
+      'utf8',
+    );
     expect(taskWorkspace).toContain("from '../../ui/ConfirmDialog'");
     expect(taskWorkspace).toContain('<ConfirmDialog');
     expect(settings).toContain("from '../../ui/ConfirmDialog'");
     expect(settings).toContain('<ConfirmDialog');
+    expect(ledger).toContain("from '../../ui/ConfirmDialog'");
+    expect(ledger).toContain('<ConfirmDialog');
   });
 });

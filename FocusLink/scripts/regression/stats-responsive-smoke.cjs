@@ -34,7 +34,7 @@ window.confirm=(message)=>{window.nativeDialogCalls.push(['confirm',String(messa
 window.alert=(message)=>{window.nativeDialogCalls.push(['alert',String(message)]);};
 window.prompt=(message)=>{window.nativeDialogCalls.push(['prompt',String(message)]);return null;};
 window.focuslink={
- sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录'},
+ sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录',delete:async(id)=>{window.smokeCalls.push(['sessionDelete',id]);const i=sessions.findIndex(s=>s.id===id);if(i>=0)sessions.splice(i,1);for(let n=segments.length-1;n>=0;n-=1)if(segments[n].sessionId===id)segments.splice(n,1);for(let n=pauses.length-1;n>=0;n-=1)if(pauses[n].sessionId===id)pauses.splice(n,1);return {state:'idle'};}},
  timer:{linkSessionTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['session',id,taskId]);Object.assign(sessions.find(s=>s.id===id),{defaultTaskId:taskId,defaultTaskSource:source,defaultTaskTitle:title});},linkSegmentsBatch:async(id,taskId,source,title,onlyUnlinked)=>{window.smokeCalls.push(['batch',id,taskId,onlyUnlinked]);segments.filter(s=>s.sessionId===id&&(!onlyUnlinked||!s.taskId)).forEach(s=>Object.assign(s,{taskId,taskSource:source,title}));},linkTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['segment',id,taskId]);Object.assign(segments.find(s=>s.id===id),{taskId,taskSource:source,title});}},
  tasks:{refresh:async()=>{if(window.slowRefresh)await new Promise(resolve=>setTimeout(resolve,window.slowRefresh));return {ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}};},reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},remove:async(id)=>{window.smokeCalls.push(['remove',id]);const index=tasks.findIndex(task=>task.id===id);if(index>=0)tasks.splice(index,1);},deleteProject:async(id)=>{window.smokeCalls.push(['deleteProject',id]);const index=projects.findIndex(project=>project.id===id);if(index>=0)projects.splice(index,1);},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
 };
@@ -312,6 +312,82 @@ async function main() {
       'empty search must not show an unrelated detail',
     );
     console.log('PASS filter, cancel, session/segment association and real multi-day chart');
+    // 第三栏删除记录（v1.5.5 恢复）：入口必须真实存在、必须走应用内弹窗、确认后必须真的删除。
+    await cdp.evaluate(
+      `(() => { const input=document.querySelector('#globalSearchInput'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,''); input.dispatchEvent(new Event('input',{bubbles:true})); })()`,
+    );
+    await delay(200);
+    assert.equal(
+      await cdp.evaluate('document.querySelectorAll(".session-card").length'),
+      6,
+      'clearing the search lists every session again',
+    );
+    assert.equal(
+      await cdp.evaluate(`document.querySelector("#sessionBadgeCount").textContent`),
+      '6 条记录',
+      'ledger header counts the real records',
+    );
+    await cdp.evaluate(`document.querySelector('button[title="删除记录"]').click()`);
+    await delay(250);
+    assert.equal(
+      await cdp.evaluate(`!!document.querySelector('.confirm-shell')`),
+      true,
+      'session delete opens the in-app confirm dialog',
+    );
+    assert.equal(
+      await cdp.evaluate(
+        `document.querySelector('.confirm-shell .btn-danger')?.textContent.trim()`,
+      ),
+      '删除记录',
+      'session delete uses the danger primary action',
+    );
+    assert.equal(
+      await cdp.evaluate(`document.activeElement?.classList.contains('btn-outline')`),
+      true,
+      'danger dialog focuses cancel first',
+    );
+    assert.equal(
+      await cdp.evaluate('window.nativeDialogCalls.length'),
+      0,
+      'session delete must never call a native confirm/alert/prompt',
+    );
+    await cdp.evaluate(`document.querySelector('.confirm-shell .btn-outline').click()`);
+    await delay(350);
+    assert.equal(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='sessionDelete').length`),
+      0,
+      'cancel must not delete the session',
+    );
+    assert.equal(
+      await cdp.evaluate('document.querySelectorAll(".session-card").length'),
+      6,
+      'cancelled session is still listed',
+    );
+    await cdp.evaluate(`document.querySelector('button[title="删除记录"]').click()`);
+    await delay(250);
+    await cdp.evaluate(`document.querySelector('.confirm-shell .btn-danger').click()`);
+    await delay(700);
+    assert.equal(
+      await cdp.evaluate(`window.smokeCalls.filter(call=>call[0]==='sessionDelete').length`),
+      1,
+      'confirmed delete calls the durable sessions:delete API exactly once',
+    );
+    assert.equal(
+      await cdp.evaluate('document.querySelectorAll(".session-card").length'),
+      5,
+      'confirmed delete removes the record from the ledger',
+    );
+    assert.equal(
+      await cdp.evaluate(`document.querySelector("#sessionBadgeCount").textContent`),
+      '5 条记录',
+      'ledger header count drops with the deleted record',
+    );
+    assert.equal(
+      await cdp.evaluate('window.nativeDialogCalls.length'),
+      0,
+      'session delete flow used no native dialog at all',
+    );
+    console.log('PASS stats ledger delete uses the in-app dialog and really deletes the record');
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 1280,
       height: 800,

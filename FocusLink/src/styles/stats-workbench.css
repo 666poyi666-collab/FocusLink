@@ -3256,6 +3256,23 @@ html:not([data-skin]) .card-widget:hover {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+/* v1.5.5：账本底部动作区恢复「删除记录」（v1.3.15 被误删的入口）。
+   危险语义只落在这一颗按钮上，不把整块动作区染红。 */
+.stats-page .ledger-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.stats-page .ledger-delete-btn {
+  border-color: rgb(var(--app-danger) / 0.34);
+  color: rgb(var(--app-danger));
+}
+.stats-page .ledger-delete-btn:hover:not(:disabled) {
+  border-color: rgb(var(--app-danger));
+  background: rgb(var(--app-danger) / 0.06);
+}
 .stats-page .ledger-empty {
   padding: 16px 0;
   font-size: 13px;

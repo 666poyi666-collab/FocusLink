@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import type { FocusSession } from '@shared/types';
 import type { SessionDetail } from '@shared/ipc/api';
 import { formatClock, formatDuration, formatMinutes } from '../../lib/time';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 
 interface Props {
   sessions: FocusSession[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onLink: (session: FocusSession, segmentId?: string) => void;
+  /** 删除成功后由页面层刷新账本读数并清理选中态 */
+  onDeleted: (sessionId: string) => void;
   reloadToken: number;
   notify: (message: string) => void;
   filterLabel?: string;
@@ -19,16 +22,27 @@ export function SessionLedger({
   selectedId,
   onSelect,
   onLink,
+  onDeleted,
   reloadToken,
   notify,
   filterLabel,
   onResetFilter,
 }: Props) {
-  const selected = sessions.find((session) => session.id === selectedId) ?? sessions[0];
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
+  /* v1.5.5：删除入口在 v1.3.15 被整段删掉后再没恢复（见 IMPLEMENTATION_LOG
+     FL-UI-20261004-STATS-DELETE）。本组件自己记住刚删掉的会话 id，让列表与读数
+     立刻收敛，不必等 analytics 重新取数回来。 */
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<FocusSession | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const visibleSessions = removedIds.length
+    ? sessions.filter((session) => !removedIds.includes(session.id))
+    : sessions;
+  const selected =
+    visibleSessions.find((session) => session.id === selectedId) ?? visibleSessions[0];
   const selectedSessionId = selected?.id;
   useEffect(() => {
     let cancelled = false;
@@ -102,12 +116,32 @@ export function SessionLedger({
       notify(`复制失败：${cause instanceof Error ? cause.message : String(cause)}`);
     }
   };
+  /* 进行中的会话由主进程拒绝删除（ipc.ts sessions:delete）。这里直接给出同一条
+     规则，避免让用户点一次必然失败的按钮。 */
+  const sessionInProgress = Boolean(selected && !selected.endedAt);
+  const performDelete = async () => {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!target) return;
+    setDeleting(true);
+    try {
+      await window.focuslink.sessions.delete(target.id);
+      setRemovedIds((ids) => (ids.includes(target.id) ? ids : [...ids, target.id]));
+      setDetail(null);
+      notify('会话记录已删除');
+      onDeleted(target.id);
+    } catch (cause) {
+      notify(`删除失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <aside className="detail-pane" aria-label="会话时间账本">
       <div className="detail-head-bar">
         <div className="detail-head-title">会话时间账本</div>
-        <span id="sessionBadgeCount">{sessions.length} 条记录</span>
+        <span id="sessionBadgeCount">{visibleSessions.length} 条记录</span>
       </div>
       {filterLabel && (
         <div className="ledger-filter">
@@ -118,14 +152,14 @@ export function SessionLedger({
         </div>
       )}
       <div className="session-card-stream" id="sessionCardStream" aria-label="会话列表">
-        {!sessions.length && (
+        {!visibleSessions.length && (
           <div className="ledger-empty">
             没有符合条件的会话
             <br />
             <span>调整日期、分类或搜索条件后再查看。</span>
           </div>
         )}
-        {sessions.map((session) => (
+        {visibleSessions.map((session) => (
           <div
             key={session.id}
             className={`session-card ${selected?.id === session.id ? 'active' : ''}`}
@@ -248,18 +282,53 @@ export function SessionLedger({
           )}
           <div className="ledger-actions">
             <span id="ddProjectLabel">{linkedLabel(selected)}</span>
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={() => {
-                void copyRecord();
-              }}
-            >
-              复制记录
-            </button>
+            <div className="ledger-action-buttons">
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={() => {
+                  void copyRecord();
+                }}
+              >
+                复制记录
+              </button>
+              {/* v1.5.5 恢复：v1.3.15 重写统计页时删掉了记录删除入口，此后第三栏
+                  只能看、只能关联，无法删除。删除确认必须走应用内 alertdialog
+                  （FRONTEND_SPEC 第 8 节），不得退回原生 confirm。 */}
+              <button
+                type="button"
+                className="btn-tool ledger-delete-btn"
+                title={sessionInProgress ? '进行中的专注结束后才能删除' : '删除记录'}
+                aria-label="删除记录"
+                disabled={sessionInProgress || deleting}
+                onClick={(event) => {
+                  event.currentTarget.focus();
+                  setDeleteTarget(selected);
+                }}
+              >
+                删除记录
+              </button>
+            </div>
           </div>
         </section>
       )}
+      {/* 删除确认按 FRONTEND_SPEC 第 8 节：portal 顶层 alertdialog、危险主按钮、
+          默认聚焦「取消」；正文点明会话时间、有效专注与两类后果。 */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        danger
+        title="删除记录"
+        description={
+          deleteTarget
+            ? `${titleOf(deleteTarget)}\n${new Date(deleteTarget.startedAt).toLocaleString('zh-CN')} 开始 · 有效专注 ${formatMinutes(deleteTarget.activeElapsedMs)}\n删除后 FocusLink 本地记录永久删除；番茄 To-do 只清理本机记录，不代表远端记录已验证删除。此操作不可撤销。`
+            : undefined
+        }
+        confirmLabel="删除记录"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          void performDelete();
+        }}
+      />
     </aside>
   );
 }

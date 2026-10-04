@@ -1,6 +1,6 @@
 # FocusLink 前端设计规范
 
-> 目标版本：v1.x（当前候选：v1.5.4，窗口控制区必须撑满标题栏，不留拖动死带）
+> 目标版本：v1.x（当前候选：v1.5.5，统计页第三栏必须保留会话删除入口）
 
 > v0.12.104 继承完整 24 小时三轨时间地图与独立清单系统，并把三端配对统一为“每台设备显示本机码”：任意一台输入另一台的 8 位码一次，两台直接进入同一任务、实时专注和账本同步空间；不区分先后、登录或批准角色。所有配对设备均可查看并撤销已配对设备。
 >
@@ -514,9 +514,18 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 ## v1.5.3 桌面端原生对话框禁令
 
 - 桌面 renderer（`src/`，不含 `src/mobile/`）**禁止**调用 `window.confirm` / `window.alert` / `window.prompt`。打包后的 Electron 里原生对话框是浏览器侧模态：它阻塞 renderer 主线程，窗口被隐藏或不在前台时对话框可能根本不可见，用户侧表现就是「整个应用点不动」，且 `webContents.reload()` 无法恢复。2026-10-03 14:46 的冻结事故就是「删除任务」调用原生 confirm：日志连续 `renderer became unresponsive`，CDP 的 `Runtime.evaluate` 与 `Debugger.pause` 全部超时，同期枚举到可见的 `#32770` 原生对话框窗口。
-- 确认类交互统一使用 `src/ui/ConfirmDialog.tsx`：危险操作 `danger`、主按钮 `.btn-danger`、默认焦点落在「取消」、Esc 取消、完成后焦点归还触发元素。删除任务、删除清单、删除设备三条路径都已接入。
+- 确认类交互统一使用 `src/ui/ConfirmDialog.tsx`：危险操作 `danger`、主按钮 `.btn-danger`、默认焦点落在「取消」、Esc 取消、完成后焦点归还触发元素。删除任务、删除清单、删除设备三条路径都已接入；v1.5.5 起统计页账本「删除记录」是第四条（见本文件 v1.5.5 节）。
 - `tests/rendererNativeDialogGuard.test.ts` 是硬门禁：桌面 renderer 出现原生对话框调用即失败，并断言上述删除路径确实渲染 `<ConfirmDialog>`。
 - `npm run smoke:stats` 必须覆盖删除链路：点击删除出现 `.confirm-shell`、全程 `window.nativeDialogCalls` 为 0、取消不写库且任务仍在、确认只调用一次持久 remove 且行消失。
+
+## v1.5.5 统计页账本删除入口（第三栏）
+
+- 统计页第三栏「会话时间账本」必须能在选中一条会话后删除它。删除入口位于详情框（`#deepDiveBox`）底部动作区，与「复制记录」并列；危险语义只落在这一颗按钮上，不把整块动作区染红。
+- 删除确认沿用第 8 节与 v1.5.3 的同一套规则：portal 到 `document.body` 的顶层 `alertdialog`（`src/ui/ConfirmDialog.tsx`）、`danger` 主按钮、默认聚焦「取消」、Esc 取消、焦点归还触发元素、Tab 焦点圈；**禁止**退回原生 `confirm`。
+- 正文必须点明当前会话开始时间与有效专注，以及两类后果：FocusLink 本地记录永久删除；番茄 To-do 仅清理本机记录，**不得声称远端删除已验证**。
+- 进行中的会话（`endedAt` 为空）不提供删除：按钮禁用并给出「进行中的专注结束后才能删除」，与主进程 `sessions:delete` 的拒绝规则保持一致，不让用户点一次必然失败的按钮。
+- 确认后必须真正调用 `window.focuslink.sessions.delete(id)`，成功后立即从第三栏列表与「N 条记录」读数中移除该条，并让页面重新取数；只弹窗不删除同样算缺陷。
+- 历史事实：该入口在 e67767f（v1.3.15「彻底剔除旧版残留」）重写统计页时被整段删掉，c1ee0c1（v1.3.21）拆出 `SessionLedger.tsx` 时也没有补回，导致第三栏在 20 多个版本里只能看、只能关联、不能删除（2026-10-04 用户直接报告）。`tests/statsLedgerDelete.test.ts` 与 `npm run smoke:stats` 现在同时锁住入口存在、危险弹窗、真实删除三段。
 
 ## v1.5.4 窗口控制区几何
 
