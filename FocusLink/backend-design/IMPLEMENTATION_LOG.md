@@ -1,5 +1,18 @@
 # FocusLink 实施日志
 
+## 2026-10-04 · `FL-UI-20261004-STATS-DELETE`：统计页第三栏没有删除记录入口（v1.5.5）
+
+- **用户报告**：「统计界面的第三栏为什么不能删除记录」。
+- **查证结论**：不是删不掉，是**这一栏根本没有删除控件**。主进程 `sessions:delete`（撤同步队列 → 写 delete 墓碑 → 清理番茄/滴答外部记录 → 删本地事实来源）、preload 桥与共享 IPC 类型一直都在且完整，但整个 `FocusLink/src/` 对 `sessions.delete` / `segments.delete` 的引用数为 **0**。
+- **根因（git 证据）**：`git log -S "sessions.delete"` 只有两处命中。`e67767f`（2026-09-29，v1.3.15「纯粹对齐设计原型、彻底剔除旧版残留」）重写 `HistoryPanel.tsx` 时删除了 `handleDelete`、`delete-session` 确认分支与那颗带 `title="删除记录"` / `aria-label="删除记录"` 的按钮；`c1ee0c1`（2026-10-02，v1.3.21）把右侧栏拆成 `SessionLedger.tsx` 时只保留了「关联任务」「复制记录」，缺口就此固化。`FRONTEND_SPEC.md` 第 8 节一直要求这条删除流程，但统计页契约测试只比对结构/文案/CSS，原生对话框守卫只列了任务页与设置页，因此**跨 20 多个版本、20 多个补丁都没有任何测试发现它**。
+- **第二层阻塞（本轮未修，如实保留）**：即使恢复入口，主进程仍会拒绝三类删除：进行中的会话（`当前专注仍在进行中…`）、存在未解决 Sync v2 冲突的实体（`存在未解决的 Sync v2 冲突，不能静默删除会话`，`deviceSyncV2Service.ts:235`）、外部记录删除失败（番茄/滴答报错时保留本地记录）。本机用户库当前 **132 条 open 冲突，涉及 71 条真实会话**，这些记录现在会明确报错而不是假装成功。冲突处理入口的缺失是 v1.3.18 起就记录的遗留缺陷（见本日志 2026-10-01 清理测试数据条目），本轮不扩大范围去改冲突语义。
+- **修复**：`SessionLedger.tsx` 详情框底部动作区恢复「删除记录」（与「复制记录」并列，危险语义只落在这颗按钮上）。确认走既有 `src/ui/ConfirmDialog.tsx`：portal 顶层 `alertdialog`、`danger` 主按钮 `.btn-danger`、默认聚焦「取消」、Esc 取消、焦点归还、Tab 焦点圈；正文点明会话开始时间、有效专注与两类后果（本地永久删除；番茄 To-do 只清理本机记录，不声称远端已验证删除）。确认后调用 `window.focuslink.sessions.delete(id)`，成功后本组件立刻把该 id 从列表与「N 条记录」读数中剔除，并由 `HistoryPanel` 清理选中态、重取统计。进行中的会话（`endedAt` 为空）禁用该按钮并说明原因，不让用户点一次必然失败的按钮。**未新增 IPC、未改数据库结构、未改计时与同步协议、未改 `miniWindowLayout` 两态常量。**
+- **守卫（这次必须有测试盯着）**：新增 `tests/statsLedgerDelete.test.ts` 锁四件事——入口存在、走危险弹窗且源码无原生 `confirm`、确认后真的调用 `sessions.delete`、IPC 三段（`shared/ipc/api.ts` / `preload.ts` / `ipc.ts`）仍在；`tests/rendererNativeDialogGuard.test.ts` 的删除路径断言扩展到统计页账本；`npm run smoke:stats` 新增完整删除链路断言：弹窗出现、危险主按钮文案为「删除记录」、默认焦点在「取消」、取消不删除（仍 6 条）、确认只调用一次 `sessions:delete`（6 条变 5 条且读数同步下降）、全程 `window.nativeDialogCalls` 为 0。
+- **验证（15:0x–15:2x，Asia/Shanghai）**：`format:check` / `typecheck`（含 worker）/ `lint` PASS；`npm test` **138 文件 / 1130 项** PASS；`npm run smoke:stats` **13 条** PASS（含本轮新链路）。clean source `edb0a5d` 构建，`shared/version.generated.ts` 无 `-dirty`；`npm run dist` PASS。
+- **打包产物实测（不能只测 win-unpacked）**：portable 与**已安装** EXE 各用独立 `--user-data-dir` 启动，`Page.addScriptToEvaluateOnNewDocument` 先注入原生对话框记录器再 reload，然后经真实 IPC 开始/结束一条专注 → 进入统计页 → 点真实按钮删除。两次结果一致：`created by real IPC = 1`、`dialog = in-app`、`nativeDialogs = 0`、默认焦点在取消、取消后记录仍在、确认后 `sessions.list` 少且只少这一条、卡片数 1 → 0、SQLite 回读该 `focus_sessions` 行与 `focus_segments` / `pause_events` 全部消失。生产库未被写入（隔离 profile）。注意：本机 agent shell 带 `ELECTRON_RUN_AS_NODE=1` 时 Electron 退化为纯 Node（首次实测退出码 9），脚本化拉起前必须显式剔除该变量。
+- **实装**：installer `/S /currentuser` 退出 0；HKCU `DisplayName=FocusLink 1.5.5` / `DisplayVersion=1.5.5`、已安装 EXE `FileVersion=1.5.5` / `ProductVersion=1.5.5.0`；**已安装 `resources/app.asar` 与构建包 app.asar SHA256 同为 `38DD81CAC722B465F77C99D954DA338CA5132C67EDA86B34CF1D620419854FCB`**；重装后重新拉起应用，`npm run smoke:window-visible` 退出 0（pid 58816、handle 3805864、标题「FocusLink」）。四文件候选 `../release-v155`：installer `3721413E…`、portable `425981E7…`；`.git/lfs/tmp` 打包前后均 0 文件 / 0 B；隔离验收 profile 与一次性探针已删除。
+- **数据/门禁**：安装前只读探测用户库 `pragma quick_check=ok`，145 sessions、**0 条进行中会话**（因此可以安全关闭应用做覆盖安装）、132 条 open `sync_v2_conflicts`（5 条 `focus_ledger_v2` + 127 条 `focus_metadata_v2`，落在 71 条真实会话上）。本机无 `adb`、无 Android SDK，小米与华为未安装回读，APK 未构建/未备份，**三设备同版门禁 FAIL**；无 tag、无 GitHub Release，不宣称正式发行。
+- **教训**：这次和 2026-09-29 的「统计页数据来源」事故是同一类——**重写页面时静默丢掉一条既有能力，而当时的测试只验证「新写进去的东西对不对」，不验证「原来存在的能力还在不在」**。凡是「主进程能力 + 渲染入口」的双端功能，都必须有一条断言同时盯住两端，否则删掉 UI 不会有任何信号。
 ## 2026-10-03 · `FL-UI-20261003-CAPTION-DEADSTRIP`：任务/统计页窗口按钮下方 13px 拖动死带（v1.5.4）
 
 - **用户报告**：「现在缩小键点不了等等bug」——最小化等窗口按钮点不动。
