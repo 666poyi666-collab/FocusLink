@@ -224,7 +224,6 @@ export default function App() {
             跳到主要内容
           </a>
           <EdgeDock view={view} state={timerState} onSelect={setView} />
-          <WindowControls />
 
           <main id="focuslink-main" className="app-stage">
             <AnimatePresence mode="sync" initial={false} custom={navigationDirection}>
@@ -250,6 +249,18 @@ export default function App() {
               )}
             </AnimatePresence>
           </main>
+
+          {/* 窗口按钮必须排在 `.app-stage` 之后 —— 这是硬约束，不是排版偏好。
+              页面标题栏（`.app-titlebar`，任务页与统计页各一份）带
+              `-webkit-app-region: drag`；Electron 按 DOM 顺序收集可拖动区域，
+              **后声明的一方覆盖先声明的**。按钮排在 `.app-stage` 之前时，
+              标题栏那 42px 高的拖动区会把右上角一起吞掉：整个顶部条带变成窗口
+              拖动/标题栏命中区，renderer 连 mousemove 都收不到，三个按钮的真实
+              鼠标点击既不小化、也不最大化、也不关闭（2026-10-04 实测：任务页
+              y≤41 无任何鼠标事件、y≥42 正常；把按钮移到 `.app-stage` 之后立即
+              恢复，真实点击可最小化/最大化）。专注页与设置页没有页面级标题栏，
+              所以一直没暴露这个问题。 */}
+          <WindowControls />
 
           {bootError && (
             <BootErrorNotice message={bootError} onRetry={() => window.location.reload()} />
