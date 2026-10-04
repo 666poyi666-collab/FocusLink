@@ -1,5 +1,17 @@
 # FocusLink 实施日志
 
+## 2026-10-04 · `FL-UI-20261004-CAPTION-DRAGREGION`：任务/统计页右上角三个窗口按钮完全点不动（v1.5.6）
+
+- **用户报告**：「任务统计界面我划线的三个按钮完全用不了，专注设置倒是可以用」（附截图圈出最小化/最大化/关闭三个按钮）。这是同一条症状第三次被报告（v1.5.3、v1.5.4 各处理过一次）。
+- **先纠正上一轮的误判**：v1.5.4 把任务页/统计页的 `.window-controls` 从 30px 改成 42px、与标题栏同高，并宣称已修复，依据是「`titlebar=42 / controls=42 / button=42 / deadStrip=0`」+ `elementFromPoint` 命中。**那只证明了几何对齐，没有证明按钮能点**；而且当时的 `smoke:stats` 用的是脚本自造的 shell 与自造窗口按钮，真实 App 的 DOM 嵌套、页面标题栏一条都没进去，所以那条断言不可能发现本缺陷。
+- **根因（真实鼠标输入实测，不是 CDP 合成事件）**：窗口按钮渲染在 `main.app-stage` **之前**，而任务页与统计页各有一份页面标题栏 `.app-titlebar`（`-webkit-app-region: drag`，42px 高，`.app-stage` 之内、DOM 顺序在按钮之后）。Electron 按 DOM/布局顺序收集可拖动区域、**后声明的覆盖先声明的**，于是标题栏那条 42px 拖动带把右上角一起吞掉：整个顶部条带成为窗口拖动/标题栏命中区，renderer **收不到任何鼠标事件**。实测（已安装 1.5.5，`x=1150` 即最小化按钮中心线）：`y=10/21/30/41` 事件数恒为 0，`y=42` 起才收到；真实点击最小化/最大化毫无效果（`IsIconic`/`IsZoomed` 均保持 False）。专注页与设置页没有页面级标题栏，拖动区只有 `.window-controls` 内部那条 `x∈[64,1128]` 的 `.window-drag-region`，所以三个按钮一直正常 —— 与用户「专注设置倒是可以用」完全一致。
+- **定位方法（可复用）**：① 用 `--remote-debugging-port` 启动隔离实例，在页面里挂 `mousemove` 记录器；② 用 `SetCursorPos` + `mouse_event`（**真实输入**）在候选坐标上取点，读回 `e.clientX/clientY` 反解出「光标坐标 → client CSS」映射（本例为 `client = cursor − (128, 90)`，1:1）；③ 沿 x=按钮中心线扫描 y，事件从哪一行开始出现就是拖动带边界（实测恰好等于标题栏高度 42px）；④ 用 `IsIconic`/`IsZoomed`/`IsWindowVisible` 判定真实点击是否生效。注意：本机 agent shell 带 `ELECTRON_RUN_AS_NODE=1` 时 Electron 退化为纯 Node（退出码 9），拉起前必须剔除；窗口必须先 `SetWindowPos(HWND_TOPMOST)` + `SetForegroundWindow`，否则光标落在别的实例上会得到空结果。
+- **修复**：`WindowControls` 改为渲染在 `main.app-stage` 之后（纯 DOM 顺序调整，视觉、z-index、焦点样式都不变），并在 App.tsx 写明「窗口按钮必须排在页面内容之后」是硬约束及其原因。**未新增 IPC、未改 CSS 几何、未改数据库、计时或同步协议。**
+- **验证**：把 `.window-controls` 在运行中的实例里手工移到 `.app-stage` 之后，同一条扫描立即从「y≤41 零事件」变为「y=10/21/41 都有事件」，真实点击最小化 → `IsIconic=True`、最大化 → `IsZoomed=True` —— 单变量对照坐实了因果关系。修复后的构建在 **portable 与已安装 EXE** 上各跑一遍完整链路：任务页与统计页 `y=10/21/41` 均收到事件，最小化 `IsIconic=True`、最大化 `IsZoomed=True`、关闭 `IsWindowVisible=False`（主窗口隐藏、进程存活转托盘）。
+- **门禁**：新增 `tests/windowControlsRegion.test.ts`（`<WindowControls />` 必须晚于 `.app-stage` 且只渲染一次）；`FRONTEND_SPEC.md` v1.5.6 节写明该硬约束，并明确「DOM 几何 / `elementFromPoint` / CDP 合成事件 / 自造 shell 的冒烟都不能作为本条通过证据」。`format:check` / `typecheck` / `lint` PASS；`npm test` **139 文件 / 1133 项** PASS；`smoke:stats` 13 条 PASS。
+- **实装**：clean source `94da429`（`version.generated.ts` 无 `-dirty`）`npm run dist` PASS；installer `/S /currentuser` 退出 0；HKCU `DisplayName=FocusLink 1.5.6` / `DisplayVersion=1.5.6`、已安装 EXE `FileVersion=1.5.6`；**已安装 app.asar 与构建包 SHA256 同为 `783F781809437F699A45668577709E18009FC2DD85ABBC5338260CDC5F19A64F`**；重启后 `smoke:window-visible` 退出 0（pid 65608 / handle 5507128）。四文件候选 `../release-v156`：installer `2E22D4C0…`、portable `A9BD18D0…`；`.git/lfs/tmp` 0 文件；隔离验收 profile 与一次性探针已删除。
+- **数据/门禁**：未写生产库（全部验收使用隔离 `--user-data-dir`）。本机无 `adb`、无 Android SDK，小米与华为未安装回读，APK 未构建/未备份，**三设备同版门禁 FAIL**；无 tag、无 GitHub Release。另：本地 `release-v*` 目录为 4 个（v1319/v1321/v155/v156），因这些目录被 `.gitignore` 忽略、仓库内不含发布二进制，且全仓库**没有任何 tag 或 GitHub Release 作为长期保存**，删除最旧的本地副本将不可恢复，故本轮不代为清理，保留待用户决定。
+- **教训（第二次同类）**：v1.5.4 的验收断言「几何差值为 0」证明的是几何，不是可用性；而它依赖的统计冒烟是**自造 shell**，连真实页面的标题栏都没有。**凡是「跨层交互」（DOM/z-index/拖动区/IPC 命中）的修复，必须有一条跑在真实结构上的证据**；本轮把「几何一致」与「按钮真的能点」拆成两条分别验证，并把不可自动化的部分（真实鼠标输入）写进规范作为人工验收步骤。
 ## 2026-10-04 · `FL-UI-20261004-STATS-DELETE`：统计页第三栏没有删除记录入口（v1.5.5）
 
 - **用户报告**：「统计界面的第三栏为什么不能删除记录」。
