@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../../styles/stats-workbench.css';
 import { SessionLedger } from './SessionLedger';
-import { createPortal } from 'react-dom';
 import { useStore } from '../../app/store';
 import {
   getDayRange,
@@ -782,19 +781,18 @@ export function HistoryPanel() {
           音效：{soundEnabled ? '开' : '关'}
         </div>
       </div>
-      {/* v1.3.19：账本补关联任务的任务选择器（TaskPicker 以当前焦点元素为锚点自定位） */}
-      {linkTarget &&
-        createPortal(
-          <TaskPicker
-            allowCompleted
-            selectedTaskId={linkTarget.taskId}
-            title={`关联任务 · ${linkTarget.label}`}
-            onPick={(task) => {
-              void handleLinkSessionTask(task);
-            }}
-          />,
-          document.body,
-        )}
+      {/* v1.3.19：账本补关联任务的任务选择器（TaskPicker 以当前焦点元素为锚点自定位，
+          自己 portal 到 document.body —— 不再在这里重复套一层 portal） */}
+      {linkTarget && (
+        <TaskPicker
+          allowCompleted
+          selectedTaskId={linkTarget.taskId}
+          title={`关联任务 · ${linkTarget.label}`}
+          onPick={(task) => {
+            void handleLinkSessionTask(task);
+          }}
+        />
+      )}
     </div>
   );
 }

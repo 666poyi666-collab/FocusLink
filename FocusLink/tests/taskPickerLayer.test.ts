@@ -18,8 +18,13 @@ import { describe, expect, it } from 'vitest';
      这条不能用 DOM 几何或 `elementFromPoint` 单独证明：必须真实点击并读事件目标。
      2026-10-06 实测记录见 `backend-design/IMPLEMENTATION_LOG.md` 的 v1.5.7 验收小节。
 
-   约束：弹层根 z 必须 **大于** 通知层、**小于** 窗口控制区（`.window-controls` 的
-   z-index），窗口右上角三个按钮在弹层打开时仍然可点。
+   约束（两条同时成立，缺一条「清除关联」就点不动）：
+   ① 弹层根必须 **portal 到 document.body**。专注页嵌在 `<ViewPage>` 内，而 ViewPage 带
+      `will-change: transform` —— 它既是层叠上下文、又是 fixed 元素的包含块。留在原地时
+      `z-[105]` 只在该上下文内部有效，挂在根上下文的通知栈 `z-[100]` 照样盖住弹层，
+      而且 `fixed inset-0` 会相对 ViewPage 定位（左侧被 edge-dock 顶掉 64px），锚点坐标整体偏移。
+   ② 弹层根 z 必须 **大于** 通知层、**小于** 窗口控制区（`.window-controls` 的
+      z-index），窗口右上角三个按钮在弹层打开时仍然可点。
    ──────────────────────────────────────────────────────────────────────────── */
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -49,6 +54,17 @@ describe('任务选择弹层级层（FL-UI-PICKER-ABOVE-TOAST）', () => {
       '通知条整条可点（pointer-events-auto），压在弹层页脚上会吞掉「清除关联」的真实点击',
     ).toBeGreaterThan(toastZ);
     expect(pickerZ, '弹层不得盖住窗口控制区：右上角三个按钮必须始终可点').toBeLessThan(controlsZ);
+  });
+
+  it('弹层 portal 到 document.body，层级不被页面切换上下文吃掉', () => {
+    expect(picker, '必须引入 createPortal').toContain("import { createPortal } from 'react-dom'");
+    expect(
+      picker,
+      '弹层根必须挂到 body：ViewPage 的 will-change: transform 是层叠上下文兼 fixed 包含块',
+    ).toContain('return createPortal(overlay, document.body)');
+    expect(picker, '弹层 JSX 必须先赋给 overlay 再 portal，避免出现两份根节点').toContain(
+      'const overlay = (',
+    );
   });
 
   it('通知条仍然整条可点（这是上述危险成立的前提）', () => {

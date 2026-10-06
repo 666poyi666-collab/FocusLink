@@ -8,6 +8,7 @@
 // - 键盘：↑↓ 导航（combobox + listbox，aria-activedescendant）、Enter 选择、Esc 关闭、
 //   ←/→ 折叠/展开有子任务的行、Home/End 跳转首尾。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { Icon } from '../../ui/Icon';
@@ -442,11 +443,18 @@ export function TaskPicker({
   // 入场微位移方向与锚点上下方位一致：向下展开从上方来，向上展开从下方来
   const initialLift = anchor ? (anchor.lift === '-2px' ? -4 : 4) : 6;
 
-  return (
-    // 层级硬约束：弹层根必须高于通知层（Toast 栈 z-[100]）、低于窗口控制区（z-110）。
-    // 通知条整条可点关闭（pointer-events-auto），若压在弹层页脚上，会把「清除关联」
-    // 这类页脚按钮的真实点击整个吞掉（2026-10-06 实测：elementFromPoint 命中 .toast-message，
-    // 点击事件目标也是 toast-message，弹层保持打开、清除动作不触发）。
+  // 层级/包含块硬约束（两条必须同时满足，缺一条就是「点了没反应」）：
+  // ① 必须 portal 到 document.body。专注页嵌在 <ViewPage> 内，而 ViewPage 带
+  //    `will-change: transform`（页面切换动画）—— 它既是**层叠上下文**，又是
+  //    **fixed 元素的包含块**。留在原地时 z-[105] 只在这个上下文内部有效，通知栈
+  //    z-[100] 挂在根上下文，照样盖住弹层；而且 `fixed inset-0` 变成相对 ViewPage
+  //    定位（左侧被 edge-dock 顶掉 64px），锚点坐标随之整体偏移。统计页账本
+  //    （HistoryPanel）早已 portal 到 body，此处统一到弹层自身。
+  // ② 弹层根 z 必须高于通知层（Toast 栈 z-[100]）、低于窗口控制区（z-110）。
+  //    通知条整条可点关闭（pointer-events-auto），若压在弹层页脚上，会把「清除关联」
+  //    这类页脚按钮的真实点击整个吞掉（2026-10-06 实测：elementFromPoint 命中 .toast-message，
+  //    点击事件目标也是 toast-message，弹层保持打开、清除动作不触发）。
+  const overlay = (
     <div
       className="fixed inset-0 z-[105] flex items-center justify-center"
       onClick={() => requestClose(null)}
@@ -657,6 +665,8 @@ export function TaskPicker({
       </motion.div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
 
 function PickerRow({
