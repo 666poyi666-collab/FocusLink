@@ -443,8 +443,12 @@ export function TaskPicker({
   const initialLift = anchor ? (anchor.lift === '-2px' ? -4 : 4) : 6;
 
   return (
+    // 层级硬约束：弹层根必须高于通知层（Toast 栈 z-[100]）、低于窗口控制区（z-110）。
+    // 通知条整条可点关闭（pointer-events-auto），若压在弹层页脚上，会把「清除关联」
+    // 这类页脚按钮的真实点击整个吞掉（2026-10-06 实测：elementFromPoint 命中 .toast-message，
+    // 点击事件目标也是 toast-message，弹层保持打开、清除动作不触发）。
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[105] flex items-center justify-center"
       onClick={() => requestClose(null)}
     >
       <div
