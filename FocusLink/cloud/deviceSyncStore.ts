@@ -33,6 +33,8 @@ import {
   LIVE_FOCUS_MAX_WAIT_MS,
   LIVE_FOCUS_PROTOCOL_VERSION,
   isLiveFocusId,
+  liveSegmentTask,
+  liveSegmentTitle,
   validateLiveFocusCommandRequest,
 } from '../shared/sync/liveFocusProtocol';
 import {
@@ -85,6 +87,8 @@ interface StoredLiveSegment {
   id: string;
   startedAt: number;
   endedAt: number | null;
+  /** Optional on persisted protocol-v1 stores written before segment tasks existed. */
+  task?: LiveFocusTaskContext | null;
 }
 
 interface StoredLivePause {
@@ -721,6 +725,17 @@ function applyLiveCommand(
       session.lastCommandDeviceId = deviceId;
       break;
     }
+    case 'link-task': {
+      const session = requireLiveSession(account);
+      const segment = session.segments.find((entry) => entry.id === command.segmentId);
+      if (!segment) {
+        throw new DeviceSyncCloudStoreError('store_corrupt', 'live segment is missing');
+      }
+      segment.task = command.task === null ? null : { ...command.task };
+      session.updatedAt = serverTime;
+      session.lastCommandDeviceId = deviceId;
+      break;
+    }
     case 'finish':
     case 'abort': {
       const session = requireLiveSession(account);
@@ -770,6 +785,10 @@ function validateLiveTransition(account: AccountState, command: LiveFocusCommand
       if (session.state !== 'paused') return 'not_paused';
       if (session.segments.length >= LIVE_FOCUS_MAX_TRANSITIONS) return 'transition_limit';
       return null;
+    case 'link-task':
+      return session.segments.some((segment) => segment.id === command.segmentId)
+        ? null
+        : 'segment_not_found';
     case 'finish':
     case 'abort':
       if (account.entities.has(session.id)) return 'session_id_exists';
@@ -862,12 +881,13 @@ function buildCompletedLiveBundle(
     if (segment.endedAt === null) {
       throw new DeviceSyncCloudStoreError('store_corrupt', 'completed live segment is still open');
     }
+    const task = liveSegmentTask(segment, session.task ?? null);
     return {
       id: segment.id,
       sessionId: session.id,
-      taskId: session.task?.taskId ?? null,
-      taskSource: session.task?.taskSource ?? null,
-      title: session.task?.taskTitle ?? session.title,
+      taskId: task?.taskId ?? null,
+      taskSource: task?.taskSource ?? null,
+      title: liveSegmentTitle(segment, session.task ?? null, session.title),
       startedAt: segment.startedAt,
       endedAt: segment.endedAt,
       activeElapsedMs: segment.endedAt - segment.startedAt,
@@ -1544,7 +1564,8 @@ function isStoredLiveSessionOrNull(value: unknown): value is StoredLiveSession |
       segmentIds.has(segment.id) ||
       !isStoredTimestamp(segment.startedAt) ||
       (segment.endedAt !== null && !isStoredTimestamp(segment.endedAt)) ||
-      (segment.endedAt !== null && segment.endedAt < segment.startedAt)
+      (segment.endedAt !== null && segment.endedAt < segment.startedAt) ||
+      !isStoredLiveTaskOrMissing((segment as Partial<StoredLiveSegment>).task)
     ) {
       return false;
     }

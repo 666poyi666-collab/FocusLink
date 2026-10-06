@@ -22,6 +22,9 @@ interface TaskPickerProps {
   title?: string;
   selectedTaskId?: string | null;
   allowCompleted?: boolean;
+  /** 提供后在页脚给出「清除关联」入口；onPick 永远不为 null，解除关联只能走这里。 */
+  onClear?: () => void;
+  clearLabel?: string;
 }
 
 /** 弹层定位结果：从触发元素附近展开，四边留出视口安全边距 */
@@ -147,6 +150,8 @@ export function TaskPicker({
   title = '选择任务',
   selectedTaskId,
   allowCompleted = false,
+  onClear,
+  clearLabel = '清除关联',
 }: TaskPickerProps) {
   const { ticktickTasks, ticktickProjects, setTicktickTasks, setTicktickProjects, addToast } =
     useStore();
@@ -169,6 +174,8 @@ export function TaskPicker({
   const triggerRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const onClearRef = useRef(onClear);
+  onClearRef.current = onClear;
   const closingRef = useRef(false);
   const exitTimerRef = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -222,21 +229,36 @@ export function TaskPicker({
     onPickRef.current(result);
   }, []);
 
-  /** 统一关闭入口：播放反向收束动画后再回调；reduced-motion 与重复调用都直接落定 */
+  /** 清除关联：焦点还给触发元素后通知父级，父级自行调 clearSegmentTask。 */
+  const finishClear = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (trigger && trigger.isConnected) {
+      trigger.focus({ preventScroll: true });
+    }
+    onClearRef.current?.();
+  }, []);
+
+  /** 播放反向收束动画后再执行收束动作；reduced-motion 与重复调用都直接落定 */
+  const runClose = useCallback((commit: () => void) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      commit();
+      return;
+    }
+    setClosing(true);
+    exitTimerRef.current = window.setTimeout(commit, EXIT_MS);
+  }, []);
+
+  /** 统一关闭入口：选择任务或空结果 */
   const requestClose = useCallback(
-    (result: Task | null) => {
-      if (closingRef.current) return;
-      closingRef.current = true;
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (reduced) {
-        finishClose(result);
-        return;
-      }
-      setClosing(true);
-      exitTimerRef.current = window.setTimeout(() => finishClose(result), EXIT_MS);
-    },
-    [finishClose],
+    (result: Task | null) => runClose(() => finishClose(result)),
+    [finishClose, runClose],
   );
+
+  /** 页脚「清除关联」入口 */
+  const requestClear = useCallback(() => runClose(finishClear), [finishClear, runClose]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -613,7 +635,20 @@ export function TaskPicker({
 
         <div className="flex min-h-[40px] items-center justify-between border-t border-border/60 px-4 text-[11px] text-fg-muted">
           <span>↑↓ 选择 · Enter 关联 · Esc 关闭</span>
-          <span>点击任务即可关联</span>
+          {onClear ? (
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={(event) => {
+                event.currentTarget.focus();
+                requestClear();
+              }}
+            >
+              {clearLabel}
+            </button>
+          ) : (
+            <span>点击任务即可关联</span>
+          )}
         </div>
       </motion.div>
     </div>

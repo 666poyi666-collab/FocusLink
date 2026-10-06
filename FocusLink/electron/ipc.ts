@@ -72,6 +72,7 @@ import {
   deleteSyncQueueForSegments,
 } from './db/index.js';
 import { exportSessionById } from './export.js';
+import { projectLiveSession } from './sessions/liveSessionProjection.js';
 
 import { buildSessionAnalytics } from '@shared/sessionAnalytics';
 import { logger } from './logger.js';
@@ -170,7 +171,9 @@ export function registerIpc(
         });
         return;
       }
-      timer.linkSegmentTask(args.segmentId, args.taskId, args.taskSource, title);
+      // Live segments live in the cloud, so return the command promise: a rejected relink must
+      // reach the renderer instead of silently keeping the previous task.
+      return timer.linkSegmentTask(args.segmentId, args.taskId, args.taskSource, title);
     },
   );
 
@@ -199,7 +202,7 @@ export function registerIpc(
       });
       return;
     }
-    timer.clearSegmentTask(args.segmentId);
+    return timer.clearSegmentTask(args.segmentId);
   });
 
   ipcMain.handle('timer:clear-session-default-task', (_e, args: { sessionId: string }) => {
@@ -498,8 +501,21 @@ export function registerIpc(
   }));
 
   // ============ Sessions ============
-  ipcMain.handle('sessions:list', (_e, limit?: number) => listSessions(limit ?? 100));
+  // 进行中的实时会话只存在于云端，本地库没有行；读接口统一注入一次投影，统计页才看得到。
+  const liveProjection = () =>
+    projectLiveSession(timer.getSnapshot(), (id) => Boolean(getSessionDb(id)));
+  ipcMain.handle('sessions:list', (_e, limit?: number) => {
+    const size = limit ?? 100;
+    const rows = listSessions(size);
+    const live = liveProjection();
+    if (!live) return rows;
+    return [live.session, ...rows.filter((row) => row.id !== live.session.id)].slice(0, size);
+  });
   ipcMain.handle('sessions:get', (_e, id: string) => {
+    const live = liveProjection();
+    if (live && live.session.id === id) {
+      return { session: live.session, segments: live.segments, pauses: live.pauses };
+    }
     const session = getSessionDb(id);
     if (!session) return null;
     return { session, segments: listSegments(id), pauses: listPauses(id) };
@@ -516,11 +532,22 @@ export function registerIpc(
     }
     const start = Math.min(range.start, range.end);
     const end = Math.max(range.start, range.end);
-    return buildSessionAnalytics(range, {
-      sessions: listSessionsInRange(start, end),
-      segments: listSegmentsInSessionRange(start, end),
-      pauses: listPausesInSessionRange(start, end),
-    });
+    const sessions = listSessionsInRange(start, end);
+    const segments = listSegmentsInSessionRange(start, end);
+    const pauses = listPausesInSessionRange(start, end);
+    // 与 listSessionsInRange 的 SQL 谓词保持一致：只有时间上落在范围内的实时会话才注入。
+    const live = liveProjection();
+    if (
+      live &&
+      live.session.startedAt <= end &&
+      (live.session.endedAt ?? live.session.startedAt + live.session.wallElapsedMs) >= start &&
+      !sessions.some((session) => session.id === live.session.id)
+    ) {
+      sessions.push(live.session);
+      segments.push(...live.segments);
+      pauses.push(...live.pauses);
+    }
+    return buildSessionAnalytics(range, { sessions, segments, pauses });
   });
   ipcMain.handle('sessions:delete', async (_e, id: string) => {
     const segs = listSegments(id);

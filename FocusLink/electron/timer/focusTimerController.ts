@@ -11,6 +11,8 @@ import {
   type LiveFocusSnapshot,
   type LiveFocusSnapshotResponse,
   type LiveFocusTaskContext,
+  liveSegmentTask,
+  liveSegmentTitle,
 } from '@shared/sync/liveFocusProtocol';
 import { normalizeDeviceSyncEndpoint } from '@shared/sync/deviceProtocol';
 import { FINISHED_PRESENTATION_HOLD_MS } from '@shared/focus/bandMath';
@@ -197,13 +199,36 @@ export class FocusTimerController {
     return startLocal();
   }
 
-  linkSegmentTask(...args: Parameters<TimerManager['linkSegmentTask']>): void {
-    this.ensureNotLiveSession(args[0]);
+  /**
+   * Segment relinks are allowed mid-session: a live segment is owned by the authority, so the
+   * change travels as a link-task command instead of a local write. The session default task is
+   * still start-only (see linkSessionTask).
+   */
+  linkSegmentTask(...args: Parameters<TimerManager['linkSegmentTask']>): void | Promise<void> {
+    const [segmentId, taskId, taskSource, taskTitle] = args;
+    if (this.isLiveSegment(segmentId)) {
+      return this.relinkLiveSegment(segmentId, {
+        taskId,
+        taskSource,
+        taskTitle: taskTitle ?? null,
+      });
+    }
     this.local.linkSegmentTask(...args);
   }
-  clearSegmentTask(...args: Parameters<TimerManager['clearSegmentTask']>): void {
-    this.ensureNotLiveSession(args[0]);
+  clearSegmentTask(...args: Parameters<TimerManager['clearSegmentTask']>): void | Promise<void> {
+    const [segmentId] = args;
+    if (this.isLiveSegment(segmentId)) {
+      return this.relinkLiveSegment(segmentId, null);
+    }
     this.local.clearSegmentTask(...args);
+  }
+
+  /** Resolves to void so the IPC surface keeps its declared Promise<void> shape. */
+  private async relinkLiveSegment(
+    segmentId: string,
+    task: LiveFocusTaskContext | null,
+  ): Promise<void> {
+    await this.send('link-task', task, segmentId);
   }
   linkSessionTask(...args: Parameters<TimerManager['linkSessionTask']>): void {
     this.ensureNotLiveSession(args[0]);
@@ -244,6 +269,12 @@ export class FocusTimerController {
     return this.liveMode;
   }
 
+  /** True when the segment belongs to the authoritative live snapshot rather than the local DB. */
+  private isLiveSegment(segmentId: string): boolean {
+    if (!this.isLiveEnabled()) return false;
+    return this.snapshot.segments.some((segment) => segment.id === segmentId);
+  }
+
   private ensureNotLiveSession(id: string): void {
     if (this.isLiveEnabled() && this.snapshot.sessionId === id) {
       throw new Error('多端实时会话需在开始前选择任务；进行中不能修改关联');
@@ -253,6 +284,7 @@ export class FocusTimerController {
   private async send(
     action: LiveFocusAction,
     task: LiveFocusTaskContext | null = null,
+    segmentId: string | null = null,
   ): Promise<TimerSnapshot> {
     const connection = getDeviceSyncRuntimeConnection();
     if (!connection) throw new Error('PC 实时专注未启用或连接配置不完整');
@@ -264,10 +296,15 @@ export class FocusTimerController {
       expectedRevision: this.liveRevision,
       sessionId,
     };
-    const command: LiveFocusCommand =
-      action === 'start'
-        ? { ...base, action, title: task?.taskTitle ?? null, task }
-        : { ...base, action };
+    let command: LiveFocusCommand;
+    if (action === 'start') {
+      command = { ...base, action, title: task?.taskTitle ?? null, task };
+    } else if (action === 'link-task') {
+      if (!segmentId) throw new Error('缺少要修改的专注片段');
+      command = { ...base, action, segmentId, task };
+    } else {
+      command = { ...base, action };
+    }
     const response = await this.request(LIVE_FOCUS_COMMAND_PATH, connection, {
       method: 'POST',
       body: JSON.stringify({
@@ -491,29 +528,37 @@ export class FocusTimerController {
       (sum, pause) => sum + (pause.endedAt === null ? 0 : pause.endedAt - pause.startedAt),
       0,
     );
+    const sessionTask = session.task ?? null;
+    const lastSegment = session.segments.at(-1) ?? null;
+    const currentTask = lastSegment ? liveSegmentTask(lastSegment, sessionTask) : sessionTask;
     return {
       state: session.state,
       sessionId: session.id,
-      currentSegmentId: session.state === 'running' ? (session.segments.at(-1)?.id ?? null) : null,
-      currentTaskId: session.task?.taskId ?? null,
-      currentTaskTitle: session.task?.taskTitle ?? session.title,
-      currentTaskSource: session.task?.taskSource ?? null,
+      currentSegmentId: session.state === 'running' ? (lastSegment?.id ?? null) : null,
+      currentTaskId: currentTask?.taskId ?? null,
+      currentTaskTitle: lastSegment
+        ? liveSegmentTitle(lastSegment, sessionTask, session.title)
+        : (sessionTask?.taskTitle ?? session.title),
+      currentTaskSource: currentTask?.taskSource ?? null,
       sessionDefaultTaskId: session.task?.taskId ?? null,
       sessionDefaultTaskTitle: session.task?.taskTitle ?? null,
       activeElapsedMs: session.activeElapsedMs,
       pauseElapsedMs: closedPauseMs,
       wallElapsedMs: session.wallElapsedMs,
       currentPauseStartedAt: local(session.currentPauseStartedAt),
-      segments: session.segments.map((segment) => ({
-        id: segment.id,
-        taskId: session.task?.taskId ?? null,
-        taskTitle: session.task?.taskTitle ?? null,
-        taskSource: session.task?.taskSource ?? null,
-        title: session.task?.taskTitle ?? session.title,
-        startedAt: local(segment.startedAt)!,
-        endedAt: local(segment.endedAt),
-        activeElapsedMs: (segment.endedAt ?? observedAt - this.clockOffsetMs) - segment.startedAt,
-      })),
+      segments: session.segments.map((segment) => {
+        const task = liveSegmentTask(segment, sessionTask);
+        return {
+          id: segment.id,
+          taskId: task?.taskId ?? null,
+          taskTitle: task?.taskTitle ?? null,
+          taskSource: task?.taskSource ?? null,
+          title: liveSegmentTitle(segment, sessionTask, session.title),
+          startedAt: local(segment.startedAt)!,
+          endedAt: local(segment.endedAt),
+          activeElapsedMs: (segment.endedAt ?? observedAt - this.clockOffsetMs) - segment.startedAt,
+        };
+      }),
       pauseEvents: session.pauses.map((pause) => ({
         id: pause.id,
         segmentId: pause.segmentId,
@@ -603,6 +648,8 @@ export class FocusTimerController {
       return '本次操作未执行：云端 revision 已变化，请确认当前状态后重试';
     if (code === 'active_session_exists') return '本次操作未执行：云端已有进行中的专注';
     if (code === 'no_active_session') return '本次操作未执行：云端当前没有活动专注';
+    if (code === 'segment_not_found') return '本次操作未执行：要修改的专注片段已不存在';
+    if (code === 'session_mismatch') return '本次操作未执行：云端活动专注已更换';
     return `实时专注命令未确认${code ? `（${code}）` : ''}`;
   }
 }

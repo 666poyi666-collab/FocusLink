@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FocusSession } from '@shared/types';
 import type { SessionDetail } from '@shared/ipc/api';
-import { formatClock, formatDuration, formatMinutes } from '../../lib/time';
+import { formatDuration, formatMinutes } from '../../lib/time';
+import { formatLedgerClock, formatLedgerSpan } from './ledgerTimeFormat';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 
 interface Props {
@@ -104,8 +105,6 @@ export function SessionLedger({
       : (session.linkedSegmentCount ?? 0) > 0
         ? '片段已关联'
         : '未关联';
-  const clockOf = (session: FocusSession) =>
-    `${formatClock(session.startedAt)} – ${session.endedAt ? formatClock(session.endedAt) : '进行中'}`;
   const copyRecord = async () => {
     if (!selected) return;
     try {
@@ -172,11 +171,7 @@ export function SessionLedger({
             >
               <span className="sc-top">
                 <span className="sc-time-pill">
-                  {new Date(session.startedAt).toLocaleDateString('zh-CN', {
-                    month: 'numeric',
-                    day: 'numeric',
-                  })}{' '}
-                  · {clockOf(session)}
+                  {formatLedgerClock(session.startedAt, session.endedAt)}
                 </span>
                 <span className="sc-dur">{formatMinutes(session.activeElapsedMs)}</span>
               </span>
@@ -203,7 +198,8 @@ export function SessionLedger({
           <div className="dd-head">
             <h4 id="ddTitle">{titleOf(selected)}</h4>
             <p id="ddMeta">
-              {clockOf(selected)} · 总历时 {formatDuration(selected.wallElapsedMs)}
+              {formatLedgerClock(selected.startedAt, selected.endedAt)} · 总历时
+              {formatDuration(selected.wallElapsedMs)}
             </p>
           </div>
           <div className="ledger-totals">
@@ -260,7 +256,7 @@ export function SessionLedger({
                         <span className="seg-dur-txt">{formatMinutes(row.ms)}</span>
                       </div>
                       <div className="seg-time-sub">
-                        {formatClock(row.start)} – {row.end ? formatClock(row.end) : '进行中'}
+                        {formatLedgerSpan(row.start, row.end, selected.startedAt)}
                       </div>
                       {row.kind === 'focus' && (
                         <button

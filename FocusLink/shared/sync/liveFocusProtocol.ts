@@ -19,9 +19,17 @@ const LIVE_FOCUS_START_COMMAND_KEYS = new Set([
   'task',
 ]);
 const LIVE_FOCUS_COMMAND_KEYS = new Set(['commandId', 'action', 'expectedRevision', 'sessionId']);
+const LIVE_FOCUS_LINK_TASK_COMMAND_KEYS = new Set([
+  'commandId',
+  'action',
+  'expectedRevision',
+  'sessionId',
+  'segmentId',
+  'task',
+]);
 
 export type LiveFocusState = 'idle' | 'running' | 'paused';
-export type LiveFocusAction = 'start' | 'pause' | 'resume' | 'finish' | 'abort';
+export type LiveFocusAction = 'start' | 'pause' | 'resume' | 'finish' | 'abort' | 'link-task';
 
 interface LiveFocusCommandBase {
   commandId: string;
@@ -46,6 +54,11 @@ export interface LiveFocusTimelineSegment {
   id: string;
   startedAt: number;
   endedAt: number | null;
+  /**
+   * Segment-level task override. Omitted means "inherit the session task"; an explicit null means
+   * the segment was deliberately unlinked, so it must not fall back to the session task.
+   */
+  task?: LiveFocusTaskContext | null;
 }
 
 export interface LiveFocusTimelinePause {
@@ -56,10 +69,39 @@ export interface LiveFocusTimelinePause {
 }
 
 export interface LiveFocusTransitionCommand extends LiveFocusCommandBase {
-  action: Exclude<LiveFocusAction, 'start'>;
+  action: 'pause' | 'resume' | 'finish' | 'abort';
 }
 
-export type LiveFocusCommand = LiveFocusStartCommand | LiveFocusTransitionCommand;
+/** Relinks one timeline segment of the running session; null clears the override. */
+export interface LiveFocusLinkTaskCommand extends LiveFocusCommandBase {
+  action: 'link-task';
+  segmentId: string;
+  task: LiveFocusTaskContext | null;
+}
+
+export type LiveFocusCommand =
+  LiveFocusStartCommand | LiveFocusTransitionCommand | LiveFocusLinkTaskCommand;
+
+/**
+ * Effective task of one live segment: an explicit segment override wins, including an explicit null
+ * clear; only a missing override inherits the session default task.
+ */
+export function liveSegmentTask(
+  segment: LiveFocusTimelineSegment,
+  sessionTask: LiveFocusTaskContext | null,
+): LiveFocusTaskContext | null {
+  return segment.task === undefined ? sessionTask : segment.task;
+}
+
+/** Display title of one live segment, preserving the legacy session-title fallback when inheriting. */
+export function liveSegmentTitle(
+  segment: LiveFocusTimelineSegment,
+  sessionTask: LiveFocusTaskContext | null,
+  sessionTitle: string | null,
+): string | null {
+  if (segment.task !== undefined) return segment.task?.taskTitle ?? null;
+  return sessionTask?.taskTitle ?? sessionTitle;
+}
 
 export interface LiveFocusCommandRequest {
   protocolVersion: typeof LIVE_FOCUS_PROTOCOL_VERSION;
@@ -139,7 +181,12 @@ export function validateLiveFocusCommandRequest(value: unknown): LiveFocusComman
   const command = value.command;
   const action = command.action;
   if (!isLiveFocusAction(action)) return invalid('command action is invalid');
-  const allowedKeys = action === 'start' ? LIVE_FOCUS_START_COMMAND_KEYS : LIVE_FOCUS_COMMAND_KEYS;
+  const allowedKeys =
+    action === 'start'
+      ? LIVE_FOCUS_START_COMMAND_KEYS
+      : action === 'link-task'
+        ? LIVE_FOCUS_LINK_TASK_COMMAND_KEYS
+        : LIVE_FOCUS_COMMAND_KEYS;
   if (!hasOnlyKeys(command, allowedKeys)) {
     return invalid('command contains unsupported fields');
   }
@@ -163,6 +210,26 @@ export function validateLiveFocusCommandRequest(value: unknown): LiveFocusComman
           sessionId: command.sessionId,
           title: command.title,
           task: command.task ?? null,
+        },
+      },
+    };
+  }
+
+  if (action === 'link-task') {
+    if (!isLiveFocusId(command.segmentId)) return invalid('segmentId is invalid');
+    if (!isNullableTask(command.task)) return invalid('task is invalid');
+    return {
+      ok: true,
+      request: {
+        protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+        deviceId: value.deviceId,
+        command: {
+          commandId: command.commandId,
+          action,
+          expectedRevision: command.expectedRevision,
+          sessionId: command.sessionId,
+          segmentId: command.segmentId,
+          task: command.task,
         },
       },
     };
@@ -197,7 +264,8 @@ function isLiveFocusAction(value: unknown): value is LiveFocusAction {
     value === 'pause' ||
     value === 'resume' ||
     value === 'finish' ||
-    value === 'abort'
+    value === 'abort' ||
+    value === 'link-task'
   );
 }
 

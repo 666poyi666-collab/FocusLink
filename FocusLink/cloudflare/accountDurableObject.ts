@@ -32,6 +32,8 @@ import {
   LIVE_FOCUS_MAX_TRANSITIONS,
   LIVE_FOCUS_MAX_WAIT_MS,
   LIVE_FOCUS_PROTOCOL_VERSION,
+  liveSegmentTask,
+  liveSegmentTitle,
   validateLiveFocusCommandRequest,
   type LiveFocusCommand,
   type LiveFocusCommandAck,
@@ -3452,17 +3454,19 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
 
       let session = live.session;
       let completedEntityId: string | null = null;
-      switch (request.command.action) {
+      // 取出为 const：闭包（如 segments.find 的回调）内不会丢失判别联合的收窄。
+      const command = request.command;
+      switch (command.action) {
         case 'start':
           session = {
-            id: request.command.sessionId,
-            title: request.command.title,
-            task: request.command.task ?? null,
+            id: command.sessionId,
+            title: command.title,
+            task: command.task ?? null,
             state: 'running',
             startedAt: serverTime,
             updatedAt: serverTime,
             lastCommandDeviceId: request.deviceId,
-            segments: [makeLiveSegment(request.command.sessionId, 0, serverTime)],
+            segments: [makeLiveSegment(command.sessionId, 0, serverTime)],
             pauses: [],
           };
           break;
@@ -3490,6 +3494,15 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
           active.lastCommandDeviceId = request.deviceId;
           break;
         }
+        case 'link-task': {
+          const active = requireLiveSession(session);
+          const segment = active.segments.find((entry) => entry.id === command.segmentId);
+          if (!segment) throw new Error('live segment missing');
+          segment.task = command.task === null ? null : { ...command.task };
+          active.updatedAt = serverTime;
+          active.lastCommandDeviceId = request.deviceId;
+          break;
+        }
         case 'finish':
         case 'abort': {
           const active = requireLiveSession(session);
@@ -3498,7 +3511,7 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
           active.lastCommandDeviceId = request.deviceId;
           const bundle = buildCompletedLiveBundle(
             active,
-            request.command.action === 'finish' ? 'finished' : 'aborted',
+            command.action === 'finish' ? 'finished' : 'aborted',
             serverTime,
           );
           this.publishLiveBundle(request.deviceId, bundle);
@@ -4529,6 +4542,11 @@ function validateLiveTransition(
     if (session.state !== 'paused') return 'not_paused';
     return session.segments.length >= LIVE_FOCUS_MAX_TRANSITIONS ? 'transition_limit' : null;
   }
+  if (command.action === 'link-task') {
+    return session.segments.some((segment) => segment.id === command.segmentId)
+      ? null
+      : 'segment_not_found';
+  }
   return existingEntity ? 'session_id_exists' : null;
 }
 
@@ -4615,12 +4633,13 @@ function buildCompletedLiveBundle(
 ): DeviceSyncSessionBundle {
   const segments = session.segments.map((segment) => {
     if (segment.endedAt === null) throw new Error('open segment in completed session');
+    const task = liveSegmentTask(segment, session.task ?? null);
     return {
       id: segment.id,
       sessionId: session.id,
-      taskId: session.task?.taskId ?? null,
-      taskSource: session.task?.taskSource ?? null,
-      title: session.task?.taskTitle ?? session.title,
+      taskId: task?.taskId ?? null,
+      taskSource: task?.taskSource ?? null,
+      title: liveSegmentTitle(segment, session.task ?? null, session.title),
       startedAt: segment.startedAt,
       endedAt: segment.endedAt,
       activeElapsedMs: segment.endedAt - segment.startedAt,

@@ -6,6 +6,8 @@ import {
   LIVE_FOCUS_PROTOCOL_VERSION,
   LIVE_FOCUS_SNAPSHOT_PATH,
   LIVE_FOCUS_WAIT_PATH,
+  liveSegmentTask,
+  liveSegmentTitle,
   validateLiveFocusCommandRequest,
 } from '@shared/sync/liveFocusProtocol';
 
@@ -125,5 +127,99 @@ describe('live focus protocol', () => {
         },
       }).ok,
     ).toBe(false);
+  });
+
+  /* 用户 2026-10-06：专注中途点账本里的片段改任务 —— 协议新增 link-task 动作。 */
+  it('accepts strict link-task bodies and rejects missing segments or forged task fields', () => {
+    const linkRequest = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+      protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+      deviceId: 'phone-a',
+      command: {
+        commandId: 'command-link-1',
+        action: 'link-task',
+        expectedRevision: 3,
+        sessionId: 'session-live-1',
+        segmentId: 'live-segment-1',
+        task: { taskId: 'poetry-1', taskSource: 'local', taskTitle: '古诗文' },
+        ...overrides,
+      },
+    });
+
+    const accepted = validateLiveFocusCommandRequest(linkRequest());
+    expect(accepted.ok).toBe(true);
+    expect(accepted.request?.command).toMatchObject({
+      action: 'link-task',
+      segmentId: 'live-segment-1',
+      task: { taskId: 'poetry-1', taskSource: 'local', taskTitle: '古诗文' },
+    });
+
+    // 显式 null 表示「主动解除关联」，必须原样透传，不能归一化成继承。
+    const cleared = validateLiveFocusCommandRequest(linkRequest({ task: null }));
+    expect(cleared.ok).toBe(true);
+    expect(cleared.request?.command).toMatchObject({ action: 'link-task', task: null });
+
+    expect(validateLiveFocusCommandRequest(linkRequest({ segmentId: '' })).ok).toBe(false);
+    expect(validateLiveFocusCommandRequest(linkRequest({ task: { taskId: 'poetry-1' } })).ok).toBe(
+      false,
+    );
+    expect(
+      validateLiveFocusCommandRequest(
+        linkRequest({ task: { taskId: 'poetry-1', taskSource: 'dida', taskTitle: null } }),
+      ).ok,
+    ).toBe(false);
+    expect(
+      validateLiveFocusCommandRequest(
+        linkRequest({
+          task: {
+            taskId: 'poetry-1',
+            taskSource: 'local',
+            taskTitle: null,
+            accountId: 'forged',
+          },
+        }),
+      ).ok,
+    ).toBe(false);
+    expect(validateLiveFocusCommandRequest(linkRequest({ title: 'not allowed' })).ok).toBe(false);
+    expect(
+      validateLiveFocusCommandRequest({
+        protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+        deviceId: 'phone-a',
+        command: {
+          commandId: 'command-resume-1',
+          action: 'resume',
+          expectedRevision: 2,
+          sessionId: 'session-live-1',
+          segmentId: 'live-segment-1',
+        },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('resolves a segment override: missing inherits the session task, null clears it', () => {
+    const sessionTask = {
+      taskId: 'math-1',
+      taskSource: 'local' as const,
+      taskTitle: '第二章第二节',
+    };
+    const inherited = { id: 'live-segment-1', startedAt: 1, endedAt: null };
+    expect(liveSegmentTask(inherited, sessionTask)).toEqual(sessionTask);
+    expect(liveSegmentTask({ ...inherited, task: null }, sessionTask)).toBeNull();
+    expect(
+      liveSegmentTask(
+        { ...inherited, task: { taskId: 'poetry-1', taskSource: 'local', taskTitle: '古诗文' } },
+        sessionTask,
+      ),
+    ).toMatchObject({ taskId: 'poetry-1' });
+
+    expect(liveSegmentTitle(inherited, sessionTask, '会话标题')).toBe('第二章第二节');
+    expect(liveSegmentTitle(inherited, null, '会话标题')).toBe('会话标题');
+    expect(liveSegmentTitle({ ...inherited, task: null }, sessionTask, '会话标题')).toBeNull();
+    expect(
+      liveSegmentTitle(
+        { ...inherited, task: { taskId: 'poetry-1', taskSource: 'local', taskTitle: null } },
+        sessionTask,
+        '会话标题',
+      ),
+    ).toBeNull();
   });
 });

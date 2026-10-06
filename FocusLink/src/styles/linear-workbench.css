@@ -1432,6 +1432,27 @@ textarea:disabled {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* 专注片段的标题就是修改任务关联的入口（用户 2026-10-06 反馈账本里的「03」改不了）。
+   按钮仍复用 .ledger-row-title 的排版契约（min-width:0 / flex:1 1 auto），
+   这里只复位按钮默认外观，不重写字号字重，避免打破桌面字号下限契约。 */
+.ledger-row-title.ledger-row-edit {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ledger-row-title.ledger-row-edit:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ledger-row-title.ledger-row-edit:focus-visible {
+  outline: 2px solid rgb(var(--app-accent) / 0.6);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
 .ledger-row.row-focus .ledger-row-title,
 .ledger-row.row-focus .ledger-row-duration {
   color: rgb(var(--app-accent));

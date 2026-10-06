@@ -1,5 +1,18 @@
 # FocusLink 实施日志
 
+## 2026-10-06 · `FL-UI-20261006-LIVE-SEGMENT-RELINK`：专注中途改片段任务 + 统计页跨午夜日期与进行中会话（v1.5.7）
+
+- **用户报告（三条一起）**：① 「我第一、第二阶段都是『第二章第二节』的任务，到了第三阶段我懒得结束就直接继续开始了，但第三个任务圈起来应该是『古诗文』，我发现目前这个界面不能改，这很不好」——要求点右侧账本里的「03」弹出小窗口改任务；默认逻辑必须保持「暂停后继续还是默认任务，只有我专门来换才换」。② 「统计界面今天是 10 月 6 号，它给我显示个 10 月 5 号干什么？」③ 「虽然我这个专注还没有结束，但你应该显示我已有的数据」。
+- **根因①（账本不能改）**：`src/features/focus/SegmentTimeline.tsx` 是纯展示账簿，全文件没有任何点击/编辑入口；控制器 `electron/timer/focusTimerController.ts` 的 6 个关联方法一律先 `ensureNotLiveSession()` 再转本地库，而用户当时正是**实时（多端）会话**，所以即便加按钮也会被主进程拒绝。
+- **根因②（日期「错」）**：`SessionLedger.tsx` 的卡片药丸用 `toLocaleDateString("zh-CN", {month:"numeric", day:"numeric"})` 只渲染**开始日期**。用户这条会话真实是 10/5 11:12 开始、10/6 08:49 结束，界面只写「10/5」，用户看到的就是「今天 10/6 却显示 10/5」。
+- **根因③（进行中看不到）**：多端实时会话由云端 Account DO 权威持有，进行中**不落本地 SQLite**；`sessions:list/get/analytics` 只读本地库，于是统计页在专注进行中显示为空白。
+- **修复（协议）**：`shared/sync/liveFocusProtocol.ts` 给 `LiveFocusTimelineSegment` 加可选 `task`（**不存在 = 继承会话默认任务 / null = 主动解除 / 对象 = 覆盖**），新增动作 `link-task` 与命令键集 `{commandId, action, expectedRevision, sessionId, segmentId, task}`，并提供唯一解释函数 `liveSegmentTask` / `liveSegmentTitle`。`cloudflare/accountDurableObject.ts` 与仓库内镜像 `cloud/deviceSyncStore.ts` 同步实现：`validateLiveTransition` 对 `link-task` 只校验片段存在（否则 `segment_not_found`，revision 不变），完成包 `buildCompletedLiveBundle` 按片段级任务产出每段 `taskId`。
+- **修复（桌面）**：控制器新增 `private async relinkLiveSegment(segmentId, task): Promise<void>` → `this.send("link-task", task, segmentId)`；`linkSegmentTask` / `clearSegmentTask` 在实时会话下走它，不再被 `ensureNotLiveSession` 拦住。`send()` 的命令构造改成显式分支（`start` / `link-task` / 其余），避免判别联合在嵌套三元里收窄失败。
+- **修复（渲染层）**：`SegmentTimeline` 的专注行标题改成按钮（`.ledger-row-title.ledger-row-edit`，hover 下划线 + `:focus-visible` 外框，圆角用 `var(--radius-xs)` 以符合 token 契约），`onEdit` 仅在专注行且传入回调时挂载；`TimerPanel` 维护 `editingSegment` 并渲染第二个 `TaskPicker`（`clearLabel="清除这一段的关联"`）；`TaskPicker` 新增可选 `onClear` / `clearLabel`，**无 `onClear` 的调用点必须保持「点击任务即可关联」文案**（`scripts/smoke/ui-state-smoke.cjs:342` 会等它）。
+- **修复（统计页）**：新建 `src/features/history/ledgerTimeFormat.ts`（`formatLedgerDay` / `isSameLedgerDay` / `formatLedgerClock` / `formatLedgerSpan`，本地时区手工拼 `M/D`，不用 `toLocaleDateString` 以免 ICU 漂移），卡片与片段行改为跨日两端都带日期（`10/5 · 11:12 – 10/6 08:49`）、进行中写「进行中」。新建 `electron/sessions/liveSessionProjection.ts`（`projectLiveSession(snapshot, hasLocalSession)`），`ipc.ts` 的 `sessions:list`（投影放最前、按 id 去重、再截断 size）、`sessions:get`（命中投影 id 直接返回）、`sessions:analytics`（区间谓词对齐 `db/index.ts` 的 `listSessionsInRange`，本地已有同一会话则不重复 push）接入。**未新增 IPC 命令、未改数据库结构、未改计时 authority。**
+- **测试**：新增 `tests/ledgerTimeFormat.test.ts`（6）、`tests/liveSessionProjection.test.ts`（5）、`tests/focusSegmentRelink.test.ts`（6，源码契约）；扩展 `tests/liveFocusCloud.test.ts`（+2：点开片段写覆盖、显式 null 解除，并断言完成包每段任务）与 `tests/liveFocusProtocol.test.ts`（+2：link-task 严格校验、`liveSegmentTask` 三态）；`npm run test:cloudflare` 在真实本地 worker 上新增断言：`link-task` applied 且 revision +1、快照第一段任务为覆盖值、第二段 `task` 仍为 `undefined`（未点开不写覆盖）、未知 `segmentId` → `rejected/segment_not_found` 且 revision 不变。
+- **门禁**：`format:check` / `typecheck`（含 `typecheck:cloudflare`）/ `lint` PASS；`npm test` **142 文件 / 1154 项** PASS；`npm run test:cloudflare` PASS（`liveLifecycle: true`）。
+- **部署**：DO 改动必须 `npx wrangler deploy` 才生效（本机 wrangler 已登录账号 `6465e9d49bcdb88adde245a7f7a74acc`）。
 ## 2026-10-04 · `FL-UI-20261004-CAPTION-DRAGREGION`：任务/统计页右上角三个窗口按钮完全点不动（v1.5.6）
 
 - **用户报告**：「任务统计界面我划线的三个按钮完全用不了，专注设置倒是可以用」（附截图圈出最小化/最大化/关闭三个按钮）。这是同一条症状第三次被报告（v1.5.3、v1.5.4 各处理过一次）。

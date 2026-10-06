@@ -101,6 +101,9 @@ export function TimerPanel() {
   const transitionCueTimer = useRef<number | null>(null);
   const previousStateRef = useRef(state);
   const [ledgerOpen, setLedgerOpen] = useState(true);
+  /* 账本里点某一段的标题即可改这一段的任务关联（用户 2026-10-06：第三段本该是古诗文却改不了）。
+     会话默认任务不受影响：之后继续开启的片段仍然继承默认任务。 */
+  const [editingSegment, setEditingSegment] = useState<{ id: string; index: number } | null>(null);
   const reducedMotion = useReducedMotion() ?? false;
 
   const isRunning = state === 'running' || state === 'paused';
@@ -274,6 +277,37 @@ export function TimerPanel() {
     try {
       await window.focuslink.timer.clearSegmentTask(snapshot.currentSegmentId);
       addToast('已清除当前片段任务关联', 'info');
+    } catch (e) {
+      addToast('清除失败：' + (e as Error).message, 'error');
+    }
+  };
+
+  const handleEditSegment = useCallback((segmentId: string, index: number) => {
+    setEditingSegment({ id: segmentId, index });
+  }, []);
+
+  const handlePickEditingSegment = async (task: Task | null) => {
+    const target = editingSegment;
+    setEditingSegment(null);
+    if (!target || !task) return;
+    try {
+      await window.focuslink.timer.linkTask(target.id, task.id, task.source, task.title);
+      addToast(
+        `已把片段 ${String(target.index).padStart(2, '0')} 关联到：${task.title}`,
+        'success',
+      );
+    } catch (e) {
+      addToast('更换失败：' + (e as Error).message, 'error');
+    }
+  };
+
+  const handleClearEditingSegment = async () => {
+    const target = editingSegment;
+    setEditingSegment(null);
+    if (!target) return;
+    try {
+      await window.focuslink.timer.clearSegmentTask(target.id);
+      addToast(`已清除片段 ${String(target.index).padStart(2, '0')} 的任务关联`, 'info');
     } catch (e) {
       addToast('清除失败：' + (e as Error).message, 'error');
     }
@@ -624,13 +658,26 @@ export function TimerPanel() {
             exit={{ opacity: 0 }}
             transition={{ duration: reducedMotion ? 0.12 : 0.32, ease: [0.16, 1, 0.3, 1] }}
           >
-            <SegmentTimeline />
+            <SegmentTimeline onEditSegment={handleEditSegment} />
           </motion.aside>
         )}
       </AnimatePresence>
 
       {pickerMode && pickerConfig && (
         <TaskPicker onPick={pickerConfig.onPick} title={pickerConfig.title} />
+      )}
+
+      {/* 修改某一已结束/进行中片段的任务关联：默认任务不动，只改这一段。 */}
+      {editingSegment && (
+        <TaskPicker
+          onPick={handlePickEditingSegment}
+          onClear={handleClearEditingSegment}
+          clearLabel="清除这一段的关联"
+          title={`更换片段 ${String(editingSegment.index).padStart(2, '0')} 的任务`}
+          selectedTaskId={
+            snapshot?.segments.find((segment) => segment.id === editingSegment.id)?.taskId ?? null
+          }
+        />
       )}
 
       {immersive &&

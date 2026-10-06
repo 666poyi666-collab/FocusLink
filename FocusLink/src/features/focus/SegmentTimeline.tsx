@@ -3,7 +3,7 @@
 // 数据源不变：snapshot.segments + snapshot.pauseEvents，经 buildMixedTimelineItems 混合。
 // 语义契约：已关联/未关联 = 本地任务关联；已同步/未同步/同步失败 = 滴答云同步队列，
 // 同步状态只出现在滴答来源的专注片段上，提示语统一为「同步到滴答清单」。
-import { memo, useEffect, useMemo, useState, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useStore } from '../../app/store';
 import { formatDuration, formatMinutes, formatClock } from '../../lib/time';
@@ -59,6 +59,7 @@ const TimelineRow = memo(function TimelineRow({
   lastTick,
   syncState,
   reducedMotion,
+  onEdit,
 }: {
   item: TimelineItem;
   state: string;
@@ -66,11 +67,14 @@ const TimelineRow = memo(function TimelineRow({
   lastTick: number;
   syncState: SessionSyncState | null;
   reducedMotion: boolean;
+  /** 专注片段的标题是修改任务关联的入口；暂停行不提供。必须由父级 useCallback 保持稳定。 */
+  onEdit: ((segmentId: string, index: number) => void) | null;
 }) {
   const isFocus = item.type === 'focus';
   const duration = getTimelineDisplayDuration(item, liveNow, lastTick);
   const isCurrent = item.isActive;
   const pausedNow = isFocus && isCurrent && state === 'paused';
+  const label = isFocus ? `${String(item.index).padStart(2, '0')} · ${item.title}` : '暂停';
 
   return (
     <motion.div
@@ -83,12 +87,24 @@ const TimelineRow = memo(function TimelineRow({
       }`}
     >
       <div className="ledger-row-main">
-        <span
-          className="ledger-row-title"
-          title={isFocus ? `${String(item.index).padStart(2, '0')} · ${item.title}` : '暂停'}
-        >
-          {isFocus ? `${String(item.index).padStart(2, '0')} · ${item.title}` : '暂停'}
-        </span>
+        {isFocus && onEdit ? (
+          <button
+            type="button"
+            className="ledger-row-title ledger-row-edit"
+            title={`${label} · 点击修改任务关联`}
+            aria-label={`修改片段 ${String(item.index).padStart(2, '0')} 的任务关联`}
+            onClick={(event) => {
+              event.currentTarget.focus();
+              onEdit(item.id, item.index);
+            }}
+          >
+            {label}
+          </button>
+        ) : (
+          <span className="ledger-row-title" title={label}>
+            {label}
+          </span>
+        )}
         <span className="ledger-row-duration">
           {isFocus ? formatDuration(duration) : formatMinutes(duration)}
         </span>
@@ -128,7 +144,12 @@ const TimelineRow = memo(function TimelineRow({
   );
 });
 
-export function SegmentTimeline() {
+interface SegmentTimelineProps {
+  /** 点击某个专注片段时打开任务选择器（用户 2026-10-06：账本里「03」要能改）。 */
+  onEditSegment?: (segmentId: string, index: number) => void;
+}
+
+export function SegmentTimeline({ onEditSegment }: SegmentTimelineProps = {}) {
   const { snapshot, syncQueue, setSyncQueue } = useStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion() ?? false;
@@ -159,6 +180,12 @@ export function SegmentTimeline() {
   const currentTaskTitle = getCurrentTaskTitle(snapshot);
 
   // 同步状态映射：片段级（逐行）+ 会话级（结束后的头部汇总）
+  // 保持稳定引用：TimelineRow 是 memo，回调每次重建会让整份账本每秒重排。
+  const handleEdit = useCallback(
+    (segmentId: string, index: number) => onEditSegment?.(segmentId, index),
+    [onEditSegment],
+  );
+
   const segmentSyncMap = useMemo(() => buildSegmentSyncMap(syncQueue), [syncQueue]);
   const sessionSyncMap = useMemo(() => buildSessionSyncStateMap(syncQueue), [syncQueue]);
   const sessionSync = sessionId ? sessionSyncMap[sessionId] : undefined;
@@ -255,6 +282,7 @@ export function SegmentTimeline() {
                 lastTick={isFocus && item.isOngoing ? lastTick : 0}
                 syncState={syncState}
                 reducedMotion={reducedMotion}
+                onEdit={isFocus && onEditSegment ? handleEdit : null}
               />
             );
           })}

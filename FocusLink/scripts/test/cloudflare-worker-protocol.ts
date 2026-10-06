@@ -15,6 +15,7 @@ import type {
   LiveFocusCommandRequest,
   LiveFocusCommandResponse,
   LiveFocusSnapshotResponse,
+  LiveFocusTaskContext,
   LiveFocusWaitResponse,
 } from '../../shared/sync/liveFocusProtocol';
 import {
@@ -566,6 +567,54 @@ async function runProtocol(context: ProtocolContext): Promise<SavedState> {
     ),
   );
   assert.equal(resumed.snapshot.state, 'running');
+
+  /* 用户 2026-10-06：专注中途点账本里的片段改任务 —— 云端权威必须接受 link-task 并把
+     覆盖写进那一段，未点开的片段保持继承（不写 override）。 */
+  const relinkSegmentId = resumed.snapshot.session?.segments[0]?.id;
+  assert.ok(relinkSegmentId, 'resumed live session should expose its first segment');
+  const relinkTask: LiveFocusTaskContext = {
+    taskId,
+    taskSource: 'local',
+    taskTitle: '古诗文',
+  };
+  const relinked = await liveCommand(
+    context,
+    liveRequest(
+      context.deviceId,
+      runId + '-link-task',
+      'link-task',
+      resumed.snapshot.revision,
+      liveEntityId,
+      undefined,
+      { segmentId: relinkSegmentId, task: relinkTask },
+    ),
+  );
+  assert.equal(relinked.ack.status, 'applied');
+  assert.equal(relinked.snapshot.revision, resumed.snapshot.revision + 1);
+  assert.equal(relinked.snapshot.session?.segments[0]?.task?.taskId, taskId);
+  assert.equal(relinked.snapshot.session?.segments[0]?.task?.taskTitle, '古诗文');
+  assert.equal(
+    relinked.snapshot.session?.segments[1]?.task,
+    undefined,
+    '未点开的片段不应写入任务覆盖',
+  );
+
+  const missingSegment = await liveCommand(
+    context,
+    liveRequest(
+      context.deviceId,
+      runId + '-link-missing',
+      'link-task',
+      relinked.snapshot.revision,
+      liveEntityId,
+      undefined,
+      { segmentId: 'live-segment-missing', task: relinkTask },
+    ),
+  );
+  assert.equal(missingSegment.ack.status, 'rejected');
+  assert.equal(missingSegment.ack.errorCode, 'segment_not_found');
+  assert.equal(missingSegment.snapshot.revision, relinked.snapshot.revision);
+
   await delay(20);
   const finished = await liveCommand(
     context,
@@ -573,7 +622,7 @@ async function runProtocol(context: ProtocolContext): Promise<SavedState> {
       context.deviceId,
       runId + '-finish',
       'finish',
-      resumed.snapshot.revision,
+      relinked.snapshot.revision,
       liveEntityId,
     ),
   );
@@ -1054,18 +1103,38 @@ function makeMetadataMutation(
 function liveRequest(
   deviceId: string,
   commandId: string,
-  action: 'start' | 'pause' | 'resume' | 'finish',
+  action: 'start' | 'pause' | 'resume' | 'finish' | 'link-task',
   expectedRevision: number,
   sessionId: string,
   title?: string,
+  relink?: { segmentId: string; task: LiveFocusTaskContext | null },
 ): LiveFocusCommandRequest {
+  if (action === 'start') {
+    return {
+      protocolVersion: 1,
+      deviceId,
+      command: { commandId, action, expectedRevision, sessionId, title: title ?? null, task: null },
+    };
+  }
+  if (action === 'link-task') {
+    assert.ok(relink, 'link-task requires a segmentId and task');
+    return {
+      protocolVersion: 1,
+      deviceId,
+      command: {
+        commandId,
+        action,
+        expectedRevision,
+        sessionId,
+        segmentId: relink.segmentId,
+        task: relink.task,
+      },
+    };
+  }
   return {
     protocolVersion: 1,
     deviceId,
-    command:
-      action === 'start'
-        ? { commandId, action, expectedRevision, sessionId, title: title ?? null, task: null }
-        : { commandId, action, expectedRevision, sessionId },
+    command: { commandId, action, expectedRevision, sessionId },
   };
 }
 

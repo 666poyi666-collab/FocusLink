@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.5.6（renderer 窗口控制区 DOM 顺序修复，不改 IPC/数据库/同步语义，三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.5.7（live 协议新增 link-task 片段级任务覆盖 + 进行中实时会话的只读投影；不新增 IPC 命令、不改数据库结构，三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -34,6 +34,15 @@
 - endpoint、authority secret、owner subject 和配对兼容层都属于基础设施细节，不进入 renderer 表单。旧合法 `fl2` 原位迁移为已登录；退出只删除本机凭据，不删除账本。移动端必须把稳定 installationId 与 authority 分配的 deviceId 分开保存，重新登录不得制造幽灵设备。
 - 推送只传 needSync hint，HTTPS/cursor 始终是数据真相。当前厂商凭据缺失，状态为 `credential-missing`。
 - R2 恢复进入 maintenance 并切换 generation 与 epoch。当前账户未启用 R2，Wrangler API `10042` 代表真实备份门禁未通过。
+
+## v1.5.7 实时会话片段级任务（live link-task）与进行中会话投影
+
+- `LiveFocusTimelineSegment` 新增可选 `task`，三态语义固定：**字段不存在 = 继承会话默认任务**、`null` = 该片段被主动解除关联、对象 = 该片段的覆盖任务。`liveSegmentTask(segment, sessionTask)` 与 `liveSegmentTitle(segment, sessionTask, sessionTitle)` 是唯一解释点（`shared/sync/liveFocusProtocol.ts`），云端 DO 的完成包构建也必须走它，不得各写一份。
+- live 协议新增动作 `link-task`（协议版本仍为 1，属于增量）：命令键集为 `{commandId, action, expectedRevision, sessionId, segmentId, task}`，`task` 只接受 `{taskId, taskSource ∈ local|ticktick, taskTitle}` 三键或显式 `null`；严格校验拒绝空 `segmentId`、缺 `taskSource`、`dida` 来源、额外键（如 `accountId`）以及非 link-task 动作携带 `segmentId`。
+- Account DO 在 `validateLiveTransition` 里对 `link-task` 只做一件事：`session.segments.some(s => s.id === command.segmentId)` 为假即 `segment_not_found`（revision 不变）；通过后在该片段上写 `segment.task`（显式 null 原样写 null）。完成时 `buildCompletedLiveBundle` 用片段级任务产出每段的 `taskId/taskSource/title`，未被覆盖的片段回落会话默认任务。
+- 桌面控制器：实时会话的 `linkSegmentTask` / `clearSegmentTask` 走 `relinkLiveSegment(segmentId, task)` → 云端命令，返回 `Promise<void>` 以保持 IPC 声明形状；`ensureNotLiveSession` 仍拦住「开始前选择默认任务」等语义，但**不再拦片段级改任务**。
+- 进行中会话投影：`electron/sessions/liveSessionProjection.ts` 把 `TimerSnapshot` 只读投影成 `FocusSession/FocusSegment/PauseEvent`；`ipc.ts` 的 `sessions:list`（放最前 + 按 id 去重 + 截断 size）、`sessions:get`（命中投影 id 直接返回）、`sessions:analytics`（区间谓词与 `db/index.ts` 的 `listSessionsInRange` 对齐，且本地已有同一会话时不重复 push）使用它。投影不写库、不改计时 authority。
+- 部署要求：DO 改动必须 `npx wrangler deploy` 后才生效；`npm run test:cloudflare` 已覆盖 link-task 的 applied / `segment_not_found` / 未点开片段不写覆盖三条实机断言。
 
 ## 1. 分层
 

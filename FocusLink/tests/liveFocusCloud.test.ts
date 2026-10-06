@@ -35,7 +35,8 @@ function commandRequest(input: {
   sessionId?: string;
   deviceId?: string;
   title?: string | null;
-  task?: { taskId: string; taskSource: 'local' | 'ticktick'; taskTitle: string | null };
+  segmentId?: string;
+  task?: { taskId: string; taskSource: 'local' | 'ticktick'; taskTitle: string | null } | null;
 }): LiveFocusCommandRequest {
   const base = {
     commandId: input.commandId,
@@ -43,19 +44,29 @@ function commandRequest(input: {
     expectedRevision: input.expectedRevision,
     sessionId: input.sessionId ?? 'live-session-1',
   };
-  return {
+  const request = {
     protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
     deviceId: input.deviceId ?? 'phone-a',
-    command:
-      input.action === 'start'
-        ? {
-            ...base,
-            action: 'start',
-            title: input.title ?? '复习化学',
-            task: input.task,
-          }
-        : { ...base, action: input.action },
   };
+  // link-task 的键集与其他动作不同，按动作分支构造，避免宽泛联合被收窄成缺字段的命令。
+  if (input.action === 'start') {
+    return {
+      ...request,
+      command: { ...base, action: 'start', title: input.title ?? '复习化学', task: input.task },
+    };
+  }
+  if (input.action === 'link-task') {
+    return {
+      ...request,
+      command: {
+        ...base,
+        action: 'link-task',
+        segmentId: input.segmentId ?? 'live-segment-1',
+        task: input.task ?? null,
+      },
+    };
+  }
+  return { ...request, command: { ...base, action: input.action } };
 }
 
 describe('live focus cloud store', () => {
@@ -160,6 +171,147 @@ describe('live focus cloud store', () => {
       liveRevision: 4,
       liveState: 'idle',
     });
+  });
+
+  /* 用户 2026-10-06 需求：专注中途能改某个片段的关联任务（点账本里的「03」），
+     但会话默认任务不变、没被点开的片段继续继承默认任务。 */
+  it('relinks one live segment while the session default task and other segments stay inherited', () => {
+    let now = 1_720_000_000_000;
+    const store = createDeviceSyncCloudStore({ now: () => now });
+
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'start-1',
+        action: 'start',
+        expectedRevision: 0,
+        task: { taskId: 'math-1', taskSource: 'local', taskTitle: '第二章第二节' },
+      }),
+    );
+
+    now += 27 * 60_000;
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({ commandId: 'pause-1', action: 'pause', expectedRevision: 1 }),
+    );
+    now += 2 * 60_000;
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({ commandId: 'resume-1', action: 'resume', expectedRevision: 2 }),
+    );
+    const segments = store.getLiveSnapshot(ACCOUNT_A).snapshot.session?.segments ?? [];
+    expect(segments).toHaveLength(2);
+
+    const relink = store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'link-1',
+        action: 'link-task',
+        expectedRevision: 3,
+        segmentId: segments[1].id,
+        task: { taskId: 'poetry-1', taskSource: 'local', taskTitle: '古诗文' },
+      }),
+    );
+    expect(relink.ack.status).toBe('applied');
+    expect(relink.snapshot.session?.task, '会话默认任务仍是最初关联的那个').toMatchObject({
+      taskId: 'math-1',
+    });
+    expect(
+      relink.snapshot.session?.segments[0].task,
+      '没被点开的片段不写 override',
+    ).toBeUndefined();
+    expect(relink.snapshot.session?.segments[1].task).toMatchObject({
+      taskId: 'poetry-1',
+      taskTitle: '古诗文',
+    });
+
+    const missing = store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'link-missing',
+        action: 'link-task',
+        expectedRevision: 4,
+        segmentId: 'live-segment-nope',
+        task: null,
+      }),
+    );
+    expect(missing.ack).toMatchObject({ status: 'rejected', errorCode: 'segment_not_found' });
+    expect(missing.snapshot.revision, '被拒绝的命令不推进 revision').toBe(4);
+
+    now += 60_000;
+    const finish = store.commandLive(
+      ACCOUNT_A,
+      commandRequest({ commandId: 'finish-1', action: 'finish', expectedRevision: 4 }),
+    );
+    expect(finish.ack).toMatchObject({ status: 'applied', completedEntityId: 'live-session-1' });
+
+    const ledger = store.sync(ACCOUNT_A, {
+      protocolVersion: 1,
+      deviceId: 'phone-a',
+      cursor: null,
+      mutations: [],
+      pullLimit: 10,
+    });
+    const bundle = ledger.changes[0]?.payload;
+    expect(bundle?.segments?.map((segment) => segment.taskId)).toEqual(['math-1', 'poetry-1']);
+    expect(bundle?.session).toMatchObject({
+      defaultTaskId: 'math-1',
+      defaultTaskTitle: '第二章第二节',
+    });
+  });
+
+  it('an explicit null clears one segment override instead of falling back to the session task', () => {
+    let now = 1_720_000_000_000;
+    const store = createDeviceSyncCloudStore({ now: () => now });
+
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'start-1',
+        action: 'start',
+        expectedRevision: 0,
+        task: { taskId: 'math-1', taskSource: 'local', taskTitle: '第二章第二节' },
+      }),
+    );
+    now += 27 * 60_000;
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({ commandId: 'pause-1', action: 'pause', expectedRevision: 1 }),
+    );
+    now += 2 * 60_000;
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({ commandId: 'resume-1', action: 'resume', expectedRevision: 2 }),
+    );
+    const segments = store.getLiveSnapshot(ACCOUNT_A).snapshot.session?.segments ?? [];
+
+    const cleared = store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'link-clear',
+        action: 'link-task',
+        expectedRevision: 3,
+        segmentId: segments[1].id,
+        task: null,
+      }),
+    );
+    expect(cleared.ack.status).toBe('applied');
+    expect(cleared.snapshot.session?.segments[1].task).toBeNull();
+
+    now += 60_000;
+    store.commandLive(
+      ACCOUNT_A,
+      commandRequest({ commandId: 'finish-1', action: 'finish', expectedRevision: 4 }),
+    );
+    const ledger = store.sync(ACCOUNT_A, {
+      protocolVersion: 1,
+      deviceId: 'phone-a',
+      cursor: null,
+      mutations: [],
+      pullLimit: 10,
+    });
+    const bundle = ledger.changes[0]?.payload;
+    expect(bundle?.segments?.map((segment) => segment.taskId)).toEqual(['math-1', null]);
   });
 
   it('allows only one concurrent revision winner and rejects stale or mismatched sessions', () => {
