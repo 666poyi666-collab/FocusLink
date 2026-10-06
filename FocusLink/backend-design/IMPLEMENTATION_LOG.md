@@ -1,5 +1,20 @@
 # FocusLink 实施日志
 
+## 2026-10-06 · `FL-UI-20261006-LEDGER-SCROLL`：长会话下统计页会话账本详情栏滚不动（v1.5.8）
+
+- **用户报告**：「在专注块这个界面，我看不到内容，它不能有个往下的滚动栏吗？我圈出来的那部分，就是每个任务的专注情况，现在不能往下拉，也没有滚动条……要是我每一个暂停，这个东西堆叠太多了呢，就看不到什么玩意了。」当时那一场专注已经 3 小时 2 分钟、10 段专注 + 9 次暂停，统计页右栏「会话时间账本」的详情框（「片段与暂停」列表）从窗口中部一路堆到窗口底边之外，只能拉大窗口才看得到后段。
+- **根因**：卡贴质感外观系统里的 `.card-widget { position: relative !important; overflow: hidden !important }`（`src/styles/stats-workbench.css:2515`）用 `!important` 的**简写** `overflow` 压掉了 `.stats-page .deep-dive-box { overflow-y: auto }`（同文件 `:3170` 与 `@media (min-width:980px)` 的 `:3671`）—— **`!important` 的胜出不看选择器优先级**，所以 `overflow-y: auto` 写得再具体也不生效。账本详情框的 className 正是 `card-widget deep-dive-box`（`src/features/history/SessionLedger.tsx:197`）。`overflow: hidden` 本意只是让卡片的伪元素光效铺满圆角，不是给滚动容器用的。
+- **实测证据（打包产物，不是几何推断）**：`release-v157/win-unpacked/FocusLink.exe`（应用自报 1.5.7 / commit 8de12e0）在隔离 `--user-data-dir` 下用 CDP 打开，注入造数会话 `probe-scroll-long-1`（今天 09:26 起，10 段专注×20min + 9 次暂停×3min）。`.deep-dive-box` computed `overflow-y: hidden`、`height 573.8px`、`clientHeight 573`、`scrollHeight 1873`、`scrollTop` 恒为 0；真实滚轮（`Input.dispatchMouseEvent` mouseWheel）落在 `.segment-mini-list` 上 `moved: {"deep-dive-box": 0}`（被吞）。对照：同栏上方 `.session-card-stream`（不是卡片）`overflow-y: auto`、滚轮 `moved: 26`；中栏 `.stats-scroll-area` `overflow-y: auto`、`scrollHeight 1519 > clientHeight 684` 均可滚。祖先高度链正常：`.detail-pane` boxH 760 / top 42 / bottom 802（= 视口底）、`.workspace-body` 760、`.stats-paper` 760，且 `stats-workbench.css` 没有 `min-width:1400` 断点、两处 `@container` 规则与滚动无关。
+- **修复**：裁切只留给真正需要它的卡片 —— `.card-widget { position: relative !important }` + `.card-widget:not(.deep-dive-box) { overflow: hidden !important }`（`src/styles/stats-workbench.css:2515-2524`，附注释写明「伪元素光效铺满卡片需要父级裁切；账本详情框自己就是滚动容器；统计页里这层光效本就被关掉」），并给 `.stats-page .deep-dive-box` 补 `overflow-x: hidden`（`:3170-3179`）保持横向裁切语义。**纯 renderer 样式修复：未改主进程、未新增 IPC 命令、未改数据库结构。**
+- **测试**：新增 `tests/ledgerScrollContract.test.ts`（3 条源码契约）—— 两个断点下 `.stats-page .deep-dive-box` 都必须含 `overflow-y: auto`；必须存在 `.card-widget:not(.deep-dive-box)` 且全文不得再出现裸 `.card-widget { overflow: hidden !important }`（同时排除式规则仍须含 `overflow: hidden !important`）；`SessionLedger.tsx` 的详情框必须匹配 `/className="card-widget deep-dive-box"/`。
+- **门禁**：`format:check` / `typecheck`（含 `typecheck:cloudflare`）/ `lint` PASS；`npm test` **144 文件 / 1160 项** PASS。
+- **出包**：干净源码 `085d954` 执行 `npm run dist`（`gen-version` stamp `commit=085d954`、`releaseDir=release-v158`）PASS，产出签名 installer `release-v158/FocusLink-1.5.8-x64.exe`（SHA256 `95c24ff8…`）与 portable `release-v158/FocusLink-1.5.8-x64-portable.exe`（`9c3fd208…`），`release-v158/SHA256SUMS.txt` 同步重算。
+- **验收（打包产物真实滚轮端到端）**：`release-v158/win-unpacked/FocusLink.exe`（应用自报 `1.5.8 / commit 085d954`）在隔离 `--user-data-dir` 临时 profile 下用 CDP `Input.dispatchMouseEvent`（mouseWheel）跑通，注入造数会话 `probe-scroll-long-1`（10 段专注×20min + 9 次暂停×3min，片段列表 `scrollHeight 1873`）：
+  - 统计页三档视口全部通过：`1700×1000`（`.deep-dive-box` `overflow-y: auto`、`top 245 / bottom 986`、`clientHeight 739 / scrollHeight 1873`，真实滚轮 `scrollTop 0 → 500`，`scrolled: ["deep-dive-box"]`）、`1440×900`（`bottom 886 / clientHeight 665`，滚轮 `0 → 500`）、`1240×802`（`bottom 788 / clientHeight 573`，滚轮 `+300`）；三档都断言详情栏底边不越过视口，且同栏会话卡片列表仍能独立滚动（`session-card-stream` `+160 / +26 / +5`）。
+  - 专注页两档同样通过：`.ledger-list` `overflow-y: auto`、`scrollHeight 1245 > clientHeight 561 / 391`、容器底边 `789 / 619 ≤ 视口`，真实滚轮 `+500`（该列表在新增条目时会 smooth 滚到底部，因此测试先把 `scrollTop` 复位再向下滚）。
+  - 临时 profile 已删除（`profile-cleaned`），全程未触碰用户正在运行的 1.5.6 与其数据库。
+- **验收方法学（避免误判）**：滚轮测试的落点必须取「元素 rect ∩ 所有会裁切的祖先 rect ∩ 视口」的交集 —— 只看视口会算出假的可视带（`1440` 视口下 `.segment-mini-list` 的 `rect.top` 已是 `-88`），滚轮会投递给别的元素，看起来像「产品不能滚」。
+
 ## 2026-10-06 · `FL-UI-20261006-LIVE-SEGMENT-RELINK`：专注中途改片段任务 + 统计页跨午夜日期与进行中会话（v1.5.7）
 
 - **用户报告（三条一起）**：① 「我第一、第二阶段都是『第二章第二节』的任务，到了第三阶段我懒得结束就直接继续开始了，但第三个任务圈起来应该是『古诗文』，我发现目前这个界面不能改，这很不好」——要求点右侧账本里的「03」弹出小窗口改任务；默认逻辑必须保持「暂停后继续还是默认任务，只有我专门来换才换」。② 「统计界面今天是 10 月 6 号，它给我显示个 10 月 5 号干什么？」③ 「虽然我这个专注还没有结束，但你应该显示我已有的数据」。
