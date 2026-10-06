@@ -1,6 +1,6 @@
 # FocusLink 前端设计规范
 
-> 目标版本：v1.x（当前候选：v1.5.7，专注页账本片段可点击改任务；统计页必须显示跨午夜日期与进行中的实时会话）
+> 目标版本：v1.x（当前候选：v1.5.8，会话账本详情栏必须可滚动；v1.5.7 的专注页账本片段可点击改任务与统计页跨午夜日期、进行中实时会话一并待实装回读）
 
 > v0.12.104 继承完整 24 小时三轨时间地图与独立清单系统，并把三端配对统一为“每台设备显示本机码”：任意一台输入另一台的 8 位码一次，两台直接进入同一任务、实时专注和账本同步空间；不区分先后、登录或批准角色。所有配对设备均可查看并撤销已配对设备。
 >
@@ -517,6 +517,13 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 确认类交互统一使用 `src/ui/ConfirmDialog.tsx`：危险操作 `danger`、主按钮 `.btn-danger`、默认焦点落在「取消」、Esc 取消、完成后焦点归还触发元素。删除任务、删除清单、删除设备三条路径都已接入；v1.5.5 起统计页账本「删除记录」是第四条（见本文件 v1.5.5 节）。
 - `tests/rendererNativeDialogGuard.test.ts` 是硬门禁：桌面 renderer 出现原生对话框调用即失败，并断言上述删除路径确实渲染 `<ConfirmDialog>`。
 - `npm run smoke:stats` 必须覆盖删除链路：点击删除出现 `.confirm-shell`、全程 `window.nativeDialogCalls` 为 0、取消不写库且任务仍在、确认只调用一次持久 remove 且行消失。
+
+## v1.5.8 会话账本详情栏必须可滚动
+
+- 统计页右栏「会话时间账本」的详情框（`.card-widget.deep-dive-box`）是**滚动容器**：长会话的「片段与暂停」列表会堆到上千像素，必须能滚、必须出现滚动条，不能只靠拉大窗口。2026-10-06 用户报告：「在专注块这个界面，我看不到内容，它不能有个往下的滚动栏吗？……要是我每一个暂停，这个东西堆叠太多了呢，就看不到什么玩意了。」
+- 根因是卡贴质感外观系统里的 `.card-widget { overflow: hidden !important }` 用 `!important` 的简写 `overflow` 压掉了 `.stats-page .deep-dive-box { overflow-y: auto }`（`!important` 的胜出不看选择器优先级）。裁切只保留给真正需要它的卡片：`.card-widget:not(.deep-dive-box)`（它的伪元素光效铺满卡片，父级必须裁切）；统计页里这层光效本就 `display: none`。
+- 硬约束由 `tests/ledgerScrollContract.test.ts` 锁定：两个断点下详情框都必须 `overflow-y: auto`，且不得再出现裸 `.card-widget { overflow: hidden !important }`。
+- 同类界面（专注页右侧账本 `.ledger-list`）本来就是独立滚动容器（`flex: 1; overflow-y: auto`），改这类布局后必须**分别真实测量**滚动，不要用几何推断代替滚轮验证。
 
 ## v1.5.7 专注中途改任务与统计页时间显示
 

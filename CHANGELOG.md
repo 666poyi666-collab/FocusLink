@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.8 - 2026-10-06（修复长会话下统计页会话账本详情栏滚不动）
+
+- 用户报告（2026-10-06，附统计页截图）：「在专注块这个界面，我看不到内容，它不能有个往下的滚动栏吗？我圈出来的那部分，就是每个任务的专注情况，现在不能往下拉，也没有滚动条……要是我每一个暂停，这个东西堆叠太多了呢，就看不到什么玩意了。」当时那一场专注已经 3 小时 2 分钟、10 段专注 + 9 次暂停，右栏「片段与暂停」列表从窗口中部一路堆到窗口底边之外。
+- 根因：卡贴质感外观系统里的 `.card-widget { position: relative !important; overflow: hidden !important }`（`src/styles/stats-workbench.css`）用 `!important` 的**简写** `overflow` 压掉了 `.stats-page .deep-dive-box { overflow-y: auto }`。`!important` 的胜出不看选择器优先级，所以详情框的 `overflow-y: auto` 写得再具体也不生效 —— 而账本详情框的 className 正是 `card-widget deep-dive-box`。
+- 打包产物实测（隔离 `--user-data-dir` + CDP，10 段专注 / 9 次暂停的长会话）：详情框 computed `overflow-y: hidden`、`scrollHeight 1873px > clientHeight 573px`、`scrollTop` 恒为 0，真实滚轮事件被吞（`moved: 0`），后段内容被祖先裁掉，只能拉大窗口才看得见。同栏上方的会话卡片列表（`.session-card-stream`，不是卡片）一直可滚，对比明显。
+- 修复：裁切只留给真正需要它的卡片 —— `.card-widget:not(.deep-dive-box) { overflow: hidden !important }`（伪元素光效铺满卡片，父级必须裁切），并给 `.stats-page .deep-dive-box` 补上 `overflow-x: hidden` 保持横向裁切语义。统计页里这层光效本就被关掉（`.stats-page .card-widget::before/::after` 是 `display: none`），放行没有副作用。
+- 新增 `tests/ledgerScrollContract.test.ts`（3 条源码契约）：两个断点下详情框都必须 `overflow-y: auto`、不得再出现裸 `.card-widget { overflow: hidden !important }`、`SessionLedger` 的详情框元素确实同时带 `card-widget deep-dive-box` 两个类。
+
 ## v1.5.7 - 2026-10-06（专注中途改任务 + 统计页日期与进行中会话）
 
 - 用户需求（2026-10-06）：「我第一、第二阶段都是『第二章第二节』的任务，到了第三阶段我懒得结束就直接继续开始了，但第三个任务圈起来应该是『古诗文』，我发现目前这个界面不能改」；「统计界面今天是 10 月 6 号，它给我显示个 10 月 5 号干什么？」；「虽然我这个专注还没有结束，但你应该显示我已有的数据」。

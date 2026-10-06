@@ -2514,6 +2514,12 @@ button {
 /* 动态光效：自适应鼠标镜面微光 (Specular Sheen) & 边缘感应高光 (Border Spotlight) */
 .card-widget {
   position: relative !important;
+}
+/* 两枚伪元素以绝对定位铺满整张卡片，父级必须裁切，否则光效会溢出卡片圆角。
+   但账本深挖卡片（.deep-dive-box）自己就是滚动容器：片段与暂停列表会堆到上千像素，
+   一旦被裁掉就再也看不到（v1.5.8 修复 —— 用户报告长会话下账本后段看不到、也没有滚动条）。
+   它在统计页里的光效本就被关掉（见 .stats-page .card-widget::before/::after），放行没有副作用。 */
+.card-widget:not(.deep-dive-box) {
   overflow: hidden !important;
 }
 
@@ -3170,6 +3176,8 @@ html:not([data-skin]) .card-widget:hover {
 .stats-page .deep-dive-box {
   flex: 1 1 0;
   min-height: 0;
+  /* 纵向必须可滚：片段与暂停会堆到上千像素（横向仍按卡片习惯裁切）。 */
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 16px;
   gap: 16px;
