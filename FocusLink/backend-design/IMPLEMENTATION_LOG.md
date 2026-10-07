@@ -9,6 +9,13 @@
 - **复测（真实用户库副本 + 真实统计函数）**：`npx tsx .tmp/repro-crossday.ts` —— 10/07 `daily.activeMs` 2874400ms(48min) → **1531640ms(26min)**、`sessionActive[df0847e5]` 22min → **0**、`dayLedger estimatedFocus` 22min → **0**、`estimated=false`、`hourly` 合计 48min → 26min；10/06 `daily.activeMs` 15146824ms(252min) → **13396052ms(223min)**、`estimatedFocus` 29min → **0**、`sessionActive[df0847e5]` 仍 41min（专注确实发生在 10/06）。
 - **测试**：`tests/sessionAnalytics.test.ts` 新增「keeps cross-midnight focus on the day it happened instead of spreading it into today」（今天 0 分钟、日账本 `not-started`/`estimated=false`；覆盖两天的范围必须把 41 分钟完整算在昨天）；`tests/dayLedgerAnalytics.test.ts` 新增「does not spread yesterday focus into today when only the pause crosses midnight」（今天 `estimatedFocusMs 0`；昨天仍是精确 40min 专注 + 80min 暂停）。
 - **门禁**：`format:check` / `typecheck`（含 `typecheck:cloudflare`）/ `lint` PASS；`npm test` **144 文件 / 1162 项** PASS。
+- **出包**：干净源码 `f74911f` 执行 `npm run dist`（`gen-version` stamp `commit=f74911f`、`releaseDir=release-v159`）PASS，产出签名 installer `release-v159/FocusLink-1.5.9-x64.exe`（SHA256 `3EC994D5…`）与 portable `release-v159/FocusLink-1.5.9-x64-portable.exe`（`93CD14F7…`），`release-v159/SHA256SUMS.txt` 与 `RELEASE_NOTES.md` 同步生成。
+- **验收（打包产物跨午夜端到端）**：`release-v159/win-unpacked/FocusLink.exe`（应用自报 `1.5.9 / commit f74911f`、`buildTime 2026-10-07T02:59:02Z`）在隔离 `--user-data-dir` 临时 profile 下用 CDP 打开，注入造数：跨午夜会话 `probe-cross-midnight-1`（昨天 22:00 起，专注片段 22:00–22:41 = 41min，暂停 22:41 → 今天 08:00 跨过午夜）+ 今天会话 `probe-today-1`（09:00–09:30 = 30min，任务「每日古诗文」）。
+  - 统计页「今日看板」hero 渲染 `专注时长 30 分钟`（修复前会摊成 52 分钟）、`2 次专注`、`暂停 8 小时`；右栏账本两张卡片分别是 `10/7 · 09:00 – 09:30 今天验证 30 分钟` 与 `10/6 · 22:00 – 10/7 08:00 跨午夜验证 41 分钟` —— 昨天的 41 分钟仍完整挂在那条会话上。
+  - 原始口径交叉验证（`window.focuslink.sessions.analytics`，今天范围）：`daily.activeMs = 1800000ms(30min)`、`sessionCount 2`、`sessionActive = [{probe-today-1: 1800000}, {probe-cross-midnight-1: 0}]` —— 跨午夜会话今天的 activeMs 精确为 **0**（修复前 22 分钟）。
+  - 探针打印 `RESULT {"status":"PASS","kpi":"30 分钟","todayActiveMs":1800000,"crossTodayMs":0}`；临时 profile 已删除（`profile-cleaned`），全程未触碰用户正在运行的 1.5.6 与其数据库。
+  - 探针期间出现 4 条「快捷键 stopTimer / toggleWindow / linkTask / toggleMiniWindow 注册失败」通知条：用户已安装的 1.5.6 正持有这些全局快捷键，隔离 profile 里的第二个实例注册不到属预期现象，与本次统计口径修复无关。
+- **冒烟**：`npm run smoke:stats` **13 条** PASS（含真实多日图表、会话/片段关联、账本删除）；`npm run smoke:window-visible` PASS（用户安装实例主窗口可见）。
 
 ## 2026-10-06 · `FL-UI-20261006-LEDGER-SCROLL`：长会话下统计页会话账本详情栏滚不动（v1.5.8）
 
