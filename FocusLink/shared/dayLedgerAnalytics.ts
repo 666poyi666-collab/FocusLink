@@ -386,9 +386,35 @@ export function buildDayLedger(
     observationStartedAt !== null && observationEndedAt > observationStartedAt
       ? partitionObservation(observationStartedAt, observationEndedAt, exact)
       : [];
-  const sessionIdsWithExactFocus = new Set(exactFocus.flatMap((interval) => interval.sessionId));
-  const sessionIdsWithExactPause = new Set(
-    exact.filter((interval) => interval.kind === 'pause').map((interval) => interval.sessionId),
+  // 「该会话有没有精确记录」要按会话在库里的全部记录判断，而不是只按落在本日窗口内的记录判断：
+  // 跨午夜会话的片段可能全在昨天（今天只看到它的暂停），那是真实记录而非无明细的 legacy 行，
+  // 若据此把会话总量按墙钟比例摊一份「估算专注」进今天，昨天的专注就会漏进今天的账本。
+  const sourceSessions = new Map(source.sessions.map((session) => [session.id, session] as const));
+  const sessionIdsWithRecordedFocus = new Set(
+    source.segments
+      .filter(
+        (segment) =>
+          exactEndForSegment(
+            segment,
+            sourceSessions.get(segment.sessionId),
+            isToday,
+            calculationWindowEnd,
+          ) !== null,
+      )
+      .map((segment) => segment.sessionId),
+  );
+  const sessionIdsWithRecordedPause = new Set(
+    source.pauses
+      .filter(
+        (pause) =>
+          exactEndForPause(
+            pause,
+            sourceSessions.get(pause.sessionId),
+            isToday,
+            calculationWindowEnd,
+          ) !== null,
+      )
+      .map((pause) => pause.sessionId),
   );
   const exactSessionFocus = new Map<string, number>();
   for (const interval of intervals) {
@@ -401,7 +427,7 @@ export function buildDayLedger(
     }
   }
   const estimatedSessionFocus = source.sessions.flatMap((session): DayLedgerSessionFocus[] => {
-    if (sessionIdsWithExactFocus.has(session.id)) return [];
+    if (sessionIdsWithRecordedFocus.has(session.id)) return [];
     const focusMs = estimatedShare(
       session,
       session.activeElapsedMs,
@@ -417,7 +443,7 @@ export function buildDayLedger(
   const estimatedPauseMs = source.sessions.reduce(
     (total, session) =>
       total +
-      (sessionIdsWithExactPause.has(session.id)
+      (sessionIdsWithRecordedPause.has(session.id)
         ? 0
         : estimatedShare(
             session,

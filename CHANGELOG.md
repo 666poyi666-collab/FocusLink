@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.9 - 2026-10-07（修复跨午夜会话的专注被算进今天）
+
+- 用户报告（2026-10-07）：「像这种跨了两天的专注时间，比如今天的，昨天的暂停一直到今天，但专注算昨天的啊，为什么算到今天了，你去看看」。真实数据：10/06 16:03:14 开始、跨夜暂停到 10/07 09:29:33 结束的会话，41 分钟专注（三段片段）全部发生在 10/06，今日看板却显示 48 分钟 —— 其中 22 分钟是「按墙钟比例摊分」摊出来的；10/06 的账本同样凭空多了 29 分钟（来自 10/05 那场会话）。
+- 根因：`shared/sessionAnalytics.ts` 的 `buildSessionAnalytics` 与 `shared/dayLedgerAnalytics.ts` 的 `buildDayLedger` 都有「会话在本范围内没有片段时，按墙钟比例把会话总量摊到每一天」的 legacy 回退，而回退判据取自**被范围裁切过**的片段/暂停数组。跨午夜会话的片段全在昨天、只有暂停伸到今天，于是被判成「无精确记录的 legacy 行」，昨天的专注被摊进了今天。数据层其实没丢信息：`listSegmentsInSessionRange` / `listPausesInSessionRange` 按会话重叠取记录，本就包含范围外的片段。
+- 修复：回退判据改成「该会话在库里是否存在可用的精确记录」（`sessionAnalytics.ts` 的 `sessionsWithRecordedSegments`/`sessionsWithRecordedPauses`，`dayLedgerAnalytics.ts` 的 `sessionIdsWithRecordedFocus`/`sessionIdsWithRecordedPause`），并且日账本改为接收**会话的完整记录**而不是「落在范围内的记录」。纯 shared 统计口径修复：未改 IPC 契约、未改数据库结构、未改 renderer。
+- 真实用户库副本复测（`npx tsx .tmp/repro-crossday.ts`）：10/07 `daily.activeMs` 48 分钟 → **26 分钟**、`sessionActive[df0847e5]` 22 分钟 → **0**、日账本 `estimatedFocusMs` 22 分钟 → **0**（`estimated` false）；10/06 `daily.activeMs` 252 分钟 → **223 分钟**、`estimatedFocusMs` 29 分钟 → **0**。
+- 新增 `tests/sessionAnalytics.test.ts` 与 `tests/dayLedgerAnalytics.test.ts` 各 1 条跨午夜回归；`npm test` 144 文件 / 1162 项 PASS。
+
 ## v1.5.8 - 2026-10-06（修复长会话下统计页会话账本详情栏滚不动）
 
 - 用户报告（2026-10-06，附统计页截图）：「在专注块这个界面，我看不到内容，它不能有个往下的滚动栏吗？我圈出来的那部分，就是每个任务的专注情况，现在不能往下拉，也没有滚动条……要是我每一个暂停，这个东西堆叠太多了呢，就看不到什么玩意了。」当时那一场专注已经 3 小时 2 分钟、10 段专注 + 9 次暂停，右栏「片段与暂停」列表从窗口中部一路堆到窗口底边之外。

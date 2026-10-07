@@ -1,6 +1,6 @@
 # FocusLink 前端设计规范
 
-> 目标版本：v1.x（当前候选：v1.5.8，会话账本详情栏必须可滚动；v1.5.7 的专注页账本片段可点击改任务与统计页跨午夜日期、进行中实时会话一并待实装回读）
+> 目标版本：v1.x（当前候选：v1.5.9，跨午夜会话的专注必须算在实际发生的那一天；v1.5.7 的专注页账本片段可点击改任务与统计页跨午夜日期、进行中实时会话，以及 v1.5.8 的会话账本详情栏可滚动一并待实装回读）
 
 > v0.12.104 继承完整 24 小时三轨时间地图与独立清单系统，并把三端配对统一为“每台设备显示本机码”：任意一台输入另一台的 8 位码一次，两台直接进入同一任务、实时专注和账本同步空间；不区分先后、登录或批准角色。所有配对设备均可查看并撤销已配对设备。
 >
@@ -517,6 +517,13 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 确认类交互统一使用 `src/ui/ConfirmDialog.tsx`：危险操作 `danger`、主按钮 `.btn-danger`、默认焦点落在「取消」、Esc 取消、完成后焦点归还触发元素。删除任务、删除清单、删除设备三条路径都已接入；v1.5.5 起统计页账本「删除记录」是第四条（见本文件 v1.5.5 节）。
 - `tests/rendererNativeDialogGuard.test.ts` 是硬门禁：桌面 renderer 出现原生对话框调用即失败，并断言上述删除路径确实渲染 `<ConfirmDialog>`。
 - `npm run smoke:stats` 必须覆盖删除链路：点击删除出现 `.confirm-shell`、全程 `window.nativeDialogCalls` 为 0、取消不写库且任务仍在、确认只调用一次持久 remove 且行消失。
+
+## v1.5.9 跨午夜会话的专注只算在实际发生的那一天
+
+- 用户报告（2026-10-07）：「像这种跨了两天的专注时间，比如今天的，昨天的暂停一直到今天，但专注算昨天的啊，为什么算到今天了？」—— 昨天 16:03 开始、暂停跨夜到今早 09:29 结束的会话，41 分钟专注（三段片段）全部发生在昨天，今日看板却显示 48 分钟，其中约 22 分钟是按墙钟比例摊出来的。
+- 统计口径（`shared/sessionAnalytics.ts` / `shared/dayLedgerAnalytics.ts`）：只有**会话在库里完全没有片段记录**（legacy 纯时长行）时，才允许按墙钟比例把会话总量摊到每一天。判据必须按会话的**全部记录**判断，不能只看落在当前范围内的记录 —— 跨午夜会话的片段属于别的自然日，但那是精确记录，不是无明细行。
+- 后果约束：`daily.activeMs`、`sessionActive`、`hourly`、日账本 `estimatedFocusMs`/`estimatedPauseMs` 与 `estimated` 标记必须一致；跨夜暂停本身仍按自然日切分（暂停不是「专注」）。
+- 硬约束由 `tests/sessionAnalytics.test.ts`（keeps cross-midnight focus on the day it happened…）与 `tests/dayLedgerAnalytics.test.ts`（does not spread yesterday focus into today…）锁定。
 
 ## v1.5.8 会话账本详情栏必须可滚动
 

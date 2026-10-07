@@ -436,4 +436,69 @@ describe('buildSessionAnalytics edge cases', () => {
     ]);
     expect(result.timeline[2].endedAt).toBeNull();
   });
+
+  it('keeps cross-midnight focus on the day it happened instead of spreading it into today', () => {
+    const nextDay = new Date(2026, 6, 19, 0, 0, 0, 0).getTime();
+    const hour = 60 * 60 * 1000;
+    // 昨天 22:00 开始、跨夜暂停到今早 08:00 结束：41 分钟专注全部发生在昨天。
+    const crossNight = session({
+      id: 'cross-night',
+      startedAt: day + 22 * hour,
+      endedAt: nextDay + 8 * hour,
+      activeElapsedMs: 41 * 60 * 1000,
+      pauseElapsedMs: 9 * hour,
+      wallElapsedMs: 10 * hour,
+    });
+    const source = {
+      sessions: [crossNight],
+      segments: [
+        segment({
+          id: 'segment-cross',
+          sessionId: 'cross-night',
+          startedAt: day + 22 * hour,
+          endedAt: day + 22 * hour + 41 * 60 * 1000,
+          activeElapsedMs: 41 * 60 * 1000,
+        }),
+      ],
+      pauses: [
+        pause({
+          id: 'pause-cross',
+          sessionId: 'cross-night',
+          segmentId: 'segment-cross',
+          pauseStartedAt: day + 22 * hour + 41 * 60 * 1000,
+          pauseEndedAt: nextDay + 8 * hour,
+          durationMs: 9 * hour,
+        }),
+      ],
+    };
+
+    // 今天：没有任何片段落在今天，专注必须是 0，而不是把 41 分钟按墙钟比例摊成约 22 分钟。
+    const today = buildSessionAnalytics({ start: nextDay, end: nextDay + 24 * hour - 1 }, source);
+    expect(today.daily).toHaveLength(1);
+    expect(today.daily[0]).toMatchObject({ activeMs: 0, sessionCount: 1 });
+    expect(today.sessionActive).toEqual([{ sessionId: 'cross-night', activeMs: 0 }]);
+    expect(today.totals.activeMs).toBe(0);
+    expect(today.dayLedgers[0].status).toBe('not-started');
+    expect(today.dayLedgers[0].estimated).toBe(false);
+    expect(today.dayLedgers[0].sessionFocus).toEqual([]);
+    expect(today.dayLedgers[0].totals).toMatchObject({
+      focusMs: 0,
+      estimatedFocusMs: 0,
+      estimatedPauseMs: 0,
+    });
+
+    // 覆盖两天的范围：同一份数据必须把 41 分钟完整算在昨天。
+    const bothDays = buildSessionAnalytics({ start: day, end: nextDay + 24 * hour - 1 }, source);
+    expect(bothDays.daily[0]).toMatchObject({ activeMs: 41 * 60 * 1000 });
+    expect(bothDays.daily[1]).toMatchObject({ activeMs: 0 });
+    expect(bothDays.dayLedgers[0].totals).toMatchObject({
+      focusMs: 41 * 60 * 1000,
+      estimatedFocusMs: 0,
+      estimatedPauseMs: 0,
+    });
+    expect(bothDays.dayLedgers[1].totals).toMatchObject({
+      focusMs: 0,
+      estimatedFocusMs: 0,
+    });
+  });
 });

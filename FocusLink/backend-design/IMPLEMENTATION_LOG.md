@@ -1,5 +1,15 @@
 # FocusLink 实施日志
 
+## 2026-10-07 · `FL-STATS-20261007-CROSSMIDNIGHT`：跨午夜会话的专注被摊进今天（v1.5.9）
+
+- **用户报告**：「像这种跨了两天的专注时间，比如今天的，昨天的暂停一直到今天，但专注算昨天的啊，为什么算到今天了，你去看看」。
+- **真实数据**：用户库副本 `%APPDATA%\FocusLink\focuslink.db` → `.tmp/repro-user.db`（只读，未触碰用户正在运行的 1.5.6 及其原库）。会话 `df0847e5-1095-4b8d-8270-07986ae63aab`：10/06 16:03:14 → 10/07 09:29:33，`active 2466741ms(41min)`、`pause 60312978ms`；三段片段全在 10/06（16:03:14–16:16:39 / 16:16:41–16:17:17 / 21:04:27–21:31:33），跨夜暂停 10/06 21:31:33 → 10/07 09:29:33。对照会话 `c81fcc5b-bed7-4656-8e9c-c3d5e784acfe`：10/05 11:12:42 → 10/06 08:49:46，`active 4286499ms(71min)`，6 段片段全在 10/05。
+- **根因**：`shared/sessionAnalytics.ts` 的 `buildSessionAnalytics`（`daily`/`sessionActive`/`hourly`）与 `shared/dayLedgerAnalytics.ts` 的 `buildDayLedger` 都有 legacy 回退 —— 会话在本范围内没有任何片段时按墙钟比例摊分（`addProportionalSessionValue` / `estimatedShare`）。回退判据原来取自**被范围裁切过**的数组：`sessionAnalytics.ts` 的 `segmentSessionIds`/`pauseSessionIds`、`dayLedgerAnalytics.ts` 的 `sessionIdsWithExactFocus`/`sessionIdsWithExactPause`（后者还来自被窗口裁切的 `exactFocus`）。跨午夜会话的片段全在昨天、只有暂停伸到今天 → 被判成 legacy 无明细行 → 昨天的专注按 `9.5h/17.4h` 摊了 22 分钟给今天。数据层没丢信息：`electron/db/index.ts:602-628` 的 `listSegmentsInSessionRange`/`listPausesInSessionRange` 按**会话**重叠取记录，本就含范围外片段；`electron/ipc.ts:523` 的 `sessions:analytics` 无需改动。
+- **修复**：判据改为「会话在库里是否存在可用精确记录」—— `sessionAnalytics.ts` 新增 `sessionSegments`/`sessionPauses`（按 `sessionIds` 过滤的会话完整记录）与 `sessionsWithRecordedSegments`/`sessionsWithRecordedPauses`（5 处回退判断改用），`dayLedgers` 改为把 `sessionSegments`/`sessionPauses` 交给 `buildCalendarDayLedger`（日账本逐天切窗口，跨日片段由 `clampInterval` 自然裁掉，只影响估算判据）；`dayLedgerAnalytics.ts` 新增 `sessionIdsWithRecordedFocus`/`sessionIdsWithRecordedPause`（用 `exactEndForSegment`/`exactEndForPause` 配会话 Map 判断，与窗口无关），替换原有两个判据。**纯 shared 统计口径修复：未改 IPC 契约、未改数据库结构、未改 renderer。**
+- **复测（真实用户库副本 + 真实统计函数）**：`npx tsx .tmp/repro-crossday.ts` —— 10/07 `daily.activeMs` 2874400ms(48min) → **1531640ms(26min)**、`sessionActive[df0847e5]` 22min → **0**、`dayLedger estimatedFocus` 22min → **0**、`estimated=false`、`hourly` 合计 48min → 26min；10/06 `daily.activeMs` 15146824ms(252min) → **13396052ms(223min)**、`estimatedFocus` 29min → **0**、`sessionActive[df0847e5]` 仍 41min（专注确实发生在 10/06）。
+- **测试**：`tests/sessionAnalytics.test.ts` 新增「keeps cross-midnight focus on the day it happened instead of spreading it into today」（今天 0 分钟、日账本 `not-started`/`estimated=false`；覆盖两天的范围必须把 41 分钟完整算在昨天）；`tests/dayLedgerAnalytics.test.ts` 新增「does not spread yesterday focus into today when only the pause crosses midnight」（今天 `estimatedFocusMs 0`；昨天仍是精确 40min 专注 + 80min 暂停）。
+- **门禁**：`format:check` / `typecheck`（含 `typecheck:cloudflare`）/ `lint` PASS；`npm test` **144 文件 / 1162 项** PASS。
+
 ## 2026-10-06 · `FL-UI-20261006-LEDGER-SCROLL`：长会话下统计页会话账本详情栏滚不动（v1.5.8）
 
 - **用户报告**：「在专注块这个界面，我看不到内容，它不能有个往下的滚动栏吗？我圈出来的那部分，就是每个任务的专注情况，现在不能往下拉，也没有滚动条……要是我每一个暂停，这个东西堆叠太多了呢，就看不到什么玩意了。」当时那一场专注已经 3 小时 2 分钟、10 段专注 + 9 次暂停，统计页右栏「会话时间账本」的详情框（「片段与暂停」列表）从窗口中部一路堆到窗口底边之外，只能拉大窗口才看得到后段。

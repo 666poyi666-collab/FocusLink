@@ -245,10 +245,15 @@ export function buildSessionAnalytics(
       'pauseMs',
     );
   }
-  const segmentSessionIds = new Set(segments.map((segment) => segment.sessionId));
-  const pauseSessionIds = new Set(pauses.map((pause) => pause.sessionId));
+  // 「这个会话有没有精确记录」必须按会话在库里的全部记录判断，而不是只按落在本次范围内的记录判断：
+  // 跨午夜会话的片段可能全在昨天、只有暂停伸到今天，此时范围内的片段集为空 ——
+  // 若据此把会话总量按墙钟比例摊进每一天，昨天的专注就会漏进今天的统计。
+  const sessionSegments = source.segments.filter((segment) => sessionIds.has(segment.sessionId));
+  const sessionPauses = source.pauses.filter((pause) => sessionIds.has(pause.sessionId));
+  const sessionsWithRecordedSegments = new Set(sessionSegments.map((segment) => segment.sessionId));
+  const sessionsWithRecordedPauses = new Set(sessionPauses.map((pause) => pause.sessionId));
   for (const session of sessions) {
-    if (!segmentSessionIds.has(session.id) && session.activeElapsedMs > 0) {
+    if (!sessionsWithRecordedSegments.has(session.id) && session.activeElapsedMs > 0) {
       addProportionalSessionValue(
         dailyMap,
         session,
@@ -258,7 +263,7 @@ export function buildSessionAnalytics(
         'activeMs',
       );
     }
-    if (!pauseSessionIds.has(session.id) && session.pauseElapsedMs > 0) {
+    if (!sessionsWithRecordedPauses.has(session.id) && session.pauseElapsedMs > 0) {
       addProportionalSessionValue(
         dailyMap,
         session,
@@ -288,7 +293,7 @@ export function buildSessionAnalytics(
     );
   }
   for (const session of sessions) {
-    if (segmentSessionIds.has(session.id) || session.activeElapsedMs <= 0) continue;
+    if (sessionsWithRecordedSegments.has(session.id) || session.activeElapsedMs <= 0) continue;
     const end = effectiveEnd(session.startedAt, session.endedAt, session.wallElapsedMs);
     sessionActiveMap.set(
       session.id,
@@ -340,7 +345,7 @@ export function buildSessionAnalytics(
   }
   for (const session of sessions) {
     const end = effectiveEnd(session.startedAt, session.endedAt, session.wallElapsedMs);
-    if (!segmentSessionIds.has(session.id) && session.activeElapsedMs > 0) {
+    if (!sessionsWithRecordedSegments.has(session.id) && session.activeElapsedMs > 0) {
       addRecordedValueToHours(
         hourly,
         session.startedAt,
@@ -351,7 +356,7 @@ export function buildSessionAnalytics(
         'activeMs',
       );
     }
-    if (!pauseSessionIds.has(session.id) && session.pauseElapsedMs > 0) {
+    if (!sessionsWithRecordedPauses.has(session.id) && session.pauseElapsedMs > 0) {
       addRecordedValueToHours(
         hourly,
         session.startedAt,
@@ -528,13 +533,16 @@ export function buildSessionAnalytics(
           Math.max(0, Math.min(100, 100 * (1 - standardDeviationMs / averageDailyActiveMs))),
         );
 
+  // 日账本必须拿到「会话的完整记录」而不是「落在本范围内的记录」：
+  // 日账本按自然日逐天切窗口，跨午夜会话的片段属于别的自然日，但它是这个会话的精确记录 ——
+  // 只喂范围内片段会让 10/07 的账本把 10/06 那 41 分钟专注当成「无明细 legacy 行」按墙钟比例摊一份假的估算值。
   const dayLedgers = enumerateDays(range.start, range.end).map((day) =>
     buildCalendarDayLedger(
       { day, now: referenceNow },
       {
         sessions,
-        segments,
-        pauses,
+        segments: sessionSegments,
+        pauses: sessionPauses,
       },
     ),
   );

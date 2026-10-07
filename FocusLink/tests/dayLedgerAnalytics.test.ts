@@ -404,6 +404,62 @@ describe('buildDayLedger interval normalization', () => {
       estimatedPauseMs: 20 * MINUTE,
     });
   });
+
+  it('does not spread yesterday focus into today when only the pause crosses midnight', () => {
+    const crossNight = session({
+      id: 'cross-night',
+      startedAt: at(-2), // 前一天 22:00
+      endedAt: at(8), // 今天 08:00
+      activeElapsedMs: 40 * MINUTE,
+      pauseElapsedMs: 9 * HOUR + 20 * MINUTE,
+      wallElapsedMs: 10 * HOUR,
+    });
+    const source = {
+      sessions: [crossNight],
+      segments: [
+        segment({
+          id: 'segment-cross',
+          sessionId: 'cross-night',
+          startedAt: at(-2),
+          endedAt: at(-2) + 40 * MINUTE,
+          activeElapsedMs: 40 * MINUTE,
+        }),
+      ],
+      pauses: [
+        pause({
+          id: 'pause-cross',
+          sessionId: 'cross-night',
+          segmentId: 'segment-cross',
+          pauseStartedAt: at(-2) + 40 * MINUTE,
+          pauseEndedAt: at(8),
+          durationMs: 9 * HOUR + 20 * MINUTE,
+        }),
+      ],
+    };
+
+    // 今天只有那条跨夜暂停，专注全是昨天的：不得再按墙钟比例摊一份「估算专注」到今天。
+    const today = buildCalendarDayLedger({ day, now: at(10) }, source);
+    expect(today.status).toBe('not-started');
+    expect(today.estimated).toBe(false);
+    expect(today.sessionFocus).toEqual([]);
+    expect(today.totals).toMatchObject({
+      focusMs: 0,
+      estimatedFocusMs: 0,
+      estimatedPauseMs: 0,
+    });
+
+    // 昨天仍然是精确记录：40 分钟专注 + 80 分钟（22:40–24:00）暂停，不是估算值。
+    const yesterday = buildCalendarDayLedger({ day: day - 24 * HOUR, now: at(10) }, source);
+    expect(yesterday.totals).toMatchObject({
+      focusMs: 40 * MINUTE,
+      pauseMs: 80 * MINUTE,
+      estimatedFocusMs: 0,
+      estimatedPauseMs: 0,
+    });
+    expect(yesterday.sessionFocus).toEqual([
+      { sessionId: 'cross-night', focusMs: 40 * MINUTE, estimated: false },
+    ]);
+  });
 });
 
 describe('buildCalendarDayLedger record-bounded observation (1.3.1 side-effect fix)', () => {
