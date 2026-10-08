@@ -475,22 +475,35 @@ describe('buildSessionAnalytics edge cases', () => {
     // 今天：没有任何片段落在今天，专注必须是 0，而不是把 41 分钟按墙钟比例摊成约 22 分钟。
     const today = buildSessionAnalytics({ start: nextDay, end: nextDay + 24 * hour - 1 }, source);
     expect(today.daily).toHaveLength(1);
-    expect(today.daily[0]).toMatchObject({ activeMs: 0, sessionCount: 1 });
+    /* v1.5.10：daily.sessionCount 与 totals.sessionCount 都改成「当天真的发生过专注的
+       会话数」。此前按「会话与当天重叠」计数，于是同一条跨夜会话在昨天和今天各 +1，
+       页头「N 个专注会话」比真实专注过的会话数虚高。 */
+    expect(today.daily[0]).toMatchObject({ activeMs: 0, sessionCount: 0 });
+    // 会话仍然与范围重叠，所以还留在列表里（用户能点开看片段），只是不再算作「专注会话」。
+    expect(today.sessions).toHaveLength(1);
     expect(today.sessionActive).toEqual([{ sessionId: 'cross-night', activeMs: 0 }]);
     expect(today.totals.activeMs).toBe(0);
-    expect(today.dayLedgers[0].status).toBe('not-started');
+    expect(today.totals.sessionCount).toBe(0);
+    /* v1.5.10：暂停也按自然日 0 点切分，今天「观察」到了 00:00–08:00 那段暂停，
+       所以日账本状态是 observed（此前是 not-started）—— 但专注仍为 0、且不得转成估算。 */
+    expect(today.dayLedgers[0].status).toBe('observed');
     expect(today.dayLedgers[0].estimated).toBe(false);
     expect(today.dayLedgers[0].sessionFocus).toEqual([]);
     expect(today.dayLedgers[0].totals).toMatchObject({
       focusMs: 0,
+      pauseMs: 8 * hour,
       estimatedFocusMs: 0,
       estimatedPauseMs: 0,
     });
 
     // 覆盖两天的范围：同一份数据必须把 41 分钟完整算在昨天。
     const bothDays = buildSessionAnalytics({ start: day, end: nextDay + 24 * hour - 1 }, source);
-    expect(bothDays.daily[0]).toMatchObject({ activeMs: 41 * 60 * 1000 });
-    expect(bothDays.daily[1]).toMatchObject({ activeMs: 0 });
+    expect(bothDays.daily[0]).toMatchObject({ activeMs: 41 * 60 * 1000, sessionCount: 1 });
+    expect(bothDays.daily[1]).toMatchObject({ activeMs: 0, sessionCount: 0 });
+    // Σdaily.sessionCount 必须等于 totals.sessionCount（页头读数与图表同源）。
+    expect(bothDays.daily.reduce((sum, item) => sum + item.sessionCount, 0)).toBe(
+      bothDays.totals.sessionCount,
+    );
     expect(bothDays.dayLedgers[0].totals).toMatchObject({
       focusMs: 41 * 60 * 1000,
       estimatedFocusMs: 0,

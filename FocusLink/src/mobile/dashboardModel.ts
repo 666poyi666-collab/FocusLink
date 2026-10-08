@@ -1,5 +1,6 @@
 import {
   buildCalendarDayLedger,
+  mergeLedgerTasks,
   type DayLedgerAnalytics,
   type DayLedgerInterval,
   type DayLedgerTask,
@@ -264,26 +265,4 @@ function parseLocalDate(value: string): number | null {
     return null;
   }
   return date.getTime();
-}
-
-function mergeLedgerTasks(dayLedgers: readonly DayLedgerAnalytics[]): DayLedgerTask[] {
-  const tasks = new Map<string, DayLedgerTask>();
-  for (const ledger of dayLedgers) {
-    for (const task of ledger.tasks) {
-      const current = tasks.get(task.key);
-      tasks.set(
-        task.key,
-        current
-          ? {
-              ...current,
-              activeMs: current.activeMs + task.activeMs,
-              segmentCount: current.segmentCount + task.segmentCount,
-            }
-          : { ...task },
-      );
-    }
-  }
-  return Array.from(tasks.values()).sort(
-    (left, right) => right.activeMs - left.activeMs || left.title.localeCompare(right.title),
-  );
 }

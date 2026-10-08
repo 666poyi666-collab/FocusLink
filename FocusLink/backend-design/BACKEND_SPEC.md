@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.5.9（纯 shared 统计口径修复：`buildSessionAnalytics`/`buildDayLedger` 的「按墙钟比例摊分」legacy 回退判据改为「该会话在库里是否存在可用精确记录」，跨午夜会话的专注不再漏进今天；不新增 IPC 命令、不改数据库结构；v1.5.7 的 live link-task 片段级任务覆盖与进行中实时会话只读投影、v1.5.8 的账本详情栏可滚一并待实装回读；三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.6.0（统计页数据对齐：`totals.sessionCount` 改为「范围内专注 > 0 的会话数」且与 `daily[].sessionCount` 同源、日账本观察窗口含跨午夜暂停、时长取整统一；纯 shared + renderer 改动，不新增 IPC 命令、不改数据库结构；v1.5.7–v1.5.9 待实装回读；三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 

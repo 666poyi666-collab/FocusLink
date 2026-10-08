@@ -5,10 +5,10 @@ import type {
   SessionAnalyticsHourly,
   SessionAnalyticsResult,
 } from '@shared/ipc/api';
-import type { DayLedgerAnalytics, DayLedgerTask } from '@shared/dayLedgerAnalytics';
+import type { DayLedgerTask } from '@shared/dayLedgerAnalytics';
 import { buildDashboardTaskAllocation } from '@shared/dashboardPresentation';
 import { formatMinutes } from '../../lib/time';
-import { HEATMAP_WEEKS } from './statsLedgerModel';
+import { ALLOCATION_COLORS, HEATMAP_WINDOW_DAYS, compactHours } from './statsLedgerModel';
 import {
   isSameLocalDay,
   type RangePreset,
@@ -68,32 +68,69 @@ export function HistoryInsights({
     [analytics?.tasks],
   );
 
-  // 计算连续打卡天数
+  // 连续记录天数。必须用「截止今天的连续自然日序列」来数，不能用页头请求范围的 daily：
+  // 今日看板的范围只有 1 个桶，用它数出来的连续天数恒为 0 或 1（用户库里真实是 4 天）。
+  // 侧栏/热力图那份 168 天窗口正好满足「截止今天、连续自然日」的要求。
+  const streakSeries = useMemo(
+    () => (heatmapDaily && heatmapDaily.length > 0 ? heatmapDaily : (analytics?.daily ?? [])),
+    [heatmapDaily, analytics?.daily],
+  );
   const streakDays = useMemo(() => {
     /* 2026-10-02 修复：这里原本有**两处**凭空兜底 —— 无数据时 `return 14`，
        以及末尾的 `return streak || 14`（算出来是 0 时 `0` 为 falsy，又回落成 14）。
        于是一个今天完全没专注的日子会显示「连续打卡 14 天 (历史最佳)」。
        现在如实返回真实连续天数。 */
-    if (!analytics?.daily || analytics.daily.length === 0) return 0;
+    if (streakSeries.length === 0) return 0;
     let streak = 0;
-    for (let i = analytics.daily.length - 1; i >= 0; i--) {
-      if (analytics.daily[i].activeMs > 0) streak++;
+    for (let i = streakSeries.length - 1; i >= 0; i--) {
+      if (streakSeries[i].activeMs > 0) streak++;
       else if (streak > 0) break;
     }
     return streak;
-  }, [analytics?.daily]);
+  }, [streakSeries]);
 
   /* 计算较昨日增减。
      2026-10-02 修复：原实现在「只有一天数据」或「取不到昨日」时 `return 42 * MINUTE`，
      于是**今天专注 0 分钟也会显示「较昨日增加 42 分钟」**。现在没有可比对的昨日数据
      就返回 0（既不显示凭空增长，也不误报下降）。 */
+  // 昨日比较同样要取「截止今天的连续自然日序列」：单日范围只有 1 个桶，
+  // 用 analytics.daily 永远凑不出两天 → 这段 UI 恒不显示（旧的 singleDay && length>=2 条件互斥）。
   const yesterdayDiff = useMemo(() => {
-    if (!singleDay || !analytics?.daily || analytics.daily.length < 2) return null;
-    const todayDaily = analytics.daily[analytics.daily.length - 1];
-    const yestDaily = analytics.daily[analytics.daily.length - 2];
-    if (!todayDaily || !yestDaily) return 0;
+    if (!singleDay || streakSeries.length < 2) return null;
+    const todayDaily = streakSeries[streakSeries.length - 1];
+    const yestDaily = streakSeries[streakSeries.length - 2];
+    if (!todayDaily || !yestDaily) return null;
     return todayDaily.activeMs - yestDaily.activeMs;
-  }, [analytics?.daily, singleDay]);
+  }, [streakSeries, singleDay]);
+
+  // 时间线卡片的取数：单日 = 那一天的日账本区间；多日 = 整个范围的 timeline。
+  // 修复前多日视图固定画 dayLedgers.at(-1)（范围最后一天），于是 7 天视图出现
+  // 「大数字 14 小时 32 分钟、时间线却是 0 分钟」的自相矛盾。
+  const spectrum = useMemo(() => {
+    if (multiDayMode) {
+      return {
+        title: '范围时间线',
+        start: range.start,
+        end: range.end,
+        // timeline 项是「范围裁剪后的专注/暂停」，没有 gap；未结束的项（endedAt 为空）不画。
+        intervals: (analytics?.timeline ?? []).flatMap((item) =>
+          item.endedAt === null
+            ? []
+            : [{ kind: item.kind, startedAt: item.startedAt, endedAt: item.endedAt }],
+        ),
+      };
+    }
+    const ledger = selectedLedger;
+    const dayStart = ledger?.dayStartedAt ?? new Date().setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    return {
+      title: '当天时间线',
+      start: dayStart,
+      end: dayEnd.getTime() - 1,
+      intervals: (ledger?.intervals ?? []).filter((interval) => interval.kind !== 'gap'),
+    };
+  }, [multiDayMode, analytics?.timeline, selectedLedger, range.start, range.end]);
 
   /* 目标达成率。
      2026-10-02 修复：原实现是 `... || 91` —— 达成率算出来是 0 时，`0` 是 falsy，
@@ -121,7 +158,7 @@ export function HistoryInsights({
           summaryCount={summary.count}
           effectiveTasks={effectiveTasks}
           streakDays={streakDays}
-          selectedLedger={selectedLedger}
+          spectrum={spectrum}
         />
 
         {/* 卡贴二：按小时分布 (24h Chronological Rhythm) */}
@@ -177,7 +214,7 @@ function HeroFocusCard({
   summaryCount,
   effectiveTasks,
   streakDays,
-  selectedLedger,
+  spectrum,
 }: {
   dashboardFocus: number;
   dashboardPause: number;
@@ -185,13 +222,24 @@ function HeroFocusCard({
   summaryCount: number;
   effectiveTasks: DayLedgerTask[];
   streakDays: number;
-  selectedLedger?: DayLedgerAnalytics;
+  spectrum: {
+    title: string;
+    start: number;
+    end: number;
+    intervals: ReadonlyArray<{ kind: string; startedAt: number; endedAt: number }>;
+  };
 }) {
-  const dayStart = selectedLedger?.dayStartedAt ?? new Date().setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-  const dayMs = dayEnd.getTime() - dayStart;
-  const intervals = selectedLedger?.intervals.filter((interval) => interval.kind !== 'gap') ?? [];
+  const dayStart = spectrum.start;
+  const dayEnd = spectrum.end;
+  const dayMs = Math.max(1, dayEnd - dayStart);
+  const intervals = spectrum.intervals;
+  const ticks =
+    dayMs > 25 * 3_600_000
+      ? Array.from({ length: 5 }, (_, index) => {
+          const stamp = dayStart + (dayMs * index) / 4;
+          return `${new Date(stamp).getMonth() + 1}/${new Date(stamp).getDate()}`;
+        })
+      : ['00:00', '06:00', '12:00', '18:00', '24:00'];
   return (
     <div className="card-widget dashboard-card-tile span-12 hero-focus-card" id="tileHero">
       <div className="hero-top-grid">
@@ -209,16 +257,20 @@ function HeroFocusCard({
         </div>
         <div className="hero-spectrum-box">
           <div className="spectrum-head">
-            <span className="spectrum-title">当天时间线</span>
+            <span className="spectrum-title">{spectrum.title}</span>
             <div className="spectrum-legend">
               <span>专注</span>
               <span>暂停</span>
             </div>
           </div>
-          <div className="spectrum-bar-wrap" id="spectrumBar" aria-label="当天专注与暂停时间线">
+          <div
+            className="spectrum-bar-wrap"
+            id="spectrumBar"
+            aria-label={`${spectrum.title}：专注与暂停`}
+          >
             {intervals.map((interval, index) => {
               const start = Math.max(dayStart, interval.startedAt);
-              const end = Math.min(dayEnd.getTime(), interval.endedAt);
+              const end = Math.min(dayEnd, interval.endedAt);
               if (end <= start) return null;
               const label =
                 (interval.kind === 'focus' ? '专注' : '暂停') +
@@ -248,24 +300,32 @@ function HeroFocusCard({
             })}
           </div>
           <div className="spectrum-ticks-row">
-            {['00:00', '06:00', '12:00', '18:00', '24:00'].map((time) => (
+            {ticks.map((time) => (
               <span key={time}>{time}</span>
             ))}
           </div>
         </div>
       </div>
+      {/* v1.5.10：三个读数此前没有任何口径说明，「关联任务 0 个」尤其容易被读成
+          「一次任务都没关联」，实际它是「当前范围内有专注时长的**已关联任务条数**」。 */}
       <dl className="summary-facts">
         <div>
           <dt>暂停</dt>
-          <dd>{duration(dashboardPause)}</dd>
+          <dd title="当前范围内的暂停总时长（跨午夜按自然日 0 点切分）">
+            {duration(dashboardPause)}
+          </dd>
         </div>
         <div>
           <dt>关联任务</dt>
-          <dd>{effectiveTasks.filter((task) => task.taskId).length} 个</dd>
+          <dd title="当前范围内真正有专注时长的已关联任务数；不含「未关联任务」与「旧记录（无片段归类）」">
+            {effectiveTasks.filter((task) => task.taskId).length} 个
+          </dd>
         </div>
         <div>
           <dt>连续记录</dt>
-          <dd>{streakDays} 天</dd>
+          <dd title="截至今天，往前连续有专注记录的天数（取自最近 168 天，与侧栏「每日记录」同源）">
+            {streakDays} 天
+          </dd>
         </div>
       </dl>
     </div>
@@ -506,7 +566,10 @@ function DonutAllocationCard({
     null,
   );
 
-  const colors = ['#2563EB', '#6366F1', '#10B981', '#94A3B8'];
+  // 与侧栏「清单分类」共用同一调色板（statsLedgerModel 的 ALLOCATION_COLORS）：
+  // 修复前环形图自带一套 4 色（第 4 色灰 #94A3B8）、侧栏自带另一套 4 色（第 4 色橙 #F59E0B），
+  // 同一个分类在两侧颜色不同，用户对不上。索引取模，聚合桶也不会出现 undefined。
+  const colors = ALLOCATION_COLORS;
   const circumference = 238.76; // 2 * PI * 38
 
   /* 没有真实分配数据时就如实为空。
@@ -596,7 +659,7 @@ function DonutAllocationCard({
             </svg>
             <div className="donut-center-metric" id="donutCenterBox">
               <span className="d-big" id="donutCenterVal">
-                {hoveredItem ? hoveredItem.pct : `${(totalActive / 3600_000).toFixed(1)}`}
+                {hoveredItem ? hoveredItem.pct : compactHours(totalActive)}
               </span>
               <span className="d-lbl" id="donutCenterLbl">
                 {hoveredItem ? '投入占比' : '专注小时'}
@@ -747,19 +810,31 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
 
     const today = new Date();
     const cols: Array<
-      Array<{ date: string; activeMs: number; sessionCount: number; level: number }>
+      Array<{
+        date: string;
+        activeMs: number;
+        sessionCount: number;
+        level: number;
+        future: boolean;
+      }>
     > = [];
     const dayOfWeek = today.getDay();
     const endOffset = (7 - dayOfWeek) % 7;
     const endDate = new Date(today);
     endDate.setDate(today.getDate() + endOffset);
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    /* v1.5.10：列数按「必须覆盖最近 HEATMAP_WINDOW_DAYS 天」反推，而不是写死 24 列。
+       右端对齐本周周日（今天是周中时右端必然有未来格子），若固定 24 列，矩阵窗口整体
+       右移，最左最多 6 天真实记录会被挤出矩阵、永远画不出来。 */
+    const weeks = Math.ceil((HEATMAP_WINDOW_DAYS + endOffset) / 7);
 
-    for (let w = HEATMAP_WEEKS - 1; w >= 0; w--) {
+    for (let w = weeks - 1; w >= 0; w--) {
       const colDays: Array<{
         date: string;
         activeMs: number;
         sessionCount: number;
         level: number;
+        future: boolean;
       }> = [];
       for (let d = 0; d < 7; d++) {
         const curDate = new Date(endDate);
@@ -780,6 +855,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
           activeMs: match.activeMs,
           sessionCount: match.sessionCount,
           level,
+          future: dateStr > todayKey,
         });
       }
       cols.unshift(colDays);
@@ -847,7 +923,12 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
                     transition: 'transform 0.15s ease',
                     cursor: 'pointer',
                   }}
-                  title={`${cell.date}: 专注 ${duration(cell.activeMs)}, ${cell.sessionCount} 轮`}
+                  data-future={cell.future ? 'true' : undefined}
+                  title={
+                    cell.future
+                      ? `${cell.date}：还没到`
+                      : `${cell.date}: 专注 ${duration(cell.activeMs)}, ${cell.sessionCount} 轮`
+                  }
                 />
               ))}
             </div>

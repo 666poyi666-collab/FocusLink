@@ -106,20 +106,35 @@ export function StatsSidebar({
           <span className="side-name">全部分类</span>
           <span className="nav-num">100%</span>
         </button>
-        {categories.map((category) => (
-          <button
-            key={category.key}
-            type="button"
-            className="side-item"
-            aria-selected={activeCategory === category.key}
-            title={`只看「${category.label}」的会话（占当前范围 ${category.percent}%）`}
-            onClick={() => onSelectCategory(category.key)}
-          >
-            <span className="project-dot" style={{ background: category.color }} />
-            <span className="side-name">{category.label}</span>
-            <span className="nav-num">{category.percent}%</span>
-          </button>
-        ))}
+        {categories.map((category) =>
+          category.clickable ? (
+            <button
+              key={category.key}
+              type="button"
+              className="side-item"
+              aria-selected={activeCategory === category.key}
+              title={`只看「${category.label}」的会话（占当前范围 ${category.percent}%）`}
+              onClick={() => onSelectCategory(category.key)}
+            >
+              <span className="project-dot" style={{ background: category.color }} />
+              <span className="side-name">{category.label}</span>
+              <span className="nav-num">{category.percent}%</span>
+            </button>
+          ) : (
+            /* 聚合桶（其他已关联任务 / 未关联任务 / 旧记录）不是一个任务，点了无法映射回 taskId，
+               所以只作为「占比合计 100%」的静态读数行展示，不给点击入口。 */
+            <div
+              key={category.key}
+              className="side-item side-item-static"
+              aria-disabled="true"
+              title={`${category.label}：占当前范围 ${category.percent}%（聚合分类，不能单独筛选）`}
+            >
+              <span className="project-dot" style={{ background: category.color }} />
+              <span className="side-name">{category.label}</span>
+              <span className="nav-num">{category.percent}%</span>
+            </div>
+          ),
+        )}
       </div>
 
       <div className="sidebar-footer">

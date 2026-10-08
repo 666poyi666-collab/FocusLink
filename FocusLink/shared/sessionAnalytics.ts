@@ -88,6 +88,7 @@ function addRecordedValueToDays(
   rangeEnd: number,
   recordedMs: number,
   field: 'activeMs' | 'pauseMs',
+  onSlice?: (date: string, amount: number) => void,
 ): void {
   const fullSpan = Math.max(1, end - start);
   let cursor = Math.max(start, rangeStart);
@@ -96,8 +97,11 @@ function addRecordedValueToDays(
     const nextDay = new Date(cursor);
     nextDay.setHours(24, 0, 0, 0);
     const sliceEnd = Math.min(clippedEnd, nextDay.getTime());
-    const item = dailyMap.get(dayKey(cursor));
-    if (item) item[field] += recordedMs * ((sliceEnd - cursor) / fullSpan);
+    const date = dayKey(cursor);
+    const amount = recordedMs * ((sliceEnd - cursor) / fullSpan);
+    const item = dailyMap.get(date);
+    if (item) item[field] += amount;
+    onSlice?.(date, amount);
     cursor = sliceEnd;
   }
 }
@@ -141,6 +145,7 @@ function addProportionalSessionValue(
   rangeEnd: number,
   amount: number,
   field: 'activeMs' | 'pauseMs',
+  onSlice?: (date: string, amount: number) => void,
 ): void {
   const end = effectiveEnd(session.startedAt, session.endedAt, session.wallElapsedMs);
   const fullSpan = Math.max(1, end - session.startedAt);
@@ -150,8 +155,11 @@ function addProportionalSessionValue(
     const nextDay = new Date(cursor);
     nextDay.setHours(24, 0, 0, 0);
     const sliceEnd = Math.min(clippedEnd, nextDay.getTime());
-    const item = dailyMap.get(dayKey(cursor));
-    if (item) item[field] += amount * ((sliceEnd - cursor) / fullSpan);
+    const date = dayKey(cursor);
+    const slice = amount * ((sliceEnd - cursor) / fullSpan);
+    const item = dailyMap.get(date);
+    if (item) item[field] += slice;
+    onSlice?.(date, slice);
     cursor = sliceEnd;
   }
 }
@@ -211,15 +219,20 @@ export function buildSessionAnalytics(
       sessionCount: 0,
     });
   }
+  // 「N 次专注」按「这一天真的有专注时长」计数：跨午夜会话当天专注为 0 时不该算成当天的一次专注。
+  // 每段专注（含无片段会话按比例摊分的那部分）在某天的份额 > 0，才把该会话记进那一天的 sessionCount。
+  const focusDatesBySession = new Map<string, Set<string>>();
+  const markFocusSlice = (sessionId: string, date: string, amount: number): void => {
+    if (amount <= 0) return;
+    const dates = focusDatesBySession.get(sessionId) ?? new Set<string>();
+    dates.add(date);
+    focusDatesBySession.set(sessionId, dates);
+  };
   for (const session of sessions) {
     const end = effectiveEnd(session.startedAt, session.endedAt, session.wallElapsedMs);
     const clippedStart = Math.max(session.startedAt, range.start);
     const clippedEnd = Math.min(end, range.end + 1);
     addIntervalToDays(dailyMap, clippedStart, clippedEnd, 'wallMs');
-    for (const timestamp of enumerateDays(clippedStart, Math.max(clippedStart, clippedEnd - 1))) {
-      const item = dailyMap.get(dayKey(timestamp));
-      if (item) item.sessionCount += 1;
-    }
   }
   for (const segment of segments) {
     const end = effectiveEnd(segment.startedAt, segment.endedAt, segment.activeElapsedMs);
@@ -231,6 +244,7 @@ export function buildSessionAnalytics(
       range.end,
       segment.activeElapsedMs,
       'activeMs',
+      (date, amount) => markFocusSlice(segment.sessionId, date, amount),
     );
   }
   for (const pause of pauses) {
@@ -261,6 +275,7 @@ export function buildSessionAnalytics(
         range.end,
         session.activeElapsedMs,
         'activeMs',
+        (date, amount) => markFocusSlice(session.id, date, amount),
       );
     }
     if (!sessionsWithRecordedPauses.has(session.id) && session.pauseElapsedMs > 0) {
@@ -272,6 +287,13 @@ export function buildSessionAnalytics(
         session.pauseElapsedMs,
         'pauseMs',
       );
+    }
+  }
+
+  for (const dates of focusDatesBySession.values()) {
+    for (const date of dates) {
+      const item = dailyMap.get(date);
+      if (item) item.sessionCount += 1;
     }
   }
 
@@ -512,7 +534,13 @@ export function buildSessionAnalytics(
       result.wallMs += item.wallMs;
       return result;
     },
-    { activeMs: 0, pauseMs: 0, wallMs: 0, sessionCount: sessions.length },
+    {
+      activeMs: 0,
+      pauseMs: 0,
+      wallMs: 0,
+      // 「N 次专注」= 本次范围内真的有专注时长的会话数（跨午夜但当天专注为 0 的会话不计）。
+      sessionCount: sessionActive.filter((item) => item.activeMs > 0).length,
+    },
   );
 
   const activeValues = daily.map((item) => item.activeMs);

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../../styles/stats-workbench.css';
 import { SessionLedger } from './SessionLedger';
+import { formatMinutes } from '../../lib/time';
 import { useStore } from '../../app/store';
 import {
   getDayRange,
@@ -20,8 +21,8 @@ import type { Task } from '@shared/types';
 import { useWorkspaceColumns } from '../../ui/WorkspaceColumns';
 import {
   HEATMAP_WINDOW_DAYS,
+  buildStatsSidebarCategories,
   formatCompactHours,
-  formatHoursMinutes,
   summarizeRangeWindows,
   type StatsRangeWindows,
   type StatsSidebarCategory,
@@ -174,19 +175,18 @@ export function HistoryPanel() {
     taskId?: string | null;
   } | null>(null);
   const [sidebarWindows, setSidebarWindows] = useState<StatsRangeWindows | null>(null);
-  const sidebarCategories = useMemo<StatsSidebarCategory[]>(() => {
-    const tasks = analytics?.tasks ?? [];
-    const total = tasks.reduce((sum, task) => sum + task.activeMs, 0);
-    return tasks
-      .filter((task) => task.activeMs > 0)
-      .map((task, index) => ({
-        key: task.key,
-        label: task.title,
-        activeMs: task.activeMs,
-        percent: total > 0 ? Math.round((task.activeMs / total) * 100) : 0,
-        color: ['#2563eb', '#6366f1', '#10b981', '#f59e0b'][index % 4],
-      }));
-  }, [analytics?.tasks]);
+  /* 每个会话在当前范围内真正发生的专注时长（shared 层按片段精确裁切）。
+     账本卡片与深潜区用它显示读数，避免跨午夜会话把昨天的时间算进今天。 */
+  const clippedActiveBySession = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of analytics?.sessionActive ?? []) map[item.sessionId] = item.activeMs;
+    return map;
+  }, [analytics?.sessionActive]);
+
+  const sidebarCategories = useMemo<StatsSidebarCategory[]>(
+    () => buildStatsSidebarCategories(analytics?.tasks ?? [], analytics?.totals?.activeMs ?? 0, 3),
+    [analytics?.tasks, analytics?.totals?.activeMs],
+  );
   /* 侧栏的点击回调要引用下面才定义的 handleSwitchPreset，用 ref 避开定义顺序问题。 */
   const handleSwitchPresetRef = useRef<(mode: StatsPreset) => void>(() => {});
 
@@ -454,11 +454,16 @@ export function HistoryPanel() {
     const d = new Date(ms);
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
   };
-  const rangeActiveLabel = formatHoursMinutes(analytics?.totals?.activeMs ?? 0);
+  // 页头「累计 X 小时 Y 分钟」与卡贴一大数字共用 formatMinutes（四舍五入到分钟），
+  // 不再用向下取整的另一套实现 —— 同屏两个数字差 1 分钟就是这么来的。
+  const rangeActiveLabel = formatMinutes(analytics?.totals?.activeMs ?? 0);
+  // 「N 个专注会话」必须与「累计时长」同源：用范围内**真的有专注**的会话数（totals.sessionCount），
+  // 而不是 analytics.sessions.length（含只与范围重叠、当天专注 0 分钟的跨午夜会话）。
+  const rangeSessionCount = analytics?.totals?.sessionCount ?? 0;
   const activeViewStats =
     curRange === 'today'
-      ? `${dayDateStr} · ${analytics?.sessions.length ?? 0} 个专注会话 · 累计 ${rangeActiveLabel}`
-      : `${formatDayLabel(range.start)} - ${formatDayLabel(range.end)} · ${analytics?.sessions.length ?? 0} 个专注会话 · 累计 ${rangeActiveLabel}`;
+      ? `${dayDateStr} · ${rangeSessionCount} 个专注会话 · 累计 ${rangeActiveLabel}`
+      : `${formatDayLabel(range.start)} - ${formatDayLabel(range.end)} · ${rangeSessionCount} 个专注会话 · 累计 ${rangeActiveLabel}`;
 
   return (
     <div
@@ -606,7 +611,7 @@ export function HistoryPanel() {
               heatmapDaily={heatmapDaily}
               summary={summarizeAnalyticsRange(
                 analytics?.daily ?? [],
-                analytics?.sessions?.length ?? 0,
+                analytics?.totals?.sessionCount ?? 0,
               )}
               range={range}
               analytics={analytics}
@@ -618,7 +623,9 @@ export function HistoryPanel() {
               onTaskSelect={handleTaskSelect}
               onTaskHover={setHoveredTaskIdx}
               hoveredTaskIndex={hoveredTaskIdx}
-              multiDayMode={curRange === '7d' || curRange === '30d'}
+              /* 「每日记录」(168 天) 也是多日范围：此前只认 7d/30d，于是这个预设把 168 天
+                 按钟点累加成 24 根柱，多日视图的时间线也停在最后一天。 */
+              multiDayMode={curRange === '7d' || curRange === '30d' || curRange === 'heatmap'}
             />
           </div>
         </main>
@@ -652,6 +659,8 @@ export function HistoryPanel() {
           }}
           reloadToken={analyticsReloadToken}
           notify={showToast}
+          range={range}
+          clippedActiveBySession={clippedActiveBySession}
           filterLabel={
             projectFilter === 'all'
               ? undefined

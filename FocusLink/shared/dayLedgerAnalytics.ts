@@ -336,6 +336,32 @@ function partitionObservation(
   return mergeIntervals(intervals);
 }
 
+/**
+ * 把逐日账本里的任务合并成同一份排行（桌面侧栏/卡贴与移动端看板共用同一合并规则）。
+ * 桌面与移动此前各有一份私有副本，改动容易只改一边 —— 统一放在这里。
+ */
+export function mergeLedgerTasks(dayLedgers: readonly DayLedgerAnalytics[]): DayLedgerTask[] {
+  const taskMap = new Map<string, DayLedgerTask>();
+  for (const ledger of dayLedgers) {
+    for (const task of ledger.tasks) {
+      const current = taskMap.get(task.key);
+      taskMap.set(
+        task.key,
+        current
+          ? {
+              ...current,
+              activeMs: current.activeMs + task.activeMs,
+              segmentCount: current.segmentCount + task.segmentCount,
+            }
+          : { ...task },
+      );
+    }
+  }
+  return Array.from(taskMap.values()).sort(
+    (left, right) => right.activeMs - left.activeMs || left.title.localeCompare(right.title),
+  );
+}
+
 /** Product statistics cover the entire local calendar day, including night-time work. */
 export function buildCalendarDayLedger(
   options: Pick<BuildDayLedgerOptions, 'day' | 'now'>,
@@ -366,12 +392,14 @@ export function buildDayLedger(
   const effectiveEndedAt = isToday ? Math.min(now, effectiveDayEnd) : effectiveDayEnd;
   const calculationWindowEnd = Math.max(effectiveStartedAt, effectiveEndedAt);
   const exact = collectExactIntervals(source, isToday, effectiveStartedAt, calculationWindowEnd);
-  const exactFocus = exact.filter((interval) => interval.kind === 'focus');
   const lastRecordEndedAt =
     exact.length > 0 ? Math.max(...exact.map((interval) => interval.endedAt)) : null;
+  // 观察窗口的起点取「当日第一条真实记录」（专注或暂停），而不是第一条专注：
+  // 跨午夜的暂停被切到 00:00 之后，它本身就是今天的记录；若从第一条专注起算，
+  // 这段暂停会被整段丢掉，日账本的暂停时长就比 totals 少（用户口径：以凌晨 0 点为界，哪一天有就算哪一天）。
   const observationStartedAt =
-    exactFocus.length > 0
-      ? Math.max(effectiveStartedAt, Math.min(...exactFocus.map((interval) => interval.startedAt)))
+    exact.length > 0
+      ? Math.max(effectiveStartedAt, Math.min(...exact.map((interval) => interval.startedAt)))
       : null;
   // 新口径（仅自然日账本启用）：观察窗口终点收束到「当日最后一条真实记录的结束点」。
   // 今天封顶 now、历史日封顶次日零点；夜间/无记录区不再被算作空档。

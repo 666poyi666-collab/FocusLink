@@ -1,7 +1,6 @@
 // 统计页页面级模型：统计侧栏（统计视图 / 清单分类）与会话账本共用的纯计算。
 // 该文件不含 JSX：放在 *.tsx 是为了遵守本轮写作用域（只允许新增 src/features/history/*.tsx）。
-import type { SessionAnalyticsDaily } from '@shared/ipc/api';
-import type { DayLedgerAnalytics, DayLedgerTask } from '@shared/dayLedgerAnalytics';
+import type { SessionAnalyticsDaily, SessionAnalyticsTask } from '@shared/ipc/api';
 import { buildDashboardTaskAllocation } from '@shared/dashboardPresentation';
 
 /** 心流热力矩阵窗口（与 HistoryInsights 的 FlowHeatmapCard 同一常量口径）。 */
@@ -18,76 +17,21 @@ export const ALLOCATION_COLORS = [
   '#CBD5E1',
 ] as const;
 
-export interface LedgerTotals {
-  focusMs: number;
-  pauseMs: number;
-  gapMs: number;
-  observationMs: number;
-  estimatedFocusMs: number;
-  estimatedPauseMs: number;
-}
-
-const EMPTY_TOTALS: LedgerTotals = {
-  focusMs: 0,
-  pauseMs: 0,
-  gapMs: 0,
-  observationMs: 0,
-  estimatedFocusMs: 0,
-  estimatedPauseMs: 0,
-};
-
-/** 跨日账本求和：原型侧栏的「今日 / 最近 7 天 / 最近 30 天」都读这一份口径。 */
-export function ledgerTotalsOf(dayLedgers: readonly DayLedgerAnalytics[]): LedgerTotals {
-  return dayLedgers.reduce<LedgerTotals>(
-    (total, item) => ({
-      focusMs: total.focusMs + item.totals.focusMs,
-      pauseMs: total.pauseMs + item.totals.pauseMs,
-      gapMs: total.gapMs + item.totals.gapMs,
-      observationMs: total.observationMs + item.totals.observationMs,
-      estimatedFocusMs: total.estimatedFocusMs + item.totals.estimatedFocusMs,
-      estimatedPauseMs: total.estimatedPauseMs + item.totals.estimatedPauseMs,
-    }),
-    { ...EMPTY_TOTALS },
-  );
-}
-
-/** 把逐日账本里的任务合并成同一份排行（侧栏清单分类与卡贴三/四共用同一合并规则）。 */
-export function mergeLedgerTasks(dayLedgers: readonly DayLedgerAnalytics[]): DayLedgerTask[] {
-  const taskMap = new Map<string, DayLedgerTask>();
-  for (const ledger of dayLedgers) {
-    for (const task of ledger.tasks) {
-      const current = taskMap.get(task.key);
-      taskMap.set(
-        task.key,
-        current
-          ? {
-              ...current,
-              activeMs: current.activeMs + task.activeMs,
-              segmentCount: current.segmentCount + task.segmentCount,
-            }
-          : { ...task },
-      );
-    }
-  }
-  return Array.from(taskMap.values()).sort(
-    (left, right) => right.activeMs - left.activeMs || left.title.localeCompare(right.title),
-  );
-}
-
-/** ms -> 原型的紧凑小时口径（"4.6h" / "0h"），用于侧栏 nav-num。 */
-export function formatCompactHours(ms: number): string {
+/**
+ * 紧凑小时数（"4.6" / "0"）：唯一的小时制取整基准。
+ * 先四舍五入到分钟再折小时，与 formatMinutes 同一个数：同一个时长在侧栏、页头、
+ * 环形图圆心显示成不同数字（14.5时 / 14 小时 31 分钟 / 14 小时 32 分钟）就是取整口径不一致造成的。
+ */
+export function compactHours(ms: number): string {
   const safe = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (safe <= 0) return '0时';
-  return `${(safe / 3_600_000).toFixed(1)}时`;
+  if (safe <= 0) return '0';
+  return `${(Math.round(safe / 60_000) / 60).toFixed(1)}`;
 }
 
-/** ms -> 原型工具栏的「累计 4h 35m」口径。 */
-export function formatHoursMinutes(ms: number): string {
-  const totalMinutes = Math.floor((Number.isFinite(ms) ? Math.max(0, ms) : 0) / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes} 分钟`;
-  return minutes === 0 ? `${hours} 小时` : `${hours} 小时 ${minutes} 分钟`;
+/** ms -> 侧栏 nav-num 的紧凑小时口径（"4.6时" / "0时"）。 */
+export function formatCompactHours(ms: number): string {
+  const value = compactHours(ms);
+  return value === '0' ? '0时' : `${value}时`;
 }
 
 export interface StatsSidebarCategory {
@@ -96,29 +40,33 @@ export interface StatsSidebarCategory {
   percent: number;
   color: string;
   activeMs: number;
+  /**
+   * 只有真实任务行能当筛选键。「其他已关联任务 / 未关联任务 / 旧记录」是聚合桶，
+   * 点它无法映射回某个 taskId，所以侧栏把它们渲染成不可点的静态行。
+   */
+  clickable: boolean;
 }
 
 /**
- * 侧栏「清单分类」：沿用卡贴三「清单分类投入占比」的同一份分配模型，
- * 取占比最高的前 limit 项 + 百分比（最大余数法保证整数且合计 100%）。
- * 原型这里放的是示例分类名（工作任务/深度学习/个人生活），客户端放真实任务分类。
+ * 侧栏「清单分类」：与卡贴三「清单分类投入占比」调用同一个分配模型、同一份
+ * `analytics.tasks` 与同一个分母（`totals.activeMs`），所以两处的顺序、标签、
+ * 配色与百分比必然一致（最大余数法保证整数且合计 100%），聚合桶也都在。
  */
 export function buildStatsSidebarCategories(
-  dayLedgers: readonly DayLedgerAnalytics[],
+  tasks: readonly SessionAnalyticsTask[],
   totalFocusMs: number,
   limit = 3,
 ): StatsSidebarCategory[] {
-  const tasks = mergeLedgerTasks(dayLedgers);
   const allocation = buildDashboardTaskAllocation(tasks, totalFocusMs, limit);
   return allocation.items
     .filter((item) => item.activeMs > 0)
-    .slice(0, limit)
     .map((item, index) => ({
       key: item.key,
       label: item.title,
       percent: item.share,
       color: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length],
       activeMs: item.activeMs,
+      clickable: item.tone === 'linked',
     }));
 }
 

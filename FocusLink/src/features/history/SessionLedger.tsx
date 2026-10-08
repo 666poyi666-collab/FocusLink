@@ -16,6 +16,29 @@ interface Props {
   notify: (message: string) => void;
   filterLabel?: string;
   onResetFilter: () => void;
+  /** 当前统计范围：卡片与深潜区读数都按它裁切（v1.5.10 数据对齐） */
+  range: { start: number; end: number };
+  /** 每个会话在当前范围内真正发生的专注时长（analytics.sessionActive，按片段精确裁切） */
+  clippedActiveBySession?: Readonly<Record<string, number>>;
+}
+
+/* 片段/暂停落在 [rangeStart, rangeEnd) 内真正发生的毫秒数。
+   完全落在范围内时原样返回（不做比例换算，避免取整漂移）；
+   部分重叠时按墙钟重叠比例折算 —— 片段只存起止时间，没有逐秒分布，
+   比例折算是唯一能给出的口径，且与 shared 层 legacy 摊分同源。 */
+function scopedMs(
+  ms: number,
+  start: number,
+  end: number,
+  rangeStart: number,
+  rangeEnd: number,
+): number {
+  const span = end - start;
+  if (span <= 0) return ms;
+  const overlap = Math.min(end, rangeEnd) - Math.max(start, rangeStart);
+  if (overlap <= 0) return 0;
+  if (overlap >= span) return ms;
+  return Math.round((ms * overlap) / span);
 }
 
 export function SessionLedger({
@@ -28,6 +51,8 @@ export function SessionLedger({
   notify,
   filterLabel,
   onResetFilter,
+  range,
+  clippedActiveBySession,
 }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +121,41 @@ export function SessionLedger({
         })),
       ].sort((a, b) => a.start - b.start)
     : [];
-  const total = rows.reduce((sum, row) => sum + Math.max(0, row.ms), 0);
+  /* v1.5.10 数据对齐：跨午夜会话在「今天」视图里，卡片与深潜区原本显示的是**整段**
+     时长（10/06 22:00 → 10/07 08:00 的会话在 10/07 卡片上写 41 分钟，而当天贡献
+     0 分钟），与页头/卡贴按范围裁切后的 totals 对不上。现在统一按当前范围裁切，
+     并把整段值作为小字注脚保留，用户两边都能看到。 */
+  const scopedRows = rows.map((row) => ({
+    ...row,
+    scopedMs: scopedMs(row.ms, row.start, row.end ?? range.end, range.start, range.end),
+  }));
+  const shownRows = scopedRows.filter((row) => row.scopedMs > 0);
+  const total = shownRows.reduce((sum, row) => sum + Math.max(0, row.scopedMs), 0);
+  const rowsClipped =
+    shownRows.length !== rows.length || shownRows.some((row) => row.scopedMs !== row.ms);
+  const selectedClippedActiveMs =
+    selected && clippedActiveBySession?.[selected.id] !== undefined
+      ? clippedActiveBySession[selected.id]
+      : (selected?.activeElapsedMs ?? 0);
+  const selectedClippedPauseMs = current
+    ? current.pauses.reduce(
+        (sum, pause) =>
+          sum +
+          scopedMs(
+            pause.durationMs,
+            pause.pauseStartedAt,
+            pause.pauseEndedAt ?? range.end,
+            range.start,
+            range.end,
+          ),
+        0,
+      )
+    : (selected?.pauseElapsedMs ?? 0);
+  const sessionScoped = Boolean(
+    selected &&
+    (selectedClippedActiveMs !== selected.activeElapsedMs ||
+      (current !== null && selectedClippedPauseMs !== selected.pauseElapsedMs)),
+  );
   const titleOf = (session: FocusSession) =>
     session.title || session.defaultTaskTitle || '专注会话';
   const linkedLabel = (session: FocusSession) =>
@@ -158,40 +217,63 @@ export function SessionLedger({
             <span>调整日期、分类或搜索条件后再查看。</span>
           </div>
         )}
-        {visibleSessions.map((session) => (
-          <div
-            key={session.id}
-            className={`session-card ${selected?.id === session.id ? 'active' : ''}`}
-          >
-            <button
-              type="button"
-              className="session-select"
-              aria-pressed={selected?.id === session.id}
-              onClick={() => onSelect(session.id)}
+        {visibleSessions.map((session) => {
+          const clippedActive = clippedActiveBySession?.[session.id];
+          const cardActiveMs =
+            clippedActive === undefined ? session.activeElapsedMs : clippedActive;
+          const cardClipped = cardActiveMs !== session.activeElapsedMs;
+          return (
+            <div
+              key={session.id}
+              className={`session-card ${selected?.id === session.id ? 'active' : ''}`}
             >
-              <span className="sc-top">
-                <span className="sc-time-pill">
-                  {formatLedgerClock(session.startedAt, session.endedAt)}
+              <button
+                type="button"
+                className="session-select"
+                aria-pressed={selected?.id === session.id}
+                onClick={() => onSelect(session.id)}
+              >
+                <span className="sc-top">
+                  <span className="sc-time-pill">
+                    {formatLedgerClock(session.startedAt, session.endedAt)}
+                  </span>
+                  <span
+                    className="sc-dur"
+                    title={
+                      cardClipped
+                        ? `当前范围 ${formatMinutes(cardActiveMs)} · 整段 ${formatMinutes(session.activeElapsedMs)}`
+                        : undefined
+                    }
+                  >
+                    {formatMinutes(cardActiveMs)}
+                  </span>
                 </span>
-                <span className="sc-dur">{formatMinutes(session.activeElapsedMs)}</span>
-              </span>
-              <span className="sc-title" title={titleOf(session)}>
-                {titleOf(session)}
-              </span>
-              <span className="sc-meta">{linkedLabel(session)}</span>
-            </button>
-            <button
-              type="button"
-              className="sc-link-btn"
-              onClick={(event) => {
-                event.currentTarget.focus();
-                onLink(session);
-              }}
-            >
-              {session.defaultTaskId || session.defaultTaskTitle ? '更换任务' : '关联任务'}
-            </button>
-          </div>
-        ))}
+                <span className="sc-title" title={titleOf(session)}>
+                  {titleOf(session)}
+                </span>
+                <span className="sc-meta">
+                  {linkedLabel(session)}
+                  {cardClipped && (
+                    <span className="sc-scope-note">
+                      {' '}
+                      · 整段 {formatMinutes(session.activeElapsedMs)}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="sc-link-btn"
+                onClick={(event) => {
+                  event.currentTarget.focus();
+                  onLink(session);
+                }}
+              >
+                {session.defaultTaskId || session.defaultTaskTitle ? '更换任务' : '关联任务'}
+              </button>
+            </div>
+          );
+        })}
       </div>
       {selected && (
         <section className="card-widget deep-dive-box" id="deepDiveBox" aria-busy={loading}>
@@ -201,13 +283,19 @@ export function SessionLedger({
               {formatLedgerClock(selected.startedAt, selected.endedAt)} · 总历时
               {formatDuration(selected.wallElapsedMs)}
             </p>
+            {sessionScoped && (
+              <p className="dd-scope-note" id="ddScopeNote">
+                当前范围之外的时长不计入统计 · 整段 专注 {formatMinutes(selected.activeElapsedMs)}
+                {' / '}暂停 {formatMinutes(selected.pauseElapsedMs)}
+              </p>
+            )}
           </div>
           <div className="ledger-totals">
-            <span>
-              专注 <strong>{formatMinutes(selected.activeElapsedMs)}</strong>
+            <span title={sessionScoped ? '当前范围内发生的专注时长' : undefined}>
+              专注 <strong>{formatMinutes(selectedClippedActiveMs)}</strong>
             </span>
-            <span>
-              暂停 <strong>{formatMinutes(selected.pauseElapsedMs)}</strong>
+            <span title={sessionScoped ? '当前范围内发生的暂停时长' : undefined}>
+              暂停 <strong>{formatMinutes(selectedClippedPauseMs)}</strong>
             </span>
           </div>
           {loading && <p role="status">正在读取片段…</p>}
@@ -228,23 +316,27 @@ export function SessionLedger({
               <div>
                 <h5>会话时序</h5>
                 <div className="horiz-flow-track" id="ddTrack" aria-label="专注与暂停时长分布">
-                  {rows
-                    .filter((row) => row.ms > 0)
-                    .map((row) => (
-                      <div
-                        key={row.id}
-                        className={row.kind === 'focus' ? 'hf-seg-focus' : 'hf-seg-pause'}
-                        style={{ flex: Math.max(0, row.ms) / (total || 1) }}
-                        title={`${row.title} · ${formatMinutes(row.ms)}`}
-                      />
-                    ))}
+                  {shownRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className={row.kind === 'focus' ? 'hf-seg-focus' : 'hf-seg-pause'}
+                      style={{ flex: Math.max(0, row.scopedMs) / (total || 1) }}
+                      title={`${row.title} · ${formatMinutes(row.scopedMs)}`}
+                    />
+                  ))}
                 </div>
               </div>
               <div>
-                <h5>片段与暂停</h5>
+                <h5>
+                  片段与暂停
+                  {rowsClipped && <span className="seg-scope-note"> 已按当前范围裁切</span>}
+                </h5>
                 <div className="segment-mini-list" id="ddSegmentList">
                   {!rows.length && <p className="ledger-empty">旧记录没有可还原的片段明细。</p>}
-                  {rows.map((row) => (
+                  {Boolean(rows.length) && !shownRows.length && (
+                    <p className="ledger-empty">这条会话在当前范围内没有片段或暂停。</p>
+                  )}
+                  {shownRows.map((row) => (
                     <div className="seg-mini-row" key={row.id}>
                       <div className="seg-row-top">
                         <div className="seg-name-wrap">
@@ -253,7 +345,7 @@ export function SessionLedger({
                             {row.title}
                           </span>
                         </div>
-                        <span className="seg-dur-txt">{formatMinutes(row.ms)}</span>
+                        <span className="seg-dur-txt">{formatMinutes(row.scopedMs)}</span>
                       </div>
                       <div className="seg-time-sub">
                         {formatLedgerSpan(row.start, row.end, selected.startedAt)}

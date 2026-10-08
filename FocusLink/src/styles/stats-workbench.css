@@ -658,6 +658,32 @@ button {
   background: var(--selected-border);
   border-radius: 0 2px 2px 0;
 }
+/* 聚合分类行（其他已关联任务 / 未关联任务 / 旧记录）：只读读数，不是可点的筛选入口。 */
+.side-item-static {
+  cursor: default;
+}
+.side-item-static:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* v1.5.10 数据对齐：账本里「按当前范围裁切」的小字注脚（卡片、深潜区、片段列表各一处）。 */
+.sc-scope-note,
+.dd-scope-note,
+.seg-scope-note {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.dd-scope-note {
+  margin: 4px 0 0;
+  line-height: 1.5;
+}
+/* 热力矩阵里还没到来的日期：与「有格子但无记录」区分开（v1.5.10 窗口对齐后
+   右端最多 6 个未来格）。 */
+.hm-box[data-future='true'] {
+  opacity: 0.35;
+}
 .side-item-icon {
   width: 16px;
   height: 16px;
