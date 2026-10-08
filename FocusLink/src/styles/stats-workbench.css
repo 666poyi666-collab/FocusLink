@@ -816,6 +816,31 @@ button {
   flex: none;
 }
 
+/* 分类筛选 chip（v1.6.1）：画卷被筛过时必须一眼看见「现在只看哪个分类」，并且一键可清。
+   没有它，用户切了分类后只会觉得「数据变少了」。 */
+.scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.scope-chip:hover {
+  border-color: var(--accent);
+}
+.scope-chip span {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
 /* 画卷内容区 */
 .stats-scroll-area {
   flex: 1;

@@ -1,4 +1,5 @@
 import type { FocusSegment, FocusSession, PauseEvent } from './types';
+import { segmentTaskKey } from './analyticsScope';
 import { buildCalendarDayLedger } from './dayLedgerAnalytics';
 import type {
   SessionAnalyticsDaily,
@@ -394,9 +395,8 @@ export function buildSessionAnalytics(
   const taskMap = new Map<string, SessionAnalyticsTask>();
   for (const segment of segments) {
     const title = segment.title?.trim() || '未关联任务';
-    const key = segment.taskId
-      ? `${segment.taskSource ?? 'unknown'}:${segment.taskId}`
-      : `unlinked:${title}`;
+    // key 只保留 analyticsScope 一份实现，统计页的分类筛选与这里的 tasks[].key 天然同源。
+    const key = segmentTaskKey(segment);
     const item =
       taskMap.get(key) ??
       ({

@@ -6,8 +6,7 @@ import { formatMinutes } from '../src/lib/time';
 import {
   ALLOCATION_COLORS,
   buildStatsSidebarCategories,
-  compactHours,
-  formatCompactHours,
+  formatStatDuration,
 } from '../src/features/history/statsLedgerModel';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -38,21 +37,30 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (...parts: string[]) => readFileSync(path.join(root, ...parts), 'utf8');
 
 describe('统计时长取整基准（FL-STATS-ALIGNMENT）', () => {
-  it('侧栏紧凑小时与 formatMinutes 共用「先四舍五入到分钟」这一个基准', () => {
+  it('时长读数先四舍五入到分钟，再按 1 小时决定单位（v1.6.1 起）', () => {
     // 真实库：最近 7 天 52,311,690 ms。
     const ms = 52_311_690;
     expect(Math.round(ms / 60_000)).toBe(872); // 871.86 分钟 → 872
     expect(formatMinutes(ms)).toBe('14 小时 32 分钟');
-    // 紧凑口径必须先取整到分钟再折小时，否则会出现 14.5时 对不上 14 小时 32 分钟。
-    expect(compactHours(ms)).toBe('14.5');
-    expect(formatCompactHours(ms)).toBe('14.5时');
+    // 必须先取整到分钟再折小时，否则会出现 14.5时 对不上 14 小时 32 分钟。
+    expect(formatStatDuration(ms)).toBe('14.5时');
   });
 
-  it('空值与 0 如实显示为 0，不凭空兜底', () => {
-    expect(compactHours(0)).toBe('0');
-    expect(formatCompactHours(0)).toBe('0时');
-    expect(compactHours(-1)).toBe('0');
-    expect(compactHours(Number.NaN)).toBe('0');
+  it('不足 1 小时显示分钟（用户 m03054：不能再出现「今日看板 0.0时」）', () => {
+    expect(formatStatDuration(2 * 60_000)).toBe('2 分钟');
+    expect(formatStatDuration(50 * 60_000)).toBe('50 分钟');
+    expect(formatStatDuration(59 * 60_000)).toBe('59 分钟');
+    // 59.6 分钟四舍五入到 60 → 跨进小时制，不会出现「60 分钟」这种读数。
+    expect(formatStatDuration(3_576_000)).toBe('1.0时');
+    expect(formatStatDuration(60 * 60_000)).toBe('1.0时');
+  });
+
+  it('空值与 0 如实显示，不凭空兜底', () => {
+    expect(formatStatDuration(0)).toBe('0 分钟');
+    expect(formatStatDuration(-1)).toBe('0 分钟');
+    expect(formatStatDuration(Number.NaN)).toBe('0 分钟');
+    // 有记录但不足 1 分钟：如实说「<1 分钟」，不能显示成 0。
+    expect(formatStatDuration(20_000)).toBe('<1 分钟');
   });
 });
 
@@ -119,13 +127,13 @@ describe('统计页渲染层接线（源码契约）', () => {
   const css = read('src', 'styles', 'stats-workbench.css');
 
   it('页头读数与卡贴一大数字共用 formatMinutes，不再有向下取整的第二套实现', () => {
-    expect(panel).toContain('formatMinutes(analytics?.totals?.activeMs ?? 0)');
+    expect(panel).toContain('formatMinutes(viewAnalytics?.totals?.activeMs ?? 0)');
     expect(panel, '向下取整的 formatHoursMinutes 必须删干净').not.toContain('formatHoursMinutes');
     expect(model).not.toContain('formatHoursMinutes');
   });
 
   it('页头「N 个专注会话」用 totals.sessionCount（范围内真的有专注的会话数）', () => {
-    expect(panel).toContain('analytics?.totals?.sessionCount ?? 0');
+    expect(panel).toContain('viewAnalytics?.totals?.sessionCount ?? 0');
     expect(panel, '不能再用与范围重叠即计入的 sessions.length').not.toContain(
       'analytics?.sessions.length ?? 0',
     );
@@ -146,9 +154,9 @@ describe('统计页渲染层接线（源码契约）', () => {
     expect(insights).toContain('if (!singleDay || streakSeries.length < 2) return null;');
   });
 
-  it('环形图用共用调色板，圆心与侧栏同一取整口径', () => {
+  it('环形图用共用调色板，圆心与侧栏同一时长口径', () => {
     expect(insights).toContain('const colors = ALLOCATION_COLORS;');
-    expect(insights).toContain('compactHours(totalActive)');
+    expect(insights).toContain('formatStatDuration(totalActive)');
   });
 
   it('多日视图（含「每日记录」）的时间线画整段范围', () => {

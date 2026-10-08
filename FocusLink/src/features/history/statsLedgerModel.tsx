@@ -18,20 +18,18 @@ export const ALLOCATION_COLORS = [
 ] as const;
 
 /**
- * 紧凑小时数（"4.6" / "0"）：唯一的小时制取整基准。
- * 先四舍五入到分钟再折小时，与 formatMinutes 同一个数：同一个时长在侧栏、页头、
- * 环形图圆心显示成不同数字（14.5时 / 14 小时 31 分钟 / 14 小时 32 分钟）就是取整口径不一致造成的。
+ * 统计页唯一的时长读数格式：不足 1 小时说分钟，1 小时以上说小数小时。
+ *
+ * 为什么按分钟决定单位（用户 m03054：侧栏「今日看板 0.0时」与页头「累计 2 分钟」打架）：
+ * 小时制在小数值上会被四舍五入成 0.0，用户看到的是「今天没学」；而分钟制在长时长上又会变成
+ * 巨大的数字。先四舍五入到分钟（与 formatMinutes 同一个数）再决定单位，同屏各处的读数才能对上。
  */
-export function compactHours(ms: number): string {
+export function formatStatDuration(ms: number): string {
   const safe = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (safe <= 0) return '0';
-  return `${(Math.round(safe / 60_000) / 60).toFixed(1)}`;
-}
-
-/** ms -> 侧栏 nav-num 的紧凑小时口径（"4.6时" / "0时"）。 */
-export function formatCompactHours(ms: number): string {
-  const value = compactHours(ms);
-  return value === '0' ? '0时' : `${value}时`;
+  const minutes = Math.round(safe / 60_000);
+  if (minutes <= 0) return safe > 0 ? '<1 分钟' : '0 分钟';
+  if (minutes < 60) return `${minutes} 分钟`;
+  return `${(minutes / 60).toFixed(1)}时`;
 }
 
 export interface StatsSidebarCategory {
@@ -40,6 +38,8 @@ export interface StatsSidebarCategory {
   percent: number;
   color: string;
   activeMs: number;
+  /** 该分类的时长读数（与侧栏/页头/环形圆心同一口径），nav-num 直接显示它。 */
+  durationLabel: string;
   /**
    * 只有真实任务行能当筛选键。「其他已关联任务 / 未关联任务 / 旧记录」是聚合桶，
    * 点它无法映射回某个 taskId，所以侧栏把它们渲染成不可点的静态行。
@@ -66,6 +66,7 @@ export function buildStatsSidebarCategories(
       percent: item.share,
       color: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length],
       activeMs: item.activeMs,
+      durationLabel: formatStatDuration(item.activeMs),
       clickable: item.tone === 'linked',
     }));
 }

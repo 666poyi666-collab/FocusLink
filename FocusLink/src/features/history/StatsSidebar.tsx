@@ -22,6 +22,11 @@ interface StatsSidebarProps {
   categories: StatsSidebarCategory[];
   activeCategory: string;
   onSelectCategory: (key: string) => void;
+  /**
+   * 「全部分类」行的读数：当前范围的总时长（与页头「累计」同一口径）。
+   * 以前这里写死 100%——百分比是「占比」，而用户在这一行想知道的是「一共多久」。
+   */
+  totalDurationLabel: string;
 }
 
 /** 原型 SVG 图标原样内联：Icon 组件里没有对应的日历/折线/柱状/四宫格形状。 */
@@ -65,6 +70,7 @@ export function StatsSidebar({
   categories,
   activeCategory,
   onSelectCategory,
+  totalDurationLabel,
 }: StatsSidebarProps) {
   return (
     <aside className="sidebar stats-sidebar" aria-label="统计导航">
@@ -104,7 +110,7 @@ export function StatsSidebar({
         >
           <span className="project-dot" style={{ background: 'var(--accent)' }} />
           <span className="side-name">全部分类</span>
-          <span className="nav-num">100%</span>
+          <span className="nav-num">{totalDurationLabel}</span>
         </button>
         {categories.map((category) =>
           category.clickable ? (
@@ -113,12 +119,12 @@ export function StatsSidebar({
               type="button"
               className="side-item"
               aria-selected={activeCategory === category.key}
-              title={`只看「${category.label}」的会话（占当前范围 ${category.percent}%）`}
+              title={`只看「${category.label}」的会话：${category.durationLabel}（占当前范围 ${category.percent}%）`}
               onClick={() => onSelectCategory(category.key)}
             >
               <span className="project-dot" style={{ background: category.color }} />
               <span className="side-name">{category.label}</span>
-              <span className="nav-num">{category.percent}%</span>
+              <span className="nav-num">{category.durationLabel}</span>
             </button>
           ) : (
             /* 聚合桶（其他已关联任务 / 未关联任务 / 旧记录）不是一个任务，点了无法映射回 taskId，
@@ -127,11 +133,11 @@ export function StatsSidebar({
               key={category.key}
               className="side-item side-item-static"
               aria-disabled="true"
-              title={`${category.label}：占当前范围 ${category.percent}%（聚合分类，不能单独筛选）`}
+              title={`${category.label}：${category.durationLabel}，占当前范围 ${category.percent}%（聚合分类，不能单独筛选）`}
             >
               <span className="project-dot" style={{ background: category.color }} />
               <span className="side-name">{category.label}</span>
-              <span className="nav-num">{category.percent}%</span>
+              <span className="nav-num">{category.durationLabel}</span>
             </div>
           ),
         )}

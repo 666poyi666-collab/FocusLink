@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.1 - 2026-10-09（点分类就看该分类的时间 + 不足一小时不再显示 0.0时）
+
+- 用户要求（2026-10-09）：「2，可以1h内就显示分钟。还有就是切换到每个分类的时候应该显示那个分类的时间吧，同理还有很多地方需要优化」。前一条来自 v1.6.0 真机安装实测暴露的问题：侧栏「今日看板 0.0时」与页头「累计 2 分钟」是同一份 95,613ms 的两种写法，小数值被小时制四舍五入成 0.0，读起来像「今天没学」。
+- **时长读数统一 `formatStatDuration`**：不足 1 小时说分钟（0 → 「0 分钟」，有记录但不足 1 分钟 → 「<1 分钟」），1 小时以上说小数小时（先四舍五入到分钟再折小时，与 `formatMinutes` 同一个数）。删掉 v1.6.0 的 `compactHours`/`formatCompactHours`；侧栏「今日看板 / 最近 7 天 / 最近 30 天」、每个清单分类行、环形圆心全部走它。
+- **侧栏清单分类行显示该分类时长**（如「数学 1.5时」），占比退到 `title`；「全部分类」行显示当前范围总时长，不再写死 100%。
+- **点分类 → 整张画卷跟随**（筛选下推到主进程）：新增 `shared/analyticsScope.ts`（`segmentTaskKey` / `scopeAnalyticsSource`），`electron/ipc.ts` 的 `sessions:analytics` 在 `buildSessionAnalytics` 之前收窄 source，于是 daily / hourly / tasks / timeline / 账本 / 热力 / totals 一次全部只含该分类，不再由各卡片自己过滤。页头新增「分类：X ✕」chip 一键清除；「导出数据报告」导出收窄后的数据（文件名带分类名）。侧栏清单列表本身仍用全量数据，否则筛完只剩一个分类就切不回去。
+- **边界口径**：无片段的旧记录会话不属于任何可点击分类（筛选时丢弃）；暂停按 `pause.segmentId` 归属，为空时回退到同会话中「开始时间不晚于该暂停」的最后一段片段，找不到就丢弃；空字符串与 null 走同一条路径。分类 key 只有一份实现（`sessionAnalytics.ts` 也调 `segmentTaskKey`），否则侧栏筛选与 `tasks[].key` 会各算各的。
+- IPC：`SessionAnalyticsRange` 新增 `taskKey?: string | null`（`normalizeRange` 会剥掉它，返回的 `range` 不含该字段），非字符串直接按既有的「统计时间范围无效」拒绝。
+- 新增 `tests/analyticsScope.test.ts`（14 条：key 归属、收窄规则与引用保持、端到端「只属于 A」的 totals/daily/hourly/tasks、Σ各分类 == 全量）与 `tests/statsCategoryScope.test.ts`（15 条：时长读数纯函数 + 渲染层接线契约）；`tests/statsAlignment.test.ts` 的时长用例按新格式更新。`npm test` 147 文件 / 1208 项 PASS。
+
 ## v1.6.0 - 2026-10-08（统计页数据对齐：同一份数据不再各说各话）
 
 - 用户要求（2026-10-08）：「统计界面还需要进一步数据对齐和显示的优化，当然不是 ui 的问题，是逻辑的问题，你可以去调研一下」。用真实用户库副本（152 个会话 / 374 个片段 / 304 个暂停事件）逐日复算，查出 9 处口径分叉；用户同时定下跨午夜口径：「哪一天有专注时间就算哪一天呗。主要还是算专注时间，暂停时间当然也可以算」，两天都有则以凌晨 0 点为界切分。

@@ -22,7 +22,7 @@ import { useWorkspaceColumns } from '../../ui/WorkspaceColumns';
 import {
   HEATMAP_WINDOW_DAYS,
   buildStatsSidebarCategories,
-  formatCompactHours,
+  formatStatDuration,
   summarizeRangeWindows,
   type StatsRangeWindows,
   type StatsSidebarCategory,
@@ -112,6 +112,11 @@ export function HistoryPanel() {
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [heatmapDaily, setHeatmapDaily] = useState<SessionAnalyticsDaily[]>([]);
   const [analytics, setAnalytics] = useState<SessionAnalyticsResult | null>(null);
+  /* 选中某个清单分类时，整张画卷只画该分类：筛选**下推到主进程**（scopeAnalyticsSource），
+     于是 daily/hourly/tasks/timeline/账本/热力都由同一份「只含该分类」的数据算出。
+     此前是渲染层各卡片各自过滤，同一份时长在不同卡片上能得出不同结论。 */
+  const activeTaskKey = projectFilter === 'all' ? null : projectFilter;
+  const [scopedAnalytics, setScopedAnalytics] = useState<SessionAnalyticsResult | null>(null);
   const range = useMemo<TimeRange>(() => {
     if (curRange === 'today') return getDayRange(dayCursor);
     const end = Date.now();
@@ -154,6 +159,49 @@ export function HistoryPanel() {
     };
   }, [range, analyticsReloadToken]);
 
+  /* 分类画卷：只在真的选了分类时才发第二个请求（全部分类时复用上面那份，避免多一次 IPC）。 */
+  useEffect(() => {
+    if (!activeTaskKey) {
+      setScopedAnalytics(null);
+      setAnalyticsError(null);
+      return;
+    }
+    let cancelled = false;
+    let requestId = 0;
+    setScopedAnalytics(null);
+    const loadScoped = async () => {
+      const id = ++requestId;
+      try {
+        if (!window.focuslink?.sessions?.analytics) return;
+        const res = await window.focuslink.sessions.analytics({
+          start: range.start,
+          end: range.end,
+          timelineStart: range.start,
+          timelineEnd: range.end,
+          taskKey: activeTaskKey,
+        });
+        if (!cancelled && id === requestId) setScopedAnalytics(res);
+      } catch (err) {
+        if (!cancelled && id === requestId)
+          setAnalyticsError(err instanceof Error ? err.message : '读取统计失败');
+      }
+    };
+
+    void loadScoped();
+    const unsub = window.focuslink?.on?.('timer:state-changed', () => {
+      void loadScoped();
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [range, activeTaskKey, analyticsReloadToken]);
+
+  /* 画卷统一读数：页头 / hero / 时间线 / 按小时分布 / 环形图 / 排行榜 / 热力 / 账本 / 导出
+     全部读它。侧栏的「清单分类」列表与占比仍读未过滤的 analytics —— 否则筛完只剩一个分类，
+     用户就没法切回去了。 */
+  const viewAnalytics = activeTaskKey ? scopedAnalytics : analytics;
+
   /* ── 侧栏真实读数（v1.3.17 修复：此前是写死的原型样例值）──────────────────
      2026-10-01 事故：侧栏显示 今日看板 4.6h / 最近7天 32.2h / 最近30天 128.6h /
      每日记录 84天，以及 工作任务 55% / 深度学习 25% / 个人生活 12% ——
@@ -179,9 +227,9 @@ export function HistoryPanel() {
      账本卡片与深潜区用它显示读数，避免跨午夜会话把昨天的时间算进今天。 */
   const clippedActiveBySession = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const item of analytics?.sessionActive ?? []) map[item.sessionId] = item.activeMs;
+    for (const item of viewAnalytics?.sessionActive ?? []) map[item.sessionId] = item.activeMs;
     return map;
-  }, [analytics?.sessionActive]);
+  }, [viewAnalytics?.sessionActive]);
 
   const sidebarCategories = useMemo<StatsSidebarCategory[]>(
     () => buildStatsSidebarCategories(analytics?.tasks ?? [], analytics?.totals?.activeMs ?? 0, 3),
@@ -207,6 +255,7 @@ export function HistoryPanel() {
           end,
           timelineStart: start,
           timelineEnd: end,
+          taskKey: activeTaskKey,
         });
         if (cancelled || id !== requestId) return;
         setSidebarWindows(summarizeRangeWindows(res.daily.slice(-30)));
@@ -224,14 +273,14 @@ export function HistoryPanel() {
       cancelled = true;
       unsub?.();
     };
-  }, [analyticsReloadToken]);
+  }, [analyticsReloadToken, activeTaskKey]);
 
   const sidebarViews = useMemo<StatsSidebarView[]>(
     () => [
       {
         id: 'today',
         label: '今日看板',
-        value: formatCompactHours(sidebarWindows?.todayMs ?? 0),
+        value: formatStatDuration(sidebarWindows?.todayMs ?? 0),
         active: curRange === 'today',
         onSelect: () => handleSwitchPresetRef.current('today'),
         title: '只看今天的心流看板',
@@ -239,7 +288,7 @@ export function HistoryPanel() {
       {
         id: '7d',
         label: '最近 7 天',
-        value: formatCompactHours(sidebarWindows?.weekMs ?? 0),
+        value: formatStatDuration(sidebarWindows?.weekMs ?? 0),
         active: curRange === '7d',
         onSelect: () => handleSwitchPresetRef.current('7d'),
         title: '最近 7 天的累计有效专注',
@@ -247,7 +296,7 @@ export function HistoryPanel() {
       {
         id: '30d',
         label: '最近 30 天',
-        value: formatCompactHours(sidebarWindows?.monthMs ?? 0),
+        value: formatStatDuration(sidebarWindows?.monthMs ?? 0),
         active: curRange === '30d',
         onSelect: () => handleSwitchPresetRef.current('30d'),
         title: '最近 30 天的累计有效专注',
@@ -264,17 +313,19 @@ export function HistoryPanel() {
     [sidebarWindows, curRange],
   );
 
+  /* 账本行读画卷数据（分类已由主进程筛过），关键词只筛账本、不改画卷。 */
   const filteredSessions = useMemo(() => {
     const query = taskQuery.trim().toLowerCase();
-    return (analytics?.sessions ?? []).filter((session: FocusSession) => {
-      const timeline = (analytics?.timeline ?? []).filter(
+    return (viewAnalytics?.sessions ?? []).filter((session: FocusSession) => {
+      const timeline = (viewAnalytics?.timeline ?? []).filter(
         (item) => item.sessionId === session.id && item.kind === 'focus',
       );
       const matchesCategory =
         projectFilter === 'all' ||
         timeline.some((item) =>
           item.taskId
-            ? item.taskId === analytics?.tasks.find((task) => task.key === projectFilter)?.taskId
+            ? item.taskId ===
+              viewAnalytics?.tasks.find((task) => task.key === projectFilter)?.taskId
             : `unlinked:${item.title}` === projectFilter,
         );
       const matchesQuery =
@@ -284,7 +335,7 @@ export function HistoryPanel() {
         );
       return matchesCategory && matchesQuery;
     });
-  }, [analytics, projectFilter, taskQuery]);
+  }, [viewAnalytics, projectFilter, taskQuery]);
 
   // 快捷键 Ctrl+K 搜索聚焦
   useEffect(() => {
@@ -402,11 +453,13 @@ export function HistoryPanel() {
   };
 
   const handleExportDataReport = () => {
-    const blob = new Blob([JSON.stringify(analytics, null, 2)], { type: 'application/json' });
+    // 导出的是**当前画卷**（选了分类就是该分类的统计），文件名带上分类名以免两份文件同名。
+    const blob = new Blob([JSON.stringify(viewAnalytics, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `FocusLink-时间账本-${new Date(range.start).toLocaleDateString('sv-SE')}.json`;
+    const scopeSuffix = activeCategoryLabel ? `-${activeCategoryLabel}` : '';
+    link.download = `FocusLink-时间账本-${new Date(range.start).toLocaleDateString('sv-SE')}${scopeSuffix}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -424,7 +477,7 @@ export function HistoryPanel() {
   // 任务选择联动
   const handleTaskSelect = (taskId: string | null, title: string) => {
     const match = filteredSessions.find((session) =>
-      (analytics?.timeline ?? []).some(
+      (viewAnalytics?.timeline ?? []).some(
         (item) =>
           item.sessionId === session.id &&
           item.kind === 'focus' &&
@@ -456,14 +509,18 @@ export function HistoryPanel() {
   };
   // 页头「累计 X 小时 Y 分钟」与卡贴一大数字共用 formatMinutes（四舍五入到分钟），
   // 不再用向下取整的另一套实现 —— 同屏两个数字差 1 分钟就是这么来的。
-  const rangeActiveLabel = formatMinutes(analytics?.totals?.activeMs ?? 0);
+  const rangeActiveLabel = formatMinutes(viewAnalytics?.totals?.activeMs ?? 0);
   // 「N 个专注会话」必须与「累计时长」同源：用范围内**真的有专注**的会话数（totals.sessionCount），
   // 而不是 analytics.sessions.length（含只与范围重叠、当天专注 0 分钟的跨午夜会话）。
-  const rangeSessionCount = analytics?.totals?.sessionCount ?? 0;
+  const rangeSessionCount = viewAnalytics?.totals?.sessionCount ?? 0;
   const activeViewStats =
     curRange === 'today'
       ? `${dayDateStr} · ${rangeSessionCount} 个专注会话 · 累计 ${rangeActiveLabel}`
       : `${formatDayLabel(range.start)} - ${formatDayLabel(range.end)} · ${rangeSessionCount} 个专注会话 · 累计 ${rangeActiveLabel}`;
+  /* 分类筛选的可见状态：没有这个 chip，用户看不出画卷为什么只剩一部分数据。 */
+  const activeCategoryLabel = activeTaskKey
+    ? (sidebarCategories.find((category) => category.key === activeTaskKey)?.label ?? activeTaskKey)
+    : null;
 
   return (
     <div
@@ -532,6 +589,7 @@ export function HistoryPanel() {
           categories={sidebarCategories}
           activeCategory={projectFilter}
           onSelectCategory={handleSelectSidebarCategory}
+          totalDurationLabel={formatStatDuration(analytics?.totals?.activeMs ?? 0)}
         />
 
         {/* 中间：统计画卷 (Stats Paper) */}
@@ -543,6 +601,18 @@ export function HistoryPanel() {
               <span className="list-stats-text" id="activeViewStats">
                 {activeViewStats}
               </span>
+              {activeCategoryLabel ? (
+                <button
+                  type="button"
+                  className="scope-chip"
+                  id="activeCategoryChip"
+                  title={`当前只统计「${activeCategoryLabel}」，点这里回到全部分类`}
+                  onClick={() => setProjectFilter('all')}
+                >
+                  分类：{activeCategoryLabel}
+                  <span aria-hidden="true">✕</span>
+                </button>
+              ) : null}
             </div>
 
             <div className="list-toolbar-actions">
@@ -579,7 +649,11 @@ export function HistoryPanel() {
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
-              <button disabled={!analytics} className="btn-tool" onClick={handleExportDataReport}>
+              <button
+                disabled={!viewAnalytics}
+                className="btn-tool"
+                onClick={handleExportDataReport}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                 </svg>
@@ -601,7 +675,7 @@ export function HistoryPanel() {
                 </button>
               </div>
             ) : (
-              !analytics && (
+              !viewAnalytics && (
                 <div role="status" className="ledger-empty">
                   正在读取统计…
                 </div>
@@ -610,11 +684,11 @@ export function HistoryPanel() {
             <HistoryInsights
               heatmapDaily={heatmapDaily}
               summary={summarizeAnalyticsRange(
-                analytics?.daily ?? [],
-                analytics?.totals?.sessionCount ?? 0,
+                viewAnalytics?.daily ?? [],
+                viewAnalytics?.totals?.sessionCount ?? 0,
               )}
               range={range}
-              analytics={analytics}
+              analytics={viewAnalytics}
               slideDirection={0}
               onSelectRange={() => undefined}
               taskQuery={taskQuery}

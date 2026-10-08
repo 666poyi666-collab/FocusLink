@@ -8,7 +8,7 @@ import type {
 import type { DayLedgerTask } from '@shared/dayLedgerAnalytics';
 import { buildDashboardTaskAllocation } from '@shared/dashboardPresentation';
 import { formatMinutes } from '../../lib/time';
-import { ALLOCATION_COLORS, HEATMAP_WINDOW_DAYS, compactHours } from './statsLedgerModel';
+import { ALLOCATION_COLORS, HEATMAP_WINDOW_DAYS, formatStatDuration } from './statsLedgerModel';
 import {
   isSameLocalDay,
   type RangePreset,
@@ -659,10 +659,10 @@ function DonutAllocationCard({
             </svg>
             <div className="donut-center-metric" id="donutCenterBox">
               <span className="d-big" id="donutCenterVal">
-                {hoveredItem ? hoveredItem.pct : compactHours(totalActive)}
+                {hoveredItem ? hoveredItem.pct : formatStatDuration(totalActive)}
               </span>
               <span className="d-lbl" id="donutCenterLbl">
-                {hoveredItem ? '投入占比' : '专注小时'}
+                {hoveredItem ? '投入占比' : '专注时长'}
               </span>
             </div>
           </div>

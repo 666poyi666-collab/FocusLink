@@ -113,6 +113,8 @@ export interface SessionAnalyticsRange {
   /** Optional single-day window used for the detailed mixed timeline. */
   timelineStart?: number;
   timelineEnd?: number;
+  /** 可选：只统计该分类（与结果 tasks[].key 同源）。null / 缺省 = 全部分类。 */
+  taskKey?: string | null;
 }
 
 export interface SessionAnalyticsDaily {

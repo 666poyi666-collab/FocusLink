@@ -1,5 +1,16 @@
 # FocusLink 实施日志
 
+## 2026-10-09 · `FL-STATS-20261009-CATEGORY-SCOPE`：分类筛选下推与时长读数（v1.6.1）
+
+- **用户要求**：「2，可以1h内就显示分钟。还有就是切换到每个分类的时候应该显示那个分类的时间吧，同理还有很多地方需要优化」。
+- **需求来源（v1.6.0 真机安装实测）**：侧栏「今日看板 0.0时」与页头「累计 2 分钟」是同一份 `totals.activeMs = 95,613ms`；小时制把小数值四舍五入成 0.0，看起来像「今天没学」。同时用户点侧栏分类时期望「整张画卷」跟着走。
+- **实现**：
+  - 时长读数：`src/features/history/statsLedgerModel.tsx` 新增 `formatStatDuration(ms)`（先 `Math.round(ms / 60000)`；`<= 0` 且有记录 → 「<1 分钟」；`< 60` → 「N 分钟」；否则 `(minutes / 60).toFixed(1)` + 「时」），删除 `compactHours`/`formatCompactHours`；`StatsSidebarCategory` 新增 `durationLabel`；侧栏 nav-num 改显示时长（「全部分类」行显示范围总时长，不再写死 100%），占比退到 `title`。
+  - 分类筛选下推：新增 `shared/analyticsScope.ts` —— `segmentTaskKey(segment)`（有 `taskId` → `${segment.taskSource ?? 'unknown'}:${segment.taskId}`，否则 `unlinked:${segment.title?.trim() || '未关联任务'}`）与 `scopeAnalyticsSource(source, taskKey)`（`null` 原样返回同一引用；片段按 key 命中；会话只留「有命中片段」的；暂停按 `pause.segmentId`，为空则回退到同会话中「`startedAt <= pauseStartedAt` 的最后一条被保留片段」，找不到丢弃）。`electron/ipc.ts:552-554` 在 `buildSessionAnalytics` 之前收窄 source；`shared/ipc/api.ts` 的 `SessionAnalyticsRange` 加 `taskKey?: string | null`（`:531-534` 把非字符串并入既有 `throw new Error('统计时间范围无效')`）；`shared/sessionAnalytics.ts:396` 改用 `segmentTaskKey`（分类 key 只有一份实现）。
+  - 渲染层：`HistoryPanel.tsx` 新增 `activeTaskKey`/`scopedAnalytics`/`viewAnalytics`（画卷统一读数）、侧栏 168 天请求也带 `taskKey`、页头「分类：X ✕」chip（`#activeCategoryChip`）、导出走 `viewAnalytics`；`HistoryInsights.tsx` 环形圆心改 `formatStatDuration`；`src/styles/stats-workbench.css` 新增 `.scope-chip`。
+- **测试**：新增 `tests/analyticsScope.test.ts`（14 条：key 归属、收窄规则与引用、端到端只含 A 的 totals/daily/hourly/tasks、Σ各分类 == 全量）与 `tests/statsCategoryScope.test.ts`（15 条：时长读数纯函数 + 渲染层接线契约）；`tests/statsAlignment.test.ts` 时长用例改为 3 条。
+- **门禁**：`format:check` / `typecheck`（含 `typecheck:cloudflare`）/ `lint` PASS；`npm test` **147 文件 / 1208 项** PASS。
+
 ## 2026-10-08 · `FL-STATS-20261008-ALIGNMENT`：统计页数据对齐（v1.6.0）
 
 - **用户要求**：「统计界面还需要进一步数据对齐和显示的优化，当然不是 ui 的问题，是逻辑的问题，你可以去调研一下」。随后定下跨午夜口径：「哪一天有专注时间就算哪一天呗。主要还是算专注时间，暂停时间当然也可以算」——只有一天有专注就全算那天，两天都有则以凌晨 0 点为界切分；暂停同样处理。另两个决策点（会话账本是否按选中日裁切、「关联任务 N 个」的语义）用户授权由实施方决定。

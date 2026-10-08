@@ -75,6 +75,7 @@ import { exportSessionById } from './export.js';
 import { projectLiveSession } from './sessions/liveSessionProjection.js';
 
 import { buildSessionAnalytics } from '@shared/sessionAnalytics';
+import { scopeAnalyticsSource } from '@shared/analyticsScope';
 import { logger } from './logger.js';
 import type {
   TaskSource,
@@ -526,7 +527,8 @@ export function registerIpc(
       !Number.isFinite(range.start) ||
       !Number.isFinite(range.end) ||
       (range.timelineStart !== undefined && !Number.isFinite(range.timelineStart)) ||
-      (range.timelineEnd !== undefined && !Number.isFinite(range.timelineEnd))
+      (range.timelineEnd !== undefined && !Number.isFinite(range.timelineEnd)) ||
+      (range.taskKey !== undefined && range.taskKey !== null && typeof range.taskKey !== 'string')
     ) {
       throw new Error('统计时间范围无效');
     }
@@ -547,7 +549,9 @@ export function registerIpc(
       segments.push(...live.segments);
       pauses.push(...live.pauses);
     }
-    return buildSessionAnalytics(range, { sessions, segments, pauses });
+    // 分类筛选下推到共享层：先收窄 source，再让 buildSessionAnalytics 算出「只属于该分类」的全套统计。
+    const source = { sessions, segments, pauses };
+    return buildSessionAnalytics(range, scopeAnalyticsSource(source, range.taskKey ?? null));
   });
   ipcMain.handle('sessions:delete', async (_e, id: string) => {
     const segs = listSegments(id);

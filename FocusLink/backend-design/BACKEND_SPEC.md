@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.6.0（统计页数据对齐：`totals.sessionCount` 改为「范围内专注 > 0 的会话数」且与 `daily[].sessionCount` 同源、日账本观察窗口含跨午夜暂停、时长取整统一；纯 shared + renderer 改动，不新增 IPC 命令、不改数据库结构；v1.5.7–v1.5.9 待实装回读；三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前候选 v1.6.1（分类筛选下推共享层：`sessions:analytics` 新增可选 `taskKey`，在 `buildSessionAnalytics` 之前收窄 source；纯 shared + 主进程 IPC 入参 + renderer 改动，不新增 IPC 命令、不改数据库结构；v1.6.0 的统计页数据对齐已真机安装验证；三端安装未闭合）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
