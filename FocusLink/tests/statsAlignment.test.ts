@@ -179,6 +179,18 @@ describe('统计页渲染层接线（源码契约）', () => {
     expect(css).toContain(".hm-box[data-future='true']");
   });
 
+  it('热力矩阵窗口外的前导格子必须隐形，不能画成「这天没有记录」', () => {
+    expect(insights, '窗口起点取自数据序列第一天').toContain(
+      'const windowStartKey = daily.length > 0 ? daily[0].date : null;',
+    );
+    expect(insights).toContain('outside: windowStartKey !== null && dateStr < windowStartKey,');
+    expect(insights).toContain("data-outside={cell.outside ? 'true' : undefined}");
+    expect(insights, '窗口外的格子不能带 tooltip').toMatch(
+      /title={\s*cell\.outside\s*\?\s*undefined/,
+    );
+    expect(insights).toContain("visibility: cell.outside ? 'hidden' : undefined,");
+  });
+
   it('死代码已清除：侧栏旧的内联百分比与 ledgerTotalsOf', () => {
     expect(model).not.toContain('ledgerTotalsOf');
     expect(panel).not.toContain("'#6366f1'");

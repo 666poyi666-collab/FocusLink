@@ -684,6 +684,8 @@ button {
 .hm-box[data-future='true'] {
   opacity: 0.35;
 }
+/* 列数按周对齐后最左可能比数据窗口早 1–6 天：那些格子用 visibility 隐形，
+   既不占用视觉也不冒充「无记录」（v1.6.0）。 */
 .side-item-icon {
   width: 16px;
   height: 16px;

@@ -809,6 +809,9 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
     for (const d of daily) map.set(d.date, { activeMs: d.activeMs, sessionCount: d.sessionCount });
 
     const today = new Date();
+    /* v1.6.0：矩阵列数按周对齐后，最左可能比数据窗口早 1–6 天（今天为周中时）。
+       那些格子不在「最近 168 天」窗口内，绝不能画成「这天没有记录」——它们只是没取数。 */
+    const windowStartKey = daily.length > 0 ? daily[0].date : null;
     const cols: Array<
       Array<{
         date: string;
@@ -816,6 +819,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
         sessionCount: number;
         level: number;
         future: boolean;
+        outside: boolean;
       }>
     > = [];
     const dayOfWeek = today.getDay();
@@ -835,6 +839,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
         sessionCount: number;
         level: number;
         future: boolean;
+        outside: boolean;
       }> = [];
       for (let d = 0; d < 7; d++) {
         const curDate = new Date(endDate);
@@ -856,6 +861,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
           sessionCount: match.sessionCount,
           level,
           future: dateStr > todayKey,
+          outside: windowStartKey !== null && dateStr < windowStartKey,
         });
       }
       cols.unshift(colDays);
@@ -922,12 +928,16 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
                     background: `var(--heatmap-${cell.level})`,
                     transition: 'transform 0.15s ease',
                     cursor: 'pointer',
+                    visibility: cell.outside ? 'hidden' : undefined,
                   }}
                   data-future={cell.future ? 'true' : undefined}
+                  data-outside={cell.outside ? 'true' : undefined}
                   title={
-                    cell.future
-                      ? `${cell.date}：还没到`
-                      : `${cell.date}: 专注 ${duration(cell.activeMs)}, ${cell.sessionCount} 轮`
+                    cell.outside
+                      ? undefined
+                      : cell.future
+                        ? `${cell.date}：还没到`
+                        : `${cell.date}: 专注 ${duration(cell.activeMs)}, ${cell.sessionCount} 轮`
                   }
                 />
               ))}

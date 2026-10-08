@@ -10,7 +10,7 @@
 - **多日时间线改画整段范围**：7 天/30 天/每日记录预设下 hero 的「专注时长」是整段总量，时间线却画最后一天的 intervals（真实库 7 天范围画的是当天 0 分钟）；现多日模式改画 `analytics.timeline` 并标「范围时间线」，刻度按跨度切换。
 - **侧栏清单分类与环形图同源**：侧栏原来自己按 `analytics.tasks` 算百分比（各条独立四舍五入、可合计 ≠100、无 top-N、配色不同、不补 legacy 差额），现直接调 `buildStatsSidebarCategories`（与环形图同一个 `buildDashboardTaskAllocation`：最大余数法合计 100%、含「其他已关联任务/未关联任务/旧记录（无片段归类）」桶、配色同 `ALLOCATION_COLORS`）；聚合桶渲染为不可点击的静态行。
 - **会话账本读数按选中范围裁切**：卡片与深潜区原来用整段 `session.activeElapsedMs`（今天视图下跨午夜会话卡片写「41 分钟」而当天贡献 0 分钟），现按选中范围裁切（完全落在范围内不换算、部分重叠按墙钟比例、无重叠为 0），并加小字标注整段值。
-- **热力矩阵不再丢记录**：列数原写死 24（`HEATMAP_WEEKS - 1`），今天是周中时矩阵整体右移、最左最多 6 天真实记录画不出来；现按 `Math.ceil((HEATMAP_WINDOW_DAYS + endOffset) / 7)` 取列，未来格子淡化并标注「还没到」。
+- **热力矩阵不再丢记录**：列数原写死 24（`HEATMAP_WEEKS - 1`），今天是周中时矩阵整体右移、最左最多 6 天真实记录画不出来；现按 `Math.ceil((HEATMAP_WINDOW_DAYS + endOffset) / 7)` 取列，未来格子淡化并标注「还没到」；按周对齐后最左可能比 168 天窗口早 1–6 天，那些格子改为隐形（`visibility: hidden`）且不带 tooltip，不再冒充「这天没有记录」。
 - 清理：删除死代码 `ledgerTotalsOf`、旧版 `buildStatsSidebarCategories` 与桌面/移动两份 `mergeLedgerTasks` 私有副本（合并进 `shared/dayLedgerAnalytics.ts`）。
 - 新增 `tests/statsAlignment.test.ts`（15 条：时长取整基准、侧栏与环形图同源、渲染层契约），并按新语义更新 2 条跨午夜断言；`npm test` 145 文件 / 1177 项 PASS。
 
