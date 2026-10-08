@@ -306,7 +306,7 @@ function HeroFocusCard({
           </div>
         </div>
       </div>
-      {/* v1.5.10：三个读数此前没有任何口径说明，「关联任务 0 个」尤其容易被读成
+      {/* v1.6.0：三个读数此前没有任何口径说明，「关联任务 0 个」尤其容易被读成
           「一次任务都没关联」，实际它是「当前范围内有专注时长的**已关联任务条数**」。 */}
       <dl className="summary-facts">
         <div>
@@ -823,7 +823,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
     const endDate = new Date(today);
     endDate.setDate(today.getDate() + endOffset);
     const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    /* v1.5.10：列数按「必须覆盖最近 HEATMAP_WINDOW_DAYS 天」反推，而不是写死 24 列。
+    /* v1.6.0：列数按「必须覆盖最近 HEATMAP_WINDOW_DAYS 天」反推，而不是写死 24 列。
        右端对齐本周周日（今天是周中时右端必然有未来格子），若固定 24 列，矩阵窗口整体
        右移，最左最多 6 天真实记录会被挤出矩阵、永远画不出来。 */
     const weeks = Math.ceil((HEATMAP_WINDOW_DAYS + endOffset) / 7);

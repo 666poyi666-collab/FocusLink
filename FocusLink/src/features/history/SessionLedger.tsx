@@ -16,7 +16,7 @@ interface Props {
   notify: (message: string) => void;
   filterLabel?: string;
   onResetFilter: () => void;
-  /** 当前统计范围：卡片与深潜区读数都按它裁切（v1.5.10 数据对齐） */
+  /** 当前统计范围：卡片与深潜区读数都按它裁切（v1.6.0 数据对齐） */
   range: { start: number; end: number };
   /** 每个会话在当前范围内真正发生的专注时长（analytics.sessionActive，按片段精确裁切） */
   clippedActiveBySession?: Readonly<Record<string, number>>;
@@ -121,7 +121,7 @@ export function SessionLedger({
         })),
       ].sort((a, b) => a.start - b.start)
     : [];
-  /* v1.5.10 数据对齐：跨午夜会话在「今天」视图里，卡片与深潜区原本显示的是**整段**
+  /* v1.6.0 数据对齐：跨午夜会话在「今天」视图里，卡片与深潜区原本显示的是**整段**
      时长（10/06 22:00 → 10/07 08:00 的会话在 10/07 卡片上写 41 分钟，而当天贡献
      0 分钟），与页头/卡贴按范围裁切后的 totals 对不上。现在统一按当前范围裁切，
      并把整段值作为小字注脚保留，用户两边都能看到。 */

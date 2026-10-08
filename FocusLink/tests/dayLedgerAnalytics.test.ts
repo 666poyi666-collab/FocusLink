@@ -438,7 +438,7 @@ describe('buildDayLedger interval normalization', () => {
     };
 
     /* 今天只有那条跨夜暂停，专注全是昨天的：不得再按墙钟比例摊一份「估算专注」到今天。
-       v1.5.10：暂停也按自然日 0 点切分，所以今天「有观察记录」（00:00–08:00 的暂停），
+       v1.6.0：暂停也按自然日 0 点切分，所以今天「有观察记录」（00:00–08:00 的暂停），
        状态从 not-started 变成 observed —— 但专注仍然是 0、且不得变成估算值。 */
     const today = buildCalendarDayLedger({ day, now: at(10) }, source);
     expect(today.status).toBe('observed');
