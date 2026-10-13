@@ -12,7 +12,6 @@ import {
   TOMATODO_CLOUD_UPLOAD_WINDOW_MS,
   type TomatodoPCRecord,
 } from '../../../shared/tomatodoPolicy.js';
-import type { TomatodoSubject } from '@shared/types';
 
 interface CdpTarget {
   type?: string;
@@ -337,14 +336,18 @@ export async function writeTomatodoRecordsThroughBridge(
   if (inputRecords.length === 0) return { available: true, ok: true, results: [] };
   const syncToPhone = options.syncToPhone === true;
   const payload = JSON.stringify(inputRecords.map((record) => ({ ...record, id: null })));
+  const phoneMethodsJson = JSON.stringify(TOMATODO_PHONE_IDENTITY_METHODS);
   const expression = `
     (async function () {
       try {
         var api = window.electronAPI;
-        if (!api || !api.addRecord || !api.getAllRecords || !api.updateRecord ||
-            (${syncToPhone} && (!api.syncGetStatus || !api.syncRecord))) {
+        if (!api || !api.addRecord || !api.getAllRecords || !api.updateRecord) {
           return JSON.stringify({ ok: false, error: 'tomatodo_record_api_unavailable', results: [] });
         }
+        // 手机直连 API 是能力而不是身份：缺失时只跳过手机投递，不得阻断写库与云上传。
+        var phoneApiAvailable = ${phoneMethodsJson}.every(function (name) {
+          return typeof api[name] === 'function';
+        });
         var inputs = ${payload};
         var records = await api.getAllRecords();
         var prepared = [];
@@ -443,29 +446,37 @@ export async function writeTomatodoRecordsThroughBridge(
           }
         }
         if (${syncToPhone}) {
-          var phoneStatus = await api.syncGetStatus();
-          var phoneConnected = phoneStatus && Number(phoneStatus.connectedCount || 0) > 0;
-          if (!phoneConnected) {
-            for (var phonePending of prepared) {
-              if (phonePending.record) {
-                phonePending.result.phoneSyncError = 'tomatodo_phone_not_connected';
+          if (!phoneApiAvailable) {
+            for (var phoneUnsupported of prepared) {
+              if (phoneUnsupported.record) {
+                phoneUnsupported.result.phoneSyncError = 'tomatodo_phone_sync_api_unavailable';
               }
             }
           } else {
-            for (var phoneItem of prepared) {
-              if (!phoneItem.record) continue;
-              try {
-                var phoneRecord = Object.assign({}, phoneItem.record, { isSynced: 0 });
-                var phoneAck = await api.syncRecord(phoneRecord, 'FocusLink手机同步');
-                phoneItem.result.phoneSyncConfirmed = Boolean(phoneAck && phoneAck.success);
-                if (!phoneItem.result.phoneSyncConfirmed) {
-                  phoneItem.result.phoneSyncError =
-                    (phoneAck && (phoneAck.error || phoneAck.message || phoneAck.code)) ||
-                    'tomatodo_phone_sync_not_confirmed';
+            var phoneStatus = await api.syncGetStatus();
+            var phoneConnected = phoneStatus && Number(phoneStatus.connectedCount || 0) > 0;
+            if (!phoneConnected) {
+              for (var phonePending of prepared) {
+                if (phonePending.record) {
+                  phonePending.result.phoneSyncError = 'tomatodo_phone_not_connected';
                 }
-              } catch (error) {
-                phoneItem.result.phoneSyncError =
-                  error && error.message ? error.message : String(error);
+              }
+            } else {
+              for (var phoneItem of prepared) {
+                if (!phoneItem.record) continue;
+                try {
+                  var phoneRecord = Object.assign({}, phoneItem.record, { isSynced: 0 });
+                  var phoneAck = await api.syncRecord(phoneRecord, 'FocusLink手机同步');
+                  phoneItem.result.phoneSyncConfirmed = Boolean(phoneAck && phoneAck.success);
+                  if (!phoneItem.result.phoneSyncConfirmed) {
+                    phoneItem.result.phoneSyncError =
+                      (phoneAck && (phoneAck.error || phoneAck.message || phoneAck.code)) ||
+                      'tomatodo_phone_sync_not_confirmed';
+                  }
+                } catch (error) {
+                  phoneItem.result.phoneSyncError =
+                    error && error.message ? error.message : String(error);
+                }
               }
             }
           }
@@ -481,10 +492,9 @@ export async function writeTomatodoRecordsThroughBridge(
       }
     })()
   `;
-  const requiredMethods = syncToPhone
-    ? [...TOMATODO_CLOUD_IDENTITY_METHODS, ...TOMATODO_PHONE_IDENTITY_METHODS]
-    : TOMATODO_CLOUD_IDENTITY_METHODS;
-  const evaluated = await evaluateJson(expression, requiredMethods);
+  // 身份校验只针对品牌标题 + 云同步 API 表面：手机直连 API 缺失属于能力差异，
+  // 不能让整条写库与云上传被判定成「桥不可用」（见 FL-SYNC-019）。
+  const evaluated = await evaluateJson(expression);
   if (!evaluated.available) {
     return { available: false, ok: false, results: [], error: evaluated.error };
   }
@@ -535,23 +545,30 @@ export async function writeTomatodoRecordThroughBridge(
   return result.results[0];
 }
 
-/** 在番茄 Todo 正运行时用其原生 API 更新分类并请求重新上传。 */
-export async function updateTomatodoSubjectThroughBridge(
+/**
+ * 在番茄 Todo 正运行时用其原生 API 更新记录名（自定义标题或学科名）并请求重新上传。
+ * recordName 是最终写入 PCRecord.name 的字符串，调用方负责决定它是标题还是学科。
+ */
+export async function updateTomatodoRecordNameThroughBridge(
   segmentId: string,
-  subject: TomatodoSubject,
+  recordName: string,
   options: TomatodoBridgeWriteOptions = {},
 ): Promise<TomatodoBridgeWriteResult> {
   const syncToPhone = options.syncToPhone === true;
   const marker = JSON.stringify(`[FocusLink:tomatodo:segment:${segmentId}]`);
-  const subjectJson = JSON.stringify(subject);
+  const nameJson = JSON.stringify(recordName);
+  const phoneMethodsJson = JSON.stringify(TOMATODO_PHONE_IDENTITY_METHODS);
   const expression = `
     (async function () {
       try {
         var api = window.electronAPI;
-        if (!api || !api.getAllRecords || !api.updateRecord ||
-            (${syncToPhone} && (!api.syncGetStatus || !api.syncRecord))) {
+        if (!api || !api.getAllRecords || !api.updateRecord) {
           return JSON.stringify({ ok: false, error: 'tomatodo_record_api_unavailable' });
         }
+        // 手机直连 API 是能力而不是身份：缺失时只跳过手机投递。
+        var phoneApiAvailable = ${phoneMethodsJson}.every(function (name) {
+          return typeof api[name] === 'function';
+        });
         var records = await api.getAllRecords();
         var record = records.find(function (item) {
           return String(item.s1 || '').indexOf(${marker}) >= 0;
@@ -560,15 +577,15 @@ export async function updateTomatodoSubjectThroughBridge(
           ok: true, recordFound: false, localWritten: false, localChanged: false,
           uploadConfirmed: false, skipped: true
         });
-        var subjectChanged = record.name !== ${subjectJson};
-        if (!subjectChanged && Number(record.isSynced) === 1 && !${syncToPhone}) {
+        var nameChanged = record.name !== ${nameJson};
+        if (!nameChanged && Number(record.isSynced) === 1 && !${syncToPhone}) {
           return JSON.stringify({
             ok: true, recordFound: true, localWritten: true, localChanged: false,
             uploadConfirmed: true, phoneSyncConfirmed: true, skipped: true, recordId: record.id
           });
         }
-        if (subjectChanged) {
-          record = Object.assign({}, record, { name: ${subjectJson}, isSynced: 0 });
+        if (nameChanged) {
+          record = Object.assign({}, record, { name: ${nameJson}, isSynced: 0 });
           await api.updateRecord(record);
         }
         var uploadConfirmed = false;
@@ -601,30 +618,34 @@ export async function updateTomatodoSubjectThroughBridge(
         var phoneSyncConfirmed = ${!syncToPhone};
         var phoneSyncError = null;
         if (${syncToPhone}) {
-          try {
-            var phoneStatus = await api.syncGetStatus();
-            if (phoneStatus && Number(phoneStatus.connectedCount || 0) > 0) {
-              var phoneAck = await api.syncRecord(
-                Object.assign({}, record, { isSynced: 0 }),
-                'FocusLink手机同步'
-              );
-              phoneSyncConfirmed = Boolean(phoneAck && phoneAck.success);
-              if (!phoneSyncConfirmed) {
-                phoneSyncError =
-                  (phoneAck && (phoneAck.error || phoneAck.message || phoneAck.code)) ||
-                  'tomatodo_phone_sync_not_confirmed';
+          if (!phoneApiAvailable) {
+            phoneSyncError = 'tomatodo_phone_sync_api_unavailable';
+          } else {
+            try {
+              var phoneStatus = await api.syncGetStatus();
+              if (phoneStatus && Number(phoneStatus.connectedCount || 0) > 0) {
+                var phoneAck = await api.syncRecord(
+                  Object.assign({}, record, { isSynced: 0 }),
+                  'FocusLink手机同步'
+                );
+                phoneSyncConfirmed = Boolean(phoneAck && phoneAck.success);
+                if (!phoneSyncConfirmed) {
+                  phoneSyncError =
+                    (phoneAck && (phoneAck.error || phoneAck.message || phoneAck.code)) ||
+                    'tomatodo_phone_sync_not_confirmed';
+                }
+              } else {
+                phoneSyncError = 'tomatodo_phone_not_connected';
               }
-            } else {
-              phoneSyncError = 'tomatodo_phone_not_connected';
+            } catch (error) {
+              phoneSyncError = error && error.message ? error.message : String(error);
             }
-          } catch (error) {
-            phoneSyncError = error && error.message ? error.message : String(error);
           }
         }
         return JSON.stringify({
-          ok: true, recordFound: true, localWritten: true, localChanged: subjectChanged,
+          ok: true, recordFound: true, localWritten: true, localChanged: nameChanged,
           uploadConfirmed: uploadConfirmed, phoneSyncConfirmed: phoneSyncConfirmed,
-          phoneSyncError: phoneSyncError, skipped: !subjectChanged,
+          phoneSyncError: phoneSyncError, skipped: !nameChanged,
           recordId: record.id, cloudError: cloudError
         });
       } catch (error) {
@@ -632,10 +653,8 @@ export async function updateTomatodoSubjectThroughBridge(
       }
     })()
   `;
-  const requiredMethods = syncToPhone
-    ? [...TOMATODO_CLOUD_IDENTITY_METHODS, ...TOMATODO_PHONE_IDENTITY_METHODS]
-    : TOMATODO_CLOUD_IDENTITY_METHODS;
-  const evaluated = await evaluateJson(expression, requiredMethods);
+  // 同 writeTomatodoRecordsThroughBridge：手机直连 API 是能力，不属于身份校验。
+  const evaluated = await evaluateJson(expression);
   const value = evaluated.value;
   return {
     available: evaluated.available,

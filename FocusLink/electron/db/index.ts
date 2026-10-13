@@ -65,6 +65,12 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE focus_segments ADD COLUMN tomatodo_subject TEXT');
     logger.info('database', 'migration: added focus_segments.tomatodo_subject');
   }
+  // focus_segments.tomatodo_record_name：番茄 Todo 记录的自定义标题。
+  // 为空表示沿用“记录名 == 学科名”的旧行为，因此这是一次纯增量迁移，无需回填。
+  if (!hasCol('focus_segments', 'tomatodo_record_name')) {
+    database.exec('ALTER TABLE focus_segments ADD COLUMN tomatodo_record_name TEXT');
+    logger.info('database', 'migration: added focus_segments.tomatodo_record_name');
+  }
   if (!hasCol('tasks_cache', 'parent_id')) {
     database.exec('ALTER TABLE tasks_cache ADD COLUMN parent_id TEXT');
     logger.info('database', 'migration: added tasks_cache.parent_id');
@@ -359,9 +365,10 @@ export function insertDeviceSyncBundleIfMissing(bundle: DeviceSyncSessionBundle)
     const insertSegmentStatement = database.prepare(
       `INSERT INTO focus_segments
         (id, session_id, task_id, task_source, title, started_at, ended_at,
-         active_elapsed_ms, note, cloud_focus_id, tomatodo_subject, created_at, updated_at)
+         active_elapsed_ms, note, cloud_focus_id, tomatodo_subject, tomatodo_record_name,
+         created_at, updated_at)
        VALUES (@id, @sessionId, @taskId, @taskSource, @title, @startedAt, @endedAt,
-         @activeElapsedMs, @note, NULL, @tomatodoSubject, @createdAt, @updatedAt)`,
+         @activeElapsedMs, @note, NULL, @tomatodoSubject, NULL, @createdAt, @updatedAt)`,
     );
     for (const segment of bundle.segments) insertSegmentStatement.run(segment);
 
@@ -434,10 +441,10 @@ export function insertSegment(segment: FocusSegment): void {
   db.prepare(
     `INSERT INTO focus_segments
       (id, session_id, task_id, task_source, title, started_at, ended_at,
-       active_elapsed_ms, note, tomatodo_subject, created_at, updated_at)
+       active_elapsed_ms, note, tomatodo_subject, tomatodo_record_name, created_at, updated_at)
      VALUES (@id, @sessionId, @taskId, @taskSource, @title, @startedAt, @endedAt,
-       @activeElapsedMs, @note, @tomatodoSubject, @createdAt, @updatedAt)`,
-  ).run(segment);
+       @activeElapsedMs, @note, @tomatodoSubject, @tomatodoRecordName, @createdAt, @updatedAt)`,
+  ).run(withTomatodoRecordName(segment));
 }
 
 export function updateSegment(segment: FocusSegment): void {
@@ -445,9 +452,20 @@ export function updateSegment(segment: FocusSegment): void {
   db.prepare(
     `UPDATE focus_segments SET
       task_id = @taskId, task_source = @taskSource, title = @title, ended_at = @endedAt,
-      active_elapsed_ms = @activeElapsedMs, note = @note, tomatodo_subject = @tomatodoSubject, updated_at = @updatedAt
+      active_elapsed_ms = @activeElapsedMs, note = @note, tomatodo_subject = @tomatodoSubject,
+      tomatodo_record_name = @tomatodoRecordName, updated_at = @updatedAt
      WHERE id = @id`,
-  ).run(segment);
+  ).run(withTomatodoRecordName(segment));
+}
+
+/**
+ * tomatodoRecordName 在类型上是可选字段（旧调用点不必逐个补齐），但 SQLite 的具名参数
+ * 必须存在，否则 better-sqlite3 会直接抛 “Missing named parameter”。
+ */
+function withTomatodoRecordName<T extends { tomatodoRecordName?: string | null }>(
+  segment: T,
+): T & { tomatodoRecordName: string | null } {
+  return { ...segment, tomatodoRecordName: segment.tomatodoRecordName ?? null };
 }
 
 export function getSegment(id: string): FocusSegment | null {
@@ -556,6 +574,19 @@ export function setSegmentsTomatodoSubject(segmentIds: string[], subject: string
     return updated;
   });
   return tx(segmentIds);
+}
+
+/**
+ * 设置 segment 的番茄 Todo 自定义记录标题。null 表示清除，
+ * 清除后写入番茄 Todo 的记录名回落到学科名（旧行为）。
+ */
+export function setSegmentTomatodoRecordName(segmentId: string, recordName: string | null): void {
+  const db = getDb();
+  db.prepare('UPDATE focus_segments SET tomatodo_record_name = ?, updated_at = ? WHERE id = ?').run(
+    recordName,
+    Date.now(),
+    segmentId,
+  );
 }
 
 // ============ Pause ============
@@ -884,6 +915,7 @@ interface SegmentRow {
   note: string | null;
   cloud_focus_id: string | null;
   tomatodo_subject: string | null;
+  tomatodo_record_name: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -900,6 +932,7 @@ function rowToSegment(r: SegmentRow): FocusSegment {
     note: r.note,
     cloudFocusId: r.cloud_focus_id,
     tomatodoSubject: (r.tomatodo_subject as TomatodoSubject | null) ?? null,
+    tomatodoRecordName: r.tomatodo_record_name ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

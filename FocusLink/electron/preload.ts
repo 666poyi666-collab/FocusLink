@@ -166,6 +166,8 @@ const api = {
       ipcRenderer.invoke('tomatodo:set-subject', segmentId, subject),
     setSubjects: (segmentIds: string[], subject: TomatodoSubject | null) =>
       ipcRenderer.invoke('tomatodo:set-subjects', segmentIds, subject),
+    setRecordName: (segmentId: string, recordName: string | null) =>
+      ipcRenderer.invoke('tomatodo:set-record-name', segmentId, recordName),
     uploadPending: () => ipcRenderer.invoke('tomatodo:upload-pending'),
     pendingCount: () => ipcRenderer.invoke('tomatodo:pending-count'),
     pendingSummary: () => ipcRenderer.invoke('tomatodo:pending-summary'),

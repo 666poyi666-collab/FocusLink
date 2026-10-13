@@ -42,6 +42,7 @@ import {
   getPendingTomatodoSummary,
   setTomatodoSubjectForSegment,
   setTomatodoSubjectsForSegments,
+  setTomatodoRecordNameForSegment,
   uploadPendingTomatodoRecords,
 } from './sync/tomatodoSyncService.js';
 import {
@@ -824,6 +825,10 @@ export function registerIpc(
   );
   ipcMain.handle('tomatodo:set-subjects', (_e, segmentIds: string[], subject: string | null) =>
     setTomatodoSubjectsForSegments(segmentIds, subject),
+  );
+  /** 保存 segment 的番茄 Todo 自定义记录标题（null 表示清除，回落到学科名） */
+  ipcMain.handle('tomatodo:set-record-name', (_e, segmentId: string, recordName: string | null) =>
+    setTomatodoRecordNameForSegment(segmentId, recordName),
   );
   /** 手动上传所有待同步的番茄 Todo 记录到云端 */
   ipcMain.handle('tomatodo:upload-pending', () =>

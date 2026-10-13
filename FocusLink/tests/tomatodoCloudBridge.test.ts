@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
 import {
   deleteTomatodoRecordThroughBridge,
   probeTomatodoBridge,
-  updateTomatodoSubjectThroughBridge,
+  updateTomatodoRecordNameThroughBridge,
   writeTomatodoRecordsThroughBridge,
   writeTomatodoRecordThroughBridge,
 } from '../electron/integrations/tomatodo/cloudBridge';
@@ -350,6 +350,51 @@ describe('tomatodo cloud bridge CDP transaction', () => {
     expect(calls.uploadCalls).toHaveLength(1);
   });
 
+  it('keeps the cloud write when this TomaToDo build exposes no direct phone channel API', async () => {
+    const records: NativeRecord[] = [];
+    const calls = installNativeApi(records);
+
+    // 本机实测：番茄 Todo 页面没有 syncGetStatus / syncRecord。
+    // 手机直连 API 缺失属于能力差异，不能把整条写库与云上传判成「桥不可用」。
+    const result = await writeTomatodoRecordThroughBridge(recordFor('phone-api-missing'), {
+      syncToPhone: true,
+    });
+
+    expect(result).toMatchObject({
+      available: true,
+      ok: true,
+      recordFound: true,
+      localWritten: true,
+      uploadConfirmed: true,
+      phoneSyncConfirmed: false,
+      phoneSyncError: 'tomatodo_phone_sync_api_unavailable',
+    });
+    expect(records[0]?.isSynced).toBe(1);
+    expect(calls.uploadCalls).toHaveLength(1);
+  });
+
+  it('renames a record through the bridge without a direct phone channel API', async () => {
+    const records = [{ ...recordFor('rename-no-phone'), id: 321, isSynced: 0 } as NativeRecord];
+    const calls = installNativeApi(records);
+
+    const result = await updateTomatodoRecordNameThroughBridge('rename-no-phone', '数学错题回顾', {
+      syncToPhone: true,
+    });
+
+    expect(result).toMatchObject({
+      available: true,
+      ok: true,
+      recordFound: true,
+      localWritten: true,
+      localChanged: true,
+      uploadConfirmed: true,
+      phoneSyncConfirmed: false,
+      phoneSyncError: 'tomatodo_phone_sync_api_unavailable',
+    });
+    expect(records[0]?.name).toBe('数学错题回顾');
+    expect(calls.uploadCalls).toHaveLength(1);
+  });
+
   it('hands a cloud-confirmed record to the direct phone channel when connected', async () => {
     const records: NativeRecord[] = [];
     installNativeApi(records);
@@ -397,7 +442,7 @@ describe('tomatodo cloud bridge CDP transaction', () => {
     const records: NativeRecord[] = [];
     const calls = installNativeApi(records);
 
-    const result = await updateTomatodoSubjectThroughBridge('missing', '数学');
+    const result = await updateTomatodoRecordNameThroughBridge('missing', '数学');
 
     expect(result).toMatchObject({
       ok: true,
@@ -418,7 +463,7 @@ describe('tomatodo cloud bridge CDP transaction', () => {
     ];
     const calls = installNativeApi(records);
 
-    const result = await updateTomatodoSubjectThroughBridge('same-subject', '数学');
+    const result = await updateTomatodoRecordNameThroughBridge('same-subject', '数学');
 
     expect(result).toMatchObject({
       recordFound: true,

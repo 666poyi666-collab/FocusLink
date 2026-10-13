@@ -17,6 +17,11 @@ export const TOMATODO_CLOUD_V053_MARKER = '[FocusLink:tomatodo:cloud-v053]';
 /** 番茄 To-do 的专注云接口只接受最近 7 天的记录。 */
 export const TOMATODO_CLOUD_UPLOAD_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
 export const ALL_SUBJECTS: readonly TomatodoSubject[] = [...TOMATODO_SUBJECTS, '学习'];
+/**
+ * 自定义记录标题的长度上限。番茄 To-do 的 PCRecord.name 是它列表里直接显示的单行短文本，
+ * 超长标题会挤坏它的排版；这里在写入前截断，而不是让外部库去处理任意长度的字符串。
+ */
+export const TOMATODO_RECORD_NAME_MAX_LENGTH = 40;
 export const TOMATODO_SUBJECT_OPTIONS = [
   { value: '语文', shortLabel: '语' },
   { value: '数学', shortLabel: '数' },
@@ -207,6 +212,29 @@ export function normalizeSubject(subject: string | null | undefined): TomatodoSu
 }
 
 /**
+ * 归一化用户在 FocusLink 里填写的番茄 Todo 记录标题。
+ * 返回 null 表示“没有自定义标题”，此时记录名回落到学科名 —— 这是与旧行为完全一致的默认。
+ */
+export function normalizeTomatodoRecordName(name: string | null | undefined): string | null {
+  if (typeof name !== 'string') return null;
+  // PCRecord.name 是单行字段：换行/制表符/tab 会让番茄 Todo 自己的列表错行，先压成空格。
+  const collapsed = name.replace(/\s+/g, ' ').trim();
+  if (!collapsed) return null;
+  return collapsed.slice(0, TOMATODO_RECORD_NAME_MAX_LENGTH);
+}
+
+/**
+ * 解析某 segment 最终写入 PCRecord.name 的字符串。
+ * 自定义标题优先；未设置时严格等于学科名，保持“记录名 == 学科”的历史行为。
+ */
+export function resolveSegmentRecordName(
+  segment: { tomatodoRecordName?: string | null },
+  subject: TomatodoSubject,
+): string {
+  return normalizeTomatodoRecordName(segment.tomatodoRecordName) ?? subject;
+}
+
+/**
  * 从标题、任务正文或标签等候选文本中推断六大学科。没有足够明确的词时返回 null，
  * 由调用方使用配置的兜底学科；不会把不确定文本强行归到任一学科。
  */
@@ -305,6 +333,11 @@ export interface TomatodoPCRecord {
 export interface BuildTomatodoRecordInput {
   segmentId: string;
   subject: TomatodoSubject;
+  /**
+   * 可选的记录标题（用户在 FocusLink 里自定义的番茄 Todo 记录名）。
+   * 省略或为空时，记录名严格等于 subject —— 即旧版本的“记录名 == 学科”。
+   */
+  recordName?: string | null;
   startedAt: number;
   endedAt: number;
   activeElapsedMs: number;
@@ -313,7 +346,8 @@ export interface BuildTomatodoRecordInput {
 export function buildTomatodoRecord(input: BuildTomatodoRecordInput): Omit<TomatodoPCRecord, 'id'> {
   const minutes = Math.max(0.1, round(Number(input.activeElapsedMs) / 60000, 6));
   return {
-    name: input.subject,
+    // 记录名承载番茄 Todo 里显示的标题；学科仍然决定统计口径，两者不再强绑定。
+    name: normalizeTomatodoRecordName(input.recordName) ?? input.subject,
     time: minutes,
     startDate: input.startedAt,
     createDate: input.endedAt,
@@ -351,6 +385,7 @@ export function buildTomatodoRecordFromSegment(
   return buildTomatodoRecord({
     segmentId: segment.id,
     subject,
+    recordName: segment.tomatodoRecordName ?? null,
     startedAt: segment.startedAt,
     endedAt: segment.endedAt as number,
     activeElapsedMs: segment.activeElapsedMs,

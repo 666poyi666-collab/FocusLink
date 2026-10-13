@@ -306,6 +306,99 @@ describe('tomatodo adapter update subject for an existing marker', () => {
   });
 });
 
+describe('tomatodo adapter custom record name', () => {
+  let dbPath: string;
+  beforeEach(() => {
+    dbPath = makeDbPath();
+    seedDb(dbPath, 193);
+  });
+  afterEach(() => {
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
+  it('writes the custom title as PCRecord.name on creation', () => {
+    addTomatodoRecord(dbPath, {
+      segmentId: 'seg-custom-name',
+      subject: '数学',
+      recordName: '数学错题回顾',
+      startedAt: 1,
+      endedAt: 2,
+      activeElapsedMs: 60000,
+    });
+    const record = loadTomatodoDb(dbPath).PCRecord?.find((r) =>
+      (r.s1 ?? '').includes('seg-custom-name'),
+    );
+
+    expect(record?.name).toBe('数学错题回顾');
+  });
+
+  it('replaces the record name in place and returns it to the upload queue', () => {
+    addTomatodoRecord(dbPath, {
+      segmentId: 'seg-rename',
+      subject: '数学',
+      startedAt: 1,
+      endedAt: 2,
+      activeElapsedMs: 60000,
+    });
+    const before = loadTomatodoDb(dbPath).PCRecord?.find((r) =>
+      (r.s1 ?? '').includes('seg-rename'),
+    );
+
+    const result = updateTomatodoRecordSubjects(dbPath, [
+      { segmentId: 'seg-rename', subject: '数学', recordName: '数学错题回顾' },
+    ]);
+    const after = loadTomatodoDb(dbPath).PCRecord?.find((r) => (r.s1 ?? '').includes('seg-rename'));
+
+    expect(result).toMatchObject({ ok: true, updatedCount: 1 });
+    expect(after?.name).toBe('数学错题回顾');
+    expect(after?.isSynced).toBe(0);
+    expect(after?.id).toBe(before?.id);
+    expect(after?.s1).toBe(before?.s1);
+  });
+
+  it('clearing the custom title falls back to the subject name', () => {
+    addTomatodoRecord(dbPath, {
+      segmentId: 'seg-clear-name',
+      subject: '数学',
+      recordName: '数学错题回顾',
+      startedAt: 1,
+      endedAt: 2,
+      activeElapsedMs: 60000,
+    });
+
+    updateTomatodoRecordSubjects(dbPath, [
+      { segmentId: 'seg-clear-name', subject: '数学', recordName: null },
+    ]);
+    const after = loadTomatodoDb(dbPath).PCRecord?.find((r) =>
+      (r.s1 ?? '').includes('seg-clear-name'),
+    );
+
+    expect(after?.name).toBe('数学');
+  });
+
+  it('keeps cloud confirmation when the custom title is unchanged', () => {
+    addTomatodoRecord(dbPath, {
+      segmentId: 'seg-idempotent-name',
+      subject: '数学',
+      recordName: '数学错题回顾',
+      startedAt: 1,
+      endedAt: 2,
+      activeElapsedMs: 60000,
+    });
+    const db = loadTomatodoDb(dbPath);
+    const record = db.PCRecord?.find((item) => (item.s1 ?? '').includes('seg-idempotent-name'));
+    if (record) record.isSynced = 1;
+    fs.writeFileSync(dbPath, JSON.stringify(db), 'utf8');
+
+    const result = updateTomatodoRecordSubjects(dbPath, [
+      { segmentId: 'seg-idempotent-name', subject: '数学', recordName: '数学错题回顾' },
+    ]);
+
+    expect(result).toMatchObject({ ok: true, updatedCount: 0 });
+    expect(getTomatodoRecordState(dbPath, 'seg-idempotent-name').cloudSynced).toBe(true);
+  });
+});
+
 describe('tomatodo adapter legacy cloud migration', () => {
   let dbPath: string;
   beforeEach(() => {

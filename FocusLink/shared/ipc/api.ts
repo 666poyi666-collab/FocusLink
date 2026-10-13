@@ -346,6 +346,10 @@ export interface TomatodoSegmentStatus {
     'not-written' | 'local-pending' | 'confirmation-pending' | 'expired-history' | 'cloud-synced';
   subject: TomatodoSubject;
   source: 'manual' | 'auto' | 'fallback';
+  /** 最终会写入 PCRecord.name 的字符串：自定义标题优先，否则等于 subject。 */
+  recordName: string;
+  /** 用户自定义标题；null 表示未设置（记录名 == 学科名）。 */
+  customRecordName: string | null;
 }
 
 export interface TomatodoSyncStatus {
@@ -572,6 +576,8 @@ export interface FocusLinkAPI {
       segmentIds: string[],
       subject: TomatodoSubject | null,
     ): Promise<TomatodoSubjectSetResult>;
+    /** 保存自定义记录标题；传 null 表示清除，记录名回落到学科名。 */
+    setRecordName(segmentId: string, recordName: string | null): Promise<TomatodoSubjectSetResult>;
     uploadPending(): Promise<PendingTomatodoUploadResult>;
     pendingCount(): Promise<number>;
     pendingSummary(): Promise<TomatodoUploadQueueSummary>;

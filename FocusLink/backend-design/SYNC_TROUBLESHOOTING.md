@@ -325,3 +325,64 @@ v1.3.20 PC 统计页关联会话后显式执行 `linkSegmentsBatch(..., onlyUnli
 检查已认证设备 ID 与待发 mutation.deviceId：历史安装 UUID 的操作会被 canonical adapter 拒绝。v1.3.21 仅将同 scope、本机 legacy ID 的操作路由到当前已认证设备，保留 opId/payload；其他设备身份不得重写。先无 mutation 拉取，再推送，避免任意旧操作阻断新会话投影。诊断与验收不得删除真实记录或清空冲突来伪造成功。
 
 已确认结束后若导入失败，呈现“专注已结束，记录已保存在云端，等待导入本机”；重试通过原同步路径导入一次，核对 session、segments、pauses 三表和统计请求范围。transport、身份鉴权、耐久冲突与第三方待投递分别记录；滴答或番茄未确认不代表本地/FocusLink 云端记录丢失。
+
+## FL-SYNC-018：番茄 To-do 的自定义记录标题变回「学习」
+
+### 含义
+
+番茄记录名与学科分类是**两层数据**，不能互相冒充。`focus_segments.tomatodo_subject` 是统计口径（只能是 语文/数学/英语/物理/化学/生物/学习 七个值）；`focus_segments.tomatodo_record_name` 是用户可见的记录标题，可以为空（为空时 `buildTomatodoRecord` 写 `name = subject`），也可以是完全自定义的字符串（如「数学错题回顾」，上限 40 个码点）。出现「标题变回『学习』」时，先判断是哪一层被抹：本地 SQLite、`tomatodo_db.json`、还是云端记录。
+
+### 根因（2026-10-13 修复，v1.6.1 未升版本）
+
+1. 旧实现 `buildTomatodoRecord` 恒为 `name: input.subject`，产品里不存在记录标题概念。
+2. 旧 `uploadPendingTomatodoRecordsUnlocked` 的待传回填是 `subject: isTomatodoSubject(record.name) ? record.name : TOMATODO_FALLBACK_SUBJECT`：**任何非学科名都会被降级成「学习」并写回待传记录**，一次上传就把用户手改的标题抹掉。现改为 `recordName: record.name`，记录名原样保留，`subject` 只用于统计兜底。
+3. 旧 `updateTomatodoRecordSubjects` 的幂等判断按学科比较，导致「改名」既不触发重新上传、又可能被同名判断跳过。现按**最终记录名**比较：同名返回原记录（保住 `isSynced=1`），改名写 `isSynced=0` 重新排队。
+
+### 处理步骤
+
+1. 读 `SELECT id, tomatodo_subject, tomatodo_record_name FROM focus_segments WHERE ...`，确认自定义标题是否还在本地库里；本地为空说明从未保存过标题，不是同步丢失。
+2. 用 `parseSegmentIdFromMarker(record.s1)` 在 `tomatodo_db.json` 找对应 `PCRecord`，读 `name` 与 `isSynced`：`name` 正确但 `isSynced=0` 表示「已写入本地、尚未上云」；`name` 已被改成「学习」说明写入方仍是旧逻辑。
+3. 判定期望值用 `resolveSegmentRecordName(segment, subject)`，不要自己拼。
+4. **必须重启 FocusLink 再上传**：运行中的旧实例内存里仍是旧回填逻辑，在它上面点「立即上传」会再次把标题抹成「学习」。
+
+### 验证
+
+`tests/tomatodoPolicy.test.ts` 锁归一化/回退/构建；`tests/tomatodoAdapter.test.ts` 锁「改名写 `isSynced=0`、同名保 `isSynced=1`」；`tests/tomatodoSyncService.test.ts` 锁「保存并推桥」「清空回退学科」「状态读取不写外部」「**回填不把自定义标题降级成『学习』**」。
+
+### 边界
+
+durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录改名是第四类复用同一 segment ID 的意图，同样不区分原因（见 FL-SYNC-015），措辞继续保持「等待同步确认」。番茄客户端仍**没有远端删除 API**：删除只保证本机 marker 清理，`remoteDeleteSupported=false`，不得宣称远端已清理。
+
+## FL-SYNC-019：番茄 Todo 明明在运行，却报「本地同步桥不可用」（手机直连 API 缺失被当成身份校验失败）
+
+### 含义
+
+`tomatodo_bridge_identity_not_verified` 有两种完全不同的来源，必须分开记：**(a)** 端口上没有番茄页面，是真的没连上；**(b)** 页面在、标题也对，但身份校验要求的某个 `electronAPI` 方法不存在。2026-10-13 本机遇到的是 (b)，而界面文案一律说成「番茄 Todo 正在运行，但本地同步桥不可用」，会把能力差异误报成连接故障。
+
+### 现象与证据（2026-10-13 11:00 本机实测）
+
+- 番茄 Todo 正在运行（`C:\Program Files\TomaToDo\TomaToDo.exe`，4 个进程，`%APPDATA%\tomatodo\DevToolsActivePort` = 55409）；CDP `/json/list` 能取到 page target，`document.title` = `番茄ToDo`。
+- `ensureTomatodoBridge()` 返回 `{state:'connected', connected:true}`（它只要求云 API），但 `syncSegmentToTomatodo` 立刻返回 `tomatodo_bridge_identity_not_verified`。
+- 页面内 `typeof window.electronAPI[m]`：8 个云方法（`getAllRecords`/`addRecord`/`updateRecord`/`deleteRecord`/`getRecentUnsyncedRecordsForCurrentDevice`/`cloudSyncGetStatus`/`cloudSyncUploadRecord`/`cloudSyncFetchTodo`）全是 `function`，`cloudSyncGetStatus()` 返回 `{isBound:true, bound:true, deviceToken:'pc_...'}`；而 **`syncGetStatus` 与 `syncRecord` 都是 `undefined`**（`Object.keys` 里也没有）。该版本同时暴露 `syncUnbind`，说明这不是「未绑定手机」，而是这个方法族在本版本/本账号下根本不存在。
+- 后果：`syncSegmentToTomatodo` 恒传 `syncToPhone:true`，身份校验要求 `[...云方法, ...TOMATODO_PHONE_IDENTITY_METHODS]` → 必然失败 → 用户番茄库里 442 条带 FocusLink marker 的记录全部 `isSynced=0`，**从未有一条真正上传过云**。
+
+### 根因（2026-10-13 修复，v1.6.1 未升版本）
+
+`electron/integrations/tomatodo/cloudBridge.ts` 把**手机直连 API 当成了目标身份的一部分**：`writeTomatodoRecordsThroughBridge` 与 `updateTomatodoRecordNameThroughBridge` 在 `syncToPhone` 为真时把 `syncGetStatus`/`syncRecord` 加进 `evaluateJson` 的必需方法列表，缺失即判「不是可信的番茄页面」，整条写库 + 云上传被丢弃；脚本内 `(${syncToPhone} && (!api.syncGetStatus || !api.syncRecord))` 也在最外层直接 `return { ok:false }`。**手机投递是能力，不是身份。**
+
+### 处理步骤
+
+1. 用**只读** CDP 探测区分 (a)/(b)：读 `DevToolsActivePort` 首行端口 → `/json/list` 找 `type==='page'` → `Runtime.evaluate` 打印 `typeof window.electronAPI[<method>]`。只有确认页面在、标题是「番茄To-do」、云方法齐全，才谈得上「桥可用」。
+2. 出现 `..._identity_not_verified` 时**不要**去关掉或重启用户的番茄 Todo：`bridgeLifecycle` 对「已运行但无桥」返回 `restart-required`，禁止杀进程。
+3. 修复后身份校验只要求**品牌标题 + 8 个云 API**；手机通道改用 `TOMATODO_PHONE_IDENTITY_METHODS` 运行时探测，缺失时只跳过手机投递并回填 `phoneSyncError='tomatodo_phone_sync_api_unavailable'`，写库与云上传照常完成。
+4. 单条云上传受番茄接口节流：一次运行里通常只有第一条拿到 `uploadConfirmed:true`，其余返回 `cloudError='cloud_upload_failed'`；对**已存在 marker** 的记录要间隔数秒重试，重试后 `isSynced` 变 1。批量路径 `writeTomatodoRecordsThroughBridge` 对已有 marker 走 `skipped`，**不能**用它补上传旧记录，补上传要用 `updateTomatodoRecordNameThroughBridge`。
+
+### 验证
+
+`tests/tomatodoCloudBridge.test.ts`：无手机 API 时写库 + 云上传仍成功且 `phoneSyncError='tomatodo_phone_sync_api_unavailable'`；同条件下改名同样成功；原有「云确认与手机投递分开」「无手机连接时为 `tomatodo_phone_not_connected`」「已确认记录仍要重试手机投递」用例保持不变。
+
+### 边界
+
+- 云上传成功 = `cloudSyncUploadRecord` 返回 success 且回写 `isSynced=1`，即「上传已确认」，**不是独立云端回读**（`cloudRecordReadbackSupported=false`）。
+- 手机投递在缺少该 API 的客户端上**无法验证**，因此 durable 队列不会被 `completeDurableTomatodoSegments` 清除，状态如实停在 `confirmation-pending`。把「客户端没有手机通道」直接视为「不需要手机投递」会改变产品语义，**待决，勿擅改**。
+- `syncToPhone:false` 时返回的 `phoneSyncConfirmed:true` 语义是「本次没有请求手机投递」，**不能读成手机投递已验证**。

@@ -13,7 +13,7 @@ const harness = vi.hoisted(() => ({
   pendingRecords: [] as Array<{
     recordId: number;
     segmentId: string;
-    name: TomatodoSubject;
+    name: string;
     time: number;
     startDate: number;
     isSynced: number;
@@ -31,6 +31,9 @@ vi.mock('../electron/db/index', () => ({
   setSetting: (key: string, value: string) => harness.settings.set(key, value),
   setSegmentTomatodoSubject: (_id: string, subject: TomatodoSubject | null) => {
     if (harness.segment) harness.segment = { ...harness.segment, tomatodoSubject: subject };
+  },
+  setSegmentTomatodoRecordName: (_id: string, recordName: string | null) => {
+    if (harness.segment) harness.segment = { ...harness.segment, tomatodoRecordName: recordName };
   },
   setSegmentsTomatodoSubject: (ids: string[], subject: TomatodoSubject | null) => {
     let updatedCount = 0;
@@ -64,7 +67,7 @@ vi.mock('../electron/integrations/tomatodo/localDb', () => ({
 
 vi.mock('../electron/integrations/tomatodo/cloudBridge', () => ({
   deleteTomatodoRecordThroughBridge: vi.fn(),
-  updateTomatodoSubjectThroughBridge: harness.updateBridge,
+  updateTomatodoRecordNameThroughBridge: harness.updateBridge,
   writeTomatodoRecordsThroughBridge: harness.writeBatchBridge,
   writeTomatodoRecordThroughBridge: harness.writeBridge,
 }));
@@ -87,6 +90,7 @@ import {
   getPendingTomatodoCount,
   getPendingTomatodoSummary,
   getTomatodoSyncStatus,
+  setTomatodoRecordNameForSegment,
   setTomatodoSubjectForSegment,
   setTomatodoSubjectsForSegments,
   syncSessionToTomatodo,
@@ -403,6 +407,116 @@ describe('tomatodo sync service bridge safety and state', () => {
     expect(JSON.parse(harness.settings.get('tomatodo.pendingSegmentIdsV060') ?? '[]')).toEqual([
       'segment-1',
     ]);
+  });
+
+  it('saves a custom record title and pushes it to the running bridge', async () => {
+    harness.updateBridge.mockResolvedValue({
+      available: true,
+      ok: true,
+      recordFound: true,
+      localWritten: true,
+      localChanged: true,
+      uploadConfirmed: true,
+      phoneSyncConfirmed: true,
+      cloudRecordReadbackSupported: false,
+      skipped: false,
+      recordId: 1,
+    });
+
+    const result = await setTomatodoRecordNameForSegment('segment-1', '  数学错题回顾  ');
+
+    expect(result).toMatchObject({ ok: true, updatedCount: 1 });
+    expect(harness.segment?.tomatodoRecordName).toBe('数学错题回顾');
+    expect(harness.updateBridge).toHaveBeenCalledWith('segment-1', '数学错题回顾', {
+      syncToPhone: true,
+    });
+    expect(harness.addRecord).not.toHaveBeenCalled();
+  });
+
+  it('clearing the custom title falls back to the subject as the record name', async () => {
+    harness.segment = {
+      ...makeSegment(),
+      tomatodoSubject: '数学',
+      tomatodoRecordName: '数学错题回顾',
+    };
+    harness.updateBridge.mockResolvedValue({
+      available: true,
+      ok: true,
+      recordFound: true,
+      localWritten: true,
+      localChanged: true,
+      uploadConfirmed: true,
+      phoneSyncConfirmed: true,
+      cloudRecordReadbackSupported: false,
+      skipped: false,
+      recordId: 1,
+    });
+
+    await setTomatodoRecordNameForSegment('segment-1', null);
+
+    expect(harness.segment?.tomatodoRecordName).toBeNull();
+    expect(harness.updateBridge).toHaveBeenCalledWith('segment-1', '数学', { syncToPhone: true });
+  });
+
+  it('reports the custom title in the sync status without touching the durable queue', () => {
+    harness.segment = {
+      ...makeSegment(),
+      tomatodoSubject: '数学',
+      tomatodoRecordName: '数学错题回顾',
+    };
+
+    const status = getTomatodoSyncStatus('session-1');
+
+    expect(status.segments[0]).toMatchObject({
+      subject: '数学',
+      source: 'manual',
+      recordName: '数学错题回顾',
+      customRecordName: '数学错题回顾',
+    });
+    expect(harness.settings.has('tomatodo.pendingSegmentIdsV060')).toBe(false);
+    expect(harness.addRecord).not.toHaveBeenCalled();
+    expect(harness.updateBridge).not.toHaveBeenCalled();
+  });
+
+  it('never downgrades a custom record title to 学习 when replaying a pending upload', async () => {
+    harness.pendingRecords = [
+      {
+        recordId: 486,
+        segmentId: 'segment-custom',
+        name: '数学错题回顾',
+        time: 63.05,
+        startDate: Date.now() - 60_000,
+        isSynced: 0,
+      },
+    ];
+    harness.writeBatchBridge.mockResolvedValue({
+      available: true,
+      ok: true,
+      results: [
+        {
+          available: true,
+          ok: true,
+          recordFound: true,
+          localWritten: true,
+          localChanged: false,
+          uploadConfirmed: true,
+          phoneSyncConfirmed: true,
+          cloudRecordReadbackSupported: false,
+          skipped: true,
+          recordId: 486,
+        },
+      ],
+    });
+
+    const result = await uploadPendingTomatodoRecords();
+
+    expect(result).toMatchObject({ ok: true, total: 1, uploaded: 1, failed: 0 });
+    const uploaded = harness.writeBatchBridge.mock.calls[0]?.[0] as Array<{
+      name: string;
+      s1: string;
+    }>;
+    expect(uploaded[0]?.name).toBe('数学错题回顾');
+    expect(String(uploaded[0]?.s1)).toContain('segment-custom');
   });
 
   it('replays a durable segment that never reached the TomaToDo JSON', async () => {

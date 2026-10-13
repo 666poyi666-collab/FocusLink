@@ -74,6 +74,12 @@ export interface FocusSegment {
   cloudFocusId: string | null;
   /** 番茄 Todo 分类（手动选择：语文/数学/英语/物理/化学/生物/学习），null 表示未设置 */
   tomatodoSubject: TomatodoSubject | null;
+  /**
+   * 番茄 Todo 记录的自定义标题，null / undefined 表示未设置（记录名回落到学科名）。
+   * PC 端本机字段：刻意不进入 `shared/sync/deviceProtocol.ts` 的片段字段白名单，
+   * 因此不会改变跨设备同步协议，旧版本对端也不受影响。
+   */
+  tomatodoRecordName?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -684,6 +690,7 @@ export interface TomatodoIPC {
   'tomatodo:status': (sessionId: string) => Promise<unknown>;
   'tomatodo:set-subject': (segmentId: string, subject: string | null) => Promise<unknown>;
   'tomatodo:set-subjects': (segmentIds: string[], subject: string | null) => Promise<unknown>;
+  'tomatodo:set-record-name': (segmentId: string, recordName: string | null) => Promise<unknown>;
   'tomatodo:upload-pending': () => Promise<{
     ok: boolean;
     total: number;

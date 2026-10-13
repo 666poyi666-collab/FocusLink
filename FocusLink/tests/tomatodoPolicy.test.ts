@@ -3,6 +3,7 @@ import {
   ALL_SUBJECTS,
   TOMATODO_CLOUD_UPLOAD_WINDOW_MS,
   TOMATODO_FALLBACK_SUBJECT,
+  TOMATODO_RECORD_NAME_MAX_LENGTH,
   TOMATODO_SUBJECTS,
   buildTomatodoRecord,
   buildTomatodoRecordFromSegment,
@@ -12,7 +13,9 @@ import {
   inferTomatodoSubject,
   isTomatodoCloudUploadEligible,
   normalizeSubject,
+  normalizeTomatodoRecordName,
   parseSegmentIdFromMarker,
+  resolveSegmentRecordName,
   resolveSegmentSubject,
   shouldSyncSegmentToTomatodo,
 } from '../shared/tomatodoPolicy';
@@ -173,6 +176,52 @@ describe('tomatodo marker', () => {
       { s1: '' },
     ];
     expect(collectSyncedSegmentIds(records)).toEqual(new Set(['a', 'b']));
+  });
+});
+
+describe('tomatodo custom record name', () => {
+  it('normalizes user input and treats blank input as no custom title', () => {
+    expect(normalizeTomatodoRecordName('  数学错题回顾  ')).toBe('数学错题回顾');
+    expect(normalizeTomatodoRecordName('数学\n错题\t回顾')).toBe('数学 错题 回顾');
+    expect(normalizeTomatodoRecordName('')).toBeNull();
+    expect(normalizeTomatodoRecordName('   ')).toBeNull();
+    expect(normalizeTomatodoRecordName(null)).toBeNull();
+    expect(normalizeTomatodoRecordName(undefined)).toBeNull();
+    expect(normalizeTomatodoRecordName('这是一条特别特别长的标题'.repeat(6))).toHaveLength(
+      TOMATODO_RECORD_NAME_MAX_LENGTH,
+    );
+  });
+
+  it('falls back to the subject only when no custom title is set', () => {
+    expect(resolveSegmentRecordName({}, '数学')).toBe('数学');
+    expect(resolveSegmentRecordName({ tomatodoRecordName: null }, '数学')).toBe('数学');
+    expect(resolveSegmentRecordName({ tomatodoRecordName: '   ' }, '数学')).toBe('数学');
+    expect(resolveSegmentRecordName({ tomatodoRecordName: '数学错题回顾' }, '数学')).toBe(
+      '数学错题回顾',
+    );
+  });
+
+  it('writes the custom title into PCRecord.name while the subject stays the ledger value', () => {
+    const base = {
+      segmentId: 'seg-1',
+      startedAt: 1782000000000,
+      endedAt: 1782010800000,
+      activeElapsedMs: 45 * 60 * 1000,
+    };
+    expect(buildTomatodoRecord({ ...base, subject: '数学' }).name).toBe('数学');
+    expect(buildTomatodoRecord({ ...base, subject: '数学', recordName: '数学错题回顾' }).name).toBe(
+      '数学错题回顾',
+    );
+    expect(buildTomatodoRecord({ ...base, subject: '数学', recordName: '  ' }).name).toBe('数学');
+  });
+
+  it('carries the custom title through buildTomatodoRecordFromSegment', () => {
+    const record = buildTomatodoRecordFromSegment(
+      endedSegment({ tomatodoRecordName: '数学错题回顾' }),
+      '数学',
+    );
+    expect(record?.name).toBe('数学错题回顾');
+    expect(record?.s1).toBe(getTomatodoMarker('seg-1'));
   });
 });
 

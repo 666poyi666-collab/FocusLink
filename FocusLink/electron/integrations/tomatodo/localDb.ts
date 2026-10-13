@@ -17,6 +17,7 @@ import {
   buildTomatodoRecord,
   collectSyncedSegmentIds,
   getTomatodoMarker,
+  normalizeTomatodoRecordName,
   parseSegmentIdFromMarker,
   TOMATODO_CLOUD_V053_MARKER,
   type TomatodoPCRecord,
@@ -36,6 +37,8 @@ export interface TomatodoDb {
 export interface AddRecordInput {
   segmentId: string;
   subject: TomatodoSubject;
+  /** 自定义记录标题；省略/为空时记录名等于 subject（旧行为）。 */
+  recordName?: string | null;
   startedAt: number;
   endedAt: number;
   activeElapsedMs: number;
@@ -51,10 +54,12 @@ export interface AddRecordResult {
   error?: string;
 }
 
-/** 将一个已写入 PCRecord 的学科名改为新的分类。 */
+/** 将一个已写入 PCRecord 的记录名改为新的标题或学科分类。 */
 export interface UpdateTomatodoRecordSubjectInput {
   segmentId: string;
   subject: TomatodoSubject;
+  /** 自定义记录标题；省略/为空时写入学科名。 */
+  recordName?: string | null;
 }
 
 export interface UpdateTomatodoRecordSubjectsResult {
@@ -252,6 +257,7 @@ export function addTomatodoRecord(dbPath: string, input: AddRecordInput): AddRec
     const partial = buildTomatodoRecord({
       segmentId: input.segmentId,
       subject: input.subject,
+      recordName: input.recordName ?? null,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
       activeElapsedMs: input.activeElapsedMs,
@@ -266,6 +272,7 @@ export function addTomatodoRecord(dbPath: string, input: AddRecordInput): AddRec
     logger.info('tomatodoAdapter', 'record added', {
       segmentId: input.segmentId,
       subject: input.subject,
+      recordName: record.name,
       recordId,
       minutes: record.time,
       backupPath,
@@ -333,18 +340,24 @@ export function countPendingTomatodoRecords(dbPath: string): number {
 
 /**
  * 就地更新已同步 PCRecord 的 name 字段，不删除 marker、不改 record id 或其他番茄 Todo 元数据。
- * 这让用户在 FocusLink 中手动改学科后可以同步反映到番茄 Todo，而不会被 marker 幂等逻辑跳过。
+ * 这让用户在 FocusLink 中手动改学科或自定义标题后可以同步反映到番茄 Todo，
+ * 而不会被 marker 幂等逻辑跳过。
  */
 export function updateTomatodoRecordSubjects(
   dbPath: string,
   updates: readonly UpdateTomatodoRecordSubjectInput[],
 ): UpdateTomatodoRecordSubjectsResult {
   try {
-    const subjectBySegmentId = new Map<string, TomatodoSubject>();
+    const nameBySegmentId = new Map<string, string>();
     for (const update of updates) {
-      if (update.segmentId) subjectBySegmentId.set(update.segmentId, update.subject);
+      if (!update.segmentId) continue;
+      // PCRecord.name 只有一个字段：自定义标题优先，未设置时才写学科名。
+      nameBySegmentId.set(
+        update.segmentId,
+        normalizeTomatodoRecordName(update.recordName) ?? update.subject,
+      );
     }
-    if (subjectBySegmentId.size === 0) {
+    if (nameBySegmentId.size === 0) {
       return { ok: true, foundSegmentIds: [], updatedCount: 0 };
     }
 
@@ -354,15 +367,15 @@ export function updateTomatodoRecordSubjects(
     let updatedCount = 0;
     const nextRecords = records.map((record) => {
       const segmentId = parseSegmentIdFromMarker(record.s1);
-      const subject = segmentId ? subjectBySegmentId.get(segmentId) : undefined;
-      if (!segmentId || !subject) return record;
+      const name = segmentId ? nameBySegmentId.get(segmentId) : undefined;
+      if (!segmentId || !name) return record;
       foundSegmentIds.add(segmentId);
-      // 同一分类是严格幂等操作：尤其不能把已经由云端确认的 isSynced=1
-      // 重新打回待上传。只有分类真实变化时才需要重新进入云同步队列。
-      if (record.name === subject) return record;
+      // 同一个名字是严格幂等操作：尤其不能把已经由云端确认的 isSynced=1
+      // 重新打回待上传。只有记录名真实变化时才需要重新进入云同步队列。
+      if (record.name === name) return record;
       updatedCount += 1;
-      // 分类变化也必须重新进入番茄 Todo 的云同步队列。
-      return { ...record, name: subject, isSynced: 0 };
+      // 记录名变化也必须重新进入番茄 Todo 的云同步队列。
+      return { ...record, name, isSynced: 0 };
     });
 
     // 未写入过的 segment 只保留 FocusLink 本地的手动选择，不创建空 PCRecord。

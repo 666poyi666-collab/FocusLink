@@ -10,6 +10,7 @@ import {
   getSetting,
   listSegments,
   setSetting,
+  setSegmentTomatodoRecordName,
   setSegmentTomatodoSubject,
   setSegmentsTomatodoSubject,
 } from '../db/index.js';
@@ -25,7 +26,7 @@ import {
 } from '../integrations/tomatodo/localDb.js';
 import {
   deleteTomatodoRecordThroughBridge,
-  updateTomatodoSubjectThroughBridge,
+  updateTomatodoRecordNameThroughBridge,
   writeTomatodoRecordsThroughBridge,
   writeTomatodoRecordThroughBridge,
 } from '../integrations/tomatodo/cloudBridge.js';
@@ -36,6 +37,8 @@ import {
   inferTomatodoSubject,
   isTomatodoCloudUploadEligible,
   isTomatodoSubject,
+  normalizeTomatodoRecordName,
+  resolveSegmentRecordName,
   resolveSegmentSubject,
   shouldSyncSegmentToTomatodo,
   TOMATODO_FALLBACK_SUBJECT,
@@ -202,10 +205,15 @@ function updateExistingTomatodoRecords(
   const dbPath = resolveTomatodoDbPath(config.dbPath);
   const result = updateTomatodoRecordSubjects(
     dbPath,
-    segments.map((segment) => ({
-      segmentId: segment.id,
-      subject: resolveSubjectForSegment(segment, config),
-    })),
+    segments.map((segment) => {
+      const subject = resolveSubjectForSegment(segment, config);
+      // 记录名 = 自定义标题 ?? 学科名；两者必须一起交给写入层，否则改标题时会把学科名写回去。
+      return {
+        segmentId: segment.id,
+        subject,
+        recordName: segment.tomatodoRecordName ?? null,
+      };
+    }),
   );
   return {
     ok: result.ok,
@@ -266,6 +274,7 @@ async function syncSegmentToTomatodoUnlocked(
   const record = buildTomatodoRecord({
     segmentId,
     subject,
+    recordName: resolveSegmentRecordName(segment, subject),
     startedAt: segment.startedAt,
     endedAt: segment.endedAt as number,
     activeElapsedMs: segment.activeElapsedMs,
@@ -313,7 +322,9 @@ async function syncSegmentToTomatodoUnlocked(
   // 番茄 Todo 未运行时安全写入本地库，并保持 isSynced=0，待它下次启动后上传。
   const existing = getTomatodoRecordState(dbPath, segmentId);
   if (existing.exists) {
-    const update = updateTomatodoRecordSubjects(dbPath, [{ segmentId, subject }]);
+    const update = updateTomatodoRecordSubjects(dbPath, [
+      { segmentId, subject, recordName: resolveSegmentRecordName(segment, subject) },
+    ]);
     const state = getTomatodoRecordState(dbPath, segmentId);
     if (state.cloudSynced) completeDurableTomatodoSegments([segmentId]);
     return {
@@ -334,6 +345,7 @@ async function syncSegmentToTomatodoUnlocked(
   const result = addTomatodoRecord(dbPath, {
     segmentId,
     subject,
+    recordName: resolveSegmentRecordName(segment, subject),
     startedAt: segment.startedAt,
     endedAt: segment.endedAt as number,
     activeElapsedMs: segment.activeElapsedMs,
@@ -385,15 +397,17 @@ async function syncSessionToTomatodoUnlocked(
   let results: TomatodoSyncSegmentResult[];
   if (await isTomatodoRunningAsync()) {
     const bridge = await writeTomatodoRecordsThroughBridge(
-      eligible.map((segment) =>
-        buildTomatodoRecord({
+      eligible.map((segment) => {
+        const subject = resolveSubjectForSegment(segment, config);
+        return buildTomatodoRecord({
           segmentId: segment.id,
-          subject: resolveSubjectForSegment(segment, config),
+          subject,
+          recordName: resolveSegmentRecordName(segment, subject),
           startedAt: segment.startedAt,
           endedAt: segment.endedAt as number,
           activeElapsedMs: segment.activeElapsedMs,
-        }),
-      ),
+        });
+      }),
       { syncToPhone: true },
     );
     results = eligible.map((segment, index) => {
@@ -541,9 +555,10 @@ async function setTomatodoSubjectForSegmentUnlocked(
     let external: ExistingRecordUpdateResult;
     let shouldRetryMarkerBackedUpdate = false;
     if (config && (await isTomatodoRunningAsync())) {
-      const bridge = await updateTomatodoSubjectThroughBridge(
+      const updatedSubject = resolveSubjectForSegment(updated, config);
+      const bridge = await updateTomatodoRecordNameThroughBridge(
         segmentId,
-        resolveSubjectForSegment(updated, config),
+        resolveSegmentRecordName(updated, updatedSubject),
         { syncToPhone: true },
       );
       external = {
@@ -629,9 +644,10 @@ async function setTomatodoSubjectsForSegmentsUnlocked(
       let externalUpdatedCount = 0;
       let error: string | undefined;
       for (const segment of updatedSegments) {
-        const bridge = await updateTomatodoSubjectThroughBridge(
+        const segmentSubject = resolveSubjectForSegment(segment, config);
+        const bridge = await updateTomatodoRecordNameThroughBridge(
           segment.id,
-          resolveSubjectForSegment(segment, config),
+          resolveSegmentRecordName(segment, segmentSubject),
           { syncToPhone: true },
         );
         if (bridge.recordFound) foundCount += 1;
@@ -690,6 +706,114 @@ export function setTomatodoSubjectsForSegments(
   );
 }
 
+/**
+ * 归一化用户输入的自定义标题；null 或空白表示清除自定义标题，
+ * 清除后写入番茄 Todo 的记录名回落到学科名（旧行为）。
+ */
+function parseRecordName(recordName: string | null): string | null {
+  if (recordName === null) return null;
+  return normalizeTomatodoRecordName(recordName);
+}
+
+/**
+ * 保存单个 segment 的番茄 Todo 自定义记录标题。
+ * 与手动学科共用同一套语义：本地选择一定保留；已存在的 marker 记录就地改名并重新排队上云；
+ * 外部更新失败时留下 durable 重试意图，不容许旧的 isSynced=1 掩盖新的待上传内容。
+ */
+async function setTomatodoRecordNameForSegmentUnlocked(
+  segmentId: string,
+  recordName: string | null,
+): Promise<TomatodoSubjectSetResult> {
+  try {
+    const manualRecordName = parseRecordName(recordName);
+    const existing = getSegment(segmentId);
+    if (!existing) {
+      return {
+        ok: false,
+        updatedCount: 0,
+        externalFoundCount: 0,
+        externalUpdatedCount: 0,
+        error: 'segment_not_found',
+      };
+    }
+
+    setSegmentTomatodoRecordName(segmentId, manualRecordName);
+    const updated = getSegment(segmentId);
+    if (!updated) {
+      return {
+        ok: false,
+        updatedCount: 0,
+        externalFoundCount: 0,
+        externalUpdatedCount: 0,
+        error: 'segment_not_found_after_update',
+      };
+    }
+
+    const config = getTomatodoConfig();
+    const dbPath = config ? resolveTomatodoDbPath(config.dbPath) : null;
+    const subject = config
+      ? resolveSubjectForSegment(updated, config)
+      : resolveSegmentSubject(updated, TOMATODO_FALLBACK_SUBJECT);
+    const effectiveName = resolveSegmentRecordName(updated, subject);
+    const markerExistedBeforeUpdate = dbPath
+      ? getTomatodoRecordState(dbPath, segmentId).exists
+      : false;
+    let external: ExistingRecordUpdateResult;
+    let shouldRetryMarkerBackedUpdate = false;
+    if (config && (await isTomatodoRunningAsync())) {
+      const bridge = await updateTomatodoRecordNameThroughBridge(segmentId, effectiveName, {
+        syncToPhone: true,
+      });
+      external = {
+        ok: bridge.available && bridge.ok,
+        foundCount: bridge.recordFound ? 1 : 0,
+        updatedCount: bridge.localChanged ? 1 : 0,
+        error: bridge.error ?? bridge.cloudError,
+      };
+      shouldRetryMarkerBackedUpdate =
+        (!bridge.available || !bridge.ok || bridge.phoneSyncConfirmed === false) &&
+        (bridge.recordFound || markerExistedBeforeUpdate);
+    } else {
+      external = updateExistingTomatodoRecords([updated], config);
+      shouldRetryMarkerBackedUpdate = !external.ok && markerExistedBeforeUpdate;
+    }
+    if (shouldRetryMarkerBackedUpdate) {
+      enqueueDurableTomatodoSegments([segmentId]);
+    }
+    if (!external.ok) {
+      logger.warn(
+        'tomatodoSync',
+        'manual record name saved locally but external record update failed',
+        { segmentId, error: external.error },
+      );
+    }
+    return {
+      ok: external.ok,
+      updatedCount: 1,
+      externalFoundCount: external.foundCount,
+      externalUpdatedCount: external.updatedCount,
+      error: external.error,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      updatedCount: 0,
+      externalFoundCount: 0,
+      externalUpdatedCount: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export function setTomatodoRecordNameForSegment(
+  segmentId: string,
+  recordName: string | null,
+): Promise<TomatodoSubjectSetResult> {
+  return withTomatodoOperationLock(() =>
+    setTomatodoRecordNameForSegmentUnlocked(segmentId, recordName),
+  );
+}
+
 /** 删除番茄 Todo 中某 segment 对应的记录（删除联动） */
 export function deleteTomatodoRecordForSegment(segmentId: string): Promise<{
   ok: boolean;
@@ -728,6 +852,10 @@ export function getTomatodoSyncStatus(sessionId: string): {
       'not-written' | 'local-pending' | 'confirmation-pending' | 'expired-history' | 'cloud-synced';
     subject: TomatodoSubject;
     source: TomatodoSubjectSource;
+    /** 最终写入 PCRecord.name 的字符串：自定义标题优先，否则等于 subject。 */
+    recordName: string;
+    /** 用户自定义标题；null 表示未设置（记录名 == 学科名）。 */
+    customRecordName: string | null;
   }>;
 } {
   const config = getTomatodoConfig();
@@ -763,6 +891,8 @@ export function getTomatodoSyncStatus(sessionId: string): {
                 : ('not-written' as const),
         subject: resolution.subject,
         source: resolution.source,
+        recordName: resolveSegmentRecordName(s, resolution.subject),
+        customRecordName: normalizeTomatodoRecordName(s.tomatodoRecordName) ?? null,
       };
     }),
   };
@@ -848,7 +978,12 @@ async function uploadPendingTomatodoRecordsUnlocked(
       segmentId: record.segmentId,
       record: buildTomatodoRecord({
         segmentId: record.segmentId,
-        subject: isTomatodoSubject(record.name) ? record.name : TOMATODO_FALLBACK_SUBJECT,
+        // 已落库的记录名可能是用户自定义标题，绝不能按“名字必须是学科”回退成「学习」，
+        // 否则一次上传就把标题改写掉。学科只用于统计兜底，name 原样保留。
+        subject: isTomatodoSubject(record.name)
+          ? record.name
+          : (inferTomatodoSubject(record.name) ?? TOMATODO_FALLBACK_SUBJECT),
+        recordName: record.name,
         startedAt: record.startDate,
         endedAt: record.startDate + Math.round(record.time * 60000),
         activeElapsedMs: Math.round(record.time * 60000),
@@ -868,6 +1003,7 @@ async function uploadPendingTomatodoRecordsUnlocked(
       record: buildTomatodoRecord({
         segmentId,
         subject: resolveSubjectForSegment(segment, config),
+        recordName: resolveSegmentRecordName(segment, resolveSubjectForSegment(segment, config)),
         startedAt: segment.startedAt,
         endedAt: segment.endedAt as number,
         activeElapsedMs: segment.activeElapsedMs,
