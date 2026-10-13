@@ -1,5 +1,17 @@
 # FocusLink 实施日志
 
+## 2026-10-13 · `FL-SYNC-20261013-TOMATODO-APPROVAL-GATE-LEAK`：批准后同步闸门漏了云端 provider delivery（v1.6.1，不升版本）
+
+- **现场证据（2026-10-13 19:50 实测）**：用户 15:08 开始、19:50 结束的会话 `827833a5-cd87-4585-8535-b7f8fefeb71e`（任务「高二暑第三节」、累计 91 分钟、会话表 `tomatodo_subject` / `tomatodo_record_name` **均为 NULL**）在**用户从未批准**的情况下被写成 `PCRecord id=636`（`name="学习"`、`time=91`、`s1=[FocusLink:tomatodo:session:827833a5…]`、`isSynced=1`），即已经上传。日志每约一分钟重复 `[tomatodoSync] session synced {skipped:1, recordFound:true, subject:"学习", minutes:91, syncState:"confirmation-pending"}` 与 `[remoteWriteback] provider delivery deferred {provider:"tomatodo", error:"tomatodo_cloud_pending:3"}`。
+- **根因**：上一轮的闸门只堵了 `electron/main.ts` 的**两条本地路径**（`autoSyncFinishedSession`、`runTomatodoPendingUpload`），漏了**第三条**——`electron/sync/remoteWritebackCoordinator.ts` 的 `deliverTomatodo()`。它执行云端的 provider delivery 意图时直接调用 `syncSessionToTomatodo()`，于是「云侧记录了这次专注」就等于「本机立刻写番茄」，绕开了用户的批准。
+- **修复**：
+  - `electron/sync/tomatodoSyncService.ts`：`getTomatodoSyncStatus()` 增加 `autoSyncEnabled: boolean`（= `shouldAutoSyncTomatodoSession(getSettings().tomatodo)`），把「用户是否允许自动写」变成可读状态，避免协调器自己去摸设置。
+  - `electron/sync/remoteWritebackCoordinator.ts`：`deliverTomatodo()` 在取到 `before` 状态后，若 `!before.autoSyncEnabled` 就**当作终态 no-op**（写 log `tomatodo delivery skipped: waiting for user approval`，不写库、不上传、不进入每分钟重试风暴）；用户批准后由 `npm run tomatodo:approve` 走正常写入路径。
+  - `scripts/maintenance/tomatodo-approval-sync.ts`：`needsApproval` 增加判据「记录已存在但会话从未手动指定过学科」——即**未经批准被自动写进去的记录**要重新算作待批准；`printCheck` 的「已上传」桶排除这类行，避免它同时出现在两个桶里。
+  - `tests/remoteWritebackCoordinator.test.ts`：新增用例 `never writes TomaToDo from a cloud intent while automatic sync is off`（断言不调用 `syncSessionToTomatodo`、按终态完成、不重试），既有 fixture 补 `autoSyncEnabled: true`。
+- **门禁**：`format:check` / `lint` / `typecheck`（含 cloudflare）/ `npm test` **148 文件 1245 项全 PASS**；不 bump 版本、不打包。
+- **遗留与风险**：① 这条 636 记录**已经上传**，本机没有远端删除 API（`remoteDeleteSupported=false`），只能等用户决定处置（改名需走批准流程重新上传）。② 云端 provider delivery 在批准模式下被当作 no-op 完成，即「云侧认为已投递、番茄侧确实没有记录」——这是批准模式的固有取舍：**没有用户答复就不应该有番茄记录**。③ 判据只能识别「会话从未手动指定学科」这种未批准形态；若用户批准时选了「学习」这类兜底学科，之后无法与自动写出的记录区分，需要靠时间与日志判断。
+
 ## 2026-10-13 · `FL-SYNC-20261013-DEVICE-SYNC-PROXY`：设备同步跟随 Windows 系统代理 + 实时专注可见（v1.6.1，不升版本）
 
 - **用户要求（原文）**：「解决看实时专注问题，我的软件你完全有全部权限，网络错误解决，但我要一直开着clash，你不能关」→ 不许动/关 Clash、不许改网络环境，只能在 FocusLink 侧修；同时要求日报能看见**进行中**的专注。

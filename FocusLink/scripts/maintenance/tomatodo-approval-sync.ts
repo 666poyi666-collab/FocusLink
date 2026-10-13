@@ -230,8 +230,13 @@ function collectRows(hours: number): {
       cloudSynced: status.cloudSynced,
       recordIsSynced: rawState.cloudSynced,
       recordId: rawState.recordId ?? null,
-      // 需要用户批准 = 已结束、有有效时长、番茄里还没有这条会话记录。
-      needsApproval: !inProgress && shouldSyncSessionToTomatodo(session) && !rawState.exists,
+      // 需要用户批准 = 已结束、有有效时长，且番茄里还没有这条会话记录；
+      // 另外：记录已存在但会话从未被手动指定过学科/标题，说明它是**未经批准**被自动写进去的
+      // （2026-10-13 实测：云端 provider delivery 曾绕开闸门写出「学习」记录），同样要请用户批准。
+      needsApproval:
+        !inProgress &&
+        shouldSyncSessionToTomatodo(session) &&
+        (!rawState.exists || session.tomatodoSubject === null),
       alreadyUploaded: rawState.exists && rawState.cloudSynced,
     };
     if (inProgress) activeRow = row;
@@ -249,7 +254,8 @@ function printCheck(
 ): void {
   const finished = rows.filter((row) => !row.inProgress);
   const pending = finished.filter((row) => row.needsApproval);
-  const synced = finished.filter((row) => row.alreadyUploaded);
+  // 未经批准却被自动写进去的记录要算「等批准」，不能同时算进「已上传」而让用户以为它已经合规了。
+  const synced = finished.filter((row) => row.alreadyUploaded && !row.needsApproval);
   const other = finished.filter((row) => !row.needsApproval && !row.alreadyUploaded);
 
   const windowLabel = hours > 0 ? `最近 ${hours} 小时` : '今天（本地零点起）';

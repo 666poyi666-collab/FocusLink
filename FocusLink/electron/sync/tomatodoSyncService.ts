@@ -42,6 +42,7 @@ import {
   normalizeTomatodoRecordName,
   pickTomatodoSessionSourceSegment,
   resolveSessionRecordName,
+  shouldAutoSyncTomatodoSession,
   shouldSyncSegmentToTomatodo,
   shouldSyncSessionToTomatodo,
   TOMATODO_FALLBACK_SUBJECT,
@@ -832,6 +833,11 @@ export type TomatodoSyncState =
 /** 查询某会话的番茄 Todo 同步状态（供 UI 展示）。一次专注 = 一条番茄记录。 */
 export function getTomatodoSyncStatus(sessionId: string): {
   enabled: boolean;
+  /**
+   * 用户是否开启了番茄自动同步（2026-10-13「批准后同步」）。false 时**任何**产品自动路径
+   * 都不得写库或上传，包括云端下发的 provider delivery。
+   */
+  autoSyncEnabled: boolean;
   dbPath: string;
   sessionId: string;
   subject: TomatodoSubject;
@@ -864,6 +870,7 @@ export function getTomatodoSyncStatus(sessionId: string): {
   if (!config) {
     return {
       enabled: false,
+      autoSyncEnabled: false,
       dbPath: '',
       sessionId,
       subject: TOMATODO_FALLBACK_SUBJECT,
@@ -909,6 +916,7 @@ export function getTomatodoSyncStatus(sessionId: string): {
   const minutes = session ? tomatodoRecordMinutes(session.activeElapsedMs) : 0;
   return {
     enabled: true,
+    autoSyncEnabled: shouldAutoSyncTomatodoSession(getSettings().tomatodo),
     dbPath,
     sessionId,
     subject: resolution.subject,

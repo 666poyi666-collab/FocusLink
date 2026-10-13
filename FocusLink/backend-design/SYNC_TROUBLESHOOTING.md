@@ -479,3 +479,32 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - 只跟随系统代理/PAC 的 Chromium 判定结果，不自建 PAC 求值；Clash 改模式后要等下一次设置变更或重启才重装 dispatcher。
 - 代理通了**不等于**业务成功：`conflict_present` 是同步冲突，必须与网络错误分开报告，不能互相冒充。
 - 实时专注由设备同步服务托管、**不落本机账本**；读到了也只表示「跟随中」，只有整场结束才进 `focus_sessions`，进行中一律只报告、不写番茄。
+
+## FL-SYNC-023：开着「批准后同步」，番茄里还是多出了没批准过的记录（云端 provider delivery 绕过闸门）
+
+### 含义
+
+`tomatodo.autoSyncEnabled = false`（批准后同步）时，番茄 To-do 里仍然出现用户**没有批准过**的会话记录，名字通常是兜底的「学习」，时长与起止看起来完全正常、已经 `isSynced=1`；而 FocusLink 里该会话的 `tomatodo_subject` / `tomatodo_record_name` 都是空。它与 FL-SYNC-021 同属「未经批准就写番茄」，但**路径不同**：021 是本地定时路径，本条是云端下发的投递意图。
+
+### 根因（2026-10-13 修复，v1.6.1 未升版本）
+
+1. 闸门最初只堵了 `electron/main.ts` 的两条本地路径（`autoSyncFinishedSession`、`runTomatodoPendingUpload`）。
+2. **第三条路径没堵**：`electron/sync/remoteWritebackCoordinator.ts` 的 `deliverTomatodo()` 执行云端 provider delivery 时直接 `syncSessionToTomatodo()` —— 于是「云侧记下了这次专注」就等于「本机立刻写番茄」。实测 2026-10-13 会话 `827833a5-cd87-4585-8535-b7f8fefeb71e`（「高二暑第三节」91 分钟）被写成 `PCRecord id=636`、`name="学习"`、`isSynced=1`。
+3. 症状会持续刷日志：`[tomatodoSync] session synced {skipped:1, recordFound:true, syncState:"confirmation-pending"}` 与 `[remoteWriteback] provider delivery deferred {error:"tomatodo_cloud_pending:N"}` 每分钟重复。
+
+### 处理步骤
+
+1. 先把三条路径都点清：`electron/main.ts:autoSyncFinishedSession`、`electron/main.ts:runTomatodoPendingUpload`、`electron/sync/remoteWritebackCoordinator.ts:deliverTomatodo`。**只堵前两条等于没堵。**
+2. 确认闸门判据统一：`shouldAutoSyncTomatodoSession(settings.tomatodo)`；协调器改用 `getTomatodoSyncStatus(sessionId).autoSyncEnabled`（避免在同步层再摸设置）。
+3. 批准前该意图必须**不写、不重试风暴**：当作终态 no-op 并在日志留 `tomatodo delivery skipped: waiting for user approval`。
+4. 用 `npm run tomatodo:check` 复核：`needsApproval` 现在会把「记录已存在但会话从未手动指定过学科」的记录重新算作**待批准**，并且「已上传」桶会排除它。
+
+### 验证
+
+`tests/remoteWritebackCoordinator.test.ts` 的 `never writes TomaToDo from a cloud intent while automatic sync is off` 断言自动同步关闭时不调用 `syncSessionToTomatodo`、意图按终态完成且不重试；`npm test` 148 文件 / 1245 项全绿。
+
+### 边界
+
+- 已经上传的记录**无法由本机撤回**（`remoteDeleteSupported=false`）；改名只能走批准流程重新上传，且要如实说明远端是否确认。
+- 批准模式下「云侧认为已投递、番茄侧确实没有记录」是有意为之：**没有用户答复就不应该有番茄记录**；不要为了对齐云侧状态而偷偷写入。
+- 「记录存在但会话从未指定过学科」只是可用的启发式；若用户批准时选的正是兜底学科「学习」，之后就无法与自动写出的记录区分。

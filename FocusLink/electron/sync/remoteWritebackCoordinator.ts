@@ -59,6 +59,18 @@ async function deliverTomatodo(item: RemoteWritebackItem): Promise<void> {
     .map((segment) => segment.id);
   if (eligibleIds.length === 0) return;
   const before = getTomatodoSyncStatus(item.sessionId);
+  // 批准后同步（用户 2026-10-13 决定）：云端下发的 provider delivery 也必须过这道闸门。
+  // 它曾经绕开 `autoSyncEnabled`，在用户批准之前就把记录建好并上传（实测 2026-10-13 19:50
+  // 的会话 827833a5 被自动写成「学习」91 分钟并上传）。这里当作终态 no-op，不写、不重试风暴；
+  // 用户批准后由 `npm run tomatodo:approve` 走正常写入路径。
+  if (!before.autoSyncEnabled) {
+    logger.info('remoteWriteback', 'tomatodo delivery skipped: waiting for user approval', {
+      connectionScope: item.connectionScope,
+      sessionId: item.sessionId,
+      provider: item.provider,
+    });
+    return;
+  }
   if (
     before.enabled &&
     eligibleIds.every((segmentId) =>

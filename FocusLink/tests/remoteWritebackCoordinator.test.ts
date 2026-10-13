@@ -176,6 +176,7 @@ describe('remote write-back coordinator', () => {
     harness.syncSessionToTomatodo.mockResolvedValue({ ok: true, failed: 0 });
     harness.getTomatodoSyncStatus.mockReturnValue({
       enabled: true,
+      autoSyncEnabled: true,
       segments: [{ segmentId: remoteSegment.id, cloudSynced: false }],
     });
 
@@ -192,6 +193,29 @@ describe('remote write-back coordinator', () => {
       'lease-1',
       'tomatodo_cloud_pending:1',
     );
+  });
+
+  it('never writes TomaToDo from a cloud intent while automatic sync is off', async () => {
+    const remote = writebackItem('tomatodo');
+    const remoteSegment = segment(remote.sessionId);
+    harness.claims.push(remote);
+    harness.sessions.set(remote.sessionId, session(remote.sessionId));
+    harness.segments.set(remote.sessionId, [remoteSegment]);
+    harness.getTomatodoSyncStatus.mockReturnValue({
+      enabled: true,
+      autoSyncEnabled: false,
+      segments: [{ segmentId: remoteSegment.id, cloudSynced: false }],
+    });
+
+    await expect(runRemoteWritebacks('scope-a')).resolves.toEqual({
+      processed: 1,
+      completed: 1,
+      deferred: 0,
+    });
+
+    expect(harness.syncSessionToTomatodo).not.toHaveBeenCalled();
+    expect(harness.completeRemoteWriteback).toHaveBeenCalledWith(remote, 'lease-1');
+    expect(harness.retryRemoteWriteback).not.toHaveBeenCalled();
   });
 
   it('renews the SQLite lease while a slow provider delivery is in flight', async () => {
