@@ -527,6 +527,20 @@ export function shouldSyncSessionToTomatodo(session: {
 }
 
 /**
+ * 专注结束后是否可以**自动**写入番茄 Todo。
+ *
+ * 2026-10-13 起番茄记录的标题由用户逐场批准，因此自动写入默认关闭：
+ * 只有 `enabled` 与 `autoSyncEnabled` 同时为真才允许后台自动写。
+ * 老设置里没有 `autoSyncEnabled` 字段，按「关闭」处理（不能因为字段缺失就恢复自动写）。
+ * 手动入口（用户在界面上的同步按钮、IPC `tomatodo:sync-session`）不走这里。
+ */
+export function shouldAutoSyncTomatodoSession(
+  config: { enabled?: boolean; autoSyncEnabled?: boolean } | null | undefined,
+): boolean {
+  return config?.enabled === true && config.autoSyncEnabled === true;
+}
+
+/**
  * 决定整条会话记录用谁的学科与标题。
  *
  * 优先级：带自定义标题的片段 → 手动选过学科的片段 → 最早开始的片段。

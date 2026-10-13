@@ -309,6 +309,7 @@ Windows 日志在 `%APPDATA%\focuslink\logs\focuslink-YYYY-MM-DD.log`。只提�
 - 每轮同步改动前先读 `IMPLEMENTATION_LOG.md` 顶部当前版本 Bug/事故、相关 `FL-SYNC-*` 条目和完整 `TEST_AND_RELEASE.md`；禁止另建平行 Bug 日志或一次性故障报告。
 - 跨设备、滴答清单、番茄 To-do 三条同步链路的成功状态不能互相冒充。
 - 任何“已同步”结论都必须有对应服务的确认；网络不可达只能显示“未同步/同步失败”。
+- 番茄 To-do 自 2026-10-13 起是**批准后同步**：`tomatodo.autoSyncEnabled=false` 时产品不得在后台写库或上传，只能由用户答复后经 `npm run tomatodo:approve` 写入。核对与写入的读写面必须分开（见 FL-SYNC-021）。
 
 ## FL-SYNC-016：统计页已关联会话，但片段仍显示未关联
 
@@ -419,3 +420,33 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - **实测（2026-10-13 12:2x）**：删掉重复的片段级记录后，**仍在运行的旧代码实例**会按 `tomatodo.pendingSegmentIdsV060` 里的片段 id 把记录**重建**回来（PCRecord 485 复现：`time=50.954883` 原始毫秒值 + `segment:` marker）。所以清理重复记录**必须同时清空旧队列**，否则旧实例会周期性写回；彻底止住要等新代码启动（`settingsStore` 迁移清空旧键，且新代码只按 session id 工作）。清空后 100 秒内未再复现。
 - 番茄 `electronAPI.deleteRecord` 的参数是**记录 id**（`api.deleteRecord(record.id)`），传记录对象不会报错但**不会删除**。
 - **不要手工给 PCRecord 写 `isSynced=1`**（实测 2026-10-13）：一次性运维脚本给 483/486/488 手工标了 `isSynced=1` 并声称上传过，但手机上一直没有这几条记录；随后用 `cloudSyncUploadRecord({ records: [record], updateTime: Date.now() })` 逐条**单独**重传，每条都返回 `{ success: true }`，手机随即显示。结论：本地标记 ≠ 云端收下 ≠ 手机可见，三者必须分开判；批量的 `cloudSyncUploadRecord` 会被节流（一次通常只有第一条真被确认），补传必须逐条、间隔数秒。
+
+## FL-SYNC-021：番茄 To-do 里莫名其妙多出旧日期的专注记录（后台自动同步未关）
+
+### 含义
+
+番茄 To-do（尤其手机端）出现若干条**用户没有批准过**的记录：日期是几天前甚至几个月前，时长看着合理，名字多为「学习」。FocusLink 界面里这些会话的状态却可能是「未写入」或「等待同步确认」。
+
+### 根因（2026-10-13 记录，v1.6.1 未升版本）
+
+1. `electron/main.ts` 的 `autoSyncFinishedSession` 与 `runTomatodoPendingUpload` 会在**后台自动**写番茄库并上传，用户没有机会在写库前确认标题；标题自动推断（`inferTomatodoSubject`）认不出「第二章直线部分回顾复盘」这类表述（`直线` 不在数学关键词表里），于是先按错误名字建单。
+2. 周期路径会把 durable 队列里的历史 session **重建**为会话级记录，其中落在番茄云 7 天窗口内的会被真正上传。实测（2026-10-13 12:59:40–14:50 新代码在闸门加入前运行）：`PCRecord` 442 → **589**，新增 150 条会话 marker 记录，**18 条被上传**（2026-10-06…10-12，26–192 分钟，名字多为「学习」，`isSynced=1`）。
+3. 当前客户端**没有远端删除 API**（`remoteDeleteSupported=false`），已上传的这类记录无法由本机撤回。
+
+### 处理步骤
+
+1. 先确认闸门在生效：`settings.tomatodo.autoSyncEnabled` 应为 `false`，且 `electron/main.ts` 的**两处**（专注结束路径与周期补传路径）都用 `shouldAutoSyncTomatodoSession` 判断。只堵一处等于没堵。
+2. 核对是否真的在跑的新代码：用 `npm run tomatodo:check` 只读列出「结束时间 + 时长 + 建议标题 + 当前状态」，它**不写任何东西**；写入必须单独由 `npm run tomatodo:approve` 触发。跑这两个命令前 `Remove-Item Env:ELECTRON_RUN_AS_NODE`。
+3. 判断番茄库里哪些是未批准记录：按 marker 取 `parseTomatodoMarker`，会话 marker 的记录对应 `focus_sessions.id`；对照 `focus_sessions.tomatodo_subject` / `tomatodo_record_name` 是否为空（用户从未批准/选择过）。
+4. 本地清理用 `deleteTomatodoRecordBySessionId` / `api.deleteRecord(record.id)`（参数是**记录 id**，不是记录对象）；已上传云端的记录只能如实报告 `remoteDeleteSupported=false`，交给用户在手机端删除，**不得声称远端已清理**。
+
+### 验证
+
+`tests/tomatodoPolicy.test.ts` 的 `tomatodo sync gating` 用例锁住「总开关关 / 自动同步关 / 两者皆开」三种组合；`npm test` 147 文件 / 1234 项全绿。
+
+### 边界
+
+- 每小时核对是 **DSH 会话级提醒**，只在宿主进程存活时触发，且停机后**只补发最后一次**漏掉的提醒；它不是产品能力，关机期间不会检查，也不会自己写番茄。
+- 未批准前该次会话在番茄里**完全没有记录**，`getTomatodoSyncStatus` 如实显示 `not-written`（不假装在等同步）。
+- 进行中的专注**只报告、不写番茄**：`activeElapsedMs` 仍在增长，此刻写库必然写出错误时长。
+- 历史 132 条已重建但未上传的会话级记录留在本机、保持未同步；不要为了「让状态好看」把它们标成已同步。

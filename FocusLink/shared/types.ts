@@ -488,6 +488,13 @@ export interface TomatodoConfig {
   dbPath: string;
   /** 无法识别学科时的默认分类（默认「学习」） */
   defaultSubject: TomatodoSubject;
+  /**
+   * 专注结束后是否自动写入番茄 Todo。
+   *
+   * 默认 false：2026-10-13 起，番茄记录的标题由用户逐场批准，所以自动写入必须显式打开才会发生。
+   * 手动入口（界面上的「立即上传」/同步按钮、IPC `tomatodo:sync-session`）不受此开关影响。
+   */
+  autoSyncEnabled: boolean;
 }
 
 /**
@@ -567,6 +574,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     enabled: false,
     dbPath: '',
     defaultSubject: '学习',
+    // 关闭自动写入：番茄记录走「用户批准后同步」流程，见 TomatodoConfig.autoSyncEnabled
+    autoSyncEnabled: false,
   },
   deviceSync: {
     enabled: false,

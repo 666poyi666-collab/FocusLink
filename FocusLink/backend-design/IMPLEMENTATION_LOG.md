@@ -1,5 +1,21 @@
 # FocusLink 实施日志
 
+## 2026-10-13 · `FL-SYNC-20261013-TOMATODO-APPROVAL-GATE`：番茄同步改为「批准后同步」（v1.6.1，不升版本）
+
+- **用户要求（原文）**：「我有一个好计划：以后由我来批准同步，并确定标题该怎么实现。具体执行方式如下：1. 设定定时任务：每天每隔 1 个小时检查一次，看有没有已完成或正在完成的专注段。2. 匹配标题并询问：对于已完成或正在完成的专注段，先去匹配标题，然后向我发消息询问。3. 答复并同步：直到我给你答复后，你再把内容补充同步到番茄todo。」批准口径（三项）：① **关掉产品里的番茄自动同步**，改由定时核对 + 用户答复驱动；② **每次都汇报一句**（即使没有新内容）；③ **进行中的专注只报告、不写番茄**，等结束后再走一遍流程。边界沿用前两轮：只改番茄同步、PC 端、**不 bump 版本、不打包、不做三设备安装门禁**。
+- **根因（为什么必须关掉自动同步）**：`electron/main.ts` 的 `autoSyncFinishedSession` 在专注结束瞬间就写番茄库并上传，用户**没有机会**在写库前确认标题；而标题自动推断（`inferTomatodoSubject`）只认关键词表，认不出「第二章直线部分回顾复盘」这类表述（`直线` 不在数学关键词里）。结果是「先按错误名字建单 → 再回来就地改名」，今天 483/485/486 全部走过这条路。另有 `runTomatodoPendingUpload` 周期补传，会把 durable 队列里的历史 session 重建记录并上传 —— 见下方副作用。
+- **实现**：
+  - `shared/types.ts`：`TomatodoConfig.autoSyncEnabled: boolean`；`DEFAULT_SETTINGS.tomatodo.autoSyncEnabled = false`（新装/未迁移用户默认**不自动同步**）。
+  - `shared/tomatodoPolicy.ts`：新增 `shouldAutoSyncTomatodoSession(config: { enabled?: boolean; autoSyncEnabled?: boolean } | null | undefined): boolean` —— 番茄总开关与自动同步开关**都**为真才返回 `true`。
+  - `electron/main.ts`：两处闸门都换成该判据 —— `autoSyncFinishedSession`（专注结束路径，关闭时写 log `auto sync skipped: waiting for user approval`）与 `runTomatodoPendingUpload`（周期补传路径）。**只要有一处在跑，批准流程就形同虚设**，因此两处必须同时受控。
+  - `scripts/maintenance/tomatodo-approval-sync.ts`（新增，一次性运维工具）：`--check` 只读列出「结束时间 + 时长 + 建议标题 + 当前状态」，`--write` 写库 + 云上传。必须在 Electron 里跑（`npm run tomatodo:check` / `npm run tomatodo:approve`），因为要用 `electron/db` 与番茄适配器；`userData` 必须显式 `app.setPath('userData', <APPDATA>\FocusLink)`，且调用前要 `Remove-Item Env:ELECTRON_RUN_AS_NODE`（否则 `import_electron.app` 为 `undefined`，报 `Cannot read properties of undefined (reading 'getPath')`）。
+  - `scripts/build/build-selftest.mjs`：入口表从「文件名数组」改为 `[目录, 文件]` 元组，并加入新工具（`['maintenance', 'tomatodo-approval-sync.ts']`）；`package.json` 增 `tomatodo:check` / `tomatodo:approve`。
+  - `tests/tomatodoPolicy.test.ts`：新增 `tomatodo sync gating` 用例，锁住「总开关关 / 自动同步关 / 两者皆开」三种组合。
+- **门禁（全 PASS）**：`npm run format:check`、`npm run lint`、`npm run typecheck`（含 `typecheck:cloudflare`）、`npm test` **147 文件 / 1234 项**。
+- **必须如实记录的副作用（本轮自己造成的）**：在闸门加上之前，新代码从 12:59:40 起实际运行到约 14:50，期间 `runTomatodoPendingUpload` 的周期循环把 durable 队列里的历史会话**重建为会话级记录并上传**：`PCRecord` 从 442 条涨到 **589 条**，其中 **150 条**带会话 marker（`sessionUnknown=0`、无垃圾 marker），**18 条落在番茄云的 7 天窗口内被真正上传**（2026-10-06…10-12，26–192 分钟，名字多为「学习」，`isSynced=1`），其余 132 条停在本地待传。证据：会话级 marker 只有新代码会写；18 恰好等于 7 天窗口内的条数。**当前客户端没有远端删除 API（`remoteDeleteSupported=false`），这 18 条无法由本机撤回**，需要在手机端处理或接受。闸门生效后该路径不再自动运行。
+- **遗留与风险**：① 每小时提醒是 **DSH 会话级提醒**，只在宿主进程/本会话存活时触发，且停机后**只补发最后一次**漏掉的提醒 —— 它不是产品能力，关机期间不会检查。② 未批准前番茄库里**完全没有**该次会话的记录，`getTomatodoSyncStatus` 会如实显示 `not-written`（不会假装在等同步）。③ 工具的 `--write` 走的是「批准后写入」，仍受番茄 7 天上传窗口与单条上传节流限制（批量 `cloudSyncUploadRecord` 通常只有第一条返回成功，需间隔数秒逐条重试）。④ 本轮未打包、未做三设备安装矩阵（用户明确要求），**没有任何真实安装实测**。
+- **相关**：`FL-SYNC-20261013-TOMATODO-SESSION-GRAIN`（会话级口径，记录粒度与时长来源）、`FL-SYNC-021`（自动同步关闭后的诊断口径）。
+
 ## 2026-10-13 · `FL-SYNC-20261013-TOMATODO-SESSION-GRAIN`：番茄 Todo 记录粒度改为会话级（v1.6.1，不升版本）
 
 - **用户要求（原文）**：「我这边看到你只同步了 7 分钟，是什么意思？……我们这边显示的第一段专注完成是 1 小时 54 分钟，你直接从 8:12 开始，加上 1 小时 54 分钟，算出截止时间就行了，中间的暂停不用管它。所以说，我们的统计方式跟那个是不一样的。同样，你只同步了 8 分钟（实际上是 7 分钟，但上面显示 8 分钟），你就直接按照上面显示的 8 分钟来算。」批准口径：① **一条番茄记录 = 一次专注会话**；② 今天的旧记录**就地改（保 id）+ 删多余记录**。边界沿用上一轮：只改番茄同步、PC 端、**不 bump 版本、不打包、不做小米/华为三设备安装门禁**。

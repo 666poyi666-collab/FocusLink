@@ -17,6 +17,7 @@ import {
   parseSegmentIdFromMarker,
   resolveSegmentRecordName,
   resolveSegmentSubject,
+  shouldAutoSyncTomatodoSession,
   shouldSyncSegmentToTomatodo,
 } from '../shared/tomatodoPolicy';
 import type { FocusSegment } from '../shared/types';
@@ -148,6 +149,16 @@ describe('tomatodo sync gating', () => {
       false,
     );
     expect(shouldSyncSegmentToTomatodo({ id: 'x', endedAt: 123, activeElapsedMs: 0 })).toBe(false);
+  });
+
+  it('keeps automatic TomaToDo writes off unless auto sync is explicitly enabled', () => {
+    // 用户逐场批准标题，所以缺这个字段的旧设置必须继续按「关闭」处理。
+    expect(shouldAutoSyncTomatodoSession({ enabled: true, autoSyncEnabled: true })).toBe(true);
+    expect(shouldAutoSyncTomatodoSession({ enabled: true, autoSyncEnabled: false })).toBe(false);
+    expect(shouldAutoSyncTomatodoSession({ enabled: true })).toBe(false);
+    expect(shouldAutoSyncTomatodoSession({ enabled: false, autoSyncEnabled: true })).toBe(false);
+    expect(shouldAutoSyncTomatodoSession(null)).toBe(false);
+    expect(shouldAutoSyncTomatodoSession(undefined)).toBe(false);
   });
 });
 

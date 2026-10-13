@@ -41,6 +41,7 @@ import {
 import type { TimerSnapshot } from '@shared/types';
 import { APP_VERSION, APP_COMMIT, APP_BUILD_TIME, APP_RELEASE_DIR } from '@shared/version';
 import { hasTicktickLinkedSegments, shouldAutoSyncFinishedSession } from '@shared/autoSyncPolicy';
+import { shouldAutoSyncTomatodoSession } from '@shared/tomatodoPolicy';
 import {
   MINI_WINDOW_COLLAPSED_SIZE,
   MINI_WINDOW_COLLAPSED_HEIGHT,
@@ -1192,31 +1193,39 @@ async function autoSyncFinishedSession(sessionId: string): Promise<void> {
   );
 
   // 番茄 Todo 同步：独立并行通道，不受 dida syncMode 影响，按学科分类写入本地库
-  operations.push(
-    syncSessionToTomatodo(sessionId)
-      .then((ttResult) => {
-        if (ttResult.total > 0) {
-          logger.info('tomatodoSync', 'auto sync after focus finished', {
+  //
+  // 2026-10-13 用户决定：番茄记录的标题要逐场批准，所以自动写入默认关闭
+  // （`tomatodo.autoSyncEnabled`，见 shared/tomatodoPolicy.ts）。这里是唯一的自动写入口；
+  // 界面的「立即上传」与 IPC `tomatodo:sync-session` 是手动入口，不受此开关影响。
+  const settings = getSettings();
+  if (shouldAutoSyncTomatodoSession(settings.tomatodo)) {
+    operations.push(
+      syncSessionToTomatodo(sessionId)
+        .then((ttResult) => {
+          if (ttResult.total > 0) {
+            logger.info('tomatodoSync', 'auto sync after focus finished', {
+              sessionId,
+              total: ttResult.total,
+              synced: ttResult.synced,
+              cloudSynced: ttResult.results.filter((result) => result.cloudSynced).length,
+              skipped: ttResult.skipped,
+              failed: ttResult.failed,
+              dbPath: ttResult.dbPath,
+            });
+          }
+        })
+        .catch((err) => {
+          logger.warn('tomatodoSync', 'auto sync failed', {
             sessionId,
-            total: ttResult.total,
-            synced: ttResult.synced,
-            cloudSynced: ttResult.results.filter((result) => result.cloudSynced).length,
-            skipped: ttResult.skipped,
-            failed: ttResult.failed,
-            dbPath: ttResult.dbPath,
+            error: err instanceof Error ? err.message : String(err),
           });
-        }
-      })
-      .catch((err) => {
-        logger.warn('tomatodoSync', 'auto sync failed', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }),
-  );
+        }),
+    );
+  } else {
+    logger.info('tomatodoSync', 'auto sync skipped: waiting for user approval', { sessionId });
+  }
 
   // dida 同步（原有逻辑）
-  const settings = getSettings();
   const segments = listSegments(sessionId);
   if (!shouldAutoSyncFinishedSession(settings.syncMode, segments)) {
     if (settings.syncMode === 'local-only') {
@@ -1466,10 +1475,14 @@ app.whenReady().then(() => {
   });
 
   // 启动后立即检查，并持续探测番茄 Todo：用户晚于 FocusLink 启动客户端时也能自动补传。
+  //
+  // 2026-10-13 起自动写入默认关闭，这里也必须一起关：否则旧队列里的待传意图会在用户
+  // 没批准的情况下被后台补传。手动上传（界面按钮 / IPC `tomatodo:upload-pending`）不受影响。
   const TOMATODO_UPLOAD_INTERVAL_MS = 20_000;
   let tomatodoUploadInFlight = false;
   const runTomatodoPendingUpload = () => {
     if (tomatodoUploadInFlight) return;
+    if (!shouldAutoSyncTomatodoSession(getSettings().tomatodo)) return;
     const pending = getPendingTomatodoCount();
     if (pending === 0) return;
     tomatodoUploadInFlight = true;

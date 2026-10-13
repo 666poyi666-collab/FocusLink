@@ -12,16 +12,18 @@ const alias = {
 };
 const external = ['better-sqlite3', 'electron'];
 
-for (const entry of [
-  'selftest.ts',
-  'crash-recovery.ts',
-  'task-test.ts',
-  'device-sync-db.ts',
-  'dida-task-state-smoke.ts',
-  'tomatodo-cloud-real-smoke.ts',
+// [目录, 入口文件]：目录用于区分 regression 与 maintenance 两类入口。
+for (const [dir, entry] of [
+  ['regression', 'selftest.ts'],
+  ['regression', 'crash-recovery.ts'],
+  ['regression', 'task-test.ts'],
+  ['regression', 'device-sync-db.ts'],
+  ['regression', 'dida-task-state-smoke.ts'],
+  ['regression', 'tomatodo-cloud-real-smoke.ts'],
+  ['maintenance', 'tomatodo-approval-sync.ts'],
 ]) {
   await esbuild.build({
-    entryPoints: [path.join(root, 'scripts', 'regression', entry)],
+    entryPoints: [path.join(root, 'scripts', dir, entry)],
     bundle: true,
     platform: 'node',
     format: 'cjs',

@@ -56,6 +56,8 @@
     "smoke:dida:ui": "node scripts/smoke/dida-task-ui-smoke.cjs",
     "smoke:tomatodo:real": "npm run build:selftest && node dist-selftest/tomatodo-cloud-real-smoke.cjs",
     "smoke:tomatodo:bridge": "npm run build:selftest && node dist-selftest/tomatodo-cloud-real-smoke.cjs --probe-only",
+    "tomatodo:check": "npm run build:selftest && electron dist-selftest/tomatodo-approval-sync.cjs --check",
+    "tomatodo:approve": "npm run build:selftest && electron dist-selftest/tomatodo-approval-sync.cjs --write",
     "typecheck": "tsc --noEmit && npm run typecheck:cloudflare",
     "postinstall": "electron-builder install-app-deps && node scripts/build/patch-electron-builder-nsis.cjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.{ts,js,mjs,cjs}\" \"mobile/**/*.{html,js,json,webmanifest,ts,tsx}\" \"*.config.ts\"",
