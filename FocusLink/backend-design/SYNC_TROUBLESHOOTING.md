@@ -418,3 +418,4 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - 旧的片段级记录保留在本机、保持未同步、不再重试；`remoteDeleteSupported=false`，本地删除不等于远端清理。
 - **实测（2026-10-13 12:2x）**：删掉重复的片段级记录后，**仍在运行的旧代码实例**会按 `tomatodo.pendingSegmentIdsV060` 里的片段 id 把记录**重建**回来（PCRecord 485 复现：`time=50.954883` 原始毫秒值 + `segment:` marker）。所以清理重复记录**必须同时清空旧队列**，否则旧实例会周期性写回；彻底止住要等新代码启动（`settingsStore` 迁移清空旧键，且新代码只按 session id 工作）。清空后 100 秒内未再复现。
 - 番茄 `electronAPI.deleteRecord` 的参数是**记录 id**（`api.deleteRecord(record.id)`），传记录对象不会报错但**不会删除**。
+- **不要手工给 PCRecord 写 `isSynced=1`**（实测 2026-10-13）：一次性运维脚本给 483/486/488 手工标了 `isSynced=1` 并声称上传过，但手机上一直没有这几条记录；随后用 `cloudSyncUploadRecord({ records: [record], updateTime: Date.now() })` 逐条**单独**重传，每条都返回 `{ success: true }`，手机随即显示。结论：本地标记 ≠ 云端收下 ≠ 手机可见，三者必须分开判；批量的 `cloudSyncUploadRecord` 会被节流（一次通常只有第一条真被确认），补传必须逐条、间隔数秒。
