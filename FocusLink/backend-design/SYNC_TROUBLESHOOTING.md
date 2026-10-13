@@ -416,3 +416,5 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - durable 队列键从 `tomatodo.pendingSegmentIdsV060` 改为 `tomatodo.pendingSessionIdsV161`（值仍是扁平 `string[]`，装 session id）；旧键在下次启动时由 `settingsStore` 一次性迁移清空，旧片段级意图**不重放**（重放会为同一会话写出第二条记录）。
 - 记录粒度改为会话后，**跨设备同步不再携带学科与标题**（`shared/sync/deviceProtocol.ts` 的片段白名单没有会话级列）。本轮 PC-only，未改协议。
 - 旧的片段级记录保留在本机、保持未同步、不再重试；`remoteDeleteSupported=false`，本地删除不等于远端清理。
+- **实测（2026-10-13 12:2x）**：删掉重复的片段级记录后，**仍在运行的旧代码实例**会按 `tomatodo.pendingSegmentIdsV060` 里的片段 id 把记录**重建**回来（PCRecord 485 复现：`time=50.954883` 原始毫秒值 + `segment:` marker）。所以清理重复记录**必须同时清空旧队列**，否则旧实例会周期性写回；彻底止住要等新代码启动（`settingsStore` 迁移清空旧键，且新代码只按 session id 工作）。清空后 100 秒内未再复现。
+- 番茄 `electronAPI.deleteRecord` 的参数是**记录 id**（`api.deleteRecord(record.id)`），传记录对象不会报错但**不会删除**。
