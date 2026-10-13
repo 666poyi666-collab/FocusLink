@@ -322,20 +322,15 @@ async function runWrite(opts: CliOptions): Promise<number> {
   }
   const recordName = normalizeTomatodoRecordName(opts.recordName);
   const status = getTomatodoSyncStatus(sessionId);
-  if (status.state === 'cloud-synced' || status.writtenLocally) {
-    process.stdout.write(
-      `会话 ${sessionId} 在番茄里已有记录（状态=${status.state}，记录 ${
-        status.recordId ?? '-'
-      }）。\n本工具只负责新建会话记录；已有记录请按文档做一次性就地迁移，避免产生重复记录。\n`,
-    );
-    return 3;
-  }
+  const existing = getTomatodoSessionRecordState(status.dbPath, sessionId);
+  // 番茄里已经有这条会话的记录（可能是没经批准就被自动写进去的）→ 就地改名，绝不新建第二条。
+  const updateInPlace = status.writtenLocally || existing.exists;
 
   if (opts.dryRun) {
     process.stdout.write(
-      `[dry-run] 将写入：会话=${sessionId} 学科=${opts.subject} 标题=${
+      `[dry-run] 将${updateInPlace ? '就地改' : '新建'}：会话=${sessionId} 学科=${opts.subject} 标题=${
         recordName ?? '(未设置 → 用学科名)'
-      } 分钟=${status.minutes}\n`,
+      } 分钟=${status.minutes}${updateInPlace ? ` 目标记录=${existing.recordId ?? '-'}` : ''}\n`,
     );
     return 0;
   }
@@ -343,9 +338,12 @@ async function runWrite(opts: CliOptions): Promise<number> {
   // 1) 先落用户批准的归属（会话级），再写外部记录。
   setSessionTomatodoSubject(sessionId, opts.subject);
   setSessionTomatodoRecordName(sessionId, recordName);
-  if (recordName !== null) {
-    // 走产品自身的赋值同步路径：写名 + 触发云上传（桥可用时）。
-    await setTomatodoRecordNameForSession(sessionId, recordName);
+  if (updateInPlace) {
+    process.stdout.write(
+      `番茄里已有这条会话的记录（记录 ${existing.recordId ?? '-'}），就地改名为「${
+        recordName ?? opts.subject
+      }」并重新上传，不新建。\n`,
+    );
   }
 
   // 2) 桥可用性：只有显式 --launch 才允许启动用户的应用。
@@ -360,6 +358,38 @@ async function runWrite(opts: CliOptions): Promise<number> {
       }）。\n记录将只写入本机待传队列，等番茄启动后由用户手动上传；不会自动启动外部应用。\n`,
     );
   }
+
+  // 3a) 已有记录：就地改名 + 重新上传，绝不新建第二条。
+  if (updateInPlace) {
+    const assign = await setTomatodoRecordNameForSession(sessionId, recordName);
+    const afterInPlace = getTomatodoSyncStatus(sessionId);
+    const rawInPlace = getTomatodoSessionRecordState(afterInPlace.dbPath, sessionId);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          ok: assign.ok,
+          mode: 'update-in-place',
+          sessionId,
+          subject: afterInPlace.subject,
+          recordName: afterInPlace.recordName,
+          minutes: afterInPlace.minutes,
+          stateAfter: afterInPlace.state,
+          recordId: rawInPlace.recordId ?? null,
+          recordExists: rawInPlace.exists,
+          recordIsSynced: rawInPlace.cloudSynced,
+          externalFound: assign.externalFoundCount,
+          externalUpdated: assign.externalUpdatedCount,
+          bridgeState: bridge.state,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return assign.ok ? 0 : 1;
+  }
+
+  // 新建路径：先尝试把用户批准的名字推给可能已存在的记录，再落新记录（幂等）。
+  await setTomatodoRecordNameForSession(sessionId, recordName);
 
   // 3) 会话级写入（运行时走桥 + 云上传，未运行时写本地待传）。
   const result = await syncSessionToTomatodo(sessionId);

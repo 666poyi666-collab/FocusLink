@@ -27,10 +27,16 @@ const harness = vi.hoisted(() => ({
   pendingRecords: [] as PendingTomatodoRecord[],
   recordStates: new Map<string, { exists: boolean; cloudSynced: boolean; recordId?: number }>(),
   settings: new Map<string, string>(),
+  tasks: new Map<
+    string,
+    { title: string | null; content: string | null; tags: string | null; projectId: string | null }
+  >(),
+  projectNames: new Map<string, string>(),
 }));
 
 vi.mock('../electron/db/index', () => ({
-  findTaskCache: () => null,
+  findTaskCache: (taskId: string) => harness.tasks.get(taskId) ?? null,
+  getTaskProjectName: (projectId: string) => harness.projectNames.get(projectId) ?? null,
   getSegment: (id: string) => harness.segments.find((segment) => segment.id === id) ?? null,
   getSession: (id: string) => harness.sessions.find((session) => session.id === id) ?? null,
   listSegments: (sessionId: string) =>
@@ -219,6 +225,8 @@ function resetHarness(): void {
   harness.pendingRecords = [];
   harness.recordStates.clear();
   harness.writtenSessionMarkers.clear();
+  harness.tasks.clear();
+  harness.projectNames.clear();
   harness.addSessionRecord.mockReset();
   harness.updateNames.mockReset();
   harness.writeBridge.mockReset();
@@ -258,6 +266,46 @@ describe('tomatodo session record mapping (one focus session = one PCRecord)', (
     expect(tomatodoRecordMinutes(0)).toBe(1);
     expect(tomatodoRecordMinutes(-5)).toBe(1);
     expect(tomatodoRecordMinutes(89_999)).toBe(1);
+  });
+
+  it('infers the subject from the linked task list when the title carries no subject word', () => {
+    // 用户 2026-10-13 的要求：「分析任务所属清单后判断学科」。
+    // 任务标题「第二章第五节」不含任何学科词，清单「数学一本通选必一」才是唯一线索。
+    const startedAt = Date.now() - 3_600_000;
+    harness.sessions = [
+      makeSession({
+        id: 'session-project',
+        title: null,
+        startedAt,
+        endedAt: startedAt + 3_485_680,
+        activeElapsedMs: 3_485_680,
+      }),
+    ];
+    harness.segments = [
+      makeSegment({
+        id: 'segment-project',
+        sessionId: 'session-project',
+        taskId: 'task-1',
+        taskSource: 'local',
+        title: '第二章第五节',
+        startedAt,
+        endedAt: startedAt + 3_485_680,
+        activeElapsedMs: 3_485_680,
+      }),
+    ];
+    harness.tasks.set('task-1', {
+      title: '第二章第五节',
+      content: null,
+      tags: null,
+      projectId: 'project-1',
+    });
+    harness.projectNames.set('project-1', '数学一本通选必一');
+
+    const status = getTomatodoSyncStatus('session-project');
+    expect(status.subject).toBe('数学');
+    expect(status.source).toBe('auto');
+    // 58 分钟：与界面显示的整数分钟一致。
+    expect(status.minutes).toBe(58);
   });
 
   it('derives createDate from startedAt + displayed minutes and stamps the session marker', () => {

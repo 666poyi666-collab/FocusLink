@@ -216,6 +216,18 @@ export function listLocalTaskProjects(): LocalTaskProject[] {
 }
 
 /**
+ * 任务所属清单的名字（例如「数学一本通选必一」）。
+ *
+ * 番茄学科自动匹配要用它当线索：用户 2026-10-13 明确要求「分析任务所属清单后判断学科」——
+ * 任务标题「第二章第五节」本身不含任何学科词，只有清单名能判断出这是数学。
+ */
+export function getTaskProjectName(projectId: string): string | null {
+  const row = getDb().prepare('SELECT name FROM task_projects WHERE id = ?').get(projectId) as
+    { name: string | null } | undefined;
+  return row?.name ?? null;
+}
+
+/**
  * Delete a user list without deleting its work.  The reassignment and list removal are one
  * SQLite transaction so a crash cannot strand tasks with a foreign project id.
  */

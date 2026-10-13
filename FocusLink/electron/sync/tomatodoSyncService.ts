@@ -7,6 +7,7 @@
 // 删除联动：删除本地 segment 时调用 deleteTomatodoRecordForSegment
 import {
   findTaskCache,
+  getTaskProjectName,
   getSegment,
   getSession,
   getSetting,
@@ -159,6 +160,12 @@ function getSubjectCandidateTexts(segment: FocusSegment): Array<string | null | 
     const task = findTaskCache(segment.taskId, segment.taskSource ?? undefined);
     if (task) {
       candidates.push(task.title, task.content, task.tags);
+      // 任务所属清单名也是学科线索（用户 2026-10-13 要求「分析任务所属清单后判断学科」）：
+      // 任务标题「第二章第五节」不含学科词，但清单「数学一本通选必一」能直接判定数学。
+      if (task.projectId) {
+        const projectName = getTaskProjectName(task.projectId);
+        if (projectName) candidates.push(projectName);
+      }
     }
   } catch (err) {
     // 自动分类不能因缓存读取失败阻断专注记录同步；仍可退回 segment.title / 默认分类。
