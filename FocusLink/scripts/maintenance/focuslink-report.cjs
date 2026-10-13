@@ -132,11 +132,14 @@ function main() {
     const recordName = session.tomatodo_record_name ?? null;
     const subject = session.tomatodo_subject ?? null;
     const pending = pendingIds.has(session.id);
+    // 「已上传」看番茄记录自己的 isSynced（上传已确认），不看到 durable 队列有没有清空：
+    // 手机直连通道缺失时 durable 会长期留着 session id，不代表没上传，只代表手机投递没确认。
     let sync;
-    if (pending) sync = '待确认';
-    else if (record && record.isSynced) sync = '已上传';
+    if (record && record.isSynced) sync = '已上传';
     else if (record) sync = '未上传';
+    else if (pending) sync = '待确认';
     else sync = '待批准';
+    const phonePending = pending && Boolean(record && record.isSynced);
     return {
       sessionId: session.id,
       title: session.title ?? session.default_task_title ?? null,
@@ -147,6 +150,7 @@ function main() {
       recordName: recordName ?? record?.name ?? subject,
       recordId: record?.recordId ?? null,
       sync,
+      phonePending,
     };
   });
 
@@ -182,7 +186,9 @@ function main() {
       const range = `${clock(row.startedAt)}–${clock(row.startedAt + row.minutes * 60000)}`;
       const label = padEndWide(`「${row.title ?? '(无标题)'}」`, titleWidth);
       out.push(
-        `  ${range}  ${padEndWide(humanMinutes(row.minutes), 12)}${label}  → ${row.recordName ?? '—'}  ${row.sync}`,
+        `  ${range}  ${padEndWide(humanMinutes(row.minutes), 12)}${label}  → ${row.recordName ?? '—'}  ${row.sync}${
+          row.phonePending ? '（手机通道待确认）' : ''
+        }`,
       );
     }
     const byTask = new Map();
