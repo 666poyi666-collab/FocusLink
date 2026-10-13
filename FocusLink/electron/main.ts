@@ -81,6 +81,7 @@ import {
   getPendingTomatodoCount,
 } from './sync/tomatodoSyncService.js';
 import { runAutomaticDeviceSync } from './sync/deviceSyncService.js';
+import { installDeviceSyncProxy } from './sync/deviceSyncProxy.js';
 import { startFoxlinkBusinessApi, type FoxlinkBusinessApi } from './mcp/businessApi.js';
 import { migrateLegacyLoopbackAccountConnection } from './sync/deviceSyncAccountService.js';
 
@@ -1330,7 +1331,7 @@ function ensureTrayAndHotkeys(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   logger.init();
   // 移除默认菜单栏（File/Edit/View/Window/Help）— 专业应用不显示默认菜单
   Menu.setApplicationMenu(null);
@@ -1424,6 +1425,8 @@ app.whenReady().then(() => {
     }
     if (domains.includes('deviceSync')) {
       timer.reloadConfiguration();
+      // 端点可能刚被改过：按新端点重新解析系统代理（Clash 等 fake-ip 环境必需）。
+      void installDeviceSyncProxy(s.deviceSync.endpoint);
       void runAutomaticDeviceSync().catch((error) => {
         logger.warn('deviceSync', 'cloud sync after settings change failed', {
           error: error instanceof Error ? error.message : String(error),
@@ -1467,6 +1470,11 @@ app.whenReady().then(() => {
         error: err instanceof Error ? err.message : String(err),
       });
     });
+
+  // 设备同步、实时专注都走 Node 全局 fetch（undici），而 undici 不读 Windows 系统代理。
+  // Clash 开 fake-ip 时同步域名会被解析成保留网段，直连必失败，因此必须在第一次同步前
+  // 按 Chromium 的代理解析结果把 undici 接到同一个代理上（只跟随，不改用户的代理设置）。
+  await installDeviceSyncProxy();
 
   void runAutomaticDeviceSync().catch((error) => {
     logger.warn('deviceSync', 'startup sync failed', {

@@ -1,5 +1,25 @@
 # FocusLink 实施日志
 
+## 2026-10-13 · `FL-SYNC-20261013-DEVICE-SYNC-PROXY`：设备同步跟随 Windows 系统代理 + 实时专注可见（v1.6.1，不升版本）
+
+- **用户要求（原文）**：「解决看实时专注问题，我的软件你完全有全部权限，网络错误解决，但我要一直开着clash，你不能关」→ 不许动/关 Clash、不许改网络环境，只能在 FocusLink 侧修；同时要求日报能看见**进行中**的专注。
+- **根因（两个问题同源，都是「进程不看系统代理」）**：
+  1. 设备同步全部走 Node 全局 `fetch`（undici），**完全不读 Windows 系统代理**；`electron/` 下此前 grep `setProxy|proxyRules|resolveProxy|session.defaultSession` **零匹配**。
+  2. Clash 开着系统代理 + fake-ip 时，`foxlink-mcp.focuslink-poyi-6465e9.workers.dev` 被解析成 `198.18.0.6`（`198.18.0.0/15` 跑分保留段）；绕开代理直连该地址 TLS 直接失败（`schannel: next InitializeSecurityContext failed: SEC_E_ILLEGAL_MESSAGE (0x80090326)`），而走 `127.0.0.1:7897` 正常（`/sync/v2/live` 无凭据返回 401 `device_credential_required`，说明路由存在）。
+  3. 日志实证：2026-10-13 UTC 09:15–10:23 每 1–15 分钟一次 `[deviceSync] sync failed {"errorCode":"network_error"}` + `canonical Sync v2 failed (network_error)`；同一时间段另有成功记录与 `conflict_present`（与网络无关）并存 → 属间歇性，不能只凭一条历史 `lastError` 断言断网。
+  4. 「实时专注看不见」是同一能力缺失：实时场次由设备同步服务（`/sync/v2/live`）托管，**不落本机 SQLite**，而没有代理支持时这个只读请求同样拿不到；此外运维工具此前读到的设置一直是**默认值**（详见下方顺手修掉的坑）。
+- **实现**：
+  - `electron/sync/deviceSyncProxy.ts`（新增）：`isLoopbackUrl` / `parseResolvedProxy` / `resolutionToUrl` / `installDeviceSyncProxy(session)` —— 用 `session.resolveProxy(endpoint)` 取 Chromium 的系统代理判定，非直连时给 undici 全局 dispatcher 装 `ProxyAgent`；回环与直连不装；可重复调用且不重复安装。
+  - `electron/sync/liveFocusClient.ts`（新增）：`readLiveFocusSnapshot()` 复用同一套代理解析 + `getDeviceSyncRuntimeConnection()`，只读 `GET /sync/v2/live`（`LIVE_FOCUS_PROTOCOL_VERSION = 1`），把实时专注暴露给运维工具。
+  - `electron/main.ts`：`whenReady` 内、首次同步前 `await installDeviceSyncProxy(session.defaultSession)`；设备同步设置变更时重新安装。
+  - `scripts/maintenance/tomatodo-approval-sync.ts`：`--check` 增加只读的「实时专注」段（`[正在进行的专注] …` / `[本机账本进行中] …`），JSON 输出增 `live` 对象。
+  - `vite.config.ts`、`scripts/build/build-selftest.mjs`：`external` 增加 `undici`；`package.json` 把 `undici` 从 devDependencies 提到 dependencies（构建期不能让可选依赖被内联）。
+- **顺手修掉的坑**：运维工具请求实时专注时返回「设备同步未启用或缺少凭据」——`getSettings()` 走 electron-store，而 **electron-store 在构造时就把 cwd 钉死**；工具在 import 之后才 `app.setPath('userData', ...)`，等于白设，设置静默读成默认值（`liveControlEnabled=false`）。现抽出 `scripts/maintenance/pinAppUserData.ts` 并作为运维入口的**第一条 import**。
+- **测试**：`tests/deviceSyncProxy.test.ts`（10 项）覆盖直连、系统代理、fake-ip 地址、`PROXY` 带 `DIRECT` 回退、`SOCKS5`、`HTTPS`、解析异常、回环豁免、重复安装幂等与 endpoint 变更重装。
+- **门禁**：`npm run format:check` / `lint` / `typecheck`（含 `typecheck:cloudflare`）/ `npm test` **148 文件 1244 项全 PASS**；不 bump 版本、不打包、不做三设备安装门禁。
+- **真实环境验证（2026-10-13 19:38 起 dev 实例）**：日志出现 `[deviceSync] node fetch proxy resolved {"endpoint":"https://foxlink-mcp.focuslink-poyi-6465e9.workers.dev","resolved":"PROXY 127.0.0.1:7897","proxyUrl":"http://127.0.0.1:7897","reason":"proxied"}`；此后**未再出现 `network_error`**；活跃域 `5fa3988a126d03f51ecd4491cbecd2496a4fb25fea3aa9a02b95f782d9e44ffc` 的 `deviceSync.lastSyncAtV2` 从 19:26:28 推进到 **19:39:49**，`lastErrorV2` 仍是与网络无关的 `conflict_present`。`npm run tomatodo:check` 实测已能只读读到进行中的实时场次（`高二暑第三节 · 有效 1 小时 23 分钟 · 起于 15:08:07 · 3 段`）。
+- **遗留与风险**：① 代理判定跟随 Windows 系统代理/PAC 的 Chromium 结果，不自建 PAC 求值；Clash 改模式后需等下一次设置变更或重启才重装 dispatcher。② 代理通了不等于业务成功，`conflict_present` 必须与网络错误分开报告。③ `remoteDeleteSupported=false` 不变。④ 实时专注仍不落本机账本，只有整场结束才进 SQLite；进行中只报告、不写番茄。⑤ 本轮没有打包与安装实测。
+
 ## 2026-10-13 · `FL-SYNC-20261013-TOMATODO-APPROVAL-GATE`：番茄同步改为「批准后同步」（v1.6.1，不升版本）
 
 - **用户要求（原文）**：「我有一个好计划：以后由我来批准同步，并确定标题该怎么实现。具体执行方式如下：1. 设定定时任务：每天每隔 1 个小时检查一次，看有没有已完成或正在完成的专注段。2. 匹配标题并询问：对于已完成或正在完成的专注段，先去匹配标题，然后向我发消息询问。3. 答复并同步：直到我给你答复后，你再把内容补充同步到番茄todo。」批准口径（三项）：① **关掉产品里的番茄自动同步**，改由定时核对 + 用户答复驱动；② **每次都汇报一句**（即使没有新内容）；③ **进行中的专注只报告、不写番茄**，等结束后再走一遍流程。边界沿用前两轮：只改番茄同步、PC 端、**不 bump 版本、不打包、不做三设备安装门禁**。

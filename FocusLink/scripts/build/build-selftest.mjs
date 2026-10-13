@@ -10,7 +10,9 @@ const alias = {
   '@shared': path.join(root, 'shared'),
   '@': path.join(root, 'src'),
 };
-const external = ['better-sqlite3', 'electron'];
+// undici 也是运行时依赖：设备同步代理支持要用它的 ProxyAgent，内联进 bundle 会拖进
+// node: 内置依赖与惰性 require。
+const external = ['better-sqlite3', 'electron', 'undici'];
 
 // [目录, 入口文件]：目录用于区分 regression 与 maintenance 两类入口。
 for (const [dir, entry] of [

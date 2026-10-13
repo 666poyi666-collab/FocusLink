@@ -80,6 +80,7 @@
     "better-sqlite3": "^13.0.3",
     "framer-motion": "^11.3.0",
     "lucide-react": "^0.412.0",
+    "undici": "^7.29.0",
     "ws": "^8.21.0",
     "zustand": "^4.5.4"
   },

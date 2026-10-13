@@ -19,7 +19,7 @@
  * - 番茄 To-do 已在运行但没有 CDP 桥时，返回 `restart-required`，绝不杀用户进程。
  * - 无法独立回读云端，`cloudSyncUploadRecord` 成功只代表「上传已确认」。
  */
-import path from 'node:path';
+import './pinAppUserData';
 import { app } from 'electron';
 import {
   getActiveSession,
@@ -47,10 +47,13 @@ import {
   shouldSyncSessionToTomatodo,
 } from '../../shared/tomatodoPolicy';
 import { getSettings } from '../../electron/settingsStore';
+import { logger } from '../../electron/logger';
+import { installDeviceSyncProxy } from '../../electron/sync/deviceSyncProxy';
+import { readLiveFocusSnapshot, type LiveFocusView } from '../../electron/sync/liveFocusClient';
 
 // Electron 默认 userData 取自应用名，直接用 `electron <script>` 跑会落到 `%APPDATA%\Electron`，
-// 那会让本工具读到另一个空库。必须在 initDatabase() 之前把路径钉到真实安装目录。
-app.setPath('userData', path.join(process.env.APPDATA ?? app.getPath('appData'), 'FocusLink'));
+// 那会让本工具读到另一个空库（electron-store 还会把设置读成默认值）。路径钉定放在
+// `pinAppUserData` 里，并作为第一条 import 执行——见该文件的说明。
 
 interface CliOptions {
   mode: 'check' | 'write';
@@ -122,6 +125,46 @@ function parseArgs(argv: string[]): CliOptions {
 function formatClock(ts: number | null): string {
   if (ts === null) return '—';
   return new Date(ts).toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms)) return '—';
+  const totalMinutes = Math.max(0, Math.round(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟`;
+}
+
+/**
+ * 实时专注渲染：这场专注由设备同步服务托管，本机账本要等整场结束才落库，
+ * 所以它不会出现在上面的会话列表里，必须单独报给用户。
+ */
+function describeLive(live: LiveFocusView): string[] {
+  if (!live.available) {
+    return [`[正在进行的专注] 读不到云端实时状态（${live.error ?? '未知原因'}）`];
+  }
+  if (live.state === 'idle' || !live.sessionId) {
+    return ['[正在进行的专注] 无'];
+  }
+  const label = live.state === 'paused' ? '已暂停' : '进行中';
+  const lines = [
+    `[正在进行的专注] ${label}「${live.taskTitle ?? live.title ?? '(无标题)'}」` +
+      ` · 有效 ${formatDuration(live.activeElapsedMs)}` +
+      ` · 起于 ${formatClock(live.startedAt)}` +
+      ` · ${live.segmentCount} 段` +
+      (live.runningSegmentStartedAt !== null
+        ? ` · 当前段 ${formatClock(live.runningSegmentStartedAt)} 起`
+        : ''),
+  ];
+  if (live.state === 'paused' && live.currentPauseStartedAt !== null) {
+    lines.push(
+      `        暂停自 ${formatClock(live.currentPauseStartedAt)} · 已暂停 ${formatDuration(
+        live.pauseElapsedMs,
+      )}`,
+    );
+  }
+  lines.push('        实时场次结束时才落库，因此不计入上面的账本，也还没有写入番茄。');
+  return lines;
 }
 
 interface CheckRow {
@@ -202,6 +245,7 @@ function printCheck(
   dbPath: string,
   rows: CheckRow[],
   activeRow: CheckRow | null,
+  live: LiveFocusView,
 ): void {
   const finished = rows.filter((row) => !row.inProgress);
   const pending = finished.filter((row) => row.needsApproval);
@@ -212,15 +256,17 @@ function printCheck(
   process.stdout.write(`=== 番茄同步核对（${windowLabel}）${formatClock(Date.now())} ===\n`);
   process.stdout.write(`番茄库：${dbPath}\n`);
 
+  for (const line of describeLive(live)) process.stdout.write(`${line}\n`);
+
   if (activeRow) {
     process.stdout.write(
-      `\n[进行中] ${formatClock(activeRow.startedAt)} 起 · 已累计 ${activeRow.minutes} 分钟 · 任务「${
-        activeRow.title ?? '(无标题)'
-      }」\n`,
+      `\n[本机账本进行中] ${formatClock(activeRow.startedAt)} 起 · 已累计 ${
+        activeRow.minutes
+      } 分钟 · 任务「${activeRow.title ?? '(无标题)'}」\n`,
     );
     process.stdout.write('        进行中不写番茄（时长未定），等结束后再走一遍流程。\n');
   } else {
-    process.stdout.write('\n[进行中] 无\n');
+    process.stdout.write('\n[本机账本进行中] 无\n');
   }
 
   process.stdout.write(`\n[等你批准] ${pending.length} 场\n`);
@@ -256,7 +302,9 @@ function printCheck(
   process.stdout.write(
     `\n汇总：共 ${rows.length} 场（含进行中 ${activeRow ? 1 : 0}），待批准 ${pending.length}，已上传 ${synced.length}。\n`,
   );
-  process.stdout.write(`JSON=${JSON.stringify({ dbPath, pending, synced, activeRow, rows })}\n`);
+  process.stdout.write(
+    `JSON=${JSON.stringify({ dbPath, live, pending, synced, activeRow, rows })}\n`,
+  );
 }
 
 async function runWrite(opts: CliOptions): Promise<number> {
@@ -339,13 +387,18 @@ async function runWrite(opts: CliOptions): Promise<number> {
 
 async function main(): Promise<number> {
   const opts = parseArgs(process.argv.slice(2));
+  // 记录日志：代理解析、凭据失败等诊断要落进 FocusLink 的日志文件，而不是只出现在终端。
+  logger.init();
   initDatabase();
+  // 代理跟随：Clash 等 fake-ip 环境下直连同步域名必失败（见 FL-SYNC-022）。
+  await installDeviceSyncProxy();
   if (opts.mode === 'write') return runWrite(opts);
   const { rows, activeRow, dbPath } = collectRows(opts.hours);
+  const live = await readLiveFocusSnapshot();
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify({ dbPath, activeRow, rows }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ dbPath, live, activeRow, rows }, null, 2)}\n`);
   } else {
-    printCheck(opts.hours, dbPath, rows, activeRow);
+    printCheck(opts.hours, dbPath, rows, activeRow, live);
   }
   return 0;
 }

@@ -450,3 +450,32 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - 未批准前该次会话在番茄里**完全没有记录**，`getTomatodoSyncStatus` 如实显示 `not-written`（不假装在等同步）。
 - 进行中的专注**只报告、不写番茄**：`activeElapsedMs` 仍在增长，此刻写库必然写出错误时长。
 - 历史 132 条已重建但未上传的会话级记录留在本机、保持未同步；不要为了「让状态好看」把它们标成已同步。
+
+## FL-SYNC-022：设备同步一直 network_error（开着 Clash 系统代理/fake-ip，Node fetch 不走代理）
+
+### 含义
+
+日志里周期性出现 `[deviceSync] sync failed {"errorCode":"network_error"}` 与 `canonical Sync v2 failed (network_error)`，但浏览器或 curl 访问同一域名却是通的。这是**进程级代理缺失**，不是账号、服务端或证书问题；同样地，界面上的「实时专注」看不见也可能是这个原因。诊断要按 DNS → TCP → TLS → 鉴权 → 产品状态分开记，**禁止**用一条历史 `lastError` 断言当前断网，也**禁止**要求用户关掉 Clash。
+
+### 根因（2026-10-13 修复，v1.6.1 未升版本）
+
+1. 设备同步全部使用 Node 全局 `fetch`（undici），**完全不读 Windows 系统代理**；`electron/` 下此前没有任何 `setProxy` / `proxyRules` / `resolveProxy` / `session.defaultSession` 用法。
+2. Clash Verge 开着系统代理并使用 fake-ip 时，`foxlink-mcp.focuslink-poyi-6465e9.workers.dev` 被解析成 `198.18.0.6`（`198.18.0.0/15` 是跑分保留网段）。**绕开代理直连**该地址会 TLS 失败：`schannel: next InitializeSecurityContext failed: SEC_E_ILLEGAL_MESSAGE (0x80090326)`；而走 `127.0.0.1:7897` 正常（`/sync/v2/live` 无凭据返回 401 `device_credential_required`，说明 Worker 路由存在）。
+3. 实测频率 2026-10-13 UTC 09:15–10:23 每 1–15 分钟一次失败，同一时段另有成功与 `conflict_present` 并存 → 表现为「间歇性」，正是查错时最容易被误判成服务抖动的形态。
+
+### 处理步骤
+
+1. 先分清是哪一层：对同一 URL 比较「直连」与「走系统代理」两条路径，读 DNS 结果是否为 `198.18.x.x`；**不要**关闭用户的 Clash，也不要建议改网络环境。
+2. 应用侧修法（本轮已实现）：`electron/sync/deviceSyncProxy.ts` 用 `session.resolveProxy(endpoint)` 取 Chromium 的系统代理判定，非直连时给 undici 全局 dispatcher 装 `ProxyAgent`（回环地址豁免），在 `whenReady` 后、首次同步前安装，并在设备同步设置变更时重装。
+3. 验证成功信号：日志出现 `[deviceSync] node fetch proxy resolved {"resolved":"PROXY 127.0.0.1:7897","proxyUrl":"http://127.0.0.1:7897","reason":"proxied"}`；随后不再出现 `network_error`，且活跃域的 `deviceSync.lastSyncAtV2` 继续推进。
+4. 运维工具（`npm run tomatodo:check`）要读实时专注时，注意 `getSettings()` 走 electron-store，而 **electron-store 在构造时就把 cwd 钉死**：路径钉定必须放在 `scripts/maintenance/pinAppUserData.ts` 里并作为**第一条 import**，否则设置静默读成默认值（表现为「设备同步未启用或缺少凭据」）。
+
+### 验证
+
+`tests/deviceSyncProxy.test.ts`（10 项）覆盖直连、系统代理、fake-ip 地址串、`PROXY` 带 `DIRECT` 回退、`SOCKS5`、`HTTPS`、解析异常、回环豁免、重复安装幂等与 endpoint 变更重装。
+
+### 边界
+
+- 只跟随系统代理/PAC 的 Chromium 判定结果，不自建 PAC 求值；Clash 改模式后要等下一次设置变更或重启才重装 dispatcher。
+- 代理通了**不等于**业务成功：`conflict_present` 是同步冲突，必须与网络错误分开报告，不能互相冒充。
+- 实时专注由设备同步服务托管、**不落本机账本**；读到了也只表示「跟随中」，只有整场结束才进 `focus_sessions`，进行中一律只报告、不写番茄。

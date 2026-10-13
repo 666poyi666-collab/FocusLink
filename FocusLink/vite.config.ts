@@ -22,9 +22,11 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              // 这两项都必须保留为运行时依赖。把 ws 内联会让 Rollup 将其可选的
+              // 这三项都必须保留为运行时依赖。把 ws 内联会让 Rollup 将其可选的
               // bufferutil/utf-8-validate require 改造成硬失败，Electron 启动即崩溃。
-              external: ['better-sqlite3', 'ws'],
+              // undici 提供 ProxyAgent（跟随系统代理），内联会把它的 node: 内置依赖与
+              // 惰性 require 一起打包，同样有启动即崩的风险。
+              external: ['better-sqlite3', 'ws', 'undici'],
             },
           },
         },
