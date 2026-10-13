@@ -37,6 +37,9 @@ const MIGRATION_TOMATODO_CLOUD_V053_KEY = 'migration.tomatodoCloudV053';
 const MIGRATION_RECONCILE_DIDA_FOCUS_V060_KEY = 'migration.reconcileDidaFocusV060';
 const MIGRATION_DEVICE_SYNC_PORT_V01221_KEY = 'migration.deviceSyncPortV01221';
 const MIGRATION_FOCUSLINK_TASKS_V01294_KEY = 'migration.focuslinkTasksV01294';
+const MIGRATION_TOMATODO_SESSION_GRAIN_V161_KEY = 'migration.tomatodoSessionGrainV161';
+/** v1.6.1 之前的番茄待传队列（片段级，扁平 string[]）。 */
+const LEGACY_TOMATODO_PENDING_QUEUE_KEY = 'tomatodo.pendingSegmentIdsV060';
 const MIGRATION_FLAG_DONE = '1';
 let tomatodoCloudMigrationAttemptedThisRun = false;
 
@@ -82,6 +85,7 @@ export function getSettings(): AppSettings {
   applyReconcileDidaFocusV060Migration();
   applyDeviceSyncPortV01221Migration(settings);
   applyFocusLinkTasksV01294Migration(settings);
+  applyTomatodoSessionGrainV161Migration();
   normalizeSegmentBehavior(settings);
   normalizeAppearanceSettings(settings);
   normalizeTaskWorkspaceAppearance(settings);
@@ -542,6 +546,41 @@ function applyDeviceSyncPortV01221Migration(settings: AppSettings): void {
     logger.info('settings', 'v0.12.21 migration: loopback sync endpoint 8787 -> 18787');
   }
   setSetting(MIGRATION_DEVICE_SYNC_PORT_V01221_KEY, MIGRATION_FLAG_DONE);
+}
+
+/**
+ * v1.6.1（2026-10-13）：番茄同步粒度从「片段」改成「一次专注会话 = 一条记录」。
+ *
+ * 旧队列键 `tomatodo.pendingSegmentIdsV060` 里是按片段记录的待传意图。会话级口径
+ * 无法把它们映射回一次专注（同一会话的多个片段会互相覆盖时长），而它们指向的
+ * 番茄记录仍然留在本机 PCRecord 里、并没有被删除或假装上传过。
+ *
+ * 因此这里只把旧队列清空，停止对它们的重试；本机记录原样保留，
+ * 历史事实（曾计入待上传、现不再重试）由界面与文档如实说明。
+ */
+function applyTomatodoSessionGrainV161Migration(): void {
+  if (getSetting(MIGRATION_TOMATODO_SESSION_GRAIN_V161_KEY) === MIGRATION_FLAG_DONE) return;
+  try {
+    const raw = getSetting(LEGACY_TOMATODO_PENDING_QUEUE_KEY);
+    let cleared = 0;
+    if (raw) {
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        cleared = Array.isArray(parsed) ? parsed.length : 0;
+      } catch {
+        cleared = 0;
+      }
+      setSetting(LEGACY_TOMATODO_PENDING_QUEUE_KEY, '[]');
+    }
+    logger.info('settings', 'v1.6.1 migration: tomatodo sync grain segment -> session', {
+      clearedLegacyPendingIntents: cleared,
+    });
+    setSetting(MIGRATION_TOMATODO_SESSION_GRAIN_V161_KEY, MIGRATION_FLAG_DONE);
+  } catch (error) {
+    logger.warn('settings', 'v1.6.1 tomatodo session grain migration deferred', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export function saveSettings(settings: AppSettings): AppSettings {

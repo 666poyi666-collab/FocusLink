@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { FocusSession, TomatodoSubject } from '@shared/types';
-import type { SessionDetail, TomatodoSegmentStatus } from '@shared/ipc/api';
+import type { SessionDetail, TomatodoSyncStatus } from '@shared/ipc/api';
 import { formatDuration, formatMinutes } from '../../lib/time';
 import { formatLedgerClock, formatLedgerSpan } from './ledgerTimeFormat';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { TomatodoSubjectChips } from './TomatodoSubjectChips';
 
 interface Props {
   sessions: FocusSession[];
@@ -41,34 +42,41 @@ function scopedMs(
   return Math.round((ms * overlap) / span);
 }
 
-/* 番茄 To-do 记录标题编辑器。学科分类仍然决定统计口径，这里改的只是番茄 To-do 里
-   显示的那一行文字；留空保存 = 清除自定义标题，记录名回落成学科名。 */
-function TomatodoRecordNameField({
-  segmentId,
-  recordName,
-  subject,
+/* 番茄 To-do 的会话级控件。一次专注 = 一条番茄记录，所以标题与分类都挂在会话上，
+   不再逐个片段编辑。学科分类决定统计口径，标题只改番茄 To-do 里显示的那行文字；
+   留空保存 = 清除自定义标题，记录名回落成学科名。 */
+const TOMATODO_STATE_LABELS: Record<TomatodoSyncStatus['state'], string> = {
+  'not-written': '未写入',
+  'local-pending': '已写入本地 · 待上传',
+  'confirmation-pending': '等待同步确认',
+  'expired-history': '历史已停止重试',
+  'cloud-synced': '上传已确认',
+};
+
+function TomatodoSessionField({
+  sessionId,
+  status,
   disabled,
   onSaved,
   notify,
 }: {
-  segmentId: string;
-  recordName: string;
-  subject: TomatodoSubject;
+  sessionId: string;
+  status: TomatodoSyncStatus;
   disabled: boolean;
   onSaved: () => void;
   notify: (message: string) => void;
 }) {
-  const [draft, setDraft] = useState(recordName);
+  const [draft, setDraft] = useState(status.recordName);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    setDraft(recordName);
-  }, [recordName]);
+    setDraft(status.recordName);
+  }, [status.recordName]);
   const commit = async () => {
     const next = draft.trim();
-    if (saving || next === recordName.trim()) return;
+    if (saving || next === status.recordName.trim()) return;
     setSaving(true);
     try {
-      const result = await window.focuslink.tomatodo.setRecordName(segmentId, next || null);
+      const result = await window.focuslink.tomatodo.setSessionRecordName(sessionId, next || null);
       if (result.ok) {
         notify('番茄标题已保存');
       } else {
@@ -83,31 +91,67 @@ function TomatodoRecordNameField({
       setSaving(false);
     }
   };
+  const selectSubject = async (subject: TomatodoSubject) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const result = await window.focuslink.tomatodo.setSessionSubject(sessionId, subject);
+      notify(
+        result.ok
+          ? `番茄分类已改为 ${subject}`
+          : `番茄分类已保存在本机，但番茄 To-do 记录未更新确认（${result.error ?? '未知原因'}）`,
+      );
+      onSaved();
+    } catch (cause) {
+      notify(`番茄分类保存失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-      <span className="text-[10.5px] text-fg-subtle">番茄标题</span>
-      <input
-        type="text"
-        value={draft}
-        disabled={disabled || saving}
-        aria-label="番茄 Todo 记录标题"
-        placeholder={subject}
-        className="w-[9.5rem] rounded-md border border-border/50 bg-bg-card/50 px-1.5 py-0.5 text-[10.5px] text-fg placeholder:text-fg-subtle focus:border-accent/50 focus:outline-none disabled:opacity-40"
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
-          void commit();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
+    <div className="mt-1.5 flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10.5px] text-fg-subtle">番茄标题</span>
+        <input
+          type="text"
+          value={draft}
+          disabled={disabled || saving}
+          aria-label="番茄 Todo 记录标题"
+          placeholder={status.subject}
+          className="w-[11rem] rounded-md border border-border/50 bg-bg-card/50 px-1.5 py-0.5 text-[10.5px] text-fg placeholder:text-fg-subtle focus:border-accent/50 focus:outline-none disabled:opacity-40"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
             void commit();
-          }
-          if (event.key === 'Escape') setDraft(recordName);
-        }}
-      />
-      <span className="text-[10px] text-fg-subtle" title="学科分类仍决定番茄 To-do 的统计口径">
-        {saving ? '保存中…' : `分类 ${subject}`}
-      </span>
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void commit();
+            }
+            if (event.key === 'Escape') setDraft(status.recordName);
+          }}
+        />
+        <span className="text-[10px] text-fg-subtle">
+          {saving ? '保存中…' : `${status.minutes} 分钟 · ${TOMATODO_STATE_LABELS[status.state]}`}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10.5px] text-fg-subtle" title="学科分类决定番茄 To-do 的统计口径">
+          分类
+        </span>
+        <TomatodoSubjectChips
+          compact
+          includeFallback
+          value={status.subject}
+          disabled={disabled || saving}
+          onChange={(subject) => {
+            void selectSubject(subject);
+          }}
+        />
+        {status.customRecordName === null && (
+          <span className="text-[10px] text-fg-subtle">未设标题时记录名就是分类名</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -129,10 +173,9 @@ export function SessionLedger({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
-  /* 番茄 To-do 是独立并行通道：读取失败或未启用时静默降级，账本本身照常显示。 */
-  const [tomatodoBySegment, setTomatodoBySegment] = useState<Record<string, TomatodoSegmentStatus>>(
-    {},
-  );
+  /* 番茄 To-do 是独立并行通道：读取失败或未启用时静默降级，账本本身照常显示。
+     一次专注 = 一条番茄记录，所以这里只保存当前会话的状态快照。 */
+  const [tomatodoStatus, setTomatodoStatus] = useState<TomatodoSyncStatus | null>(null);
   const [tomatodoReload, setTomatodoReload] = useState(0);
   /* v1.5.5：删除入口在 v1.3.15 被整段删掉后再没恢复（见 IMPLEMENTATION_LOG
      FL-UI-20261004-STATS-DELETE）。本组件自己记住刚删掉的会话 id，让列表与读数
@@ -174,21 +217,17 @@ export function SessionLedger({
     };
   }, [selectedSessionId, reloadToken, retry]);
 
-  /* 番茄记录名与分类来自主进程的番茄状态快照；番茄通道未启用时这里保持空表，
-     片段行就不会出现标题输入框。 */
+  /* 番茄记录名与分类来自主进程的番茄状态快照；番茄通道未启用时保持 null，
+     会话区就不会出现番茄控件。 */
   useEffect(() => {
     let cancelled = false;
-    setTomatodoBySegment({});
+    setTomatodoStatus(null);
     if (!selectedSessionId) return;
     void window.focuslink.tomatodo
       .status(selectedSessionId)
       .then((status) => {
         if (cancelled) return;
-        const next: Record<string, TomatodoSegmentStatus> = {};
-        if (status.enabled) {
-          for (const item of status.segments) next[item.segmentId] = item;
-        }
-        setTomatodoBySegment(next);
+        setTomatodoStatus(status.enabled ? status : null);
       })
       .catch(() => {
         /* 番茄 To-do 未安装/未启用/桥不可用都不影响历史账本；不在这里打扰用户。 */
@@ -209,7 +248,6 @@ export function SessionLedger({
           end: segment.endedAt,
           ms: segment.activeElapsedMs,
           linked: Boolean(segment.taskId),
-          tomatodo: tomatodoBySegment[segment.id] ?? null,
         })),
         ...current.pauses.map((pause) => ({
           id: pause.id,
@@ -219,7 +257,6 @@ export function SessionLedger({
           end: pause.pauseEndedAt,
           ms: pause.durationMs,
           linked: false,
-          tomatodo: null as TomatodoSegmentStatus | null,
         })),
       ].sort((a, b) => a.start - b.start)
     : [];
@@ -428,6 +465,18 @@ export function SessionLedger({
                   ))}
                 </div>
               </div>
+              {tomatodoStatus && (
+                <div>
+                  <h5>番茄 Todo</h5>
+                  <TomatodoSessionField
+                    sessionId={tomatodoStatus.sessionId}
+                    status={tomatodoStatus}
+                    disabled={deleting}
+                    notify={notify}
+                    onSaved={() => setTomatodoReload((value) => value + 1)}
+                  />
+                </div>
+              )}
               <div>
                 <h5>
                   片段与暂停
@@ -452,16 +501,6 @@ export function SessionLedger({
                       <div className="seg-time-sub">
                         {formatLedgerSpan(row.start, row.end, selected.startedAt)}
                       </div>
-                      {row.kind === 'focus' && row.tomatodo && (
-                        <TomatodoRecordNameField
-                          segmentId={row.id}
-                          recordName={row.tomatodo.recordName}
-                          subject={row.tomatodo.subject}
-                          disabled={deleting}
-                          notify={notify}
-                          onSaved={() => setTomatodoReload((value) => value + 1)}
-                        />
-                      )}
                       {row.kind === 'focus' && (
                         <button
                           type="button"

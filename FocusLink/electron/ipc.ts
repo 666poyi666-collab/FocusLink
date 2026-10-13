@@ -37,11 +37,14 @@ import {
   syncSegmentToTomatodo,
   syncSessionToTomatodo,
   deleteTomatodoRecordForSegment,
+  deleteTomatodoRecordForSession,
   getTomatodoSyncStatus,
   getPendingTomatodoCount,
   getPendingTomatodoSummary,
+  setTomatodoSubjectForSession,
   setTomatodoSubjectForSegment,
   setTomatodoSubjectsForSegments,
+  setTomatodoRecordNameForSession,
   setTomatodoRecordNameForSegment,
   uploadPendingTomatodoRecords,
 } from './sync/tomatodoSyncService.js';
@@ -817,18 +820,30 @@ export function registerIpc(
   ipcMain.handle('tomatodo:sync-session', (_e, sessionId: string) =>
     syncSessionToTomatodo(sessionId),
   );
-  /** 查询某会话各 segment 的番茄 Todo 同步状态（供 UI 展示） */
+  /** 查询某会话的番茄 Todo 同步状态（供 UI 展示）。一次专注 = 一条记录。 */
   ipcMain.handle('tomatodo:status', (_e, sessionId: string) => getTomatodoSyncStatus(sessionId));
-  /** 设置 segment 的番茄 Todo 学科分类（手动选择） */
+  /** 设置会话的番茄 Todo 学科分类（手动选择；一次写入该会话全部片段） */
   ipcMain.handle('tomatodo:set-subject', (_e, segmentId: string, subject: string | null) =>
     setTomatodoSubjectForSegment(segmentId, subject),
   );
   ipcMain.handle('tomatodo:set-subjects', (_e, segmentIds: string[], subject: string | null) =>
     setTomatodoSubjectsForSegments(segmentIds, subject),
   );
-  /** 保存 segment 的番茄 Todo 自定义记录标题（null 表示清除，回落到学科名） */
+  ipcMain.handle('tomatodo:set-session-subject', (_e, sessionId: string, subject: string | null) =>
+    setTomatodoSubjectForSession(sessionId, subject),
+  );
+  /** 保存会话的番茄 Todo 自定义记录标题（null 表示清除，回落到学科名） */
   ipcMain.handle('tomatodo:set-record-name', (_e, segmentId: string, recordName: string | null) =>
     setTomatodoRecordNameForSegment(segmentId, recordName),
+  );
+  ipcMain.handle(
+    'tomatodo:set-session-record-name',
+    (_e, sessionId: string, recordName: string | null) =>
+      setTomatodoRecordNameForSession(sessionId, recordName),
+  );
+  /** 删除某会话的番茄记录（删除本地会话时的联动；本地记录不会被远端删除接口支持） */
+  ipcMain.handle('tomatodo:delete-record', (_e, sessionId: string) =>
+    deleteTomatodoRecordForSession(sessionId),
   );
   /** 手动上传所有待同步的番茄 Todo 记录到云端 */
   ipcMain.handle('tomatodo:upload-pending', () =>

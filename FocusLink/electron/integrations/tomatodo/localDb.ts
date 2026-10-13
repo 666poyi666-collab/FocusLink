@@ -15,11 +15,14 @@ import { execFile } from 'node:child_process';
 import { logger } from '../../logger.js';
 import {
   buildTomatodoRecord,
+  buildTomatodoSessionRecord,
   collectSyncedSegmentIds,
   getTomatodoMarker,
+  getTomatodoSessionMarker,
   normalizeTomatodoRecordName,
-  parseSegmentIdFromMarker,
+  parseTomatodoMarker,
   TOMATODO_CLOUD_V053_MARKER,
+  type TomatodoMarkerKind,
   type TomatodoPCRecord,
 } from '../../../shared/tomatodoPolicy.js';
 import type { TomatodoSubject } from '@shared/types';
@@ -54,9 +57,41 @@ export interface AddRecordResult {
   error?: string;
 }
 
+/**
+ * 一次专注会话 → 一条 PCRecord（2026-10-13 起的产品口径）。
+ * 时长取界面显示的整数分钟，终点由「起点 + 时长」算出，会话中间暂停不参与。
+ */
+export interface AddSessionRecordInput {
+  sessionId: string;
+  subject: TomatodoSubject;
+  /** 自定义记录标题；省略/为空时记录名等于 subject。 */
+  recordName?: string | null;
+  startedAt: number;
+  activeElapsedMs: number;
+}
+
+/** 按 marker 就地改记录名的通用结果（片段级与会话级共用）。 */
+export interface UpdateTomatodoRecordNamesResult {
+  ok: boolean;
+  /** 命中 marker 的键：片段级是 segmentId，会话级是 sessionId。不存在时不写文件。 */
+  foundKeys: string[];
+  /** 实际修改的 PCRecord 数（异常重复 marker 也会一并修正）。 */
+  updatedCount: number;
+  backupPath?: string;
+  error?: string;
+}
+
 /** 将一个已写入 PCRecord 的记录名改为新的标题或学科分类。 */
 export interface UpdateTomatodoRecordSubjectInput {
   segmentId: string;
+  subject: TomatodoSubject;
+  /** 自定义记录标题；省略/为空时写入学科名。 */
+  recordName?: string | null;
+}
+
+/** 会话级同上：改一次专注会话记录的记录名。 */
+export interface UpdateTomatodoSessionRecordNameInput {
+  sessionId: string;
   subject: TomatodoSubject;
   /** 自定义记录标题；省略/为空时写入学科名。 */
   recordName?: string | null;
@@ -241,12 +276,19 @@ export function hasRecordForSegment(dbPath: string, segmentId: string): boolean 
   }
 }
 
-/** 追加一条 PCRecord。marker 已存在则跳过（幂等）。 */
-export function addTomatodoRecord(dbPath: string, input: AddRecordInput): AddRecordResult {
+/**
+ * 追加一条带 marker 的 PCRecord。marker 已存在则跳过（幂等）。
+ * 片段级与会话级共用这段落盘逻辑，只有 marker 与构建函数不同。
+ */
+function appendRecordWithMarker(
+  dbPath: string,
+  marker: string,
+  partial: Omit<TomatodoPCRecord, 'id'>,
+  logFields: Record<string, unknown>,
+): AddRecordResult {
   try {
     const db = loadTomatodoDb(dbPath);
     const records = db.PCRecord ?? [];
-    const marker = getTomatodoMarker(input.segmentId);
 
     // 去重：marker 已存在则跳过
     if (records.some((r) => (r.s1 ?? '').includes(marker))) {
@@ -254,14 +296,6 @@ export function addTomatodoRecord(dbPath: string, input: AddRecordInput): AddRec
     }
 
     const recordId = nextRecordId(db);
-    const partial = buildTomatodoRecord({
-      segmentId: input.segmentId,
-      subject: input.subject,
-      recordName: input.recordName ?? null,
-      startedAt: input.startedAt,
-      endedAt: input.endedAt,
-      activeElapsedMs: input.activeElapsedMs,
-    });
     const record: TomatodoPCRecord = { id: recordId, ...partial };
 
     const backupPath = backupDb(dbPath);
@@ -270,19 +304,55 @@ export function addTomatodoRecord(dbPath: string, input: AddRecordInput): AddRec
     saveTomatodoDb(dbPath, db);
 
     logger.info('tomatodoAdapter', 'record added', {
-      segmentId: input.segmentId,
-      subject: input.subject,
-      recordName: record.name,
+      marker,
       recordId,
+      recordName: record.name,
       minutes: record.time,
       backupPath,
+      ...logFields,
     });
 
     return { ok: true, skipped: false, record, recordId, backupPath: backupPath ?? undefined };
   } catch (err) {
-    logger.error('tomatodoAdapter', 'addTomatodoRecord failed', err);
+    logger.error('tomatodoAdapter', 'append record failed', err);
     return { ok: false, skipped: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** 追加一条片段级 PCRecord（历史口径：一个 focus_segment 一条记录）。 */
+export function addTomatodoRecord(dbPath: string, input: AddRecordInput): AddRecordResult {
+  return appendRecordWithMarker(
+    dbPath,
+    getTomatodoMarker(input.segmentId),
+    buildTomatodoRecord({
+      segmentId: input.segmentId,
+      subject: input.subject,
+      recordName: input.recordName ?? null,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      activeElapsedMs: input.activeElapsedMs,
+    }),
+    { segmentId: input.segmentId, subject: input.subject },
+  );
+}
+
+/** 追加一次专注会话的 PCRecord。marker 已存在则跳过（幂等）。 */
+export function addTomatodoSessionRecord(
+  dbPath: string,
+  input: AddSessionRecordInput,
+): AddRecordResult {
+  return appendRecordWithMarker(
+    dbPath,
+    getTomatodoSessionMarker(input.sessionId),
+    buildTomatodoSessionRecord({
+      sessionId: input.sessionId,
+      subject: input.subject,
+      recordName: input.recordName ?? null,
+      startedAt: input.startedAt,
+      activeElapsedMs: input.activeElapsedMs,
+    }),
+    { sessionId: input.sessionId, subject: input.subject },
+  );
 }
 
 /** 返回 marker 对应记录的本地/云端状态，避免把“已写入 JSON”误报为“已上云”。 */
@@ -302,9 +372,39 @@ export function getTomatodoRecordState(dbPath: string, segmentId: string): Tomat
   }
 }
 
+/** 会话级同上：按一次专注会话的 marker 读取本地记录状态。 */
+export function getTomatodoSessionRecordState(
+  dbPath: string,
+  sessionId: string,
+): TomatodoRecordState {
+  try {
+    const db = loadTomatodoDb(dbPath);
+    const marker = getTomatodoSessionMarker(sessionId);
+    // marker 唯一，用「最后一条命中的」而不是「第一条命中的」：
+    // 2026-10-13 的就地迁移会同时留下片段级与会话级 marker，修复后的记录才是真身。
+    const matched = (db.PCRecord ?? []).filter((item) => (item.s1 ?? '').includes(marker));
+    const record = matched[matched.length - 1];
+    if (!record) return { exists: false, cloudSynced: false };
+    return {
+      exists: true,
+      recordId: typeof record.id === 'number' ? record.id : undefined,
+      cloudSynced: Number(record.isSynced) === 1,
+    };
+  } catch {
+    return { exists: false, cloudSynced: false };
+  }
+}
+
 export interface PendingTomatodoRecord {
   recordId: number;
-  segmentId: string;
+  /** marker 级别：`segment` 是 v1.6.1 之前写的历史记录，`session` 是 2026-10-13 起的新口径。 */
+  markerKind: TomatodoMarkerKind;
+  /** marker 键：片段级为 segmentId，会话级为 sessionId。 */
+  markerId: string;
+  /** 仅片段级记录有值，会话级为 null。 */
+  segmentId: string | null;
+  /** 仅会话级记录有值，片段级为 null。 */
+  sessionId: string | null;
   name: string;
   time: number;
   startDate: number;
@@ -315,19 +415,24 @@ export interface PendingTomatodoRecord {
 export function listPendingTomatodoRecords(dbPath: string): PendingTomatodoRecord[] {
   try {
     const db = loadTomatodoDb(dbPath);
-    return (db.PCRecord ?? [])
-      .filter((r) => {
-        if (Number(r.isSynced) === 1) return false;
-        return parseSegmentIdFromMarker(r.s1) !== null;
-      })
-      .map((r) => ({
+    const pending: PendingTomatodoRecord[] = [];
+    for (const r of db.PCRecord ?? []) {
+      if (Number(r.isSynced) === 1) continue;
+      const parsed = parseTomatodoMarker(r.s1);
+      if (!parsed) continue;
+      pending.push({
         recordId: r.id,
-        segmentId: parseSegmentIdFromMarker(r.s1)!,
+        markerKind: parsed.kind,
+        markerId: parsed.id,
+        segmentId: parsed.kind === 'segment' ? parsed.id : null,
+        sessionId: parsed.kind === 'session' ? parsed.id : null,
         name: r.name,
         time: r.time,
         startDate: r.startDate,
         isSynced: Number(r.isSynced),
-      }));
+      });
+    }
+    return pending;
   } catch {
     return [];
   }
@@ -338,8 +443,81 @@ export function countPendingTomatodoRecords(dbPath: string): number {
   return listPendingTomatodoRecords(dbPath).length;
 }
 
+interface RecordNameUpdate {
+  marker: string;
+  key: string;
+  name: string;
+}
+
 /**
- * 就地更新已同步 PCRecord 的 name 字段，不删除 marker、不改 record id 或其他番茄 Todo 元数据。
+ * 按 marker 就地改记录名（片段级与会话级共用）。
+ *
+ * 两条不变量：
+ * - 同一个名字是严格幂等操作，尤其不能把已经由云端确认的 `isSynced=1` 重新打回待上传；
+ * - 只改已存在的 PCRecord，绝不为没写过的片段/会话创建空记录。
+ */
+function applyRecordNameUpdates(
+  dbPath: string,
+  updates: readonly RecordNameUpdate[],
+  logTag: string,
+): UpdateTomatodoRecordNamesResult {
+  try {
+    const effective = updates.filter((u) => u.marker.length > 0 && u.key.length > 0);
+    if (effective.length === 0) {
+      return { ok: true, foundKeys: [], updatedCount: 0 };
+    }
+
+    const db = loadTomatodoDb(dbPath);
+    const records = db.PCRecord ?? [];
+    const foundKeys = new Set<string>();
+    let updatedCount = 0;
+    const nextRecords = records.map((record) => {
+      const s1 = record.s1 ?? '';
+      // 一条记录同时带片段级与会话级 marker 时（2026-10-13 的就地迁移），
+      // 取列表里靠后的一条，让后写的会话级口径生效。
+      let hit: RecordNameUpdate | null = null;
+      for (const update of effective) {
+        if (s1.includes(update.marker)) hit = update;
+      }
+      if (!hit) return record;
+      foundKeys.add(hit.key);
+      if (record.name === hit.name) return record;
+      updatedCount += 1;
+      // 记录名变化必须重新进入番茄 Todo 的云同步队列。
+      return { ...record, name: hit.name, isSynced: 0 };
+    });
+
+    if (foundKeys.size === 0 || updatedCount === 0) {
+      return { ok: true, foundKeys: [...foundKeys], updatedCount: 0 };
+    }
+
+    const backupPath = backupDb(dbPath);
+    db.PCRecord = nextRecords;
+    saveTomatodoDb(dbPath, db);
+    logger.info('tomatodoAdapter', logTag, {
+      keys: [...foundKeys],
+      updatedCount,
+      backupPath,
+    });
+    return {
+      ok: true,
+      foundKeys: [...foundKeys],
+      updatedCount,
+      backupPath: backupPath ?? undefined,
+    };
+  } catch (err) {
+    logger.error('tomatodoAdapter', `${logTag} failed`, err);
+    return {
+      ok: false,
+      foundKeys: [],
+      updatedCount: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * 就地更新片段级 PCRecord 的 name 字段，不删除 marker、不改 record id 或其他番茄 Todo 元数据。
  * 这让用户在 FocusLink 中手动改学科或自定义标题后可以同步反映到番茄 Todo，
  * 而不会被 marker 幂等逻辑跳过。
  */
@@ -347,69 +525,43 @@ export function updateTomatodoRecordSubjects(
   dbPath: string,
   updates: readonly UpdateTomatodoRecordSubjectInput[],
 ): UpdateTomatodoRecordSubjectsResult {
-  try {
-    const nameBySegmentId = new Map<string, string>();
-    for (const update of updates) {
-      if (!update.segmentId) continue;
-      // PCRecord.name 只有一个字段：自定义标题优先，未设置时才写学科名。
-      nameBySegmentId.set(
-        update.segmentId,
-        normalizeTomatodoRecordName(update.recordName) ?? update.subject,
-      );
-    }
-    if (nameBySegmentId.size === 0) {
-      return { ok: true, foundSegmentIds: [], updatedCount: 0 };
-    }
+  const result = applyRecordNameUpdates(
+    dbPath,
+    updates
+      .filter((update) => Boolean(update.segmentId))
+      .map((update) => ({
+        marker: getTomatodoMarker(update.segmentId),
+        key: update.segmentId,
+        // PCRecord.name 只有一个字段：自定义标题优先，未设置时才写学科名。
+        name: normalizeTomatodoRecordName(update.recordName) ?? update.subject,
+      })),
+    'record subjects updated',
+  );
+  return {
+    ok: result.ok,
+    foundSegmentIds: result.foundKeys,
+    updatedCount: result.updatedCount,
+    backupPath: result.backupPath,
+    error: result.error,
+  };
+}
 
-    const db = loadTomatodoDb(dbPath);
-    const records = db.PCRecord ?? [];
-    const foundSegmentIds = new Set<string>();
-    let updatedCount = 0;
-    const nextRecords = records.map((record) => {
-      const segmentId = parseSegmentIdFromMarker(record.s1);
-      const name = segmentId ? nameBySegmentId.get(segmentId) : undefined;
-      if (!segmentId || !name) return record;
-      foundSegmentIds.add(segmentId);
-      // 同一个名字是严格幂等操作：尤其不能把已经由云端确认的 isSynced=1
-      // 重新打回待上传。只有记录名真实变化时才需要重新进入云同步队列。
-      if (record.name === name) return record;
-      updatedCount += 1;
-      // 记录名变化也必须重新进入番茄 Todo 的云同步队列。
-      return { ...record, name, isSynced: 0 };
-    });
-
-    // 未写入过的 segment 只保留 FocusLink 本地的手动选择，不创建空 PCRecord。
-    if (foundSegmentIds.size === 0 || updatedCount === 0) {
-      return {
-        ok: true,
-        foundSegmentIds: [...foundSegmentIds],
-        updatedCount: 0,
-      };
-    }
-
-    const backupPath = backupDb(dbPath);
-    db.PCRecord = nextRecords;
-    saveTomatodoDb(dbPath, db);
-    logger.info('tomatodoAdapter', 'record subjects updated', {
-      segmentIds: [...foundSegmentIds],
-      updatedCount,
-      backupPath,
-    });
-    return {
-      ok: true,
-      foundSegmentIds: [...foundSegmentIds],
-      updatedCount,
-      backupPath: backupPath ?? undefined,
-    };
-  } catch (err) {
-    logger.error('tomatodoAdapter', 'updateTomatodoRecordSubjects failed', err);
-    return {
-      ok: false,
-      foundSegmentIds: [],
-      updatedCount: 0,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+/** 会话级：就地改一条专注会话记录的记录名（学科或自定义标题）。 */
+export function updateTomatodoSessionRecordNames(
+  dbPath: string,
+  updates: readonly UpdateTomatodoSessionRecordNameInput[],
+): UpdateTomatodoRecordNamesResult {
+  return applyRecordNameUpdates(
+    dbPath,
+    updates
+      .filter((update) => Boolean(update.sessionId))
+      .map((update) => ({
+        marker: getTomatodoSessionMarker(update.sessionId),
+        key: update.sessionId,
+        name: normalizeTomatodoRecordName(update.recordName) ?? update.subject,
+      })),
+    'session record names updated',
+  );
 }
 
 /** 更新单个已同步 segment 的番茄 Todo 学科名。 */
@@ -423,14 +575,33 @@ export function updateTomatodoRecordSubjectBySegmentId(
 
 /** 按 segmentId 删除番茄 Todo 中对应的 PCRecord（删除联动） */
 export function deleteTomatodoRecordBySegmentId(dbPath: string, segmentId: string): DeleteResult {
+  const marker = getTomatodoMarker(segmentId);
+  return deleteTomatodoRecordsByMarker(dbPath, (s1) => s1.includes(marker), { segmentId });
+}
+
+/** 按 sessionId 删除番茄 Todo 中对应的 PCRecord（会话级删除联动）。 */
+export function deleteTomatodoRecordBySessionId(dbPath: string, sessionId: string): DeleteResult {
+  const marker = getTomatodoSessionMarker(sessionId);
+  return deleteTomatodoRecordsByMarker(dbPath, (s1) => s1.includes(marker), { sessionId });
+}
+
+/** 按 record id 删除一条 PCRecord（本地清理；番茄客户端没有远端删除接口）。 */
+export function deleteTomatodoRecordById(dbPath: string, recordId: number): DeleteResult {
+  return deleteTomatodoRecordsByMarker(dbPath, (_s1, record) => Number(record.id) === recordId, {
+    recordId,
+  });
+}
+
+function deleteTomatodoRecordsByMarker(
+  dbPath: string,
+  shouldDelete: (s1: string, record: TomatodoPCRecord) => boolean,
+  logFields: Record<string, unknown>,
+): DeleteResult {
   try {
     const db = loadTomatodoDb(dbPath);
     const records = db.PCRecord ?? [];
     const before = records.length;
-    const remaining = records.filter((r) => {
-      const sid = parseSegmentIdFromMarker(r.s1);
-      return sid !== segmentId;
-    });
+    const remaining = records.filter((r) => !shouldDelete(r.s1 ?? '', r));
     if (remaining.length === before) {
       return { ok: true, deletedCount: 0 };
     }
@@ -438,13 +609,13 @@ export function deleteTomatodoRecordBySegmentId(dbPath: string, segmentId: strin
     db.PCRecord = remaining;
     saveTomatodoDb(dbPath, db);
     logger.info('tomatodoAdapter', 'record deleted', {
-      segmentId,
+      ...logFields,
       deletedCount: before - remaining.length,
       backupPath,
     });
     return { ok: true, deletedCount: before - remaining.length };
   } catch (err) {
-    logger.error('tomatodoAdapter', 'deleteTomatodoRecordBySegmentId failed', err);
+    logger.error('tomatodoAdapter', 'delete tomatodo record failed', err);
     return {
       ok: false,
       deletedCount: 0,
@@ -474,7 +645,8 @@ export function migrateLegacyTomatodoRecords(
     const db = loadTomatodoDb(dbPath);
     let updatedCount = 0;
     const next = (db.PCRecord ?? []).map((record) => {
-      if (!parseSegmentIdFromMarker(record.s1)) return record;
+      // 只处理纯片段级的历史记录；带会话级 marker 的记录属于 2026-10-13 起的新口径，不在迁移范围内。
+      if (parseTomatodoMarker(record.s1)?.kind !== 'segment') return record;
       const name = record.name === '杂' ? '学习' : record.name;
       const alreadyMigrated = String(record.s9 ?? '').includes(TOMATODO_CLOUD_V053_MARKER);
       if (alreadyMigrated && name === record.name) return record;

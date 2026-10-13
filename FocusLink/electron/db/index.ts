@@ -66,10 +66,49 @@ function runMigrations(database: Database.Database): void {
     logger.info('database', 'migration: added focus_segments.tomatodo_subject');
   }
   // focus_segments.tomatodo_record_name：番茄 Todo 记录的自定义标题。
-  // 为空表示沿用“记录名 == 学科名”的旧行为，因此这是一次纯增量迁移，无需回填。
+  // v1.6.1 及以前番茄记录的口径挂在片段上；2026-10-13 起「一次专注会话 = 一条番茄记录」，
+  // 学科与标题迁移到 focus_sessions。片段上的旧列保留（SQLite 删列代价高），只作一次性回填来源。
   if (!hasCol('focus_segments', 'tomatodo_record_name')) {
     database.exec('ALTER TABLE focus_segments ADD COLUMN tomatodo_record_name TEXT');
     logger.info('database', 'migration: added focus_segments.tomatodo_record_name');
+  }
+  const addedSessionTomatodoSubject = !hasCol('focus_sessions', 'tomatodo_subject');
+  if (addedSessionTomatodoSubject) {
+    database.exec('ALTER TABLE focus_sessions ADD COLUMN tomatodo_subject TEXT');
+    logger.info('database', 'migration: added focus_sessions.tomatodo_subject');
+  }
+  const addedSessionTomatodoRecordName = !hasCol('focus_sessions', 'tomatodo_record_name');
+  if (addedSessionTomatodoRecordName) {
+    database.exec('ALTER TABLE focus_sessions ADD COLUMN tomatodo_record_name TEXT');
+    logger.info('database', 'migration: added focus_sessions.tomatodo_record_name');
+  }
+  // 回填只在真正新增这两列的那一次启动执行。若每次都跑，用户清空标题后会被片段上的旧值复活。
+  if (addedSessionTomatodoSubject || addedSessionTomatodoRecordName) {
+    const backfilled = database
+      .prepare(
+        `UPDATE focus_sessions SET
+           tomatodo_subject = (
+             SELECT s.tomatodo_subject FROM focus_segments s
+             WHERE s.session_id = focus_sessions.id AND s.tomatodo_subject IS NOT NULL
+             ORDER BY s.started_at ASC LIMIT 1
+           ),
+           tomatodo_record_name = (
+             SELECT s.tomatodo_record_name FROM focus_segments s
+             WHERE s.session_id = focus_sessions.id AND s.tomatodo_record_name IS NOT NULL
+             ORDER BY s.started_at ASC LIMIT 1
+           )
+         WHERE EXISTS (
+           SELECT 1 FROM focus_segments s
+           WHERE s.session_id = focus_sessions.id
+             AND (s.tomatodo_subject IS NOT NULL OR s.tomatodo_record_name IS NOT NULL)
+         )`,
+      )
+      .run();
+    if (backfilled.changes > 0) {
+      logger.info('database', 'migration: backfilled focus_sessions tomatodo assignment', {
+        sessions: backfilled.changes,
+      });
+    }
   }
   if (!hasCol('tasks_cache', 'parent_id')) {
     database.exec('ALTER TABLE tasks_cache ADD COLUMN parent_id TEXT');
@@ -589,6 +628,44 @@ export function setSegmentTomatodoRecordName(segmentId: string, recordName: stri
   );
 }
 
+/**
+ * 设置会话的番茄 Todo 学科分类（手动选择）。
+ * 记录粒度是会话，所以学科与标题都挂在 focus_sessions 上，不再写片段列。
+ */
+export function setSessionTomatodoSubject(sessionId: string, subject: string | null): number {
+  const db = getDb();
+  const result = db
+    .prepare('UPDATE focus_sessions SET tomatodo_subject = ?, updated_at = ? WHERE id = ?')
+    .run(subject, Date.now(), sessionId);
+  return Number(result.changes ?? 0);
+}
+
+/** 设置会话的番茄 Todo 自定义记录标题。null 表示清除，写入番茄 Todo 的记录名回落到学科名。 */
+export function setSessionTomatodoRecordName(sessionId: string, recordName: string | null): number {
+  const db = getDb();
+  const result = db
+    .prepare('UPDATE focus_sessions SET tomatodo_record_name = ?, updated_at = ? WHERE id = ?')
+    .run(recordName, Date.now(), sessionId);
+  return Number(result.changes ?? 0);
+}
+
+/** 读取会话的番茄 Todo 手动分配（学科 + 自定义标题）；会话不存在返回 null。 */
+export function getSessionTomatodoAssignment(sessionId: string): {
+  subject: TomatodoSubject | null;
+  recordName: string | null;
+} | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT tomatodo_subject, tomatodo_record_name FROM focus_sessions WHERE id = ?')
+    .get(sessionId) as
+    { tomatodo_subject: string | null; tomatodo_record_name: string | null } | undefined;
+  if (!row) return null;
+  return {
+    subject: (row.tomatodo_subject as TomatodoSubject | null) ?? null,
+    recordName: row.tomatodo_record_name ?? null,
+  };
+}
+
 // ============ Pause ============
 
 export function insertPause(pause: PauseEvent): void {
@@ -883,6 +960,8 @@ interface SessionRow {
   note: string | null;
   created_at: number;
   updated_at: number;
+  tomatodo_subject: string | null;
+  tomatodo_record_name: string | null;
 }
 function rowToSession(r: SessionRow): FocusSession {
   return {
@@ -900,6 +979,8 @@ function rowToSession(r: SessionRow): FocusSession {
     note: r.note,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    tomatodoSubject: (r.tomatodo_subject as TomatodoSubject | null) ?? null,
+    tomatodoRecordName: r.tomatodo_record_name ?? null,
   };
 }
 

@@ -166,8 +166,13 @@ const api = {
       ipcRenderer.invoke('tomatodo:set-subject', segmentId, subject),
     setSubjects: (segmentIds: string[], subject: TomatodoSubject | null) =>
       ipcRenderer.invoke('tomatodo:set-subjects', segmentIds, subject),
+    setSessionSubject: (sessionId: string, subject: TomatodoSubject | null) =>
+      ipcRenderer.invoke('tomatodo:set-session-subject', sessionId, subject),
     setRecordName: (segmentId: string, recordName: string | null) =>
       ipcRenderer.invoke('tomatodo:set-record-name', segmentId, recordName),
+    setSessionRecordName: (sessionId: string, recordName: string | null) =>
+      ipcRenderer.invoke('tomatodo:set-session-record-name', sessionId, recordName),
+    deleteRecord: (sessionId: string) => ipcRenderer.invoke('tomatodo:delete-record', sessionId),
     uploadPending: () => ipcRenderer.invoke('tomatodo:upload-pending'),
     pendingCount: () => ipcRenderer.invoke('tomatodo:pending-count'),
     pendingSummary: () => ipcRenderer.invoke('tomatodo:pending-summary'),

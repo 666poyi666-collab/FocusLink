@@ -337,13 +337,16 @@ export interface TomatodoSubjectSetResult {
   error?: string;
 }
 
+export type TomatodoSyncState =
+  'not-written' | 'local-pending' | 'confirmation-pending' | 'expired-history' | 'cloud-synced';
+
 export interface TomatodoSegmentStatus {
   segmentId: string;
+  /** 兼容旧渲染层；现在只在番茄 Todo 云端已确认时为 true。 */
   synced: boolean;
   writtenLocally: boolean;
   cloudSynced: boolean;
-  state:
-    'not-written' | 'local-pending' | 'confirmation-pending' | 'expired-history' | 'cloud-synced';
+  state: TomatodoSyncState;
   subject: TomatodoSubject;
   source: 'manual' | 'auto' | 'fallback';
   /** 最终会写入 PCRecord.name 的字符串：自定义标题优先，否则等于 subject。 */
@@ -352,9 +355,26 @@ export interface TomatodoSegmentStatus {
   customRecordName: string | null;
 }
 
+/**
+ * 番茄 Todo 同步状态：一次专注会话 = 一条番茄记录。
+ * `segments` 是兼容旧渲染层的镜像视图，每个片段都指向同一条会话级记录。
+ */
 export interface TomatodoSyncStatus {
   enabled: boolean;
   dbPath: string;
+  sessionId: string;
+  subject: TomatodoSubject;
+  source: 'manual' | 'auto' | 'fallback';
+  /** 最终会写入 PCRecord.name 的字符串：自定义标题优先，否则等于 subject。 */
+  recordName: string;
+  /** 用户自定义标题；null 表示未设置（记录名 == 学科名）。 */
+  customRecordName: string | null;
+  /** 将写入番茄 Todo 的整数分钟（与界面显示的会话时长一致）。 */
+  minutes: number;
+  writtenLocally: boolean;
+  cloudSynced: boolean;
+  recordId?: number;
+  state: TomatodoSyncState;
   segments: TomatodoSegmentStatus[];
 }
 
@@ -578,6 +598,18 @@ export interface FocusLinkAPI {
     ): Promise<TomatodoSubjectSetResult>;
     /** 保存自定义记录标题；传 null 表示清除，记录名回落到学科名。 */
     setRecordName(segmentId: string, recordName: string | null): Promise<TomatodoSubjectSetResult>;
+    /** 会话级：一次专注 = 一条记录，学科写入该会话全部片段。 */
+    setSessionSubject(
+      sessionId: string,
+      subject: TomatodoSubject | null,
+    ): Promise<TomatodoSubjectSetResult>;
+    /** 会话级自定义记录标题；传 null 表示清除，记录名回落到学科名。 */
+    setSessionRecordName(
+      sessionId: string,
+      recordName: string | null,
+    ): Promise<TomatodoSubjectSetResult>;
+    /** 删除该会话对应的番茄记录（本机 marker 清理；番茄客户端没有远端删除接口）。 */
+    deleteRecord(sessionId: string): Promise<{ ok: boolean; deletedCount: number }>;
     uploadPending(): Promise<PendingTomatodoUploadResult>;
     pendingCount(): Promise<number>;
     pendingSummary(): Promise<TomatodoUploadQueueSummary>;

@@ -547,15 +547,16 @@ export async function writeTomatodoRecordThroughBridge(
 
 /**
  * 在番茄 Todo 正运行时用其原生 API 更新记录名（自定义标题或学科名）并请求重新上传。
- * recordName 是最终写入 PCRecord.name 的字符串，调用方负责决定它是标题还是学科。
+ * `marker` 是完整 marker 字符串：片段级 `[FocusLink:tomatodo:segment:<id>]`
+ * 或会话级 `[FocusLink:tomatodo:session:<id>]`；recordName 是最终写入 PCRecord.name 的字符串。
  */
 export async function updateTomatodoRecordNameThroughBridge(
-  segmentId: string,
+  marker: string,
   recordName: string,
   options: TomatodoBridgeWriteOptions = {},
 ): Promise<TomatodoBridgeWriteResult> {
   const syncToPhone = options.syncToPhone === true;
-  const marker = JSON.stringify(`[FocusLink:tomatodo:segment:${segmentId}]`);
+  const markerJson = JSON.stringify(marker);
   const nameJson = JSON.stringify(recordName);
   const phoneMethodsJson = JSON.stringify(TOMATODO_PHONE_IDENTITY_METHODS);
   const expression = `
@@ -570,9 +571,10 @@ export async function updateTomatodoRecordNameThroughBridge(
           return typeof api[name] === 'function';
         });
         var records = await api.getAllRecords();
-        var record = records.find(function (item) {
-          return String(item.s1 || '').indexOf(${marker}) >= 0;
-        }) || null;
+        var matched = records.filter(function (item) {
+          return String(item.s1 || '').indexOf(${markerJson}) >= 0;
+        });
+        var record = matched.length > 0 ? matched[matched.length - 1] : null;
         if (!record) return JSON.stringify({
           ok: true, recordFound: false, localWritten: false, localChanged: false,
           uploadConfirmed: false, skipped: true
@@ -675,12 +677,13 @@ export async function updateTomatodoRecordNameThroughBridge(
 
 /**
  * 删除联动交给番茄 Todo 本地数据库 API，避免运行中直接改文件被回写覆盖。
+ * `marker` 是完整 marker 字符串（片段级或会话级），匹配到的记录全部删除。
  * 当前客户端未暴露专注记录远端删除能力，因此返回值明确限定为本地清理。
  */
 export async function deleteTomatodoRecordThroughBridge(
-  segmentId: string,
+  marker: string,
 ): Promise<TomatodoBridgeDeleteResult> {
-  const marker = JSON.stringify(`[FocusLink:tomatodo:segment:${segmentId}]`);
+  const markerJson = JSON.stringify(marker);
   const expression = `
     (async function () {
       try {
@@ -690,7 +693,7 @@ export async function deleteTomatodoRecordThroughBridge(
         }
         var records = await api.getAllRecords();
         var matches = records.filter(function (item) {
-          return String(item.s1 || '').indexOf(${marker}) >= 0;
+          return String(item.s1 || '').indexOf(${markerJson}) >= 0;
         });
         for (var record of matches) await api.deleteRecord(record.id);
         return JSON.stringify({ ok: true, deletedCount: matches.length });

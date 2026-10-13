@@ -22,6 +22,12 @@ export const ALL_SUBJECTS: readonly TomatodoSubject[] = [...TOMATODO_SUBJECTS, '
  * 超长标题会挤坏它的排版；这里在写入前截断，而不是让外部库去处理任意长度的字符串。
  */
 export const TOMATODO_RECORD_NAME_MAX_LENGTH = 40;
+/**
+ * 番茄 To-do 的 PCRecord.time 是整数分钟，且它在列表里按截断显示。真值写成小数会让
+ * 「番茄显示 7 分钟、FocusLink 显示 8 分钟」这种同一条记录两个数打架，所以先取整再写。
+ * 不足 1 分钟的会话没有可表达的时长，按 1 分钟记录，避免写出 0 分钟的空记录。
+ */
+export const TOMATODO_MIN_RECORD_MINUTES = 1;
 export const TOMATODO_SUBJECT_OPTIONS = [
   { value: '语文', shortLabel: '语' },
   { value: '数学', shortLabel: '数' },
@@ -235,6 +241,17 @@ export function resolveSegmentRecordName(
 }
 
 /**
+ * 解析某会话最终写入 PCRecord.name 的字符串。
+ * 2026-10-13 起番茄记录的粒度是会话，所以学科与标题都以会话为准。
+ */
+export function resolveSessionRecordName(
+  session: { tomatodoRecordName?: string | null },
+  subject: TomatodoSubject,
+): string {
+  return normalizeTomatodoRecordName(session.tomatodoRecordName) ?? subject;
+}
+
+/**
  * 从标题、任务正文或标签等候选文本中推断六大学科。没有足够明确的词时返回 null，
  * 由调用方使用配置的兜底学科；不会把不确定文本强行归到任一学科。
  */
@@ -280,6 +297,7 @@ function findFirstRuleMatch(
   return best?.subject ?? null;
 }
 
+/** 片段级 marker：v1.6.1 之前每条 PCRecord 对应一个 focus_segment，历史记录仍是这种形状。 */
 export function getTomatodoMarker(segmentId: string): string {
   return `[FocusLink:tomatodo:segment:${segmentId}]`;
 }
@@ -288,6 +306,39 @@ export function parseSegmentIdFromMarker(s1: string | null | undefined): string 
   if (!s1) return null;
   const match = /\[FocusLink:tomatodo:segment:([^\]]+)\]/.exec(s1);
   return match ? match[1] : null;
+}
+
+/**
+ * 会话级 marker：一条 PCRecord 对应一次专注会话（`focus_sessions` 一行）。
+ * 产品路径自 2026-10-13 起只写这种 marker；片段级 marker 仅用于识别历史记录。
+ */
+export function getTomatodoSessionMarker(sessionId: string): string {
+  return `[FocusLink:tomatodo:session:${sessionId}]`;
+}
+
+export function parseSessionIdFromMarker(s1: string | null | undefined): string | null {
+  if (!s1) return null;
+  const match = /\[FocusLink:tomatodo:session:([^\]]+)\]/.exec(s1);
+  return match ? match[1] : null;
+}
+
+export type TomatodoMarkerKind = 'segment' | 'session';
+
+export interface ParsedTomatodoMarker {
+  kind: TomatodoMarkerKind;
+  id: string;
+}
+
+/**
+ * 识别一条 PCRecord 是 FocusLink 写的哪一级记录。
+ * 同时要能读两种 marker：库里 442 条历史记录都是片段级，重传与新写入是会话级。
+ */
+export function parseTomatodoMarker(s1: string | null | undefined): ParsedTomatodoMarker | null {
+  const sessionId = parseSessionIdFromMarker(s1);
+  if (sessionId) return { kind: 'session', id: sessionId };
+  const segmentId = parseSegmentIdFromMarker(s1);
+  if (segmentId) return { kind: 'segment', id: segmentId };
+  return null;
 }
 
 export interface TomatodoSegmentLike {
@@ -395,6 +446,127 @@ export function buildTomatodoRecordFromSegment(
 function round(value: number, digits: number): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+/**
+ * FocusLink 界面显示给用户的分钟数 —— 与 `formatMinutes` 用同一个 `Math.round(ms / 60000)`。
+ * 番茄记录必须写这个数，不能写毫秒真值：番茄 To-do 自己按截断显示小数，两边会给出不同结果。
+ */
+export function tomatodoRecordMinutes(activeElapsedMs: number): number {
+  const ms = Number(activeElapsedMs);
+  if (!Number.isFinite(ms) || ms <= 0) return TOMATODO_MIN_RECORD_MINUTES;
+  return Math.max(TOMATODO_MIN_RECORD_MINUTES, Math.round(ms / 60_000));
+}
+
+export interface BuildTomatodoSessionRecordInput {
+  sessionId: string;
+  subject: TomatodoSubject;
+  /** 可选自定义标题；省略或为空时记录名严格等于 subject。 */
+  recordName?: string | null;
+  startedAt: number;
+  /** 该会话的累计专注毫秒（不含暂停）。 */
+  activeElapsedMs: number;
+}
+
+/**
+ * 一次专注会话 → 一条番茄记录。
+ *
+ * 与片段级 `buildTomatodoRecord` 的关键区别：
+ * - marker 是会话 id，幂等判据变成「这次专注是否已经写过一条」；
+ * - time 取界面显示的整数分钟，createDate 由「起点 + 显示时长」算出，
+ *   会话中间的暂停既不进 time 也不推到终点，两边口径才一致。
+ */
+export function buildTomatodoSessionRecord(
+  input: BuildTomatodoSessionRecordInput,
+): Omit<TomatodoPCRecord, 'id'> {
+  const minutes = tomatodoRecordMinutes(input.activeElapsedMs);
+  return {
+    name: normalizeTomatodoRecordName(input.recordName) ?? input.subject,
+    time: minutes,
+    startDate: input.startedAt,
+    createDate: input.startedAt + minutes * 60_000,
+    i1: 0,
+    i2: 1,
+    i3: 0,
+    i4: 0,
+    i5: 0,
+    i6: 0,
+    i7: 0,
+    i8: 0,
+    i9: 0,
+    s1: getTomatodoSessionMarker(input.sessionId),
+    s2: '',
+    s3: '',
+    s4: '',
+    s5: '',
+    s6: '',
+    s7: '',
+    s8: '',
+    s9: TOMATODO_CLOUD_V053_MARKER,
+    isComplete: 1,
+    // 新记录必须保持待同步；只有番茄 To-do 的云上传接口确认成功后才能置 1。
+    isSynced: 0,
+    isTransfer: 0,
+    boundDeviceId: null,
+  };
+}
+
+export interface TomatodoSessionSourceSegment {
+  id: string;
+  startedAt: number;
+  title?: string | null;
+  tomatodoSubject: TomatodoSubject | null;
+  tomatodoRecordName?: string | null;
+}
+
+export function shouldSyncSessionToTomatodo(session: {
+  endedAt: number | null;
+  activeElapsedMs: number;
+}): boolean {
+  return session.endedAt !== null && session.activeElapsedMs > 0;
+}
+
+/**
+ * 决定整条会话记录用谁的学科与标题。
+ *
+ * 优先级：带自定义标题的片段 → 手动选过学科的片段 → 最早开始的片段。
+ * 这条规则保证用户在任何一条片段上做过的显式选择都能生效，而不是被「最早片段」吃掉。
+ */
+export function pickTomatodoSessionSourceSegment<T extends TomatodoSessionSourceSegment>(
+  segments: readonly T[],
+): T | null {
+  if (segments.length === 0) return null;
+  const ordered = [...segments].sort(
+    (a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id),
+  );
+  const withRecordName = ordered.find(
+    (segment) => normalizeTomatodoRecordName(segment.tomatodoRecordName) !== null,
+  );
+  if (withRecordName) return withRecordName;
+  const withManualSubject = ordered.find(
+    (segment) =>
+      (segment.tomatodoSubject as string | null) === '杂' ||
+      isTomatodoSubject(segment.tomatodoSubject),
+  );
+  return withManualSubject ?? ordered[0];
+}
+
+export function hasTomatodoSessionMarker(
+  record: { s1?: string | null },
+  sessionId: string,
+): boolean {
+  return (record.s1 ?? '').includes(getTomatodoSessionMarker(sessionId));
+}
+
+export function collectSyncedSessionIds(
+  records: ReadonlyArray<{ s1?: string | null }>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const r of records) {
+    const sid = parseSessionIdFromMarker(r.s1);
+    if (sid) ids.add(sid);
+  }
+  return ids;
 }
 
 export function hasTomatodoMarker(record: { s1?: string | null }, segmentId: string): boolean {

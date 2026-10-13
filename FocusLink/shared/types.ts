@@ -55,6 +55,13 @@ export interface FocusSession {
   segmentCount?: number;
   linkedSegmentCount?: number;
   ticktickLinkedSegmentCount?: number;
+  /**
+   * 番茄 Todo 手动学科分类。记录粒度是会话（一次专注 = 一条番茄记录），
+   * 所以 v1.6.1 之后这两项挂在会话上；片段上的同名列只保留为旧数据来源。
+   */
+  tomatodoSubject?: TomatodoSubject | null;
+  /** 番茄 Todo 自定义记录标题；为空表示记录名回落到学科名。 */
+  tomatodoRecordName?: string | null;
 }
 
 export type SessionStatus = 'active' | 'finished' | 'aborted';

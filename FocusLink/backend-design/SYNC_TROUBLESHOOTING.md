@@ -386,3 +386,33 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - 云上传成功 = `cloudSyncUploadRecord` 返回 success 且回写 `isSynced=1`，即「上传已确认」，**不是独立云端回读**（`cloudRecordReadbackSupported=false`）。
 - 手机投递在缺少该 API 的客户端上**无法验证**，因此 durable 队列不会被 `completeDurableTomatodoSegments` 清除，状态如实停在 `confirmation-pending`。把「客户端没有手机通道」直接视为「不需要手机投递」会改变产品语义，**待决，勿擅改**。
 - `syncToPhone:false` 时返回的 `phoneSyncConfirmed:true` 语义是「本次没有请求手机投递」，**不能读成手机投递已验证**。
+
+## FL-SYNC-020：番茄 To-do 里一次专注只同步了几分钟（记录粒度与时长口径）
+
+### 含义
+
+番茄 Todo 里 FocusLink 记录的时长与专注列表显示的分钟数不一致（例如列表显示 1 小时 54 分钟，番茄里那条却是 7 分钟），或一次专注会话在番茄里出现好几条记录。
+
+### 根因（2026-10-13 修复，v1.6.1 未升版本）
+
+1. 记录粒度是**片段**（marker `[FocusLink:tomatodo:segment:<id>]`），一次会话里每段打断/继续都单独成条，时长只算该片段。
+2. `PCRecord.time` 写毫秒真值（`activeElapsedMs / 60000` 保留 6 位小数，如 `7.5046`）：番茄客户端显示时**截断**成 7，FocusLink 的 `formatMinutes`（`src/lib/time.ts:30-37`）用 `Math.round` 得到 8，同一条记录两边读数不同。
+3. `createDate` 取片段结束时刻，把会话中间的暂停也算进跨度。
+
+### 处理步骤
+
+1. 先判 marker 种类（`parseTomatodoMarker`）：`segment:` 是旧口径记录，`session:` 是新口径。
+2. 新口径：**一条番茄记录 = 一次专注会话**；`time = Math.max(1, Math.round(会话 activeElapsedMs / 60000))`（与界面 `formatMinutes` 同一取整）；`startDate = 会话 startedAt`；`createDate = startedAt + minutes * 60000`，**不把会话中间暂停推给终点**。用 `buildTomatodoSessionRecord` 构造，marker 为 `[FocusLink:tomatodo:session:<id>]`。
+3. 会话的学科/标题取 `focus_sessions.tomatodo_subject` / `tomatodo_record_name`；来源片段由 `pickTomatodoSessionSourceSegment` 决定（带自定义标题 → 手动学科 → 最早片段）。**不要**回头改统计页口径去对齐：统计卡片的分钟是按任务把片段相加，与专注记录口径本来就不同源（用户 2026-10-13 明确要求各按各的）。
+4. 就地修复历史记录：按 marker 找记录，改 `name` / `time` / `startDate` / `createDate` / `s1` 并写 `isSynced=0` 重新上传。**不要**改 `startDate` 去骗 7 天窗口（见 FL-SYNC-009）。
+5. 上传：`cloudSyncUploadRecord({ records: [record], updateTime: Date.now() })` —— 传裸 record 会返回 `{ success: false }`。该接口有节流，一次运行里第二条起常失败，需间隔数秒重试，成功后把 `isSynced` 回写为 1。
+
+### 验证
+
+`tests/tomatodoSyncService.test.ts`（会话级重写，34 项）锁住：`450276ms → 8`、`6842106ms → 114`、`0 / -5 → 1`；同一会话多片段只写一条记录；`getTomatodoSyncStatus` 只读不写外部记录、不清 durable 队列；桥返回失败不得被算成「上传已确认」。
+
+### 边界
+
+- durable 队列键从 `tomatodo.pendingSegmentIdsV060` 改为 `tomatodo.pendingSessionIdsV161`（值仍是扁平 `string[]`，装 session id）；旧键在下次启动时由 `settingsStore` 一次性迁移清空，旧片段级意图**不重放**（重放会为同一会话写出第二条记录）。
+- 记录粒度改为会话后，**跨设备同步不再携带学科与标题**（`shared/sync/deviceProtocol.ts` 的片段白名单没有会话级列）。本轮 PC-only，未改协议。
+- 旧的片段级记录保留在本机、保持未同步、不再重试；`remoteDeleteSupported=false`，本地删除不等于远端清理。
