@@ -8,7 +8,8 @@
  * 因此 `tomatodo.autoSyncEnabled` 默认关闭，本工具是唯一补写入口。
  *
  * 用法（在 FocusLink/ 下执行，必须用 Electron 运行，因为需要 userData 与 SQLite）：
- *   electron dist-selftest/tomatodo-approval-sync.cjs --check [--hours 24]
+ *   electron dist-selftest/tomatodo-approval-sync.cjs --check [--hours N]
+ *     （默认窗口 = 今天本地零点起，只看今天和以后；`--hours 72` 可显式回看）
  *   electron dist-selftest/tomatodo-approval-sync.cjs --write --session <id> \
  *       [--subject 数学] [--name 数学错题回顾] [--launch] [--dry-run]
  *
@@ -65,7 +66,8 @@ interface CliOptions {
 function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     mode: 'check',
-    hours: 24,
+    // 0 = 默认窗口「今天（本地零点起）」，只看今天和以后，不翻旧账。
+    hours: 0,
     sessionId: null,
     subject: null,
     recordName: null,
@@ -143,6 +145,12 @@ interface CheckRow {
   alreadyUploaded: boolean;
 }
 
+/** 本地零点（今天开始）——默认核对窗口，只看今天和以后，不翻旧账。 */
+function startOfLocalToday(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
 /** 只读核对：把 SQLite 与番茄库的当前事实合起来，不做任何写操作。 */
 function collectRows(hours: number): {
   rows: CheckRow[];
@@ -151,7 +159,7 @@ function collectRows(hours: number): {
 } {
   const settings = getSettings();
   const dbPath = resolveTomatodoDbPath(settings.tomatodo?.dbPath ?? '');
-  const since = Date.now() - hours * 3600 * 1000;
+  const since = hours > 0 ? Date.now() - hours * 3600 * 1000 : startOfLocalToday();
   const sessions = listSessions(200).filter((session) => session.startedAt >= since);
   const rows: CheckRow[] = [];
   let activeRow: CheckRow | null = null;
@@ -200,7 +208,8 @@ function printCheck(
   const synced = finished.filter((row) => row.alreadyUploaded);
   const other = finished.filter((row) => !row.needsApproval && !row.alreadyUploaded);
 
-  process.stdout.write(`=== 番茄同步核对（最近 ${hours} 小时）${formatClock(Date.now())} ===\n`);
+  const windowLabel = hours > 0 ? `最近 ${hours} 小时` : '今天（本地零点起）';
+  process.stdout.write(`=== 番茄同步核对（${windowLabel}）${formatClock(Date.now())} ===\n`);
   process.stdout.write(`番茄库：${dbPath}\n`);
 
   if (activeRow) {
