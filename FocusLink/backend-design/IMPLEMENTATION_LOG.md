@@ -18,6 +18,7 @@
 - **门禁**：`npm run format:check` / `typecheck`（含 `typecheck:cloudflare`）/ `lint` / `npm test` 全 PASS。按用户指示**未 bump 版本、未打包、未做三设备安装矩阵**。
 - **真实数据落地（2026-10-13 12:2x，本机 `%APPDATA%\tomatodo\tomatodo_db.json`）**：今天的旧片段级记录**就地**改成会话级 —— PCRecord `483` → `数学错题回顾` / 114 分 / 08:12:24 → 10:06:24（会话 `df0494e1-dcb5-49c4-aad4-a5757f5726a0`）、`486` → `数学错题回顾` / 8 分 / 10:24:08 → 10:32:08（会话 `c2f8754b-445b-4eda-bce1-2e93b2891b07`）、片段级 `485` 已删；三条记录的 `s1` 换成会话 marker，`isSynced=1`。11:02–11:56 的会话 `b8d350df-551e-4f00-b9ca-9b22ce6ecf54`（54 分钟）按用户当轮选择建了 `488` = `英语` / 54 分 / 11:02:13 → 11:56:13。`focuslink.db` 的会话级目录迁移已在本机真实库上执行并被真实读写验证。
 - **遗留与风险**：① **跨设备不再携带学科与标题**（`shared/sync/deviceProtocol.ts` 的片段白名单没有会话级列，`:222` 仍要求 `isTomatodoSubject(item.tomatodoSubject)`），片段旧列只是历史回填来源，用户的会话级选择不会出现在手机端；要让移动端也拿到必须改 `deviceProtocol.ts` / `v2Protocol.ts`（本轮 PC-only，未做）。② 手机直连 API 在本机番茄版本上不存在，durable 队列不会被清除，状态如实停在 `confirmation-pending`（既定不变量）。③ 旧的片段级 PCRecord 全部 `isSynced=0`，属永久不可投递历史，不再重试。④ 本轮**无任何真实安装实测**，用户机器上运行的仍是改动前打包的版本。
+- **环境坑（2026-10-13 实测）**：`npm run dev` 运行期间，用会在同目录创建临时目录的写入方式改 `FocusLink/backend-design/` 下的文件，会让 vite 的文件监听报 `EBUSY: resource busy or locked, watch '…\.SYNC_TROUBLESHOOTING.md.<pid>.<uuid>.tmpdir\SYNC_TROUBLESHOOTING.md.tmp'` 并让整个 dev 进程退出（Electron 一起消失）。改文档类文件应在 dev 未运行时做，或改完重启 dev。
 
 ## 2026-10-13 · `FL-SYNC-20261013-TOMATODO-RECORD-NAME`：番茄 Todo 记录自定义标题（v1.6.1，不升版本）
 
