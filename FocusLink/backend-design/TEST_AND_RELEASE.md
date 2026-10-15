@@ -381,6 +381,13 @@ Foxlink 独立 MCP 的重启门禁还必须验证：停止 `FoxlinkSecureMcpTunn
 
 `win-unpacked/`、`builder-debug.yml`、`*.blockmap`、日志、截图和测试 JSON 都不是发布资产。
 
+6. 本机 `github.com` 不可达时（2026-10-15 实测：直连与系统代理 `127.0.0.1:7897` 都是 `schannel: failed to receive handshake` 或 `TLS connect error: unexpected eof while reading`，ssh `github.com:22` 被 Clash 假 IP `198.18.0.56` 关闭），`electron-builder` 会停在
+   `no custom electronDist provided, unpacking default Electron distribution` 并以 TLS 错误退出。
+   `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/` 只覆盖 `nsis` / `winCodeSign`，**不覆盖 Electron 本体**；离线打包要复用本机已缓存的官方 zip，例如
+   `Expand-Archive "$env:LOCALAPPDATA\electron\Cache\<hash>\electron-v43.4.1-win32-x64.zip" "$env:TEMP\electron-dist-43.4.1"`，
+   再在 `FocusLink/` 下执行 `npx electron-builder --publish never --config.electronDist="$env:TEMP\electron-dist-43.4.1"`。
+   这不能算“干净源码全在线构建”：RELEASE_NOTES 与实施日志必须写明本轮复用了缓存 Electron 离线打包，并且 `main` 未推送，不得把网络不可达写成已发布。
+
 ## 4. Release notes
 
 - 从 [../../.github/RELEASE_NOTES_TEMPLATE.md](../../.github/RELEASE_NOTES_TEMPLATE.md) 复制并填写。

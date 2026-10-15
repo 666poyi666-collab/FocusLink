@@ -127,7 +127,10 @@ async function main() {
   if (!result.hasRail) failures.push('missing .edge-dock');
   if (!result.hasNavButton) failures.push('missing .edge-dock-button');
   if (!result.hasConsole) failures.push('missing .focus-console');
-  if (result.pauseToken !== '211 102 55') failures.push(`pause token ${result.pauseToken}`);
+  // 暂停色以 src/styles/focuslink-2.css 里那层 `--app-pause: 210 67 57`（色相 4° 红）为准；
+  // `211 102 55` 是 2026-08 之前被覆盖成陶土橙的旧值，那轮改回红之后没同步这里，
+  // 于是 1.6.1 与 1.6.2 两个构建都被这条断言误报（实测 1.6.1 同样是 `210 67 57`）。
+  if (result.pauseToken !== '210 67 57') failures.push(`pause token ${result.pauseToken}`);
 
   try {
     await evaluate('window.focuslink.window.quit()');
