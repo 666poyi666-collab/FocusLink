@@ -34,6 +34,7 @@ const RECONNECT_DELAY_MS = 2_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const REQUEST_RETRY_DELAY_MS = 250;
 const REQUEST_MAX_ATTEMPTS = 2;
+const CONTROL_REQUEST_TIMEOUT_MS = 4_000;
 
 class LiveFocusHttpError extends Error {
   constructor(readonly status: number) {
@@ -55,6 +56,8 @@ export class FocusTimerController {
   private reconnectAttempt = 0;
   private acceptedLiveVersion: LiveSnapshotVersion | null = null;
   private liveConnectionKey: string | null = null;
+  private pendingCommand: { key: string; promise: Promise<TimerSnapshot> } | null = null;
+  private completionTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly local: TimerManager) {
     this.snapshot = local.getSnapshot();
@@ -281,7 +284,28 @@ export class FocusTimerController {
     }
   }
 
-  private async send(
+  private send(
+    action: LiveFocusAction,
+    task: LiveFocusTaskContext | null = null,
+    segmentId: string | null = null,
+  ): Promise<TimerSnapshot> {
+    // Mouse, tray and global shortcuts share one command boundary. Repeated toggles
+    // while awaiting the same ACK must not send multiple commands at one revision.
+    const key = JSON.stringify([this.generation, this.snapshot.sessionId, action, task, segmentId]);
+    if (this.pendingCommand) {
+      if (this.pendingCommand.key === key && action !== 'link-task') {
+        return this.pendingCommand.promise;
+      }
+      return Promise.reject(new Error('上一次操作正在确认，请稍后重试'));
+    }
+    const promise = this.sendCommand(action, task, segmentId).finally(() => {
+      if (this.pendingCommand?.promise === promise) this.pendingCommand = null;
+    });
+    this.pendingCommand = { key, promise };
+    return promise;
+  }
+
+  private async sendCommand(
     action: LiveFocusAction,
     task: LiveFocusTaskContext | null = null,
     segmentId: string | null = null,
@@ -324,41 +348,7 @@ export class FocusTimerController {
       throw new Error(this.commandError(value.ack.errorCode));
     }
     if ((action === 'finish' || action === 'abort') && value.ack.completedEntityId) {
-      this.accept(value, false);
-      try {
-        await runDeviceSync();
-      } catch {
-        // A confirmed finish cannot become a failed timer command because ledger delivery failed.
-        // Keep the authority's idle state; never recreate a local session from elapsed estimates.
-        if (!this.isCurrentConnection(connection)) throw new Error('实时同步连接已变更');
-        const imported = getSession(value.ack.completedEntityId);
-        logger.warn('liveFocus', 'completion confirmed; ledger sync pending', {
-          sessionId: value.ack.completedEntityId,
-          imported: Boolean(imported),
-        });
-        this.publish({
-          ...this.toTimerSnapshot(value.snapshot, Date.now()),
-          ledgerImportPending: !imported,
-        });
-        return this.snapshot;
-      }
-      const imported = getSession(value.ack.completedEntityId);
-      if (!imported) {
-        this.publish({
-          ...this.toTimerSnapshot(value.snapshot, Date.now()),
-          ledgerImportPending: true,
-        });
-        return this.snapshot;
-      }
-      if (imported.status === 'finished') {
-        this.publish({ ...current, state: 'finished', sessionId: imported.id });
-        setTimeout(
-          () => this.publish(this.toTimerSnapshot(value.snapshot, Date.now())),
-          FINISHED_PRESENTATION_HOLD_MS,
-        );
-      } else {
-        this.publish(this.toTimerSnapshot(value.snapshot, Date.now()));
-      }
+      this.completeLiveSession(value, current, value.ack.completedEntityId, connection);
     } else {
       this.accept(value);
     }
@@ -404,32 +394,7 @@ export class FocusTimerController {
           previous.sessionId &&
           (previous.state === 'running' || previous.state === 'paused')
         ) {
-          this.accept(next, false);
-          try {
-            await runDeviceSync();
-          } catch {
-            logger.warn('liveFocus', 'remote completion confirmed; ledger sync pending', {
-              sessionId: previous.sessionId,
-            });
-          }
-          if (generation !== this.generation || !this.isCurrentConnection(connection)) return;
-          const imported = getSession(previous.sessionId);
-          if (!imported) {
-            this.publish({
-              ...this.toTimerSnapshot(next.snapshot, Date.now()),
-              ledgerImportPending: true,
-            });
-            continue;
-          }
-          if (imported.status === 'finished') {
-            this.publish({ ...previous, state: 'finished', sessionId: imported.id });
-            setTimeout(
-              () => this.publish(this.toTimerSnapshot(next.snapshot, Date.now())),
-              FINISHED_PRESENTATION_HOLD_MS,
-            );
-          } else {
-            this.publish(this.toTimerSnapshot(next.snapshot, Date.now()));
-          }
+          this.completeLiveSession(next, previous, previous.sessionId, connection);
         } else {
           this.accept(next);
         }
@@ -479,6 +444,61 @@ export class FocusTimerController {
     );
   }
 
+  private completeLiveSession(
+    value: LiveFocusSnapshotResponse,
+    previous: TimerSnapshot,
+    sessionId: string,
+    connection: { endpoint: string; accessToken: string },
+  ): void {
+    if (!this.accept(value, false)) return;
+    const generation = this.generation;
+    const revision = value.snapshot.revision;
+    this.publish({
+      ...this.toTimerSnapshot(value.snapshot, Date.now()),
+      ledgerImportPending: !getSession(sessionId),
+    });
+    // The authority has confirmed the end. Ledger import is background work and
+    // cannot hold the control console, its command lock or the long-poll loop.
+    void (async () => {
+      try {
+        await runDeviceSync();
+      } catch {
+        logger.warn('liveFocus', 'completion confirmed; ledger sync pending', { sessionId });
+      }
+      if (
+        generation !== this.generation ||
+        !this.isCurrentConnection(connection) ||
+        this.liveRevision !== revision ||
+        this.snapshot.state !== 'idle'
+      )
+        return;
+      const imported = getSession(sessionId);
+      if (!imported) return;
+      if (imported.status !== 'finished') {
+        this.publish(this.toTimerSnapshot(value.snapshot, Date.now()));
+        return;
+      }
+      this.publish({ ...previous, state: 'finished', sessionId });
+      if (this.completionTimer) clearTimeout(this.completionTimer);
+      this.completionTimer = setTimeout(() => {
+        this.completionTimer = null;
+        if (
+          generation === this.generation &&
+          this.liveRevision === revision &&
+          this.snapshot.state === 'finished' &&
+          this.snapshot.sessionId === sessionId
+        ) {
+          this.publish(this.toTimerSnapshot(value.snapshot, Date.now()));
+        }
+      }, FINISHED_PRESENTATION_HOLD_MS);
+    })().catch((error) =>
+      logger.warn('liveFocus', 'ledger import follow-up failed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+
   private nextReconnectDelay(): number {
     const delay = Math.min(
       RECONNECT_DELAY_MS * 2 ** Math.min(this.reconnectAttempt, 5),
@@ -496,7 +516,7 @@ export class FocusTimerController {
     });
   }
 
-  private accept(response: LiveFocusSnapshotResponse, publish = true): void {
+  private accept(response: LiveFocusSnapshotResponse, publish = true): boolean {
     if (response.protocolVersion !== LIVE_FOCUS_PROTOCOL_VERSION)
       throw new Error('实时协议版本不兼容');
     const incomingVersion = liveSnapshotVersion(response);
@@ -505,7 +525,7 @@ export class FocusTimerController {
         currentRevision: this.acceptedLiveVersion?.revision ?? null,
         incomingRevision: incomingVersion.revision,
       });
-      return;
+      return false;
     }
     this.acceptedLiveVersion = incomingVersion;
     const observedAt = Date.now();
@@ -517,6 +537,7 @@ export class FocusTimerController {
       liveRevision: this.liveRevision,
       liveState: response.snapshot.state,
     });
+    return true;
   }
 
   private toTimerSnapshot(snapshot: LiveFocusSnapshot, observedAt: number): TimerSnapshot {
@@ -592,6 +613,8 @@ export class FocusTimerController {
   }
 
   private stopLiveLoop(): void {
+    if (this.completionTimer) clearTimeout(this.completionTimer);
+    this.completionTimer = null;
     this.abortController?.abort();
     this.abortController = null;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -615,7 +638,14 @@ export class FocusTimerController {
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: init.body,
-      signal,
+      signal: AbortSignal.any([
+        ...(signal ? [signal] : []),
+        AbortSignal.timeout(
+          path.startsWith(LIVE_FOCUS_WAIT_PATH)
+            ? LIVE_FOCUS_MAX_WAIT_MS + 5_000
+            : CONTROL_REQUEST_TIMEOUT_MS,
+        ),
+      ]),
       cache: 'no-store',
       credentials: 'omit',
       redirect: 'error',
@@ -628,6 +658,9 @@ export class FocusTimerController {
       } catch (error) {
         if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
           throw error;
+        }
+        if (requestInit.signal?.aborted) {
+          throw new Error('实时同步请求超时，操作尚未确认；请检查连接后重试');
         }
         if (attempt < REQUEST_MAX_ATTEMPTS) {
           await waitForRetry(signal);

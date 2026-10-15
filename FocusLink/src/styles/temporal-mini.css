@@ -6,7 +6,7 @@
   position: relative;
   overflow: hidden;
   border: 1px solid rgb(var(--app-border-strong));
-  border-radius: 0;
+  border-radius: var(--radius-2xl);
   background: rgb(var(--app-surface));
   color: rgb(var(--app-text));
   box-shadow: none;
@@ -20,6 +20,24 @@
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+.mini-window-shell button,
+.mini-window-shell button * {
+  -webkit-app-region: no-drag;
+}
+
+.mini-command-error {
+  color: rgb(var(--app-danger));
+}
+
+.mini-window-shell[data-command-error] {
+  border-color: rgb(var(--app-danger));
+}
+
+.mini-action-dock button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .mini-state-dot {

@@ -17,6 +17,7 @@ import type { Task } from '@shared/types';
 import { TaskTree, type TaskTreeRowContext } from './TaskTree';
 import { countTaskTree, filterTaskTree } from './taskTreeModel';
 import { useTaskTreeCollapse } from './useTaskTreeCollapse';
+import { readTaskWorkspace, refreshTaskWorkspace } from './taskWorkspaceData';
 
 interface TaskPickerProps {
   onPick: (task: Task | null) => void;
@@ -154,11 +155,15 @@ export function TaskPicker({
   onClear,
   clearLabel = '清除关联',
 }: TaskPickerProps) {
-  const { ticktickTasks, ticktickProjects, setTicktickTasks, setTicktickProjects, addToast } =
-    useStore();
+  const ticktickTasks = useStore((state) => state.ticktickTasks);
+  const ticktickProjects = useStore((state) => state.ticktickProjects);
+  const taskWorkspaceLoaded = useStore((state) => state.taskWorkspaceLoaded);
+  const backgroundRefreshing = useStore((state) => state.taskWorkspaceRefreshing);
+  const backgroundError = useStore((state) => state.taskWorkspaceRefreshError);
+  const addToast = useStore((state) => state.addToast);
   const [query, setQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState('');
-  const [loading, setLoading] = useState(ticktickTasks.length === 0);
+  const [loading, setLoading] = useState(!taskWorkspaceLoaded);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [providerLabel, setProviderLabel] = useState('FocusLink 任务');
   const [closing, setClosing] = useState(false);
@@ -188,29 +193,28 @@ export function TaskPicker({
     hasTasksRef.current = ticktickTasks.length > 0;
   }, [ticktickTasks.length]);
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const result = await window.focuslink.tasks.refresh({ includeCompleted: allowCompleted });
-      if (!result.ok) throw new Error(result.error);
-      setTicktickProjects(result.data.projects);
-      setTicktickTasks(result.data.tasks);
-      setProviderLabel(
-        result.data.provider === 'focuslink-local' ? 'FocusLink 任务' : '已导入任务',
-      );
-    } catch (error) {
-      const message = toErrorMessage(error);
-      if (hasTasksRef.current) {
-        // 已有缓存列表时刷新失败不打断浏览，走 transient 提示
-        addToast(`加载任务失败：${message}`, 'error');
-      } else {
-        setLoadError(message);
+  const loadTasks = useCallback(
+    async (force = false) => {
+      setLoading(force || !useStore.getState().taskWorkspaceLoaded);
+      setLoadError(null);
+      try {
+        const data = force ? await refreshTaskWorkspace(true) : await readTaskWorkspace();
+        setProviderLabel(data.provider === 'focuslink-local' ? 'FocusLink 任务' : '已导入任务');
+        if (!force) void refreshTaskWorkspace().catch(() => undefined);
+      } catch (error) {
+        const message = toErrorMessage(error);
+        if (hasTasksRef.current) {
+          // 已有缓存列表时刷新失败不打断浏览，走 transient 提示
+          addToast(`加载任务失败：${message}`, 'error');
+        } else {
+          setLoadError(message);
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast, allowCompleted, setTicktickProjects, setTicktickTasks]);
+    },
+    [addToast],
+  );
 
   useEffect(() => {
     void loadTasks();
@@ -545,11 +549,11 @@ export function TaskPicker({
           <button
             type="button"
             className="task-refresh-btn"
-            onClick={loadTasks}
-            disabled={loading}
+            onClick={() => void loadTasks(true)}
+            disabled={loading || backgroundRefreshing}
             aria-label="刷新任务"
           >
-            <Icon.Refresh size="sm" spin={loading} />
+            <Icon.Refresh size="sm" spin={loading || backgroundRefreshing} />
           </button>
         </div>
 
@@ -560,6 +564,11 @@ export function TaskPicker({
           role="listbox"
           aria-label="FocusLink 任务列表"
         >
+          {backgroundError && !loadError && (
+            <p className="task-refresh-message" role="status" title={backgroundError}>
+              后台更新失败，正在显示本地任务。可点击刷新重试。
+            </p>
+          )}
           {loading && filteredTree.length === 0 ? (
             <div aria-hidden="true">
               {SKELETON_ROWS.map(([indent, width], index) => (
@@ -582,7 +591,11 @@ export function TaskPicker({
                 <p className="state-block-title">加载任务失败</p>
                 <p className="state-block-desc">{loadError}</p>
                 <div className="state-block-actions">
-                  <button type="button" className="btn-outline" onClick={loadTasks}>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => void loadTasks(true)}
+                  >
                     <Icon.Refresh size="xs" />
                     重试
                   </button>
@@ -598,10 +611,18 @@ export function TaskPicker({
                   </div>
                   <p className="state-block-title">暂无可用任务</p>
                   <p className="state-block-desc">
-                    先在 FocusLink 任务页创建任务，再回到这里选择。
+                    {backgroundRefreshing
+                      ? '本地还没有任务，正在后台更新…'
+                      : backgroundError
+                        ? '本地还没有任务，后台更新失败，请点击刷新重试。'
+                        : '先在 FocusLink 任务页创建任务，再回到这里选择。'}
                   </p>
                   <div className="state-block-actions">
-                    <button type="button" className="btn-outline" onClick={loadTasks}>
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      onClick={() => void loadTasks(true)}
+                    >
                       <Icon.Refresh size="xs" />
                       刷新
                     </button>

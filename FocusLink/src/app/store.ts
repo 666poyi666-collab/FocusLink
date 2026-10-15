@@ -1,6 +1,7 @@
 // Zustand 全局状态 - 计时器快照 + 任务 + 导航
 import { create } from 'zustand';
 import type { TimerSnapshot, Task, Project, AppSettings, SyncQueueItem } from '@shared/types';
+import type { TaskWorkspaceRefreshData } from '@shared/ipc/api';
 
 interface ToastItem {
   id: string;
@@ -14,6 +15,9 @@ interface AppState {
   snapshot: TimerSnapshot | null;
   ticktickTasks: Task[];
   ticktickProjects: Project[];
+  taskWorkspaceLoaded: boolean;
+  taskWorkspaceRefreshing: boolean;
+  taskWorkspaceRefreshError: string | null;
   settings: AppSettings | null;
   syncQueue: SyncQueueItem[];
   view: View;
@@ -24,6 +28,7 @@ interface AppState {
   setSnapshot: (s: TimerSnapshot) => void;
   setTicktickTasks: (t: Task[]) => void;
   setTicktickProjects: (p: Project[]) => void;
+  setTaskWorkspace: (data: TaskWorkspaceRefreshData) => void;
   setSettings: (s: AppSettings) => void;
   setSyncQueue: (q: SyncQueueItem[]) => void;
   setView: (v: View) => void;
@@ -38,6 +43,9 @@ export const useStore = create<AppState>((set) => ({
   snapshot: null,
   ticktickTasks: [],
   ticktickProjects: [],
+  taskWorkspaceLoaded: false,
+  taskWorkspaceRefreshing: false,
+  taskWorkspaceRefreshError: null,
   settings: null,
   syncQueue: [],
   view: 'timer',
@@ -48,6 +56,8 @@ export const useStore = create<AppState>((set) => ({
   setSnapshot: (s) => set({ snapshot: s }),
   setTicktickTasks: (t) => set({ ticktickTasks: t }),
   setTicktickProjects: (p) => set({ ticktickProjects: p }),
+  setTaskWorkspace: (data) =>
+    set({ ticktickTasks: data.tasks, ticktickProjects: data.projects, taskWorkspaceLoaded: true }),
   setSettings: (s) => set({ settings: s }),
   setSyncQueue: (q) => set({ syncQueue: q }),
   setView: (v) => set({ view: v }),

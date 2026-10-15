@@ -34,11 +34,13 @@ window.confirm=(message)=>{window.nativeDialogCalls.push(['confirm',String(messa
 window.alert=(message)=>{window.nativeDialogCalls.push(['alert',String(message)]);};
 window.prompt=(message)=>{window.nativeDialogCalls.push(['prompt',String(message)]);return null;};
 window.focuslink={
+ tomatodo:{status:async()=>({enabled:false})},
  sessions:{list:async()=>sessions,analytics:async(range)=>buildSessionAnalytics(range,{sessions,segments,pauses},day+23*3600000),get:async(id)=>({session:sessions.find(s=>s.id===id),segments:segments.filter(s=>s.sessionId===id),pauses:pauses.filter(s=>s.sessionId===id)}),export:async()=> '# 会话记录',delete:async(id)=>{window.smokeCalls.push(['sessionDelete',id]);const i=sessions.findIndex(s=>s.id===id);if(i>=0)sessions.splice(i,1);for(let n=segments.length-1;n>=0;n-=1)if(segments[n].sessionId===id)segments.splice(n,1);for(let n=pauses.length-1;n>=0;n-=1)if(pauses[n].sessionId===id)pauses.splice(n,1);return {state:'idle'};}},
  timer:{linkSessionTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['session',id,taskId]);Object.assign(sessions.find(s=>s.id===id),{defaultTaskId:taskId,defaultTaskSource:source,defaultTaskTitle:title});},linkSegmentsBatch:async(id,taskId,source,title,onlyUnlinked)=>{window.smokeCalls.push(['batch',id,taskId,onlyUnlinked]);segments.filter(s=>s.sessionId===id&&(!onlyUnlinked||!s.taskId)).forEach(s=>Object.assign(s,{taskId,taskSource:source,title}));},linkTask:async(id,taskId,source,title)=>{window.smokeCalls.push(['segment',id,taskId]);Object.assign(segments.find(s=>s.id===id),{taskId,taskSource:source,title});}},
  tasks:{refresh:async()=>{if(window.slowRefresh)await new Promise(resolve=>setTimeout(resolve,window.slowRefresh));return {ok:true,data:{provider:'focuslink-local',tasks:JSON.parse(JSON.stringify(tasks)),projects:[...projects]}};},reorder:async(ids)=>{window.smokeCalls.push(['reorder',ids]);tasks.flatMap(task=>[task,...(task.children||[])]).filter(task=>ids.includes(task.id)).forEach(task=>task.sortOrder=ids.indexOf(task.id)+1);},createProject:async(name,color,icon)=>{window.smokeCalls.push(['createProject',name]);if(window.failProjectCreate)throw new Error('fixture create failure');const project={id:'project-'+projects.length,name,color,icon};projects.push(project);return project;},remove:async(id)=>{window.smokeCalls.push(['remove',id]);const index=tasks.findIndex(task=>task.id===id);if(index>=0)tasks.splice(index,1);},deleteProject:async(id)=>{window.smokeCalls.push(['deleteProject',id]);const index=projects.findIndex(project=>project.id===id);if(index>=0)projects.splice(index,1);},create:async(title,projectId,options)=>{window.smokeCalls.push(['create',title,projectId,options]);const task={id:'created-'+tasks.length,source:'local',externalId:'',title,projectId:projectId||'p1',children:[],tags:[],content:null,priority:0,isCompleted:false,status:'0',dueDate:options?.dueDate??null,startDate:options?.startDate??null,sortOrder:tasks.length+1};tasks.push(task);return task;}},settings:{get:async()=>DEFAULT_SETTINGS,set:async(patch)=>({...DEFAULT_SETTINGS,...patch})},on:()=>()=>{},
 };
 useStore.setState({settings:DEFAULT_SETTINGS,ticktickTasks:tasks,ticktickProjects:[{id:'p1',name:'学习',color:'#2563eb'}]});
+window.resetTaskWorkspace=()=>useStore.setState({taskWorkspaceLoaded:false,ticktickTasks:[],ticktickProjects:[]});
 const reactRoot=createRoot(document.getElementById('root'));
 const render=(view)=>reactRoot.render(<div className={'app-shell view-'+view}><div className="window-controls"><span className="window-drag-region"/><button aria-label="最小化">−</button><button aria-label="最大化或还原">□</button><button aria-label="关闭">×</button></div><main className="app-stage">{view==='tasks'?<TaskWorkspace/>:<HistoryPanel/>}</main></div>);
 window.showTasks=()=>render('tasks');
@@ -54,8 +56,14 @@ async function connect(url) {
   });
   let sequence = 0;
   const pending = new Map();
+  const diagnostics = [];
   ws.onmessage = ({ data }) => {
     const response = JSON.parse(data);
+    if (response.method === 'Runtime.exceptionThrown')
+      diagnostics.push(
+        response.params.exceptionDetails.exception?.description ||
+          response.params.exceptionDetails.text,
+      );
     const waiter = pending.get(response.id);
     if (!waiter) return;
     pending.delete(response.id);
@@ -84,7 +92,7 @@ async function connect(url) {
       throw new Error(response.exceptionDetails.exception?.description || 'Renderer exception');
     return response.result.value;
   };
-  return { send, evaluate, close: () => ws.close() };
+  return { send, evaluate, diagnostics, close: () => ws.close() };
 }
 
 async function main() {
@@ -146,6 +154,7 @@ async function main() {
     const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
     cdp = await connect(targets.find((target) => target.type === 'page').webSocketDebuggerUrl);
     await cdp.send('Page.enable');
+    await cdp.send('Runtime.enable');
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
     for (let attempt = 0; attempt < 80; attempt++) {
       if (await cdp.evaluate('document.querySelectorAll(".seg-mini-row").length === 3')) break;
@@ -394,7 +403,7 @@ async function main() {
       deviceScaleFactor: 1.25,
       mobile: false,
     });
-    await cdp.evaluate('window.slowRefresh=700');
+    await cdp.evaluate('window.slowRefresh=700;window.resetTaskWorkspace()');
     await cdp.evaluate('window.showTasks()');
     await delay(150);
     assert.equal(
@@ -782,6 +791,18 @@ async function main() {
       'delete flow used no native dialog at all',
     );
     console.log('PASS delete confirmation uses the in-app dialog and never blocks the renderer');
+  } catch (error) {
+    if (cdp)
+      console.error(
+        'Renderer diagnostics:',
+        cdp.diagnostics,
+        await cdp
+          .evaluate(
+            'JSON.stringify({url:location.href,text:document.body?.innerText?.slice(0,1600)})',
+          )
+          .catch(() => 'unavailable'),
+      );
+    throw error;
   } finally {
     if (cdp) {
       await cdp.send('Browser.close').catch(() => {});

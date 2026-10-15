@@ -438,10 +438,12 @@ export interface MiniDockTransition {
 export interface FocusLinkEventMap {
   tick: [snapshot: TimerSnapshot];
   'timer:state-changed': [snapshot: TimerSnapshot];
+  'timer:command-pending': [pending: boolean];
   navigate: [target: FocusLinkNavigationTarget];
   'toast:show': [toast: FocusLinkToast];
   'hotkey:registered': [info: HotkeyRegistrationResult];
   'settings:changed': [settings: AppSettings];
+  'tasks:changed': [workspace: TaskWorkspaceRefreshData];
   'settings:domain-changed': [domains: SettingsDomain[]];
   'mini:dock-transition': [transition: MiniDockTransition];
 }

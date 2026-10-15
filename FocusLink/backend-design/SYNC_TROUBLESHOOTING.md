@@ -539,3 +539,22 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 
 - 这是**第三方投递节流**，不是本机同步故障：不要因此改记录日期、不要伪造 `isSynced`，也不要报成 `network_error`。
 - 已经落库的记录本机无法撤回（`remoteDeleteSupported=false`），只能改名后按批准流程重传。
+
+## FL-SYNC-025：任务一直加载、小窗继续或 Ctrl+1 像卡死
+
+### 区分症状
+
+1. 同一时间查看 `hotkey trigger pressed`、异步完成/失败和 `liveFocus` 日志。按键有记录但状态未变，不代表未触发；早期版本会在网络结果之前错误写 `success:true`。2026-10-15 15:04:59 → 15:05:09 的真实记录是 10.255 秒后 transport 失败。
+2. 任务读取若先等待 `/sync/v2/tasks`，断网会拖住已有本地任务。v1.6.2 的 `tasks:refresh({localOnly:true})` 不经过云端/CLI，已有列表可浏览，后台失败保留数据并显示更新失败。
+3. 小窗操作有「确认中」或错误反馈，仍保持原有状态，表示尚无云端 ACK；不得改本地数据库或伪造 running 解除远端会话锁。
+
+### 诊断顺序
+
+- 先确认安装的 EXE/构建 commit，再按 `FL-SYNC-022` 检查应用是否跟随系统代理。不要关闭 Clash 或改变用户网络环境。
+- 使用当前配置允许的 canonical/固定备用 origin 只读 `/healthz`；没有请求凭据的 `/sync/v2/live` 返回 401 只能证明路由/transport 可达，不证明账号有效。TLS reset、超时、401/403、耐久 conflict 与第三方投递分别归类。
+- 同时验证本地列表是否立即出现、失败时任务是否仍在、鼠标与快捷键是否有 pending/错误、重复输入是否只发同一个 command。finish 已 ACK 而导入卡住时，控制台必须能继续使用；导入晚到不能覆盖新会话。
+- 运行 `npm run smoke:performance`、`npm run smoke:stats` 和 controller 单元测试；无头 synthetic IPC 通过不能替代真实网络已恢复或原生拖拽已验证。
+
+### 已知事实
+
+2026-10-13 代理修复实例有真实成功；2026-10-15 15:33 的新 Node/代理探测仍得到 `ECONNRESET` 或 `/healthz` 超时。两者时间不同、可以同时成立，不能仅凭旧日志把当前故障说成已修复，也不能把当前失败反推成旧成功无效。

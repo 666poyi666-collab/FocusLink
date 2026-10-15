@@ -3,7 +3,11 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import type { FocusTimerController } from './timer/focusTimerController.js';
 import { LocalTaskProvider } from './tasks/localProvider.js';
-import { refreshTaskWorkspace, setTaskCompleted } from './tasks/workspaceService.js';
+import {
+  refreshTaskWorkspace,
+  queueLocalTaskWorkspace,
+  setTaskCompleted,
+} from './tasks/workspaceService.js';
 import {
   detectCli,
   diagnoseCli,
@@ -269,11 +273,17 @@ export function registerIpc(
   });
 
   // ============ Tasks ============
+  const commitTaskWorkspace = () => {
+    const data = queueLocalTaskWorkspace();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('tasks:changed', data);
+    }
+  };
   ipcMain.handle(
     'tasks:create',
     async (_e, title: string, projectId?: string, options?: TaskCreateOptions) => {
       const task = LocalTaskProvider.create(title, projectId, options);
-      await refreshTaskWorkspace({ force: true });
+      commitTaskWorkspace();
       return task;
     },
   );
@@ -281,7 +291,7 @@ export function registerIpc(
     'tasks:create-project',
     async (_e, name: string, color?: string | null, icon?: string | null) => {
       const project = LocalTaskProvider.createProject(name, color, icon);
-      await refreshTaskWorkspace({ force: true });
+      commitTaskWorkspace();
       return project;
     },
   );
@@ -293,7 +303,7 @@ export function registerIpc(
       input: { name?: string; color?: string | null; icon?: string | null },
     ) => {
       const project = LocalTaskProvider.updateProject(projectId, input);
-      await refreshTaskWorkspace({ force: true });
+      commitTaskWorkspace();
       return project;
     },
   );
@@ -340,6 +350,7 @@ export function registerIpc(
         `删除清单未获得同步确认，已尝试回滚本地任务：${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    commitTaskWorkspace();
     return {
       projectId: deletion.project.id,
       movedTaskCount: deletion.movedTaskCount,
@@ -348,36 +359,36 @@ export function registerIpc(
   });
   ipcMain.handle('tasks:move', async (_e, taskId: string, projectId?: string | null) => {
     const task = LocalTaskProvider.moveTask(taskId, projectId);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
     return task;
   });
   ipcMain.handle('tasks:update', async (_e, taskId: string, patch: TaskUpdatePatch) => {
     const task = LocalTaskProvider.update(taskId, patch);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
     return task;
   });
   ipcMain.handle('tasks:delete', async (_e, taskId: string) => {
     const result = LocalTaskProvider.remove(taskId);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
     return result;
   });
   ipcMain.handle('tasks:set-parent', async (_e, taskId: string, parentId: string | null) => {
     const task = LocalTaskProvider.setParent(taskId, parentId);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
     return task;
   });
   ipcMain.handle('tasks:reorder', async (_e, orderedIds: string[]) => {
     LocalTaskProvider.reorder(orderedIds);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
   });
   ipcMain.handle('tasks:complete', async (_e, task: Task) => {
     const completed = await setTaskCompleted(task, true);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
     return completed;
   });
   ipcMain.handle('tasks:set-completed', async (_e, task: Task, completed: boolean) => {
     const changed = await setTaskCompleted(task, completed);
-    await refreshTaskWorkspace({ force: true });
+    commitTaskWorkspace();
     return changed;
   });
   ipcMain.handle('tasks:refresh', (_e, options?: TaskWorkspaceRefreshOptions) =>

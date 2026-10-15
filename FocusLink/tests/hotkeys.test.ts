@@ -6,6 +6,8 @@ let blockedAccelerators: Set<string>;
 let registeredCallbacks: Map<string, () => void>;
 let registerCalls: string[];
 let unregisterCalls: string[];
+const hotkeyLog = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock('../electron/logger.js', () => ({ logger: hotkeyLog }));
 
 vi.mock('electron', () => ({
   globalShortcut: {
@@ -39,6 +41,60 @@ function settingsWithHotkeys(hotkeys: Partial<AppSettings['hotkeys']>): AppSetti
 }
 
 describe('hotkey registration regression guards', () => {
+  it('does not log success before an asynchronous timer action is confirmed', async () => {
+    const hotkeys = await loadHotkeys();
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    let state = 'paused';
+    hotkeys.setStateGetter(() => state);
+    hotkeys.setHotkeyHandlers({
+      toggleTimer: () => pending,
+      stopTimer: () => {},
+      toggleWindow: () => {},
+      linkTask: () => {},
+      toggleMiniWindow: () => {},
+    });
+    hotkeys.registerAllHotkeys(settingsWithHotkeys({ toggleTimer: 'CommandOrControl+1' }));
+    hotkeyLog.info.mockClear();
+    registeredCallbacks.get('CommandOrControl+1')!();
+    expect(hotkeyLog.info.mock.calls.some((call) => call[1] === 'trigger handled')).toBe(false);
+    state = 'running';
+    resolve();
+    await pending;
+    await Promise.resolve();
+    expect(hotkeyLog.info).toHaveBeenCalledWith(
+      'hotkey',
+      'trigger handled',
+      expect.objectContaining({ beforeState: 'paused', afterState: 'running', success: true }),
+    );
+  });
+
+  it('logs a rejected timer action as a failure instead of reporting it handled', async () => {
+    const hotkeys = await loadHotkeys();
+    hotkeys.setHotkeyHandlers({
+      toggleTimer: async () => {
+        throw new Error('unconfirmed');
+      },
+      stopTimer: () => {},
+      toggleWindow: () => {},
+      linkTask: () => {},
+      toggleMiniWindow: () => {},
+    });
+    hotkeys.registerAllHotkeys(settingsWithHotkeys({ toggleTimer: 'CommandOrControl+1' }));
+    hotkeyLog.info.mockClear();
+    hotkeyLog.error.mockClear();
+    registeredCallbacks.get('CommandOrControl+1')!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(hotkeyLog.info.mock.calls.some((call) => call[1] === 'trigger handled')).toBe(false);
+    expect(hotkeyLog.error).toHaveBeenCalledWith(
+      'hotkey',
+      'handler error for toggleTimer',
+      expect.objectContaining({ error: 'unconfirmed' }),
+    );
+  });
   beforeEach(() => {
     blockedAccelerators = new Set();
     registeredCallbacks = new Map();

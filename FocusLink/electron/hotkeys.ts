@@ -9,8 +9,8 @@ export type HotkeyAction =
   'toggleTimer' | 'stopTimer' | 'toggleWindow' | 'linkTask' | 'toggleMiniWindow';
 
 export interface HotkeyHandlers {
-  toggleTimer: () => void;
-  stopTimer: () => void;
+  toggleTimer: () => void | Promise<void>;
+  stopTimer: () => void | Promise<void>;
   toggleWindow: () => void;
   linkTask: () => void;
   toggleMiniWindow: () => void;
@@ -48,7 +48,7 @@ function registerOne(accelerator: string, action: HotkeyAction): boolean {
     globalShortcut.unregister(accelerator);
     registered.delete(accelerator);
     ok = globalShortcut.register(accelerator, () => {
-      onHotkeyTriggered(accelerator, action);
+      void onHotkeyTriggered(accelerator, action);
     });
   } catch (error) {
     logger.warn('hotkey', `invalid accelerator: ${accelerator} -> ${action}`, {
@@ -66,7 +66,7 @@ function registerOne(accelerator: string, action: HotkeyAction): boolean {
 }
 
 /** 快捷键触发：debounce + 状态日志 */
-function onHotkeyTriggered(accelerator: string, action: HotkeyAction): void {
+async function onHotkeyTriggered(accelerator: string, action: HotkeyAction): Promise<void> {
   const now = Date.now();
   const lastAt = lastTriggeredAt.get(action) ?? 0;
   if (now - lastAt < DEBOUNCE_MS) {
@@ -85,7 +85,7 @@ function onHotkeyTriggered(accelerator: string, action: HotkeyAction): void {
   });
 
   try {
-    handlers?.[action]();
+    await handlers?.[action]();
     const afterState = stateGetter?.() ?? 'unknown';
     logger.info('hotkey', `trigger handled`, {
       accelerator,

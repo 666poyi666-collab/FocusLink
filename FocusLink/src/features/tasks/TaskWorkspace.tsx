@@ -10,6 +10,7 @@ import { assembleTaskTree } from '@shared/taskTreeUtils';
 import { resolveThemeAppearance } from '@shared/theme';
 import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
+import { readTaskWorkspace, refreshTaskWorkspace } from './taskWorkspaceData';
 import '../../styles/task-workbench.css';
 import { createPortal } from 'react-dom';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
@@ -351,9 +352,24 @@ interface TaskWorkspaceSnapshot {
 let taskWorkspaceSnapshot: TaskWorkspaceSnapshot | null = null;
 
 export function TaskWorkspace() {
-  const { setSnapshot, addToast, settings } = useStore();
-  const [tasks, setTasks] = useState<Task[]>(() => taskWorkspaceSnapshot?.tasks ?? []);
-  const [projects, setProjects] = useState<Project[]>(() => taskWorkspaceSnapshot?.projects ?? []);
+  const setSnapshot = useStore((state) => state.setSnapshot);
+  const addToast = useStore((state) => state.addToast);
+  const settings = useStore((state) => state.settings);
+  const sharedTasks = useStore((state) => state.ticktickTasks);
+  const sharedProjects = useStore((state) => state.ticktickProjects);
+  const sharedLoaded = useStore((state) => state.taskWorkspaceLoaded);
+  const backgroundRefreshing = useStore((state) => state.taskWorkspaceRefreshing);
+  const backgroundError = useStore((state) => state.taskWorkspaceRefreshError);
+  const [tasks, setTasks] = useState<Task[]>(() =>
+    useStore.getState().taskWorkspaceLoaded
+      ? assembleTaskTree(useStore.getState().ticktickTasks)
+      : (taskWorkspaceSnapshot?.tasks ?? []),
+  );
+  const [projects, setProjects] = useState<Project[]>(() =>
+    useStore.getState().taskWorkspaceLoaded
+      ? useStore.getState().ticktickProjects
+      : (taskWorkspaceSnapshot?.projects ?? []),
+  );
   const [sessions, setSessions] = useState<TaskWorkspaceSession[]>(
     () => taskWorkspaceSnapshot?.sessions ?? [],
   );
@@ -362,10 +378,13 @@ export function TaskWorkspace() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
     () => taskWorkspaceSnapshot?.selectedTaskId ?? null,
   );
-  const [tasksLoaded, setTasksLoaded] = useState(() => Boolean(taskWorkspaceSnapshot));
+  const [tasksLoaded, setTasksLoaded] = useState(
+    () => useStore.getState().taskWorkspaceLoaded || Boolean(taskWorkspaceSnapshot),
+  );
   const [completedCollapsed, setCompletedCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [quickInput, setQuickInput] = useState('');
   // 勾选弹跳 / 恢复闪烁：动画类只由这两个 state 挂上，animationend 时摘掉。
   const [springPopTaskId, setSpringPopTaskId] = useState<string | null>(null);
@@ -448,10 +467,13 @@ export function TaskWorkspace() {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', themeMode);
-    document.documentElement.classList.toggle('dark', themeMode === 'dark');
-    document.documentElement.classList.toggle('light', themeMode === 'light');
-  }, [themeMode]);
+    const root = document.documentElement;
+    const update = () => setThemeMode(root.classList.contains('dark') ? 'dark' : 'light');
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    update();
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('focuslink_task_sound', String(sound));
@@ -554,41 +576,56 @@ export function TaskWorkspace() {
   const [nativeColorInput, setNativeColorInput] = useState('#2563EB');
 
   // Load Data
-  const refresh = useCallback(async () => {
-    if (!window.focuslink?.tasks) {
-      // 没有 IPC 时也必须退出骨架态，否则加载指示会永久停留。
-      setTasksLoaded(true);
-      return;
-    }
-    setRefreshing(true);
-    try {
-      const [res, sessList] = await Promise.all([
-        window.focuslink.tasks.refresh({ includeCompleted: true, completedDays: 90 }),
-        window.focuslink.sessions?.list
-          ? window.focuslink.sessions.list(100).catch(() => [])
-          : Promise.resolve([]),
-      ]);
-      if (res && res.ok && res.data) {
-        const assembled = assembleTaskTree(res.data.tasks);
-        setTasks(assembled);
-        setProjects(res.data.projects);
-        setSelectedTaskId((current) =>
-          current && assembled.some((task) => task.id === current)
-            ? current
-            : (assembled.find((t) => !t.isCompleted)?.id ?? assembled[0]?.id ?? null),
+  const refresh = useCallback(
+    async (force = false) => {
+      if (!window.focuslink?.tasks) {
+        // 没有 IPC 时也必须退出骨架态，否则加载指示会永久停留。
+        setTasksLoaded(true);
+        return;
+      }
+      setRefreshing(true);
+      setLoadError(null);
+      try {
+        const data = await readTaskWorkspace(true);
+        {
+          const assembled = assembleTaskTree(data.tasks);
+          setTasks(assembled);
+          setProjects(data.projects);
+          setTasksLoaded(true);
+          setSelectedTaskId((current) =>
+            current && assembled.some((task) => task.id === current)
+              ? current
+              : (assembled.find((t) => !t.isCompleted)?.id ?? assembled[0]?.id ?? null),
+          );
+        }
+        void window.focuslink.sessions
+          ?.list(100)
+          .then(setSessions)
+          .catch(() => undefined);
+        if (force) await refreshTaskWorkspace(true);
+        else void refreshTaskWorkspace().catch(() => undefined);
+      } catch (e) {
+        console.error('Failed to load tasks', e);
+        setLoadError('任务读取失败，原有列表已保留。请重试。');
+        addToast(
+          `任务读取失败，原有列表已保留：${e instanceof Error ? e.message : String(e)}`,
+          'error',
         );
+      } finally {
+        // 无论成功或失败都结束骨架态，避免加载指示无限停留。
+        setTasksLoaded(true);
+        setRefreshing(false);
       }
-      if (sessList) {
-        setSessions(sessList);
-      }
-    } catch (e) {
-      console.error('Failed to load tasks', e);
-    } finally {
-      // 无论成功或失败都结束骨架态，避免加载指示无限停留。
-      setTasksLoaded(true);
-      setRefreshing(false);
-    }
-  }, []);
+    },
+    [addToast],
+  );
+
+  useEffect(() => {
+    if (!sharedLoaded) return;
+    setTasks(assembleTaskTree(sharedTasks));
+    setProjects(sharedProjects);
+    setTasksLoaded(true);
+  }, [sharedTasks, sharedProjects, sharedLoaded]);
 
   useEffect(() => {
     void refresh();
@@ -941,7 +978,7 @@ export function TaskWorkspace() {
         const created = await window.focuslink.tasks.create(val, projectId ?? undefined, {
           priority: 0,
         });
-        setTasks((prev) => [created, ...prev]);
+        setTasks((prev) => [created, ...prev.filter((task) => task.id !== created.id)]);
         setSelectedTaskId(created.id);
         setQuickInput('');
         setSearchQuery('');
@@ -1018,7 +1055,15 @@ export function TaskWorkspace() {
       });
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === parentTask.id ? { ...t, children: [...(t.children || []), created] } : t,
+          t.id === parentTask.id
+            ? {
+                ...t,
+                children: [
+                  ...(t.children || []).filter((child) => child.id !== created.id),
+                  created,
+                ],
+              }
+            : t,
         ),
       );
     } catch (e) {
@@ -1380,7 +1425,10 @@ export function TaskWorkspace() {
           COLOR_PALETTE[projects.length % COLOR_PALETTE.length],
           'folder',
         );
-        setProjects((previous) => [...previous, created]);
+        setProjects((previous) => [
+          ...previous.filter((project) => project.id !== created.id),
+          created,
+        ]);
         setProjectId(created.id);
         setViewId('all');
       }
@@ -1489,7 +1537,7 @@ export function TaskWorkspace() {
 
   return (
     <div
-      className={`task-workspace-root app-window ${themeMode === 'dark' ? 'dark' : ''}`}
+      className="task-workspace-root app-window"
       data-pal={taskAppearance.palette}
       data-task-font={taskAppearance.font}
       data-density={taskAppearance.density}
@@ -1524,11 +1572,17 @@ export function TaskWorkspace() {
           <div
             className="sync-badge"
             style={{ cursor: 'pointer' }}
-            onClick={() => refresh()}
-            title="点击立即刷新同步"
+            onClick={() => refresh(true)}
+            title={backgroundError ?? '点击立即刷新任务'}
           >
             <i style={{ backgroundColor: refreshing ? '#3B82F6' : '#10B981' }} />
-            <span>{refreshing ? '正在刷新…' : '本地任务'}</span>
+            <span>
+              {refreshing || backgroundRefreshing
+                ? '本地任务 · 正在更新'
+                : backgroundError
+                  ? '本地任务 · 更新失败'
+                  : '本地任务'}
+            </span>
           </div>
         </div>
       </header>
@@ -1729,7 +1783,11 @@ export function TaskWorkspace() {
                   </option>
                 ))}
               </select>
-              <button className="btn-tool" onClick={() => refresh()}>
+              <button
+                className="btn-tool"
+                disabled={refreshing || backgroundRefreshing}
+                onClick={() => refresh(true)}
+              >
                 <span dangerouslySetInnerHTML={{ __html: ICONS.clock }} />
                 <span>刷新</span>
               </button>
@@ -1737,11 +1795,16 @@ export function TaskWorkspace() {
           </div>
 
           <div className="tasks-scroll-area">
+            {loadError && (
+              <div className="state-block tone-error" role="alert">
+                {loadError}
+              </div>
+            )}
             {/* 未完成任务区域 (黄金分割 1/2 沉底) */}
             <div className="uncompleted-group">
               {!tasksLoaded ? (
                 pendingList
-              ) : viewId === 'done' ? (
+              ) : loadError && tasks.length === 0 ? null : viewId === 'done' ? (
                 completedTasks.length === 0 ? (
                   <div
                     style={{
@@ -3213,7 +3276,7 @@ export function TaskWorkspace() {
       {projectDialog &&
         createPortal(
           <div
-            className={`task-workspace-root project-dialog-overlay ${themeMode === 'dark' ? 'dark' : ''}`}
+            className="task-workspace-root project-dialog-overlay"
             data-theme={themeMode}
             data-pal={taskAppearance.palette}
             data-task-font={taskAppearance.font}

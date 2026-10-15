@@ -250,6 +250,8 @@ export interface Task {
 
 /** 任务工作台刷新参数。默认只读取活动任务，避免加载完整完成历史。 */
 export interface TaskWorkspaceRefreshOptions {
+  /** Read the durable local workspace without network, provider detection or publication. */
+  localOnly?: boolean;
   projectId?: string;
   includeCompleted?: boolean;
   /** 已完成任务回溯天数；仅 includeCompleted=true 时生效。 */

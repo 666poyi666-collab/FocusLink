@@ -1,6 +1,6 @@
 {
   "name": "focuslink",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "FocusLink - 本地优先的任务、专注与多端时间账本工作台",
   "author": "FocusLink",
   "main": "dist-electron/main.js",
@@ -49,6 +49,7 @@
     "contract:stats:parity": "node scripts/regression/stats-prototype-parity.cjs",
     "smoke:mini": "node scripts/smoke/mini-ui-smoke.cjs",
     "smoke:stats": "node scripts/regression/stats-responsive-smoke.cjs",
+    "smoke:performance": "node scripts/regression/desktop-performance-smoke.cjs",
     "smoke:window-visible": "node scripts/smoke/main-window-visible.cjs",
     "smoke:live-fallback": "node scripts/smoke/live-fallback-packaged-smoke.cjs",
     "smoke:dida": "node scripts/smoke/dida-real-smoke.cjs",

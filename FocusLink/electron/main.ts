@@ -1290,17 +1290,31 @@ function ensureTrayAndHotkeys(): void {
     // 注入状态查询函数（快捷键触发日志用）
     setStateGetter(() => timer?.getSnapshot().state ?? 'unknown');
 
-    // 快捷键 handler
+    let pendingTimerHotkeys = 0;
+    const runTimerHotkey = async (action: 'toggle' | 'stop') => {
+      pendingTimerHotkeys += 1;
+      if (pendingTimerHotkeys === 1) {
+        for (const win of getAllWindows()) win.webContents.send('timer:command-pending', true);
+      }
+      try {
+        await timer?.[action]();
+      } catch (error) {
+        for (const win of getAllWindows())
+          win.webContents.send('toast:show', {
+            type: 'error',
+            message: error instanceof Error ? error.message : '操作未确认，请重试',
+          });
+        throw error;
+      } finally {
+        pendingTimerHotkeys -= 1;
+        if (pendingTimerHotkeys === 0) {
+          for (const win of getAllWindows()) win.webContents.send('timer:command-pending', false);
+        }
+      }
+    };
     const hotkeyHandlers: HotkeyHandlers = {
-      toggleTimer: () => {
-        void timer
-          ?.toggle()
-          .catch((error) => logger.warn('hotkey', 'toggle failed', { error: String(error) }));
-      },
-      stopTimer: () =>
-        void timer
-          ?.stop()
-          .catch((error) => logger.warn('hotkey', 'stop failed', { error: String(error) })),
+      toggleTimer: () => runTimerHotkey('toggle'),
+      stopTimer: () => runTimerHotkey('stop'),
       toggleWindow: () => toggleMainWindow(),
       linkTask: () => {
         mainWindow?.show();

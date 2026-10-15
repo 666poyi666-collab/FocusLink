@@ -1,8 +1,16 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前候选 v1.6.1（分类筛选下推共享层：`sessions:analytics` 新增可选 `taskKey`，在 `buildSessionAnalytics` 之前收窄 source；纯 shared + 主进程 IPC 入参 + renderer 改动，不新增 IPC 命令、不改数据库结构；v1.6.0 的统计页数据对齐已真机安装验证；三端安装未闭合）
+> 状态：v1.x 后端单一真相；当前 Windows 候选 v1.6.2（本地任务读写不等待网络、renderer 变更事件、实时命令防重入和有界超时；不改数据库或云端协议。用户 2026-10-15 限定本轮只开发 PC。）
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
+
+## v1.6.2 本地任务与实时控制响应合同
+
+- `tasks:refresh({localOnly:true})` 只读本地任务与清单，不访问云端、不探测 CLI、不发布快照。renderer 共享已加载状态（含空集合）、本地读请求和 30 秒后台刷新窗口；新本地读取/`tasks:changed` 使旧刷新结果失效，后台失败不会清空本地数据。
+- 本地任务 mutation 在 SQLite 保存后调用 `queueLocalTaskWorkspace()`：`publishDeviceTaskSnapshot()` 先同步写入既有 durable pending，再在后台发送；IPC 返回不等待网络。`tasks:changed` 广播最新本地工作区给所有 renderer。外部任务完成仍等待原 Provider；清单删除仍按原有确认/回滚路径执行。
+- `timer:command-pending` 为快捷键的暂态反馈，不是计时事实。日志只有在异步 handler 完成后才写 `trigger handled`；拒绝时记录失败并推送错误提示。
+- 实时命令以 generation/session/action/task/segment 识别在途请求；同一意图共用 Promise，不同意图明确拒绝而不是叠发同 revision。普通请求预算 4 秒，long-poll 保留 `LIVE_FOCUS_MAX_WAIT_MS + 5 秒`，重试复用同 commandId 和截止信号。
+- finish/abort 的 authority ACK 先发布真实 idle/`ledgerImportPending`；账本导入异步执行。导入和 finished 收束必须校验连接、generation、revision 与当前状态，不能覆盖新的活动会话。网络中断不把已确认的远端活动会话偷偷转换为本机计时。
 
 ## 当前三端同步修复需求（2026-07-22）
 

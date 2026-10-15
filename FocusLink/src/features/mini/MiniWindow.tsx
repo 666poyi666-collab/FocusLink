@@ -27,6 +27,7 @@ import {
 import { MINI_WINDOW_DOCK_TRANSITION_MS } from '@shared/miniWindowLayout';
 import type { MiniWindowDockPlacement } from '@shared/miniWindowLayout';
 import { pauseDissolveParticles } from '@shared/focus/bandMath';
+import { ipcErrorMessage } from '../../app/ipcError';
 
 const STATE_META: Record<
   TimerSnapshot['state'],
@@ -210,6 +211,33 @@ export function MiniWindow() {
   const [dockingEdge, setDockingEdge] = useState<'left' | 'right' | 'top' | 'bottom' | null>(null);
   const [dockedPlacement, setDockedPlacement] = useState<MiniWindowDockPlacement | null>(null);
   const [dockTransitioning, setDockTransitioning] = useState(false);
+  const [commandPending, setCommandPending] = useState(false);
+  const commandPendingRef = useRef(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      window.focuslink.on('timer:command-pending', (pending) => {
+        commandPendingRef.current = pending;
+        setCommandPending(pending);
+        if (pending) setCommandError(null);
+      }),
+    [],
+  );
+
+  useEffect(
+    () =>
+      window.focuslink.on('toast:show', (toast) => {
+        if (toast.type === 'error') setCommandError(toast.message);
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!commandError) return;
+    const timeout = window.setTimeout(() => setCommandError(null), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [commandError]);
 
   useEffect(() => {
     let mounted = true;
@@ -286,19 +314,6 @@ export function MiniWindow() {
 
   useEffect(() => {
     if (snapshot?.state !== 'running' && snapshot?.state !== 'paused') return;
-    if (snapshot.state === 'paused' && !reduceMotion) {
-      let frame = 0;
-      let lastFrame = 0;
-      const draw = (timestamp: number) => {
-        if (timestamp - lastFrame >= 32) {
-          lastFrame = timestamp;
-          setNow(Date.now());
-        }
-        frame = window.requestAnimationFrame(draw);
-      };
-      frame = window.requestAnimationFrame(draw);
-      return () => window.cancelAnimationFrame(frame);
-    }
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [reduceMotion, snapshot?.state, snapshot?.lastTick, snapshot?.currentPauseStartedAt]);
@@ -336,7 +351,7 @@ export function MiniWindow() {
       cancelled = true;
       observer.disconnect();
     };
-  }, [currentTaskTitle, collapsed, reduceMotion, settings?.fontProfile]);
+  }, [currentTaskTitle, commandError, collapsed, reduceMotion, settings?.fontProfile]);
   const isRunning = state === 'running';
   const isPaused = state === 'paused';
   const primaryMs = isPaused ? currentPauseMs : currentFocusMs;
@@ -367,9 +382,19 @@ export function MiniWindow() {
   const handleToggle = useCallback(
     async (event: React.MouseEvent) => {
       event.stopPropagation();
-      if (state === 'stopping') return;
-      const next = await triggerMiniToggle(state, window.focuslink.timer);
-      if (next) setSnapshot(next);
+      if (state === 'stopping' || commandPendingRef.current) return;
+      commandPendingRef.current = true;
+      setCommandPending(true);
+      setCommandError(null);
+      try {
+        const next = await triggerMiniToggle(state, window.focuslink.timer);
+        if (next) setSnapshot(next);
+      } catch (error) {
+        setCommandError(error instanceof Error ? ipcErrorMessage(error) : '操作未确认，请重试');
+      } finally {
+        commandPendingRef.current = false;
+        setCommandPending(false);
+      }
     },
     [state],
   );
@@ -377,9 +402,19 @@ export function MiniWindow() {
   const handleStop = useCallback(
     async (event: React.MouseEvent) => {
       event.stopPropagation();
-      if (state === 'stopping') return;
-      const next = await triggerMiniStop(state, window.focuslink.timer);
-      if (next) setSnapshot(next);
+      if (state === 'stopping' || commandPendingRef.current) return;
+      commandPendingRef.current = true;
+      setCommandPending(true);
+      setCommandError(null);
+      try {
+        const next = await triggerMiniStop(state, window.focuslink.timer);
+        if (next) setSnapshot(next);
+      } catch (error) {
+        setCommandError(error instanceof Error ? ipcErrorMessage(error) : '操作未确认，请重试');
+      } finally {
+        commandPendingRef.current = false;
+        setCommandPending(false);
+      }
     },
     [state],
   );
@@ -416,13 +451,14 @@ export function MiniWindow() {
       data-testid="mini-shell"
       data-state={state}
       data-mode={collapsed ? 'collapsed' : 'expanded'}
+      data-command-error={commandError ? true : undefined}
       data-docking-edge={dockingEdge ?? undefined}
       data-docking-placement={dockedPlacement ?? undefined}
       data-dock-transitioning={dockTransitioning || undefined}
       className={`mini-window-shell mini-window-${state} ${collapsed ? 'mini-window-collapsed' : 'mini-window-expanded'} ${dockTransitioning && dockingEdge ? `mini-window-docking mini-dock-edge-${dockingEdge}` : ''} ${collapsed && dockedPlacement ? `mini-dock-placement-${dockedPlacement}` : ''} h-full w-full text-fg`}
       style={MINI_SHELL_STYLE}
       onDoubleClick={collapsed ? handleExpand : undefined}
-      title={collapsed ? '点击箭头展开；拖离屏幕边缘也会自动展开' : undefined}
+      title={commandError ?? (collapsed ? '点击箭头展开；拖离屏幕边缘也会自动展开' : undefined)}
     >
       <AnimatePresence mode="sync" initial={false}>
         {collapsed ? (
@@ -446,7 +482,12 @@ export function MiniWindow() {
             <div className="mini-collapsed-current">
               <span className="mini-collapsed-state">
                 <span className={`mini-state-dot ${meta.dotClass}`} aria-hidden="true" />
-                <span className={`mini-collapsed-label ${meta.textClass}`}>{meta.stripLabel}</span>
+                <span
+                  className={`mini-collapsed-label ${commandError ? 'mini-command-error' : meta.textClass}`}
+                  role={commandError ? 'alert' : undefined}
+                >
+                  {commandError ? '未确认' : commandPending ? '确认中' : meta.stripLabel}
+                </span>
               </span>
               <div
                 className={`mini-display-time mini-collapsed-time ${isLongTime ? 'mini-time-long' : ''}`}
@@ -484,11 +525,14 @@ export function MiniWindow() {
               >
                 <span
                   ref={taskTitleRef}
-                  className="mini-task-title"
                   data-testid="mini-task-title"
-                  title={currentTaskTitle}
+                  title={commandError ?? currentTaskTitle}
+                  role={commandError ? 'alert' : undefined}
+                  className={
+                    commandError ? 'mini-task-title mini-command-error' : 'mini-task-title'
+                  }
                 >
-                  {currentTaskTitle}
+                  {commandError ?? currentTaskTitle}
                 </span>
               </div>
               <div className="mini-header-actions">
@@ -546,19 +590,19 @@ export function MiniWindow() {
                       className={`mini-primary-button ${primaryButtonClass} no-drag`}
                       data-testid="mini-primary-action"
                       onClick={handleToggle}
-                      disabled={primaryAction.disabled}
-                      aria-busy={state === 'stopping'}
+                      disabled={primaryAction.disabled || commandPending}
+                      aria-busy={state === 'stopping' || commandPending}
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.14 }}
                     >
                       <FocusGlyph glyph={primaryAction.glyph} size={12} />
-                      {primaryAction.label}
+                      {commandPending ? '确认中' : primaryAction.label}
                     </motion.button>
                     <motion.button
                       className="mini-secondary-button no-drag"
                       data-testid="mini-stop"
                       onClick={handleStop}
-                      disabled={isMiniStopDisabled(state)}
+                      disabled={isMiniStopDisabled(state) || commandPending}
                       whileTap={{ scale: 0.98 }}
                       transition={{ duration: 0.12 }}
                     >
@@ -629,6 +673,7 @@ function MiniFuseCanvas({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const observedAt = performance.now();
 
     const draw = () => {
       const rect = canvas.getBoundingClientRect();
@@ -688,7 +733,12 @@ function MiniFuseCanvas({
 
       if (reducedMotion) return;
 
-      const particles = pauseDissolveParticles(elapsedMs, sourceWidth, false, densityScale);
+      const particles = pauseDissolveParticles(
+        elapsedMs + performance.now() - observedAt,
+        sourceWidth,
+        false,
+        densityScale,
+      );
       for (const particle of particles) {
         if (particle.alpha <= 0.01) continue;
         const originX = headX - particle.originOffsetX;
@@ -739,7 +789,7 @@ function MiniFuseCanvas({
     };
 
     const schedule = () => {
-      if (rafRef.current) return;
+      if (rafRef.current || document.hidden) return;
       rafRef.current = requestAnimationFrame((timestamp) => {
         rafRef.current = 0;
         if (timestamp - lastDrawRef.current < 32) {
@@ -748,6 +798,7 @@ function MiniFuseCanvas({
         }
         lastDrawRef.current = timestamp;
         draw();
+        schedule();
       });
     };
 
@@ -759,10 +810,22 @@ function MiniFuseCanvas({
       if (!reducedMotion) schedule();
     });
     resizeObserver.observe(canvas);
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      } else {
+        draw();
+        if (!reducedMotion) schedule();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
       resizeObserver.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [elapsedMs, reducedMotion, compact]);
 

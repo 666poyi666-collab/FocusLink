@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion, useIsPresent } from 'framer-motion';
 import '../styles/shell-motion.css';
 import { useStore } from './store';
+import {
+  acceptTaskWorkspace,
+  readTaskWorkspace,
+  refreshTaskWorkspace,
+} from '../features/tasks/taskWorkspaceData';
 import { TimerPanel } from '../features/focus/TimerPanel';
 import { HistoryPanel } from '../features/history/HistoryPanel';
 import { SettingsPanel } from '../features/settings/SettingsPanel';
@@ -123,6 +128,7 @@ export default function App() {
         // 先注册事件。任务来源或账号状态读取失败时，核心计时仍必须继续更新。
         unsubs.push(window.focuslink.on('tick', (snap) => setSnapshot(snap as any)));
         unsubs.push(window.focuslink.on('timer:state-changed', (snap) => setSnapshot(snap as any)));
+        unsubs.push(window.focuslink.on('tasks:changed', acceptTaskWorkspace));
         unsubs.push(
           window.focuslink.on('navigate', (target) => {
             if (
@@ -157,6 +163,9 @@ export default function App() {
           }),
         );
 
+        void readTaskWorkspace()
+          .then(() => refreshTaskWorkspace())
+          .catch(() => undefined);
         const [settingsResult, snapshotResult, queueResult] = await Promise.allSettled([
           window.focuslink.settings.get(),
           window.focuslink.timer.getSnapshot(),

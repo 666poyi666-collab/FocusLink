@@ -76,7 +76,9 @@ export function HistoryPanel() {
 
   // 外观设置
   const [palette, setPalette] = useState<'linear' | 'rose' | 'contrast'>('linear');
-  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() =>
+    document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+  );
   const [font, setFont] = useState<'sans' | 'serif'>('sans');
   const [soundEnabled, setSoundEnabled] = useState(false);
 
@@ -84,7 +86,6 @@ export function HistoryPanel() {
     const root = document.documentElement;
     const attributes = {
       'data-pal': palette,
-      'data-theme': themeMode,
       'data-font': font,
       'data-skin': 'ceramic',
       'data-sound': soundEnabled ? 'on' : 'off',
@@ -95,7 +96,25 @@ export function HistoryPanel() {
       previous.forEach(([key, value]) =>
         value === null ? root.removeAttribute(key) : root.setAttribute(key, value),
       );
-  }, [palette, themeMode, font, soundEnabled]);
+  }, [palette, font, soundEnabled]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => setThemeMode(root.classList.contains('dark') ? 'dark' : 'light');
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    update();
+    return () => observer.disconnect();
+  }, []);
+
+  const applyTheme = async (theme: 'light' | 'dark') => {
+    try {
+      const saved = await window.focuslink.settings.set({ theme });
+      useStore.getState().setSettings(saved);
+    } catch {
+      useStore.getState().addToast('主题保存失败，请重试', 'error');
+    }
+  };
 
   // 外观弹出菜单
   const [menuOpen, setMenuOpen] = useState(false);
@@ -800,7 +819,7 @@ export function HistoryPanel() {
           aria-checked={themeMode === 'light'}
           onClick={() => {
             playWebAudioChime('click');
-            setThemeMode('light');
+            void applyTheme('light');
             setMenuOpen(false);
             showToast('主题：浅色模式');
           }}
@@ -813,7 +832,7 @@ export function HistoryPanel() {
           aria-checked={themeMode === 'dark'}
           onClick={() => {
             playWebAudioChime('click');
-            setThemeMode('dark');
+            void applyTheme('dark');
             setMenuOpen(false);
             showToast('主题：深色模式');
           }}

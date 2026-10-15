@@ -22,10 +22,7 @@
 }
 :root,
 html[data-pal='linear'] {
-  --font-ui:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC Variable', Roboto, 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
-  --font-num: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-num: var(--font-number);
 
   /* 基础三栏空间进深体系 (Sidebar < List < Detail) */
   --bg-app: #f7f8fa;
@@ -3825,4 +3822,40 @@ html:not([data-skin]) .card-widget:hover {
     min-height: 0;
     overflow: auto;
   }
+}
+
+/* Default workspaces inherit the application's semantic palette. Custom palettes
+   remain explicit choices; opening a page must not recolor the surrounding shell. */
+html body .task-workspace-root[data-pal='linear'],
+html body .stats-page[data-pal='linear'] {
+  --bg-app: rgb(var(--app-bg));
+  --bg-titlebar: rgb(var(--app-bg));
+  --bg-sidebar: rgb(var(--app-bg));
+  --bg-list: rgb(var(--app-surface));
+  --bg-detail: rgb(var(--app-surface-2));
+  --bg-card: rgb(var(--app-surface));
+  --bg-hover: rgb(var(--app-text) / 0.04);
+  --bg-active: rgb(var(--app-text) / 0.07);
+  --bg-selected: rgb(var(--app-accent) / 0.09);
+  --selected-border: rgb(var(--app-accent));
+  --border-app: rgb(var(--app-border));
+  --border-subtle: rgb(var(--app-border) / 0.7);
+  --border-row: rgb(var(--app-border) / 0.5);
+  --border-default: rgb(var(--app-border));
+  --text-primary: rgb(var(--app-text));
+  --text-secondary: rgb(var(--app-muted));
+  --text-tertiary: rgb(var(--app-subtle));
+  --text-disabled: rgb(var(--app-subtle));
+  --accent: rgb(var(--app-accent));
+  --accent-soft: rgb(var(--app-accent) / 0.1);
+  --accent-ink: rgb(var(--app-accent));
+  --pause-color: rgb(var(--app-pause));
+  --check-bg: rgb(var(--app-accent));
+  --check-border: rgb(var(--app-accent));
+  --check-hover-border: rgb(var(--app-accent));
+  --font-num: var(--font-number);
+  --r-xs: var(--radius-xs);
+  --r-sm: var(--radius-md);
+  --r-md: var(--radius-lg);
+  --r-lg: var(--radius-2xl);
 }

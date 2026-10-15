@@ -16,6 +16,12 @@
 
 ## 1. 测试层级
 
+### v1.6.2 PC 范围例外（2026-10-15 用户指令）
+
+本次用户明确「现在只开发 pc」，因此 v1.6.2 只执行 Windows 功能、构建、覆盖安装与可见性验收；小米/华为不再作为本轮阻塞，不能宣称 Android 已构建或安装。Android 只同步版本元数据以保持源码版本一致，不改手机/平板功能；三设备与 APK 备份门禁在后续移动端候选恢复。本例外不改 Windows 门禁，也不授权公开 tag 或 GitHub Release。用户另要求不使用 computer-use；采用无头 renderer、既有 Electron 回归与脚本化安装验证。
+
+本地响应回归新增 `npm run smoke:performance`（先 `npm run build`），必须覆盖真实 App 的本地列表优先、重复选择器、变更事件、防旧响应、后台失败，以及真实 MiniWindow 的确认/失败/重试、暂停态提交频率、两态几何、主题和 DPR。该 smoke 只用 synthetic IPC，不能算原生拖拽或真实云端通过。
+
 ### 快速静态与单元验证
 
 ```bash

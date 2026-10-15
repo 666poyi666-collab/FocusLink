@@ -5,10 +5,7 @@
 html[data-pal='linear'],
 .task-workspace-root[data-pal='linear'],
 .task-workspace-root {
-  --font-ui:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC Variable', Roboto, 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
-  --font-num: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-num: var(--font-number);
 
   /* 基础三栏空间进深体系 (Sidebar < List < Detail) */
   --bg-app: #f7f8fa;
@@ -75,6 +72,13 @@ html[data-pal='linear'],
   --r-lg: 12px;
   --p-color: var(--accent);
   --app-solid-fg: #ffffff;
+}
+
+.task-refresh-message {
+  padding: 8px 12px;
+  color: rgb(var(--app-muted));
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 /* 高级粉调高对比模式 */

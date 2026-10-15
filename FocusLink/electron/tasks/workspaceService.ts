@@ -10,6 +10,31 @@ import {
 } from '../sync/deviceSyncService.js';
 import { assembleTaskTree } from '@shared/taskTreeUtils';
 import { getSettings } from '../settingsStore.js';
+import { logger } from '../logger.js';
+
+export function readLocalTaskWorkspace(projectId?: string): TaskWorkspaceRefreshData {
+  const tasks = LocalTaskProvider.list().filter(
+    (task) => !projectId || task.projectId === projectId,
+  );
+  return {
+    provider: 'focuslink-local',
+    projects: LocalTaskProvider.listProjects(),
+    tasks: assembleTaskTree(tasks),
+    refreshedAt: Date.now(),
+  };
+}
+
+/** Local mutations are already durable. Stage the snapshot before replying; its
+ * delivery must not make a successful SQLite write wait for an unavailable cloud. */
+export function queueLocalTaskWorkspace(): TaskWorkspaceRefreshData {
+  const data = readLocalTaskWorkspace();
+  void publishTaskWorkspace(data.projects, data.tasks, data.refreshedAt, false).catch((error) => {
+    logger.warn('tasks', 'local workspace saved; cloud publication pending', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  return data;
+}
 
 export async function setTaskCompleted(task: Task, completed: boolean): Promise<Task> {
   if (task.source === 'local') return LocalTaskProvider.setCompleted(task.id, completed);
@@ -53,7 +78,11 @@ async function publishTaskWorkspace(
       throw new Error('任务快照未获得云端确认，已保留本地变更并等待重试');
     }
   } else {
-    void publication;
+    void publication.catch((error) => {
+      logger.warn('tasks', 'workspace publication pending', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 }
 
@@ -64,6 +93,12 @@ export async function refreshTaskWorkspace(
   const normalizedOptions = { ...options, projectId: selectedProjectId };
   let providerLabel = 'FocusLink 任务库';
   try {
+    if (options.localOnly) {
+      return {
+        ok: true,
+        data: readLocalTaskWorkspace(selectedProjectId),
+      };
+    }
     if (!options.skipCloudSnapshotMerge) {
       const cloud = await readDeviceTaskSnapshot();
       if (cloud?.snapshot) {

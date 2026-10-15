@@ -87,6 +87,164 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('desktop live focus controller', () => {
+  it('acknowledges finish and releases control even while ledger import never responds', async () => {
+    const local = { getSnapshot: () => snapshot('idle'), onSnapshot: vi.fn(), dispose: vi.fn() };
+    const controller = new FocusTimerController(local as never);
+    const internal = controller as unknown as { liveMode: boolean; snapshot: TimerSnapshot };
+    internal.liveMode = true;
+    internal.snapshot = { ...snapshot('running'), sessionId: 'remote-session' };
+    const value = await liveResponse('idle', 2).json();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ...value,
+          ack: { status: 'applied', errorCode: null, completedEntityId: 'remote-session' },
+        }),
+      ),
+    );
+    vi.mocked(runDeviceSync).mockImplementation(() => new Promise(() => {}));
+    try {
+      await expect(controller.stop()).resolves.toMatchObject({
+        state: 'idle',
+        ledgerImportPending: true,
+      });
+      expect(runDeviceSync).toHaveBeenCalledOnce();
+      const next = await liveResponse('running', 3).json();
+      fetchSpy.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...next,
+            ack: { status: 'applied', errorCode: null, completedEntityId: null },
+          }),
+        ),
+      );
+      await expect(controller.toggle()).resolves.toMatchObject({ state: 'running' });
+    } finally {
+      controller.dispose();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('does not let a late ledger import overwrite a newer active session', async () => {
+    const local = { getSnapshot: () => snapshot('idle'), onSnapshot: vi.fn(), dispose: vi.fn() };
+    const controller = new FocusTimerController(local as never);
+    const internal = controller as unknown as { liveMode: boolean; snapshot: TimerSnapshot };
+    internal.liveMode = true;
+    internal.snapshot = { ...snapshot('running'), sessionId: 'remote-session' };
+    let finishImport!: () => void;
+    vi.mocked(runDeviceSync).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishImport = () => resolve({} as never);
+        }),
+    );
+    const value = await liveResponse('idle', 2).json();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...value,
+          ack: { status: 'applied', errorCode: null, completedEntityId: 'remote-session' },
+        }),
+      ),
+    );
+    try {
+      await controller.stop();
+      const next = await liveResponse('running', 3).json();
+      fetchSpy.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...next,
+            ack: { status: 'applied', errorCode: null, completedEntityId: null },
+          }),
+        ),
+      );
+      await controller.toggle();
+      vi.mocked(getSession).mockReturnValue({ id: 'remote-session', status: 'finished' } as never);
+      finishImport();
+      await flushMicrotasks();
+      expect(controller.getSnapshot().state).toBe('running');
+    } finally {
+      controller.dispose();
+      fetchSpy.mockRestore();
+    }
+  });
+  it('coalesces repeated mouse and shortcut toggles while a command is awaiting confirmation', async () => {
+    const local = { getSnapshot: () => snapshot('idle'), onSnapshot: vi.fn(), dispose: vi.fn() };
+    const controller = new FocusTimerController(local as never);
+    const internal = controller as unknown as { liveMode: boolean; snapshot: TimerSnapshot };
+    internal.liveMode = true;
+    internal.snapshot = { ...snapshot('paused'), sessionId: 'remote-session' };
+    let resolveCommand!: (value: Response) => void;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCommand = resolve;
+        }),
+    );
+    try {
+      const mouse = controller.toggle();
+      const shortcut = controller.toggle();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      await expect(controller.stop()).rejects.toThrow('上一次操作正在确认');
+      const value = await liveResponse('running', 2).json();
+      resolveCommand(
+        new Response(
+          JSON.stringify({
+            ...value,
+            ack: { status: 'applied', errorCode: null, completedEntityId: null },
+          }),
+        ),
+      );
+      await expect(mouse).resolves.toMatchObject({ state: 'running' });
+      await expect(shortcut).resolves.toMatchObject({ state: 'running' });
+    } finally {
+      controller.dispose();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('bounds an unresponsive command and permits a later retry without changing confirmed state', async () => {
+    vi.useFakeTimers();
+    const timeouts = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const abort = new AbortController();
+      setTimeout(() => abort.abort(new DOMException('Timed out', 'TimeoutError')), ms);
+      return abort.signal;
+    });
+    const local = { getSnapshot: () => snapshot('idle'), onSnapshot: vi.fn(), dispose: vi.fn() };
+    const controller = new FocusTimerController(local as never);
+    const internal = controller as unknown as { liveMode: boolean; snapshot: TimerSnapshot };
+    internal.liveMode = true;
+    internal.snapshot = { ...snapshot('paused'), sessionId: 'remote-session' };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    try {
+      const rejected = expect(controller.toggle()).rejects.toThrow('实时同步请求超时');
+      await vi.advanceTimersByTimeAsync(4_000);
+      await rejected;
+      expect(controller.getSnapshot().state).toBe('paused');
+      const value = await liveResponse('running', 2).json();
+      fetchSpy.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...value,
+            ack: { status: 'applied', errorCode: null, completedEntityId: null },
+          }),
+        ),
+      );
+      await expect(controller.toggle()).resolves.toMatchObject({ state: 'running' });
+    } finally {
+      controller.dispose();
+      fetchSpy.mockRestore();
+      timeouts.mockRestore();
+      vi.useRealTimers();
+    }
+  });
   beforeEach(() => {
     vi.mocked(runDeviceSync).mockReset();
     vi.mocked(getSession).mockReset();

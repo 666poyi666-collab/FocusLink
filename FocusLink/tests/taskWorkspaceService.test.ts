@@ -69,7 +69,11 @@ vi.mock('../electron/sync/deviceSyncService.js', () => ({
   isDeviceTaskSnapshotSyncConfigured: vi.fn(() => serviceState.taskSyncConfigured),
 }));
 
-import { refreshTaskWorkspace, setTaskCompleted } from '../electron/tasks/workspaceService';
+import {
+  refreshTaskWorkspace,
+  queueLocalTaskWorkspace,
+  setTaskCompleted,
+} from '../electron/tasks/workspaceService';
 import { ticktickCliProvider } from '../electron/tasks/cliProvider';
 
 function makeTask(id: string, source: Task['source'] = 'local'): Task {
@@ -107,6 +111,36 @@ beforeEach(() => {
 });
 
 describe('task workspace service', () => {
+  it('stages a local mutation without waiting for cloud delivery or merging an older register', () => {
+    serviceState.localTasks = [makeTask('just-saved')];
+    serviceState.publishTaskSnapshot.mockImplementationOnce(() => new Promise(() => {}));
+    expect(queueLocalTaskWorkspace()).toMatchObject({ tasks: [{ id: 'just-saved' }] });
+    expect(serviceState.publishTaskSnapshot).toHaveBeenCalledOnce();
+    expect(serviceState.readTaskSnapshot).not.toHaveBeenCalled();
+    expect(ticktickCliProvider.listWorkspaceTasks).not.toHaveBeenCalled();
+  });
+  it('reads durable local tasks immediately even while cloud reads cannot finish', async () => {
+    serviceState.localTasks = [makeTask('offline-task')];
+    serviceState.readTaskSnapshot.mockImplementationOnce(() => new Promise(() => {}));
+    const result = await refreshTaskWorkspace({ localOnly: true });
+    expect(result).toMatchObject({ ok: true, data: { tasks: [{ id: 'offline-task' }] } });
+    expect(serviceState.readTaskSnapshot).not.toHaveBeenCalled();
+    expect(serviceState.publishTaskSnapshot).not.toHaveBeenCalled();
+    expect(ticktickCliProvider.listWorkspaceTasks).not.toHaveBeenCalled();
+    // Do not leave an unconsumed mock implementation for another test.
+    serviceState.readTaskSnapshot.mockReset().mockResolvedValue(null);
+  });
+
+  it('does not launch the configured external provider for a local-only read', async () => {
+    serviceState.taskSource = 'ticktick-cli';
+    serviceState.localTasks = [makeTask('local-copy')];
+    await expect(refreshTaskWorkspace({ localOnly: true })).resolves.toMatchObject({
+      ok: true,
+      data: { tasks: [{ id: 'local-copy' }] },
+    });
+    expect(ticktickCliProvider.listProjects).not.toHaveBeenCalled();
+    expect(serviceState.readTaskSnapshot).not.toHaveBeenCalled();
+  });
   it('keeps a local workspace empty instead of importing an installed provider', async () => {
     serviceState.taskSource = 'local';
     const result = await refreshTaskWorkspace({

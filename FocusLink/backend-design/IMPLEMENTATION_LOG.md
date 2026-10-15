@@ -1,5 +1,18 @@
 # FocusLink 实施日志
 
+## 2026-10-15 · `FL-UI-20261015-DESKTOP-RESPONSIVENESS`：任务加载、小窗操作与页面主题（Windows v1.6.2）
+
+- **用户范围**：要求任务快速、简洁，任务/统计与整体 UI 一致，小窗点击与 Ctrl+1 不再像卡死并增加圆角；随后明确「不要用 computeruse，继续」「现在只开发 pc」。本轮只执行 Windows，Android 仅同步版本元数据，不构建/安装 APK；不把小米/华为缺席写成通过，也不阻塞本轮 PC 验收。未获公开 tag/GitHub Release 授权。
+- **Bug 证据**：2026-10-15 本机日志 UTC 07:04:59.020（北京时间 15:04:59）记录 Ctrl+1 `paused → paused` 且立即 `success:true`；UTC 07:05:09.275 才出现 `toggle failed`，相隔 10.255 秒。同期 `/sync/v2/live*`、`/sync/v2/tasks` 多次真实 transport 失败。根因是 remote command 无显式截止时间、快捷键未等待异步 handler 就报成功、小窗 Promise 拒绝未呈现；不是快捷键未注册的证据。
+- **任务根因与修复**：刷新函数先 await 云端快照才读 SQLite；任务页初次读取还与会话列表绑定，选择器每次重挂载都刷新。本地 mutation 也 await 云端刷新/发布。增加 `localOnly` 快速读取、共享已加载/在途缓存、30 秒刷新/失败冷却和错误提示；本地写入后先持久化同步 pending、广播 `tasks:changed`，再后台发送。新任务事件与响应按 id 去重，旧读结果不能覆盖新 mutation。清单删除的确认/回滚不变，未修改 dida 评论、marker 或 checklist 逻辑。
+- **控制修复**：实时普通请求 4 秒预算，long-poll 仍有独立 30 秒预算；同 session/意图在途合并，冲突意图拒绝。finish/abort ACK 立即响应，账本导入不锁住控制台；导入/finished 回调有 generation、连接、revision 和状态保护。快捷键等待真实结果并广播 pending/错误，小窗两态均有反馈，不伪造远端确认。
+- **渲染与主题**：任务页/选择器改为 Zustand 字段订阅；暂停动画仅更新 canvas，隐藏时取消，整树只按秒更新。小窗保留两固定尺寸并增加共享圆角。任务和统计默认调色板映射根主题；无头验收发现任务根的第二层 `.dark` 把 `--app-surface` 重置为 `21 24 28`，与根主题 `31 37 39` 不一致，已移除该冗余 class，保留局部 data-theme 和用户显式调色板。
+- **自动化证据**：149 文件 / 1261 单元测试通过；typecheck（含 Worker）、lint、build 通过。真实构建 `smoke:performance`（synthetic IPC，无用户数据）通过：远端请求一直挂起时 240 条本地任务约 121ms 出现、重复打开共享一次远端请求、mutation 同步到 picker 且不重复、错误后保留列表、明暗主题跟随；暂停小窗 2.5 秒内仅 3 次 React 提交，重复点击仅一个请求、失败后可重试、两态尺寸/圆角/DPR 通过。截图/结果在系统临时目录，不作为原生输入或网络恢复证据。
+- **验收脚本的历史漂移**：旧统计 smoke 的 synthetic IPC 漏了 10 月 13 日新增的 `tomatodo.status`，页面 effect 抛异常而空白；补齐 disabled fixture 后恢复。它的“首次加载”此前已由统计页任务 picker 预热共享缓存，因此必须显式重置 fixture 缓存才是真冷启动，不能把不再出现骨架当作产品退步。新性能 smoke 初次没 enable Page domain 导致初始化脚本未运行，修正后使用真实构建验证；保留失败事实。
+- **当前网络证据**：北京时间 15:33:09，Node 22 + 同一系统 HTTP 代理对 canonical `/sync/v2/live` 得到 `ECONNRESET`；15:33:43 canonical 与固定备用 origin 的只读 `/healthz` 均在 5 秒超时。与 10 月 13 日代理恢复成功同时保留；不归因于鉴权，也不声称云已恢复。稳定诊断见 `FL-SYNC-025` / `FL-SYNC-022`。
+- **安装前回读**：已安装 EXE FileVersion `1.6.1` / ProductVersion `1.6.1.0`，卸载注册表仍为 `DisplayName=FocusLink 1.5.1` / `DisplayVersion=1.5.1`，属于既有 `FL-INSTALL-015`。ADB 当前为空，但用户已将本轮限定 PC。
+- **交付状态**：Windows 1.6.2 构建/安装验收进行中；后续实际安装、版本、主窗口可见性、资产哈希和 main 推送结果在本条补充，当前不宣称完成。
+
 ## 2026-10-13 · `FL-SYNC-20261013-TOMATODO-APPROVAL-GATE-LEAK`：批准后同步闸门漏了云端 provider delivery（v1.6.1，不升版本）
 
 - **现场证据（2026-10-13 19:50 实测）**：用户 15:08 开始、19:50 结束的会话 `827833a5-cd87-4585-8535-b7f8fefeb71e`（任务「高二暑第三节」、累计 91 分钟、会话表 `tomatodo_subject` / `tomatodo_record_name` **均为 NULL**）在**用户从未批准**的情况下被写成 `PCRecord id=636`（`name="学习"`、`time=91`、`s1=[FocusLink:tomatodo:session:827833a5…]`、`isSynced=1`），即已经上传。日志每约一分钟重复 `[tomatodoSync] session synced {skipped:1, recordFound:true, subject:"学习", minutes:91, syncState:"confirmation-pending"}` 与 `[remoteWriteback] provider delivery deferred {provider:"tomatodo", error:"tomatodo_cloud_pending:3"}`。
