@@ -1565,7 +1565,8 @@ async function main() {
   const afterBringToFrontGeometry = summarizeWindowState(afterBringToFront);
   if (
     broughtToFront !== true ||
-    foregroundBeforeBringToFront.handle <= 0 ||
+    typeof foregroundBeforeBringToFront.handle !== 'number' ||
+    foregroundBeforeBringToFront.handle < 0 ||
     foregroundAfterBringToFront.handle !== foregroundBeforeBringToFront.handle ||
     foregroundAfterBringToFront.processId !== foregroundBeforeBringToFront.processId ||
     foregroundAfterBringToFront.title !== foregroundBeforeBringToFront.title ||
