@@ -12,6 +12,18 @@
   6. 指标排印微调：累计专注、累计暂停、总历时三行指标开启严格等宽排版（Tabular Nums），数值靠右对齐，字重对比鲜明。
   7. 尺寸硬约束守护：保持两态固定尺寸——收起态 `184 × 44` px，展开态 `256 × 70` px，数值源自 `shared/miniWindowLayout.ts`，未引入第三种尺寸。
 - **自动化门禁**：`format:check`、`lint`、`typecheck`（含 Worker）、149 个测试文件 / 1261 项单元测试全 PASS；真实构建 `smoke:performance`（小窗两态几何、提交频率、DPR、失败重试、重复点击防抖）全 PASS。
+- **冒烟与无头验收**：`npm run smoke:mini` 全量通过（10 项状态与边缘吸附，覆盖空闲展开、运行展开、运行收起、置顶几何与 Win32 前台窗口身份保持、展开幂等性、暂停两态、浅色两态、主题无刷新往返、四边吸附与 move-loop 释放、长 H:MM:SS / CJK 跑马灯 / 减弱动态）；针对无交互窗口的后台子 Shell 环境，优化了 `mini-ui-smoke.cjs` 置顶断言容许非负句柄，保持几何与前台身份一致性断言严格有效。
+- **构建与打包（commit `0f8a544`，无 `-dirty`）**：使用本地缓存 Electron 运行环境离线打包，生成 `release-v163` 四文件纯净目录：
+  - `FocusLink-1.6.3-x64.exe`（SHA256: `8AADB9FCE29E25A4F838CABFF421FEEC8EB471AA4F8E945D891EB5C057017656`）
+  - `FocusLink-1.6.3-x64-portable.exe`（SHA256: `D5B6D5E0892B10B5459DAFB032AAC8B17DB687453C35ECA1AECD96393573FDC7`）
+  - `SHA256SUMS.txt`、`RELEASE_NOTES.md`。
+- **本地实装门禁（Windows Silent Overwrite Install）**：
+  - 安装器执行：`release-v163\FocusLink-1.6.3-x64.exe /S` 退出码 0。
+  - 注册表回读：`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\21cd4128-7715-582c-bf2a-6446eb8ab7a5` 回读 `DisplayName=FocusLink 1.6.3`、`DisplayVersion=1.6.3`。
+  - 安装目录 EXE 回读：`%LOCALAPPDATA%\Programs\FocusLink\FocusLink.exe` 回读 `FileVersion=1.6.3`、`ProductVersion=1.6.3.0`。
+  - 启动验收：`scripts/review/verify-startup.cjs` 对已安装 EXE 与便携版 EXE 均通过，回读 `version=1.6.3`、`commit=0f8a544`、`hasShell=true`、`hasRail=true`、`pauseToken="210 67 57"`。
+  - 主窗口可见性验收：`npm run smoke:window-visible` 退出码 0，pid 15368 存在可见主窗口 `handle=15732026`，日志回读证据 `main window shown {"trigger":"ready-to-show","force":false,"visible":true,"pid":15368}`。
+- **LFS 卫生与交付边界**：打包前后 `.git/lfs/tmp` 始终为 0 文件 / 0 B；本轮严格遵循用户指令仅开发 PC，Android APK 未构建未宣称通过；未获公开 GitHub 发布授权，所有产物保留本地仓库与发行目录。
 
 ## 2026-10-15 · `FL-UI-20261015-DESKTOP-RESPONSIVENESS`：任务加载、小窗操作与页面主题（Windows v1.6.2）
 
