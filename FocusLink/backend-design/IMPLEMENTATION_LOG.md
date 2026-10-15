@@ -8,7 +8,19 @@
   2. 彻底根除挤压与截断：右列 104px 上半部 29px 容纳 3 行指标（各 1/3，强制 `white-space: nowrap` 与 Tabular Nums 等宽对齐，绝不换行）；下半部 19px 容纳双操作按钮（4px 微圆角，平整并列，绝不压字）。
   3. 微光立体感强化（方案 1）：外轮廓加入 `box-shadow: inset 0 1px 0 rgb(var(--app-highlight) / 0.12), 0 8px 24px rgb(0 0 0 / 0.4)`，高饱和小窗在暗色与复杂桌面壁纸下拥有深邃通透的悬浮质感。
   4. 尺寸硬门禁守护：收起态 `184 × 44` px，展开态 `256 × 70` px，严格符合 `miniWindowLayout.ts`。
-- **本轮范围**：用户明确只开发 PC，Android 仅同步版本元数据（1.6.5 / 1341），不构建 APK。
+- **自动化门禁**：`format:check`、`lint`、`typecheck`（含 Worker）、149 个测试文件 / 1261 项单元测试全 PASS；真实构建 `smoke:performance`（小窗两态几何、提交频率、DPR、失败重试、重复点击防抖）全 PASS（`cachedTaskOpenMs: 93`, `pausedReactCommitsIn2500ms: 3`）。
+- **冒烟与无头验收**：`npm run smoke:mini` 全量通过（10 项状态与边缘吸附，覆盖空闲展开、运行展开、运行收起、置顶几何与 Win32 前台窗口身份保持、展开幂等性、暂停两态、浅色两态、主题无刷新往返、四边吸附与 move-loop 释放、长 H:MM:SS / CJK 跑马灯 / 减弱动态）。
+- **构建与打包（commit `142a64e`，无 `-dirty`）**：使用本地缓存 Electron 运行环境离线打包，生成 `release-v165` 四文件纯净目录：
+  - `FocusLink-1.6.5-x64.exe`（SHA256: `1AC48DE04E4EEE68870D6BAE7414B246DD6DAC545703EA9D0C5C6EED0E8C9A78`）
+  - `FocusLink-1.6.5-x64-portable.exe`（SHA256: `38C1EF9A30A565FA851230B7A870DC927454ECFB324E2A083394861C42252237`）
+  - `SHA256SUMS.txt`、`RELEASE_NOTES.md`。
+- **本地实装门禁（Windows Silent Overwrite Install）**：
+  - 安装器执行：`release-v165\FocusLink-1.6.5-x64.exe /S` 退出码 0。
+  - 注册表回读：`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\21cd4128-7715-582c-bf2a-6446eb8ab7a5` 回读 `DisplayName=FocusLink 1.6.5`、`DisplayVersion=1.6.5`。
+  - 安装目录 EXE 回读：`%LOCALAPPDATA%\Programs\FocusLink\FocusLink.exe` 回读 `FileVersion=1.6.5`、`ProductVersion=1.6.5.0`。
+  - 启动验收：`scripts/review/verify-startup.cjs` 对已安装 EXE 与便携版 EXE 均通过，回读 `version=1.6.5`、`commit=142a64e`、`hasShell=true`、`hasRail=true`、`pauseToken="210 67 57"`。
+  - 主窗口可见性验收：`npm run smoke:window-visible` 退出码 0，pid 46636 存在可见主窗口 `handle=1577830`，日志回读证据 `main window shown {"trigger":"ready-to-show","force":false,"visible":true,"pid":46636}`。
+- **LFS 卫生与交付边界**：打包前后 `.git/lfs/tmp` 始终为 0 文件 / 0 B；本轮严格遵循用户指令仅开发 PC，Android APK 未构建未宣称通过；未获公开 GitHub 发布授权，所有产物保留本地仓库与发行目录。
 
 ## 2026-10-15 · `FL-UI-20261015-MINI-WINDOW-LEGIBILITY`：桌面小窗字体清晰度与高对比度深度打磨（Windows v1.6.4）
 
