@@ -179,6 +179,7 @@
   /* 圆角梯子必须补齐到 2xl：tailwind.config.js 已经把 rounded-2xl 映射过来了，
      半截的梯子只会让下一个用到它的人得到一个没有圆角的方块。 */
   --radius-2xl: 8px;
+  --radius-3xl: 16px;
   --radius-pill: 999px;
   --radius-circle: 50%;
   --radius-instrument-slot: 0.055em;

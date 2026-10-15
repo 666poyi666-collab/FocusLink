@@ -5,17 +5,25 @@
 .mini-window-shell {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgb(var(--app-border-strong));
+  border: 1px solid rgb(var(--app-border-strong) / 0.85);
   border-radius: var(--radius-2xl);
   background: rgb(var(--app-surface));
   color: rgb(var(--app-text));
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgb(var(--app-highlight) / 0.08);
   transition:
     width var(--mini-dock-transition-duration) var(--ease-fluid),
     height var(--mini-dock-transition-duration) var(--ease-fluid),
     transform var(--motion-fast) var(--ease-out);
   -webkit-app-region: drag;
   cursor: grab;
+}
+
+.mini-window-collapsed {
+  border-radius: var(--radius-pill);
+}
+
+.mini-window-expanded {
+  border-radius: var(--radius-3xl);
 }
 
 .no-drag {
@@ -43,7 +51,7 @@
 .mini-state-dot {
   width: 6px;
   height: 6px;
-  border-radius: 1px;
+  border-radius: var(--radius-pill);
   background: rgb(var(--app-subtle));
 }
 
@@ -100,15 +108,17 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-left: 1px solid rgb(var(--app-border));
-  border-radius: 0;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: rgb(var(--app-muted));
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .mini-icon-button:hover {
-  background: rgb(var(--app-accent-soft));
-  color: rgb(var(--app-accent));
+  background: rgb(var(--app-text) / 0.08);
+  color: rgb(var(--app-text));
 }
 
 /* ─── 收起态：状态 / 时间 / 60 格秒轨 / 展开 ─── */
@@ -127,7 +137,7 @@
   height: 100%;
   grid-template-columns: minmax(0, 1fr) 30px;
   align-items: center;
-  padding: 0 3px 0 11px;
+  padding: 0 4px 0 13px;
   -webkit-app-region: drag;
 }
 
@@ -136,6 +146,7 @@
   width: 24px;
   height: 24px;
   min-width: 24px;
+  border-radius: var(--radius-pill);
 }
 
 .mini-collapsed-current,
@@ -178,7 +189,7 @@
   color: rgb(var(--app-text));
   font-size: 25px;
   font-weight: 560;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
   line-height: 1;
 }
 
@@ -205,14 +216,14 @@
   position: absolute;
   overflow: visible;
   /* 轨道本体透明，只由上下发丝线界定；刻度线就是全部内容。 */
-  border-top: 1px solid rgb(var(--app-border) / 0.62);
-  border-bottom: 1px solid rgb(var(--app-border-strong) / 0.78);
+  border-top: 1px solid rgb(var(--app-border) / 0.45);
+  border-bottom: 1px solid rgb(var(--app-border-strong) / 0.55);
   /* 只有每 5 秒一根刻度线。每秒一根在这个尺度上就是一把梳子——
      上一版正是这样，读起来像条形码而不是刻度。 */
   background: repeating-linear-gradient(
     90deg,
-    rgb(var(--app-grid) / 0.4) 0,
-    rgb(var(--app-grid) / 0.4) 1px,
+    rgb(var(--app-grid) / 0.35) 0,
+    rgb(var(--app-grid) / 0.35) 1px,
     transparent 1px,
     transparent 8.3333%
   );
@@ -220,10 +231,14 @@
 }
 
 .mini-edge-progress {
-  right: 4px;
-  bottom: 1px;
-  left: 4px;
-  height: 4px;
+  right: 14px;
+  bottom: 2px;
+  left: 14px;
+  height: 3px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgb(var(--app-border) / 0.4);
+  overflow: hidden;
 }
 
 /* 暂停态熔断画布必须有一个显式 CSS 盒（FL-INSTALL-011 同轮实测的 P0 缺陷）。
@@ -307,7 +322,8 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   padding-left: 8px;
-  border-bottom: 1px solid rgb(var(--app-border));
+  border-bottom: 1px solid rgb(var(--app-border) / 0.55);
+  background: rgb(var(--app-surface-2) / 0.2);
 }
 
 .mini-state-badge {
@@ -329,15 +345,40 @@
 }
 
 .mini-header-actions {
+  display: flex;
   height: 20px;
+  align-items: center;
+  gap: 1px;
+  padding-right: 3px;
+  border-left: 1px solid rgb(var(--app-border) / 0.45);
+}
+
+.mini-header-actions .mini-icon-button {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
 }
 
 .mini-task-block {
   position: relative;
   min-width: 0;
   overflow: hidden;
-  padding: 0 7px;
-  border-left: 1px solid rgb(var(--app-border));
+  padding: 0 8px;
+  border-left: 1px solid rgb(var(--app-border) / 0.45);
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black 6px,
+    black calc(100% - 6px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black 6px,
+    black calc(100% - 6px),
+    transparent 100%
+  );
 }
 
 .mini-task-title {
@@ -416,7 +457,7 @@
   color: rgb(var(--app-text));
   font-size: 23px;
   font-weight: 570;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
   line-height: 1;
   white-space: nowrap;
 }
@@ -430,7 +471,8 @@
   min-width: 0;
   min-height: 0;
   grid-template-rows: minmax(0, 30px) 18px;
-  border-left: 1px solid rgb(var(--app-border));
+  border-left: 1px solid rgb(var(--app-border) / 0.55);
+  background: rgb(var(--app-surface-2) / 0.15);
 }
 
 .mini-metric-rail {
@@ -439,6 +481,7 @@
   min-height: 0;
   overflow: hidden;
   grid-template-rows: repeat(3, minmax(0, 1fr));
+  padding: 1px 0;
 }
 
 .mini-metric {
@@ -465,6 +508,7 @@
   font-size: 9.5px;
   font-weight: 600;
   white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .mini-expanded-footer {
@@ -474,7 +518,8 @@
   align-items: center;
   justify-content: stretch;
   overflow: hidden;
-  border-top: 1px solid rgb(var(--app-border));
+  border-top: 1px solid rgb(var(--app-border) / 0.55);
+  padding: 0 1px;
 }
 
 .mini-action-dock {
@@ -482,6 +527,7 @@
   width: 100%;
   height: 17px;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 2px;
 }
 
 .mini-primary-button,
@@ -492,20 +538,18 @@
   justify-content: center;
   gap: 3px;
   overflow: hidden;
-  padding: 0 3px;
-  border-top: 0;
-  border-bottom: 0;
-  border-radius: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
   font-size: 9px;
   font-weight: 650;
   white-space: nowrap;
 }
 
 .mini-primary-button {
-  border: 0;
-  border-right: 1px solid rgb(var(--app-border-strong));
   background: rgb(var(--app-accent));
   color: rgb(var(--app-accent-fg));
+  box-shadow: inset 0 1px 0 rgb(var(--app-highlight) / 0.2);
 }
 
 .mini-action-hold {
@@ -519,14 +563,18 @@
 }
 
 .mini-secondary-button {
-  border: 0;
-  background: transparent;
+  background: rgb(var(--app-surface-2) / 0.65);
   color: rgb(var(--app-text));
+}
+
+.mini-secondary-button:hover:not(:disabled) {
+  background: rgb(var(--app-surface-2));
 }
 
 .mini-secondary-button:disabled {
   color: rgb(var(--app-subtle));
   opacity: 0.55;
+  background: transparent;
 }
 
 /* 展开态主按钮按压反馈：140ms 亮度收敛，配合 framer whileTap 缩放（140ms）。 */
