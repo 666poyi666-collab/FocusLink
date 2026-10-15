@@ -9,7 +9,9 @@
   border-radius: var(--radius-2xl);
   background: rgb(var(--app-surface));
   color: rgb(var(--app-text));
-  box-shadow: inset 0 1px 0 rgb(var(--app-highlight) / 0.08);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--app-highlight) / 0.12),
+    0 8px 24px rgb(0 0 0 / 0.4);
   transition:
     width var(--mini-dock-transition-duration) var(--ease-fluid),
     height var(--mini-dock-transition-duration) var(--ease-fluid),
