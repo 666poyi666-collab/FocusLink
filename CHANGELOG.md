@@ -2,7 +2,7 @@
 
 ## v1.6.7 - 2026-10-20（去重减负：包体、字体表、暂停重绘与死代码）
 
-- **安装包瘦身（不改任何界面）**：剔除 `node_modules/@fontsource` 与 `@fontsource-variable` 整包（实测 7 个包共 70.74 MiB，构建期已被 Vite 哈希进 `dist/assets`，运行期无任何代码 require）；`electronLanguages` 只保留 `zh-CN`、`en-US`（55 个 locale pak 共 46.65 MiB，中英仅 1.09 MiB）；better-sqlite3 只保留 `win32-x64` 的 N-API prebuild（8 个平台合计 16.11 MiB，其中 win32-x64 仅 1.90 MiB）并排除 `deps/` 下 9.78 MiB 的 sqlite3 C 源码；`lucide-react` / `framer-motion` / `zustand` 等已由 Vite 打进产物的 renderer 专用依赖不再进入 asar。
+- **安装包瘦身：已实现、已实测、但本轮未交付（BLOCKED）**：`electron-builder.yml` 已加入四组排除（`@fontsource*` 整包 70.74 MiB、只留 `zh-CN`/`en-US` 两个 locale、better-sqlite3 只留 `win32-x64` prebuild 并排除 `deps/`、renderer 专用依赖不进 asar）。实测两组配置都能正常出包：全量排除时安装包 **204.95 → 120.02 MiB**、`app.asar` **109.51 → 32.14 MiB**、locale 55 → 2；只留字体与 locale 时 **128.26 MiB**。但**两种打包产物的启动验收全部失败**：`scripts/review/verify-startup.cjs` 报 `Electron exited before exposing a page (code 2147483651 / 0x80000003)`，进程无窗口、无日志。已排除的两个原因：① 打包配置不是元凶——把四组排除全部撤回到 1.6.5 原配置重新打包（204.95 MiB、55 个 locale）同样启动即崩；② 外壳不是元凶——把本轮的 `win-unpacked` 换成 1.6.5 的 `app.asar` + `app.asar.unpacked` 后能正常起窗口，而 1.6.5 安装版自身用 `verify-startup.cjs` 能读到版本与 commit。两个 asar 的文件条目数都是 3848，差异只落在重建后的 `dist/assets/*` 与 `dist-electron/*` chunk 上。**结论：崩溃出在重建后的 bundle 内容，未定位到具体文件前不发布、不安装**；本轮因此没有 `release-v167` 目录、没有覆盖安装、没有推送 tag。
 - **字体表按住入口拆分**：新增 `src/styles/font-faces.css`（全站字体表）与 `src/styles/mini-font-faces.css`（小窗可达字体表），`temporal-foundation.css` 不再声明任何 `@font-face`。184×44 的专注小窗此前要为整副字体表付费——实测小窗 CSS 362,233 B 中 236 条 `@font-face` 占约 68%；拆分后小窗 CSS **324,564 B（−37,669 B，−10.4%）**、`@font-face` **236 → 212 条**。小窗 8 档界面字体的首选族经逐档核对后全部保留，剔除项只有三处确实不可达的引用（Oswald / Bodoni Moda 只被 `--font-timer-flip/thin` 引用，小窗没有计时器字形；JetBrains Mono 的非 latin 分片与 woff 备份，小窗 `--font-number` 只渲染 ASCII），**不外露任何字形变化**。
 - **暂停态重绘减半**：时间之带在暂停后由满帧连续重绘改为 32ms 限频连续帧（≈30 次/秒，原 60；每帧位移 0.27px，低于可辨阈值），与 `MiniWindow` 已有的 32ms 节流同一套做法。running 与暂停过渡期（离子收束 / 变焦）仍保持满帧，reduced-motion 仍按秒唤醒，镜头投影口径未动——**没有任何单帧位移超过约 0.3px，暂停画面观感不变**。
 - **专注页订阅收窄**：`TimerPanel` 从无选择器的 `useStore()` 整仓订阅改为 7 个逐字段选择器；计时 tick、toast 与同步队列写入不再重建整个专注页（表盘 + 时间之带 + 账本）。
@@ -10,6 +10,7 @@
 - **规范纠偏**：`FRONTEND_SPEC` 里"样式只来自三层"的说法实际早已是六层，改正为六层按序导入 + 六个按需动效层的入口清单。
 - **门禁**：`format:check` / `typecheck`（含 Worker）/ `lint` / `npm test` **150 文件 1271 项全 PASS** / `npm run build` 通过。本轮修掉 1.6.6 遗留的 `tests/releaseRecordContract.test.ts` 12 个 TypeScript 错误（隐式 any、可能 undefined、null 赋值）与两个 smoke 脚本的格式问题——它们此前会让 `typecheck` 门禁直接失败。
 - **范围**：用户 2026-10-20 批准本轮，仍只开发 PC（Windows）；Android 仅同步版本元数据（1.6.7 / 1343），不构建、不安装、不宣称。
+- **本轮状态**：代码层四项（字体表拆分、暂停态重绘减半、专注页订阅收窄、死代码清理）已完成并通过全部门禁；打包瘦身待启动崩溃修复后再作为独立补丁交付。**不做封面安装、不创建发布记录、不推送 tag**。
 
 ## v1.6.6 - 2026-10-15（交付管道与仓库清理）
 

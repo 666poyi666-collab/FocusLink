@@ -1,5 +1,28 @@
 # FocusLink 实施日志
 
+## 2026-10-20 · `FL-PERF-20261020-DEDUP`：去重减负四项落地 + 打包瘦身启动崩溃（Windows v1.6.7，BLOCKED）
+
+- **用户范围（原文）**：「这个项目的主要问题就是不够丝滑，整体卡顿，ui设计一体化很差，不是小巧精致的产品」→ 我给出证据报告后用户批准「可以试试，你去做吧」。本轮定位：只砍浪费、不改任何可见视觉；仍只开发 PC（Windows），Android 仅同步版本元数据。
+- **先量后改的证据（三路只读探针，全部实测）**：
+  1. 时间之带在 running 与 paused 都持续 rAF（`src/features/focus/TemporalRibbon.tsx:317-325`），暂停后画面静止仍满帧 clearRect 重画整幅。
+  2. `TimerPanel` 用无选择器 `useStore()` 订阅整个 store（`:84-92`），计时 tick、toast、同步队列任何写入都重建整页。
+  3. 小窗 CSS 362,233 B 中 236 条 @font-face 占约 68%；`dist` 内 226 个 woff2 共 28.0 MB。
+  4. 主窗 CSS 613 KB / 4305 条规则 / 232 个自定义属性 / 285 处 !important。
+  5. `node_modules/@fontsource*` 70.74 MiB、`electron/dist/locales` 55 个 pak 46.65 MiB、better-sqlite3 prebuilds 16.11 MiB（Win64 只需 1.90 MiB）。
+- **已落地并通过门禁的四项**：
+  1. **字体表按住入口拆分**：新增 `src/styles/font-faces.css`（全站）与 `mini-font-faces.css`（小窗可达族），`temporal-foundation.css` 不再声明任何 @font-face。实测构建后 **mini CSS 362,233 → 324,564 B（−10.4%）**、@font-face **236 → 212 条**；主窗 CSS 614,304 → 613,189 B。判定口径：小窗 8 档界面字体首选族必须齐全（MiniWindow.tsx:147-150 会把全局字体档 class 挂到小窗），可剔除的只有小窗链路不可达的 Oswald / Bodoni / JetBrains 非 latin 与 woff 备份。
+  2. **暂停态重绘减半**：暂停且过渡收敛后按 32ms 限频连续补帧（≈30 次/秒，原 60；每帧位移 0.27px），与 `MiniWindow.tsx:791-806` 同一套节流；running 与过渡期仍满帧，reduced-motion 仍按秒唤醒，镜头投影未改。**两版前车之鉴必须记住**：先用「过渡完就停帧、按秒唤醒」实现过，但 `bandMath.ts:12` BAND_TICK_MS 与 `bandDisplaySeconds` 在本组件里没有消费方——镜头实际是 `cameraMs/1000` 的 8px/s 连续滑动，整秒限流会在秒边界留下约 8px 硬跳；第二版 tick-burst 又留下约 6.7px 残跳。最终取限频连续帧才做到零可辨抖动。
+  3. **专注页订阅收窄**：`TimerPanel` 改 7 个逐字段选择器，与整仓订阅取值等价。
+  4. **死代码清理（先证明再删）**：删 `tasks-motion.css` / `history-motion.css`（全仓 0 import）与 `[data-skin='frosted']` 集群（data-skin 两个写入点恒为 ceramic），stats-workbench 少 35 行。**保留** `html[data-pal]` 三套配色：`shared/types.ts:319` 有 linear/rose/contrast，设置页与历史页都能选，`HistoryPanel.tsx:85-99` 会 `setAttribute('data-pal')` 到 `<html>`——删了历史页「典雅粉/高对比」当场失效。
+- **门禁**：`format:check` / `typecheck`（含 Worker）/ `lint` / `npm test`（**150 文件 1271 项**）/ `npm run build` 全绿；`npm run smoke:performance` exit 0（`cachedTaskOpenMs:162`、`pausedReactCommitsIn2500ms:3`）。顺手修掉 1.6.6 遗留的 `tests/releaseRecordContract.test.ts` 12 个 TS 错误与两个 smoke 脚本格式问题（它们此前会让 typecheck / format:check 直接红）。
+- **打包瘦身：实现完成但 BLOCKED，未发布未安装**：
+  - 实测两组配置均正常出包：全量排除 → 安装包 **204.95 → 120.02 MiB**、便携版 119.80 MiB、`app.asar` 109.51 → **32.14 MiB**、locale 55 → 2；只留字体+locale → 128.26 MiB。
+  - **两种产物启动验收全部失败**：`node scripts/review/verify-startup.cjs <exe>` 报 `Electron exited before exposing a page (code 2147483651 / 0x80000003)`；进程无窗口、不写任何日志，`cmd` 重定向的 stdout/stderr 也是空。
+  - **已排除的原因**：① 打包配置——把四组排除全部撤回成 1.6.5 原配置重新打包（204.95 MiB / 55 locale）**同样启动即崩**；② Electron 外壳——新 `win-unpacked` 的顶层文件与 1.6.5 安装版逐字节同尺寸，且把新外壳配上 1.6.5 的 `app.asar` + `app.asar.unpacked` 后**能正常起窗口**；③ 校验器与环境——同一 `verify-startup.cjs` 对 1.6.5 安装版能读到 `version=1.6.5 commit=142a64e`。
+  - **收敛结论**：两个 asar 条目数同为 3848，差异只在重建后的 `dist/assets/*` 与 `dist-electron/*` chunk；崩溃出在重建后的 bundle 内容，未定位到具体文件。
+  - **下一步（按成本排序）**：a) 把 1.6.5 的 `dist-electron` 换回新 asar 内，二分定位是主进程 bundle 还是 renderer bundle；b) 定位后单文件回退确认；c) 修好后重跑 `verify-startup` 两个产物 + 静默覆盖安装 + 注册表/EXE 回读 + `smoke:window-visible`，再建 `release-v167` 四件套。
+- **交付状态**：源码提交 `fdd1608`（四项代码改动 + 版本 1.6.7/1343 + 文档）。**没有 `release-v167` 目录、没有覆盖安装、没有推送 tag、没有 GitHub Release**；用户本机仍是 1.6.5。中途曾因 `npx asar extract-file ... package.json` 把仓库根 `package.json` 写到当前目录导致其被临时移走，已用 `git checkout -- package.json` 复原并复核 `name=focuslink version=1.6.7 scripts=59`。
+
 ## 2026-10-15 · `FL-UI-20261015-MINI-WINDOW-REFINEMENT`：桌面小窗真实架构精工对齐与微光雕琢落地（Windows v1.6.5）
 
 - **用户反馈与 Bug 定位**：用户反馈「差劲」并提供原型展开截图。排查证实：设计工坊旧版原型在展开态（256 × 70）误用单行 Flex 导致横向严重挤压，三行指标被挤成两行（「累计专/注」）、大时间数字与按钮被腰斩截断。该错误源于原型结构未对齐真实小窗网格。

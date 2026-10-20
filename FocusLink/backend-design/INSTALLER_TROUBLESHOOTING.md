@@ -1,5 +1,36 @@
 # FocusLink Windows 安装器错误索引
 
+## FL-INSTALL-016：新打包产物启动即崩（`verify-startup` 报 code 2147483651 / 0x80000003）
+
+### 症状
+
+`node scripts/review/verify-startup.cjs <exe>` 直接报 `Electron exited before exposing a page (code 2147483651)`；双击安装版/便携版无任何窗口、不写业务日志，`cmd` 重定向的 stdout/stderr 为空。同一台机器上的旧版本安装包照常启动。
+
+### 三步定位（按成本从低到高，2026-10-20 实测有效）
+
+1. **先证明外壳没问题**：新建一个临时目录，把新 `win-unpacked` 整份复制过去，只把其中的 `resources/app.asar` 与
+   `resources/app.asar.unpacked` 换成「已知能跑的旧版本安装目录里的同名内容」，再用隔离 `--user-data-dir` 启动。
+   能起窗口就说明 Electron 外壳（dll / pak / 二进制）是好的，问题在应用内容。
+2. **再证明打包配置没问题**：把所有 `electron-builder.yml` 的额外排除项撤回到旧版本原样重新打包。
+   仍然崩就说明与排除项无关，不要继续在配置上试。
+3. **最后二分应用内容**：两个 asar 的文件条目数与目录结构往往完全一致，差异只在重建后的
+   `dist-electron/*` 与 `dist/assets/*` chunk 上；把旧版本的 `dist-electron` 换进新 asar（或反之）即可二分出是主进程
+   bundle 还是 renderer bundle。`npx asar pack/unpack` 都可用。
+
+### 关键前置条件（否则整轮排查结论无效）
+
+- `Remove-Item Env:ELECTRON_RUN_AS_NODE`：继承该变量会让 Electron 静默退化为纯 Node（退出码 9 或静默 0、不写日志）。
+- 本机已有在跑的 FocusLink 实例时，必须用 `--user-data-dir=<临时目录>` 启动新构建，否则会撞单实例锁，表现为「启动即退」。
+- `Start-Process` 在受限 shell 里可能直接挂住（进程根本不被创建）：改用 `node` + `child_process.spawn` 且
+  `stdio: 'ignore'`，需要看输出时用 `cmd /c "... > out.txt 2>&1"` 重定向到文件。
+- `npx asar extract-file <asar> package.json` **会写到当前工作目录**：不要在仓库根执行，否则会把仓库的
+  `package.json` 覆盖成 asar 里那份精简版（2026-10-20 实际踩过，用 `git checkout -- package.json` 复原）。
+
+### 已排除的结论（2026-10-20，v1.6.7 候选）
+
+打包配置不是元凶（撤回全部排除仍崩）；Electron 外壳不是元凶（新外壳 + 旧 app.asar 正常起窗口）；
+`verify-startup.cjs` 本身不是元凶（同一脚本能读到旧版本的 version/commit）。根因锁定在重建后的 bundle 内容。
+
 这是一份可重复使用的安装排错页，不是某次发布的临时报告。安装器默认只处理当前 Windows 账户的 `FocusLink.exe`；不会结束其他账户的同名进程，也不会用 `/T` 遍历 Chromium 进程树。
 
 ## FL-INSTALL-001：FocusLink 无法关闭
