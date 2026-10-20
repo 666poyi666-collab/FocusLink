@@ -21,12 +21,6 @@
   --app-danger: 170 63 54;
   --app-ink: 29 35 39;
   --app-ink-fg: 255 255 255;
-  --radius-xs: 4px;
-  --radius-sm: 7px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-  --radius-2xl: 22px;
   --motion-fast: 120ms ease;
   --motion-normal: 180ms ease;
 }

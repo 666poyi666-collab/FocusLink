@@ -196,173 +196,6 @@ html[data-pal='contrast'] .btn-action-focus {
   font-weight: 700;
 }
 
-/* 深色模式体系 (Obsidian Dark) */
-html[data-theme='dark'] {
-  --heatmap-0: rgba(255, 255, 255, 0.08);
-  --heatmap-1: #064e3b;
-  --heatmap-2: #047857;
-  --heatmap-3: #10b981;
-  --heatmap-4: #34d399;
-
-  --bg-app: #121316;
-  --bg-titlebar: #121316;
-  --bg-sidebar: #17181c;
-  --bg-list: #1e2024;
-  --bg-detail: #22242a;
-  --bg-card: #262830;
-  --bg-hover: rgba(255, 255, 255, 0.05);
-  --bg-active: rgba(255, 255, 255, 0.09);
-  --bg-selected: rgba(59, 130, 246, 0.18);
-  --selected-border: #3b82f6;
-
-  --border-app: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-row: rgba(255, 255, 255, 0.045);
-
-  --text-primary: #f4f4f5;
-  --text-secondary: #d4d4d8;
-  --text-tertiary: #8e929e;
-  --text-disabled: #52525b;
-
-  --accent: #3b82f6;
-  --pause-color: #64748b;
-  --accent-soft: rgba(59, 130, 246, 0.2);
-  --accent-ink: #60a5fa;
-
-  /* 深色纯净白打勾令牌 */
-  --check-bg: #3b82f6;
-  --check-border: #3b82f6;
-  --check-fg: #ffffff;
-  --check-hover-border: #3b82f6;
-  --check-ghost: rgba(59, 130, 246, 0.45);
-  --check-halo-0: rgba(59, 130, 246, 0.65);
-  --check-halo-1: rgba(59, 130, 246, 0.25);
-  --confetti-colors: '#3B82F6,#60A5FA,#93C5FD,#1D4ED8,#2563EB';
-
-  /* 鼠标跟随与镜面高光 (深色模式 Linear：电光蓝深空氖光) */
-  --spotlight-core: rgba(96, 165, 250, 0.2);
-  --spotlight-sheen: rgba(59, 130, 246, 0.08);
-  --spotlight-border: rgba(96, 165, 250, 0.4);
-
-  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.35);
-}
-
-/* 深色模式下的专注主按钮 - 高级电光蓝 (绝不暗淡发灰) */
-html[data-theme='dark'] .btn-action-focus {
-  background: #2563eb;
-  color: var(--app-solid-fg);
-  font-weight: 600;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-}
-html[data-theme='dark'] .btn-action-focus:hover {
-  background: #3b82f6;
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.5);
-}
-
-/* 深色 + 锐利黑白高对比模式 */
-html[data-theme='dark'][data-pal='contrast'] {
-  --bg-app: #0a0b0e;
-  --bg-titlebar: #0a0b0e;
-  --bg-sidebar: #111216;
-  --bg-list: #16181d;
-  --bg-detail: #1b1d23;
-  --bg-card: #21232b;
-  --bg-hover: rgba(255, 255, 255, 0.08);
-  --bg-active: rgba(255, 255, 255, 0.14);
-  --bg-selected: #2b2e38;
-  --selected-border: #ffffff;
-
-  --accent: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.15);
-  --accent-ink: #ffffff;
-  --border-app: rgba(255, 255, 255, 0.2);
-  --border-subtle: rgba(255, 255, 255, 0.12);
-  --border-row: rgba(255, 255, 255, 0.08);
-  --text-primary: #ffffff;
-  --text-secondary: #e4e4e7;
-  --text-tertiary: #a1a1aa;
-  --text-disabled: #71717a;
-
-  /* 深色锐利黑白高对比打勾令牌：纯白圆底、曜黑对勾 */
-  --check-bg: #ffffff;
-  --check-border: #ffffff;
-  --check-fg: #000000;
-  --check-hover-border: #ffffff;
-  --check-ghost: rgba(255, 255, 255, 0.45);
-  --check-halo-0: rgba(255, 255, 255, 0.65);
-  --check-halo-1: rgba(255, 255, 255, 0.25);
-  --confetti-colors: '#FFFFFF,#E4E4E7,#D4D4D8,#A1A1AA,#71717A';
-
-  /* 鼠标跟随与镜面高光 (深色模式 锐利黑白高对比：璀璨纯白钻石切光) */
-  --spotlight-core: rgba(255, 255, 255, 0.18);
-  --spotlight-sheen: rgba(255, 255, 255, 0.06);
-  --spotlight-border: rgba(255, 255, 255, 0.4);
-}
-html[data-theme='dark'][data-pal='contrast'] .side-item[aria-selected='true'],
-html[data-theme='dark'][data-pal='contrast'] .task-entry[aria-selected='true'] {
-  background: #2b2e38;
-  color: var(--app-solid-fg);
-  font-weight: 700;
-}
-html[data-theme='dark'][data-pal='contrast'] .side-item[aria-selected='true']::before {
-  background: #ffffff;
-}
-html[data-theme='dark'][data-pal='contrast'] .side-item[aria-selected='true'] .nav-num {
-  color: var(--app-solid-fg);
-  font-weight: 700;
-}
-html[data-theme='dark'][data-pal='contrast'] .task-entry[aria-selected='true'] {
-  box-shadow: inset 3px 0 0 #ffffff;
-}
-html[data-theme='dark'][data-pal='contrast'] .task-entry[aria-selected='true'] .entry-title {
-  color: var(--app-solid-fg);
-  font-weight: 600;
-}
-html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
-  background: #ffffff;
-  color: #000000;
-  font-weight: 700;
-}
-
-/* 深色 + 高级粉调：补全缺失的深色玫粉令牌。
-   修复前 dark+rose 与 dark+linear 完全相同（rose 令牌被 dark 块整体覆盖），
-   导致「切换色彩基调」在深色主题下毫无变化。 */
-html[data-theme='dark'][data-pal='rose'] {
-  --bg-app: #141013;
-  --bg-titlebar: #141013;
-  --bg-sidebar: #1a1418;
-  --bg-list: #201a1e;
-  --bg-detail: #241d22;
-  --bg-card: #2a2228;
-  --bg-hover: rgba(244, 63, 94, 0.08);
-  --bg-active: rgba(244, 63, 94, 0.14);
-  --bg-selected: rgba(225, 29, 72, 0.26);
-  --selected-border: #fb7185;
-  --border-app: rgba(244, 63, 94, 0.18);
-  --border-subtle: rgba(244, 63, 94, 0.12);
-  --border-row: rgba(244, 63, 94, 0.08);
-  --accent: #e11d48;
-  --accent-soft: rgba(225, 29, 72, 0.26);
-  --accent-ink: #fb7185;
-  --check-bg: #e11d48;
-  --check-border: #e11d48;
-  --check-fg: #ffffff;
-  --check-hover-border: #e11d48;
-  --check-ghost: rgba(225, 29, 72, 0.45);
-  --check-halo-0: rgba(225, 29, 72, 0.65);
-  --check-halo-1: rgba(225, 29, 72, 0.25);
-  --confetti-colors: '#E11D48,#F43F5E,#FB7185,#FDA4AF,#BE123C';
-
-  /* 鼠标跟随与镜面高光 (深色模式 高级粉：魅影夜光玫红) */
-  --spotlight-core: rgba(251, 113, 133, 0.22);
-  --spotlight-sheen: rgba(225, 29, 72, 0.09);
-  --spotlight-border: rgba(251, 113, 133, 0.42);
-}
-html[data-theme='dark'][data-pal='rose'] .btn-action-focus {
-  background: var(--accent);
-  color: var(--app-solid-fg);
-}
-
 /* 字体方案：衬线（产品自带 Noto Serif SC）—— 变量必须真正被 UI 消费，禁止只写不接 */
 html[data-font='serif'] {
   --font-ui: 'Noto Serif SC Variable', 'Songti SC', 'SimSun', serif;
@@ -2558,9 +2391,10 @@ button {
 
 /* ═════════════════════════════════════════════════════════════════════════
    【卡贴质感外观系统 (Tactile Card Plaque Skins Architecture)】
-   ▫️ 纯白陶瓷 (Pure Ceramic) / ⚙️ 极客钛金 (Titanium Sheen)
-   注：微光磨砂 (Frosted Glass) 档已于 v1.6.7 删除——data-skin 只可能是 ceramic（HistoryPanel.tsx:90/550），
-   该档的 backdrop-filter 规则永不匹配。钛金档目前同样没有写入方，保留待后续接线或一并清理。
+   ▫️ 纯白陶瓷 (Pure Ceramic) —— 唯一实现档。
+   历史：微光磨砂 (Frosted Glass) v1.6.7 删除、极客钛金 (Titanium Sheen) v1.6.8 删除。
+   依据：全仓库只有两个 data-skin 写入点（HistoryPanel.tsx:90 写 <html>、:550 写 .stats-page），
+   值恒为 'ceramic'，其余档的选择器永不匹配。新增档位必须同时接上切换入口，否则不要写规则。
    ═════════════════════════════════════════════════════════════════════════ */
 
 /* 动态光效：自适应鼠标镜面微光 (Specular Sheen) & 边缘感应高光 (Border Spotlight) */
@@ -2634,36 +2468,6 @@ html:not([data-skin]) .card-widget {
 html:not([data-skin]) .card-widget:hover {
   border-color: var(--border-default) !important;
   box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.06) !important;
-  transform: translateY(-2px) !important;
-}
-
-/* 3. ⚙️ 极客钛金 (Titanium Sheen) - 阳极氧化喷砂金属感 */
-[data-skin='titanium'] .card-widget {
-  background: linear-gradient(145deg, #f8fafc 0%, #eef2f6 100%) !important;
-  border: 1px solid #cbd5e1 !important;
-  box-shadow:
-    0 2px 10px rgba(100, 116, 139, 0.12),
-    inset 0 1px 0 #ffffff !important;
-}
-[data-skin='titanium'] .card-widget:hover {
-  border-color: #94a3b8 !important;
-  box-shadow:
-    0 6px 20px rgba(100, 116, 139, 0.18),
-    inset 0 1px 0 #ffffff !important;
-  transform: translateY(-2px) !important;
-}
-[data-theme='dark'][data-skin='titanium'] .card-widget {
-  background: linear-gradient(145deg, #1c1f26 0%, #13161c 100%) !important;
-  border: 1px solid #334155 !important;
-  box-shadow:
-    0 4px 18px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
-}
-[data-theme='dark'][data-skin='titanium'] .card-widget:hover {
-  border-color: #475569 !important;
-  box-shadow:
-    0 8px 26px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   transform: translateY(-2px) !important;
 }
 

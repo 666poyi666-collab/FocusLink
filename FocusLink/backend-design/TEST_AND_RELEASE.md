@@ -324,6 +324,21 @@ Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd
 - Android 版本必须与桌面同版递增：`android/app/build.gradle` 的 `versionName`/`versionCode` 与
   `FocusLinkConfigTest.java` 的断言一起改。v1.3.14/v1.3.15 曾漏改，停在 `1.3.13 / 1319`，本项为硬性检查。
 
+### 打包产物启动自检门禁（v1.6.8 起，硬性）
+
+**「构建成功」不等于「产物能启动」。打包完必须立刻跑下面这条命令，退出码非 0 即阻断发布。**
+
+```powershell
+npm run verify:packaged
+```
+
+- 2026-10-20：产物启动即崩（`exit 0x80000003`，无窗口、无日志），打完包才发现，人工排查 40 分钟。本门禁就是为这一类事故设的，目标是把「起不来」压到 5 分钟内变红。
+- 脚本 `scripts/verify/packaged-startup.mjs` 自己拉起产物并回收：默认自动发现最新 `release-v*` 下的 `win-unpacked/FocusLink.exe` 与 `*-portable.exe`，用隔离 `--user-data-dir` + 随机 CDP 端口连真实页面，回读版本、commit、`.app-shell`、`.edge-dock`、`.focus-console` 与暂停色 token；进程在出首帧前退出即当场判红。
+- 判红时打印退出码（十进制 + 十六进制 + NTSTATUS 名字，例如 `0x80000003 = STATUS_BREAKPOINT`）、子进程 stdout/stderr 尾巴、隔离日志尾巴，以及被保留的 `user-data-dir` 路径（排查后自行删除）。这些正是人工排查最缺的证据。
+- 拉起前必须清 `ELECTRON_RUN_AS_NODE`（见上一条），脚本内置该清理并在输出里标注；`finally` 必须结束自己拉起的进程树并回读 pid 已消失（`FL-INSTALL-012`），只结束自己记录的 pid 与子孙，禁止 `Stop-Process` 全部 `FocusLink.exe`。
+- 只校验可直接运行的产物：NSIS 安装版 `FocusLink-x.y.z-x64.exe` 会被跳过并说明原因，安装版由正式构建第 3 步的隔离安装验收覆盖。
+- 其它用法：`--list` 只列将校验的文件、`--exe <path>` 指定单个产物、`--dir <release 目录>` 指定目录、`--timeout` 调整单产物超时。
+
 
 每个补丁版本都在测试、三设备同版安装、CHANGELOG/实施日志、四文件发布目录和 Android APK 备份完成后推送 `main`。补丁尾号不再决定上传节奏；annotated tag、公开资产和 GitHub Release 只在用户明确要求时创建，不得因版本尾号自动发布。
 
@@ -365,6 +380,7 @@ Foxlink 独立 MCP 的重启门禁还必须验证：停止 `FoxlinkSecureMcpTunn
 1. 完成功能源码提交，确认 `git status --short` 为空；该提交是 Release notes 中的“对应提交”。
 2. 在这个干净源码提交上执行全部测试与 `npm run dist`；正式包写到父级 `release-v*`，`shared/version.generated.ts` 与包内元数据不得含 `-dirty`。
 3. 对安装版与便携版计算 SHA256，写入 `SHA256SUMS.txt`，并运行安装版与便携版 smoke；不能只验证 `win-unpacked`。
+   **打包完成后第一件事是跑 `npm run verify:packaged`**（见「打包产物启动自检门禁」），红即阻断发布，不得用「先装上再说」的方式绕开。
    本机若已有不能中断的 FocusLink 会话，只允许在启动安装器的父进程临时设置
    `FOCUSLINK_INSTALLER_SKIP_CLOSE=1`，并用 `/D=<系统临时目录>` 安装后验收；不得把该变量写入系统环境。
    隔离安装前还必须备份并临时隐藏当前用户的 FocusLink 卸载注册项，避免 Electron Builder 把本次验证识别成升级并卸载正在运行的正式安装；

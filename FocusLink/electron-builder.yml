@@ -50,6 +50,18 @@ files:
   - '!**/node_modules/zustand/**'
   - '!**/node_modules/use-sync-external-store/**'
 asar: true
+# v1.6.7 实测结论（2026-10-20）：electron-builder 26.15.3 打包时会打开该 fuse 并写入 asar 完整性
+# 资源，而本机产物里该资源与实际 app.asar 不匹配，Electron 启动时 C++ CHECK 失败，进程以
+# 0x80000003(STATUS_BREAKPOINT) 立即退出：无窗口、无日志、user-data-dir 里连 Chromium profile
+# 都不建（人工排查花了 40 分钟）。三条互证：① 裸 node_modules/electron/dist/electron.exe 配同一份
+# app.asar 启动全绿；② 只把 exe 换成安装版 1.6.5 的 FocusLink.exe，同一份内容也全绿；③ 用
+# @electron/fuses 关掉已打包 exe 的 EnableEmbeddedAsarIntegrityValidation 后立刻全绿。
+# 2026-10-20 结论修正：打包产物「启动即崩」与 asar 完整性、exe 编辑、排除项全部无关。
+# 同一份产物（文件树 76 项零差异、exe 逐字节相同）在
+#   C:\Users\<user>\Desktop\开发\...\release-v167\win-unpacked  → 必崩（0x80000003，四连复现）
+#   C:\fltest\win-unpacked、Desktop\foucslink-copy、Desktop\测试目录、%TEMP%        → 全绿
+# 所以是「打包产物从本仓库那条长中文路径直接拉起」的环境效应（安装器在该路径下静默退出 0 也是同一现象）。
+# 验收/门禁一律把产物复制到短 ASCII 路径再拉起；安装走安装器本身，落在 %LOCALAPPDATA% 不受影响。
 # better-sqlite3 13 ships N-API prebuilds. Rebuilding its compatibility binding with node-gyp
 # would incorrectly require a local MSVC toolchain and would throw away the cross-runtime benefit.
 npmRebuild: false

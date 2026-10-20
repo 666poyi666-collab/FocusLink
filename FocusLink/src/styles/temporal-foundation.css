@@ -96,6 +96,9 @@
   --scrim: var(--app-scrim);
   --info: var(--app-info);
 
+  /* 圆角阶梯 · 基础档（移动端与小窗的运行时值：mobile.css / mini.css 只加载本层，
+     生效值 = 2/3/4/6/6/8/16）。桌面入口把 xs..3xl 整体改写成 4/7/10/14/18/22/26，
+     见本文件末尾「桌面圆角阶梯」块——两份值都只声明在本文件，不再有第二个声明文件。 */
   --radius-xs: 2px;
   --radius-sm: 3px;
   --radius-md: 4px;
@@ -104,6 +107,7 @@
   /* 圆角梯子必须补齐到 2xl：tailwind.config.js 已经把 rounded-2xl 映射过来了，
      半截的梯子只会让下一个用到它的人得到一个没有圆角的方块。 */
   --radius-2xl: 8px;
+  /* 小窗展开态专用（唯一消费方 temporal-mini.css:28）；桌面阶梯把它提到 26px 消除倒挂。 */
   --radius-3xl: 16px;
   --radius-pill: 999px;
   --radius-circle: 50%;
@@ -129,6 +133,25 @@
   --shadow-slider-thumb-hover: 0 0 0 4px rgb(var(--app-accent) / 0.14);
   --shadow-swatch-ring: inset 0 0 0 1px rgb(0 0 0 / 0.14);
   --shadow-swatch-ring-soft: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+/* ── 桌面圆角阶梯（本文件内的第二段声明，也是唯一来源）──────────────────────
+   区分方式全部来自真实入口：
+     · 桌面 main.tsx 不写 data-runtime，也没有 .mini-window-page；
+     · 移动/手表入口在 mobile/main.tsx:27 写 documentElement.dataset.runtime；
+     · 小窗入口在 mini.tsx:9 给 <html> 加 .mini-window-page。
+   因此下面这段只在桌面窗口命中。改前桌面运行时值来自 focuslink-2.css 的 :root
+   覆盖（4/7/10/14/18/22），本块写的是同一组数值，像素不变。
+   --radius-3xl 在桌面没有任何消费方（唯一消费方 temporal-mini.css:28 属小窗），
+   这里写 26px 只为消除 2xl(22px) > 3xl(16px) 的倒挂，不影响任何已渲染像素。 */
+html:not([data-runtime]):not(.mini-window-page) {
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 22px;
+  --radius-3xl: 26px;
 }
 
 .dark {

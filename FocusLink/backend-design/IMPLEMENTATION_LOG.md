@@ -23,6 +23,15 @@
   - **下一步（按成本排序）**：a) 把 1.6.5 的 `dist-electron` 换回新 asar 内，二分定位是主进程 bundle 还是 renderer bundle；b) 定位后单文件回退确认；c) 修好后重跑 `verify-startup` 两个产物 + 静默覆盖安装 + 注册表/EXE 回读 + `smoke:window-visible`，再建 `release-v167` 四件套。
 - **交付状态**：源码提交 `fdd1608`（四项代码改动 + 版本 1.6.7/1343 + 文档）。**没有 `release-v167` 目录、没有覆盖安装、没有推送 tag、没有 GitHub Release**；用户本机仍是 1.6.5。中途曾因 `npx asar extract-file ... package.json` 把仓库根 `package.json` 写到当前目录导致其被临时移走，已用 `git checkout -- package.json` 复原并复核 `name=focuslink version=1.6.7 scripts=59`。
 
+- **更正（2026-10-20 21:30，最终结论）**：本条上文「打包瘦身 BLOCKED / 根因锁定在重建后的 bundle 内容」是**错的**，已收口。真实原因是**拉起位置**：同一份产物（文件树 76 项零字节差异、exe 逐字节相同）从本仓库那条长中文路径 `…\Desktop\开发\foucslink\release-v167\win-unpacked\` 直接拉起必崩 `0x80000003`（四连复现、无窗口无日志、user-data-dir 里连 Chromium profile 都不建），而复制到 `C:\fltest`、`Desktop\foucslink-copy`、`Desktop\测试目录`、`%TEMP%` 后**全部通过**；同一条路径下执行 NSIS 安装器也会静默退出 0、什么都不装。逐项排除过且都不是原因的：asar 完整性资源与 `disableAsarIntegrity`、exe 编辑与 `signAndEditExecutable`、electron fuses、`--config.electronDist` 与原生 electron 目录、四组打包排除项、Electron 版本、`ELECTRON_RUN_AS_NODE`、单实例锁、残留实例。处置已固化在 `FL-INSTALL-016` 与 `verify:packaged`（内置短路径暂存）。**教训**：打包类验收必须先固定拉起路径，否则会把环境效应误判成产物缺陷，本轮为此多花了约 3 小时与 8 次打包。
+- **最终交付（v1.6.7，Windows）**：
+  1. 安装包 **204.95 → 119.87 MiB（−85.08 MiB，−41.5%）**；便携版 204.73 → 119.66 MiB；`app.asar` 109.51 → 31.41 MiB；安装目录 492.76 → 345.01 MiB。做法：13 个纯构建期依赖移出 `dependencies`（只剩 better-sqlite3 / undici / ws）、better-sqlite3 只留 win32-x64 prebuild 并排除 `deps/`、`electronLanguages` 收到 zh-CN + en-US。
+  2. 字体表拆分：小窗 CSS 362,233 → 324,564 B、@font-face 236 → 212 条，8 档字体首选族零变化。
+  3. 暂停态重绘 60 → 约 30 次/秒（32ms 限频，每帧 0.27px）；专注页订阅收窄到 7 个字段选择器。
+  4. 样式层：删 197 行可证明永不匹配的死规则（13 个 `html[data-theme='dark']` 块 + titanium 皮肤），`--radius-*` 收敛为唯一来源并消掉 2xl(22) > 3xl(16) 倒挂，三端逐 token 实测渲染值不变。
+  5. 新增 `npm run verify:packaged` 门禁（自动发现产物、短路径暂存、崩溃 12 秒变红、finally 回收实例），写进 `TEST_AND_RELEASE.md` 正式构建第 3 步。
+- **门禁（全部实测通过）**：`format:check` / `typecheck`（含 Worker）/ `lint` / `npm test` 150 文件 1271 项 / `npm run build` / `npm run verify:packaged`（两个产物 PASS）/ 静默覆盖安装（注册表 `DisplayVersion=1.6.7`、已安装 EXE `1.6.7.0`）/ `smoke:window-visible`（pid 75640，主窗口 handle 26480752）。
+- **交付边界**：`release-v167` 四件套（安装版 SHA256 `EB251E09…4D80`、便携版 `9B4CF304…1058`）；仅 Windows 验收，Android 只同步版本元数据（1.6.7 / 1343），未构建未安装；未创建公开 tag / GitHub Release。
 ## 2026-10-15 · `FL-UI-20261015-MINI-WINDOW-REFINEMENT`：桌面小窗真实架构精工对齐与微光雕琢落地（Windows v1.6.5）
 
 - **用户反馈与 Bug 定位**：用户反馈「差劲」并提供原型展开截图。排查证实：设计工坊旧版原型在展开态（256 × 70）误用单行 Flex 导致横向严重挤压，三行指标被挤成两行（「累计专/注」）、大时间数字与按钮被腰斩截断。该错误源于原型结构未对齐真实小窗网格。

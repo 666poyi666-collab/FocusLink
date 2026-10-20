@@ -132,6 +132,7 @@
 - 强调色跨色相五选（翡翠/钴蓝/鸢尾/琥珀/石墨），同时映射 `--app-accent*` 与 `--app-success*`：导航、按钮、链接、任务选中态、统计图、运行读数、时间之带和账本标题必须使用同一色相；暂停始终为红色。
 - 暂停红用于文字、时间之带前沿的短寿命损耗粒子、竖向暂停指针与 mini 小窗的余烬轨迹；它不得在主时间带形成持久区间、横线或历史痕迹。危险深红永远实心填充 + 二次确认，两者永不相邻使用。
 - 桌面全部层叠样式来自 `src/styles/main.css` 的六层按序导入：`temporal-foundation.css`（token）→ `legacy-support.css`（任务/设置/浮层沿用规则）→ `linear-workbench.css`（表现层）→ `focuslink-2.css` → `task-workbench.css` → `stats-workbench.css`；动效层按需导入：`motion.css`（`main.tsx`）、`shell-motion.css`（`App.tsx`）、`focus-motion.css`（`TimerPanel`）、`dial-motion.css`（`TimerDial`）、`settings-motion.css`（`SettingsPanel`）、`ui-motion.css`（`Toast`/`Icon`）。`temporal-ui.css`、AmbientField、`tasks-motion.css`、`history-motion.css` 已删除（后两者在 v1.6.7 清理：它们从未被任何入口 import，规则从未生效）。
+- 圆角只有一处声明文件：`temporal-foundation.css`。基础档 `--radius-xs…3xl` = `2/3/4/6/6/8/16px`，是移动端与小窗的运行时值（`mobile.css` / `mini.css` 只加载 token 层）；桌面档由 `html:not([data-runtime]):not(.mini-window-page)` 覆盖为 `4/7/10/14/18/22/26px`，是桌面四个表现层的运行时值。`focuslink-2.css` 不得再声明 `--radius-*`；`--radius-3xl` 在桌面没有消费方，取 26px 只为消除 `2xl(22px) > 3xl(16px)` 的倒挂，不改变任何已渲染像素。
 
 ### 3.3 字体系统
 

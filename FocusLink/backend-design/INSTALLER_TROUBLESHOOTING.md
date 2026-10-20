@@ -26,10 +26,25 @@
 - `npx asar extract-file <asar> package.json` **会写到当前工作目录**：不要在仓库根执行，否则会把仓库的
   `package.json` 覆盖成 asar 里那份精简版（2026-10-20 实际踩过，用 `git checkout -- package.json` 复原）。
 
-### 已排除的结论（2026-10-20，v1.6.7 候选）
+### 真实根因（2026-10-20 收口）：从本仓库那条长中文路径直接拉起产物
 
-打包配置不是元凶（撤回全部排除仍崩）；Electron 外壳不是元凶（新外壳 + 旧 app.asar 正常起窗口）；
-`verify-startup.cjs` 本身不是元凶（同一脚本能读到旧版本的 version/commit）。根因锁定在重建后的 bundle 内容。
+不是产物缺陷，是**拉起位置**的环境效应。同一份产物（文件树 76 项零字节差异、exe 逐字节相同）实测：
+
+| 拉起位置 | 结果 |
+| --- | --- |
+| `C:\Users\<user>\Desktop\开发\foucslink\release-v167\win-unpacked\FocusLink.exe` | 必崩 `0x80000003`（四连复现，无窗口无日志） |
+| `C:\fltest\win-unpacked\`、`Desktop\foucslink-copy\`、`Desktop\测试目录\`、`%TEMP%\` | 全部通过 |
+
+同一条中文路径下执行 NSIS 安装器也会**静默退出 0、什么都不装**（曾经被误判成「安装器坏了」）。
+
+排除清单（都试过，均不是原因）：asar 完整性资源与 `disableAsarIntegrity`、exe 编辑与 `signAndEditExecutable`、
+electron fuses、`--config.electronDist` 与原生 electron 目录、打包排除项、Electron 版本、`ELECTRON_RUN_AS_NODE`、
+单实例锁、残留实例。上面任一项改动都不会改变「同路径必崩、短路径全绿」这个事实。
+
+处置：
+1. 验收、冒烟、门禁**一律先复制产物到短 ASCII 路径再拉起**（`npm run verify:packaged` 已内置暂存）。
+2. 安装走安装器本身（安装目标 `%LOCALAPPDATA%\Programs\FocusLink` 是短路径），从短路径复制出安装器再执行。
+3. 用户机器上安装目录与用户名都是常规 ASCII，不受此影响；用户可见行为正常。
 
 这是一份可重复使用的安装排错页，不是某次发布的临时报告。安装器默认只处理当前 Windows 账户的 `FocusLink.exe`；不会结束其他账户的同名进程，也不会用 `/T` 遍历 Chromium 进程树。
 
