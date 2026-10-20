@@ -22,15 +22,19 @@ const DURABLE_KEY = 'tomatodo.pendingSessionIdsV161';
 function parseArgs(argv) {
   let hours = 0;
   let json = false;
+  let pendingHours = 168;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--hours') {
       hours = Number(argv[i + 1]);
+      i += 1;
+    } else if (argv[i] === '--pending-hours') {
+      pendingHours = Number(argv[i + 1]);
       i += 1;
     } else if (argv[i] === '--json') {
       json = true;
     }
   }
-  return { hours, json };
+  return { hours, json, pendingHours };
 }
 
 function startOfLocalToday() {
@@ -117,6 +121,22 @@ function main() {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   const pendingIds = readPendingSessionIds(db);
   const { bySessionId } = readTomatodoRecords();
+  // 「待批准」= 已结束、有有效时长、但番茄里还没有这条会话记录的场次。
+  // 窗口独立于显示窗口：默认回看 7 天（番茄云的上传窗口），因为批准往往滞后好几天，
+  // 只看今天会把 10-15/10-16 那几场漏掉。
+  const pendingApprovals = db
+    .prepare(
+      'SELECT * FROM focus_sessions WHERE ended_at IS NOT NULL AND active_elapsed_ms > 0 AND ended_at >= ? ORDER BY ended_at ASC',
+    )
+    .all(Date.now() - opts.pendingHours * 3600 * 1000)
+    .filter((session) => !bySessionId.has(session.id))
+    .map((session) => ({
+      sessionId: session.id,
+      title: session.title ?? session.default_task_title ?? null,
+      endedAt: Number(session.ended_at),
+      minutes: Math.max(1, Math.round(Number(session.active_elapsed_ms ?? 0) / 60000)),
+      subject: session.tomatodo_subject ?? null,
+    }));
   const sessions = db
     .prepare(
       'SELECT * FROM focus_sessions WHERE started_at >= ? OR ended_at IS NULL ORDER BY started_at ASC',
@@ -155,7 +175,7 @@ function main() {
   });
 
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify({ since, rows }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ since, rows, pendingApprovals }, null, 2)}\n`);
     return;
   }
 
@@ -209,6 +229,15 @@ function main() {
     }
   }
   const count = (state) => rows.filter((row) => row.sync === state).length;
+  out.push('');
+  out.push(
+    `待批准（近 ${Math.round(opts.pendingHours / 24)} 天，已结束但番茄里没有记录）：${pendingApprovals.length} 场`,
+  );
+  for (const item of pendingApprovals) {
+    out.push(
+      `  · ${item.sessionId}  ${dateLabel(item.endedAt)} ${clock(item.endedAt)} 止 · ${humanMinutes(item.minutes)} ·「${item.title ?? '(无标题)'}」· 会话学科=${item.subject ?? '未指定'}`,
+    );
+  }
   out.push('');
   out.push(
     `番茄同步：已上传 ${count('已上传')} · 待确认 ${count('待确认')} · 未上传 ${count('未上传')} · 待批准 ${count('待批准')}`,

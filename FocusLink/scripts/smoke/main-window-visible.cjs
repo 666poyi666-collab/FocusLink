@@ -18,6 +18,12 @@
  *   ① 当前账户存在一个**可见**的顶层窗口，标题恰为 `FocusLink`（小窗不算）；
  *   ② 当天日志里有 `main window shown` 且 `visible: true`。
  *
+ * 2026-10-15 22:28（FL-INSTALL-012 复发）补充：验收期拉起的 pid 46636 验收后仍存活、占住
+ *   单实例锁，用户点桌面图标只拉起一个注定退出的第二实例，当天日志里没有 `main window shown`，
+ *   用户看到的是「点了没反应」。本脚本只做只读枚举，**不拉起也不回收任何进程**；拉起即回收由
+ *   `launch-and-verify-main-window.cjs` 负责。当检测到「有进程存活但没有任何可见主窗口」时，
+ *   本脚本额外输出 `FL-INSTALL-012` 诊断块（进程 pid/startTime、结论、处置顺序），退出码仍非 0。
+ *
  * 用法（在 FocusLink/ 下）：
  *   node scripts/smoke/main-window-visible.cjs
  * 退出码非 0 即「安装后打不开」，按 INSTALLER_TROUBLESHOOTING.md 的 FL-INSTALL-012 处理。
@@ -87,6 +93,93 @@ function focusLinkPids() {
     { encoding: 'utf8', windowsHide: true },
   ).trim();
   return raw ? raw.split(',').map(Number) : [];
+}
+
+/* 只读取证：进程 pid / startTime / .NET MainWindowHandle / 会话号。
+ * MainWindowHandle 只作参考，不能替代 EnumWindows 判据（它可能返回小窗句柄）。 */
+const PS_PROCESS_DETAILS = `
+$ErrorActionPreference = 'SilentlyContinue'
+Get-Process -Name FocusLink | ForEach-Object {
+  $item = $_
+  try { $start = $item.StartTime.ToString('yyyy-MM-dd HH:mm:ss') } catch { $start = 'unknown' }
+  "$($item.Id)|$start|$($item.MainWindowHandle)|$($item.SessionId)"
+}
+`;
+
+function focusLinkProcessDetails() {
+  const raw = execFileSync(
+    'powershell',
+    ['-NoProfile', '-NonInteractive', '-Command', PS_PROCESS_DETAILS],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024,
+    },
+  );
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [pid, startTime, mainWindowHandle, sessionId] = line.split('|');
+      return {
+        pid: Number(pid),
+        startTime: startTime || 'unknown',
+        mainWindowHandle: mainWindowHandle || '0',
+        sessionId: sessionId || 'unknown',
+      };
+    });
+}
+
+/* FL-INSTALL-012 诊断块：进程在跑、但没有任何可见主窗口。
+ * 本脚本只读，诊断块里的第 1 步命令**不会**由脚本执行，只能由用户/操作者自己执行。 */
+function printInstall012Diagnostic(pids) {
+  console.error(
+    '\n[window-visible] FL-INSTALL-012 诊断：有 FocusLink 进程存活，但没有任何可见的主窗口',
+  );
+  console.error('  当前会话：SESSIONNAME=' + (process.env.SESSIONNAME || '(未设置)'));
+  let details = [];
+  try {
+    details = focusLinkProcessDetails();
+  } catch (error) {
+    console.error(
+      '  （读取进程 startTime 失败：' +
+        (error instanceof Error ? error.message : String(error)) +
+        '）',
+    );
+  }
+  const rows = details.filter((item) => pids.includes(item.pid));
+  console.error('  进程（当前账户）：');
+  if (rows.length > 0) {
+    for (const row of rows) {
+      console.error(
+        '    pid=' +
+          row.pid +
+          ' startTime=' +
+          row.startTime +
+          ' mainWindowHandle=' +
+          row.mainWindowHandle +
+          ' session=' +
+          row.sessionId,
+      );
+    }
+  } else {
+    for (const pid of pids) console.error('    pid=' + pid);
+  }
+  console.error(
+    '  结论：这些实例占着 Electron 单实例锁；用户点桌面图标只会拉起一个注定退出的第二实例，',
+  );
+  console.error(
+    '        日志里可能写着 main window shown visible:true，但窗口不在用户桌面上 —— 日志证据为真、窗口不可见。',
+  );
+  console.error('  处置顺序（本脚本只读，不结束任何进程；第 1 步需要你或用户自己执行）：');
+  console.error('    1) Get-Process FocusLink -ErrorAction SilentlyContinue | Stop-Process -Force');
+  console.error(
+    '    2) 由用户从桌面图标（或开始菜单）启动 FocusLink —— 不要用后台自动化代替用户拉起 GUI。',
+  );
+  console.error(
+    '    3) 再跑一次：node scripts/smoke/main-window-visible.cjs（或 npm run smoke:window-visible）。',
+  );
 }
 
 function visibilityEvidence() {

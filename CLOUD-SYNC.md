@@ -1,5 +1,7 @@
 # 云同步（Cloudflare）· FocusLink / Foxlink
 
+> **历史架构，仅存档（2026-10-17 标注）**：本文描述的「本机 Foxlink MCP 8770 → D1 镜像 + 5 分钟 watchdog」链路已被 canonical gateway + Account Durable Object 权威架构取代。生产同步以 `FocusLink/cloudflare/accountDurableObject.ts`、`FocusLink/cloudflare/worker.ts` 与 `FocusLink/backend-design/BACKEND_SPEC.md` 为准；本文不再维护，保留只为解释旧数据形态。
+>
 > 2026-07-26 建立。目标：电脑关机后，ChatGPT/Claude 仍能读到专注记录与统计。
 
 ## 现状架构（已上线并验证）

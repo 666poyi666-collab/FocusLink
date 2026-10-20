@@ -1,3 +1,4 @@
+@import '../styles/font-faces.css';
 @import '../styles/temporal-foundation.css';
 
 /* Mobile/Web/Android intentionally consume the desktop renderer's token source. The

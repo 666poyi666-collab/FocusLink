@@ -331,15 +331,24 @@ Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd
 
 ### Git LFS 磁盘安全门禁
 
-发布目录中的安装版和便携版 EXE 由 Git LFS 管理。禁止让普通的全仓 `git diff`、GUI 变更扫描或高频状态轮询反复处理 `release-v*/FocusLink-*-x64*.exe`；一个已修改的约 200 MB EXE 会反复启动 `git-lfs filter-process`，中断或重入时可在 `.git/lfs/tmp` 留下数百 GB 临时文件。只读检查必须排除发布 EXE，或仅对该次只读命令禁用 LFS filter；`add`、`commit`、`fetch`、`pull`、`push` 和正式发布流程始终保持 LFS 启用。
+**2026-10-17 用户拍板：安装包永不进入 Git。** `release-v*/` 目录里只有 `RELEASE_NOTES.md` 被跟踪
+（`.gitignore` 用 `release-v*/*` + `!release-v*/RELEASE_NOTES.md`），安装版、便携版与 `SHA256SUMS.txt`
+只作为 GitHub Release 附件分发。历史上已提交的约 2.6 GB LFS 对象仍留在 Git 历史里，因此禁止让普通的全仓
+`git diff`、GUI 变更扫描或高频状态轮询反复处理这些历史 `release-v*/FocusLink-*-x64*.exe` 路径；一个已修改的
+约 200 MB EXE 会反复启动 `git-lfs filter-process`，中断或重入时可在 `.git/lfs/tmp` 留下数百 GB 临时文件。
+只读检查必须排除发布 EXE，或仅对该次只读命令禁用 LFS filter；`add`、`commit`、`fetch`、`pull`、`push` 始终保持 LFS 启用。
 
-若 `.git/lfs/tmp` 异常增长，先停止重复触发它的 Git 客户端或命令并确认没有活动的 `git-lfs` 进程，再清理 `tmp`；不得把 `.git/lfs/objects` 当作临时目录删除。为规避故障 GUI watcher，可以在本机 `.git/info/attributes` 临时覆盖发布 EXE 的 filter/diff，但该文件不得提交。任何发布 EXE 入暂存区前必须删除此覆盖，并执行：
+**不得**再 `git add` 安装版、便携版或 `SHA256SUMS.txt`，也不得把忽略规则改回目录级 `release-v*/`（父目录被整体忽略后，
+Git 无法再用 `!` 重新包含里面的 `RELEASE_NOTES.md`）。
 
-```bash
-git check-attr filter diff -- release-vXYZ/FocusLink-x.y.z-x64.exe release-vXYZ/FocusLink-x.y.z-x64-portable.exe
-```
+若 `.git/lfs/tmp` 异常增长，先停止重复触发它的 Git 客户端或命令并确认没有活动的 `git-lfs` 进程，再清理 `tmp`；
+不得把 `.git/lfs/objects` 当作临时目录删除。为规避故障 GUI watcher，可以在本机 `.git/info/attributes` 临时覆盖
+历史发布 EXE 的 filter/diff，但该文件不得提交。正式构建前后都要记录 `.git/lfs/tmp` 的文件数与大小；
+目录非空或仍在增长即视为门禁失败，排除触发源后才能继续发布。
 
-两个文件都必须分别返回 `filter: lfs` 和 `diff: lfs`。正式构建前后都要记录 `.git/lfs/tmp` 的文件数与大小；目录非空或仍在增长即视为门禁失败，排除触发源后才能继续发布。
+任何脚本化拉起 GUI 的验收（例如 `npm run smoke:window-visible:launch`）必须在 `finally` 里结束自己拉起的进程树并回读
+pid 已消失；只结束自己记录的 pid 与子孙，禁止 `Stop-Process` 全部 `FocusLink.exe`。验收期遗留的实例会占住单实例锁，
+用户点桌面图标只会拉起一个注定退出的第二实例（`FL-INSTALL-012`）。
 
 Foxlink 独立 MCP 的重启门禁还必须验证：停止 `FoxlinkSecureMcpTunnel` 与 `PoyiFoxlinkMcp` 后，
 8770/8878 均消失且其他 MCP 服务保持运行；重新启动后两个 `/readyz` 恢复。若 WinSW 返回 1067，
@@ -369,7 +378,7 @@ Foxlink 独立 MCP 的重启门禁还必须验证：停止 `FoxlinkSecureMcpTunn
    `0xC0000005` 退出，可清理隔离安装目录并按发布工作流进行有界重试，最多共 4 次；只允许该退出码，第四次或其他退出码必须立即失败。
 4. 填完对应根发布目录内唯一的 `RELEASE_NOTES.md`，记录上一步的源码提交和真实 SHA256；不可变元数据固定为
    “发布类型：正式版 / 验证状态：已通过”，不在正式 Release 正文里保留“候选”或“待发布”。
-5. 清理 release 目录，只留下下列四个文件；把发布资产、notes 和本次生成的版本元数据组成单独的 release-record commit。该提交不得再改产品源码。
+5. 清理 release 目录，只留下下列四个文件；**只有 `RELEASE_NOTES.md` 入库**——安装版、便携版与 `SHA256SUMS.txt` 永不进入 Git，只作为 GitHub Release 附件分发。把 notes 与本次生成的版本元数据组成单独的 release-record commit，该提交不得再改产品源码；提交前必须跑 `npm run release:verify` 并全绿。
 
 ```text
 ../release-vXYZ/
@@ -394,20 +403,34 @@ Foxlink 独立 MCP 的重启门禁还必须验证：停止 `FoxlinkSecureMcpTunn
 - 内容必须与 `CHANGELOG.md` 同版本段落一致，但面向用户组织，不粘贴内部流水账。
 - 只列已经实现并验证的内容；未完成项保留在下一版本草稿，不能写进发布正文。
 - 必须记录升级提示、已知限制、验证摘要和两个资产的 SHA256。
-- 正式正文使用稳定的“发布类型 / 验证状态”，不要使用发布后必然过期的“待发布”状态。
+- 本地候选可以写 `发布类型：候选补丁（未创建公开 tag / GitHub Release）` 加上真实 `验证状态`；
+  只有真正公开的 Release 正文才必须是 `发布类型：正式版` 且 `验证状态：已通过`——`npm run release:publish`
+  会拒绝候选补丁，避免把未走完门禁的构建推成公开版本。
 - 本地 `../release-v*/RELEASE_NOTES.md` 与 GitHub Release 正文保持一致，是离线发布记录。
 
 ## 5. GitHub 发布门禁
 
-GitHub Actions 会复跑可自动化的静态检查、源码构建和隔离回归，并重新 smoke 已提交的便携版与安装版；它不会重新生成另一套哈希不同的发布包。workflow 会核对 package-lock 的根版本、annotated tag、源码提交祖先关系、唯一 Release notes、四文件目录和 SHA256，再原样发布这些已验证资产。它不能替代需要本机登录态的 dida、番茄 To-do 真实临时数据验收，也不能替代最终人工视觉检查。只有本地全部门禁通过后才能推送版本 tag；tag 是“允许自动发布”的明确授权，不是开始测试的快捷方式。
+**2026-10-17 起分工固定**（用户拍板：安装包永不进 Git）：
+
+- `.github/workflows/release.yml` 只是「发布记录 + 源码门禁」——tag 推送或手动触发时跑
+  `node scripts/release/verify-release-record.mjs`（版本源、README 当前版本行、CHANGELOG 顶条、
+  两份设计文档基线、`RELEASE_NOTES.md` 字段与两行 SHA256）以及 format/typecheck/lint/test/build/audit。
+  **它不再 smoke 已提交的二进制，也不再创建 GitHub Release**；历史上「必须提交 exe」和「产物必须是 tag 直接子提交」
+  两条判据已删除，因为 `.gitignore` 按上述决定排除安装包，保留它们只会让工作流永远不可能通过。
+- 正式发布由本机执行 `npm run release:publish`（`FocusLink/scripts/release/publish.ps1`，参数
+  `-Version -NotesFile -Installer -Portable -Sha256File [-DryRun]`）：校验工作区干净、版本一致、
+  `release:verify` 通过、notes 必须是「正式版 + 已通过」、三个资产哈希与 `SHA256SUMS.txt` 及 notes 一致，
+  然后创建 annotated tag、推送 `main` 与 tag、`gh release create --verify-tag` 上传三个附件，最后用
+  `gh api` / `gh release view` 回读 tag、target、正文、资产名与文件大小。CI 不能替代本机三设备安装门禁，
+  也不能替代 dida、番茄 To-do 的真实临时数据验收与人工视觉检查。
 
 顺序固定：
 
 1. 推送包含源码提交与 release-record commit 的 `main`，确认两者都在远端；Release notes 的“对应提交”必须是实际生成二进制的干净源码提交。
-2. 在 release-record commit 上创建并推送与版本完全一致的 annotated tag，例如 `v0.11.5`。
-3. 创建 GitHub Release，标题使用 `FocusLink v0.11.5`，正文使用本地 `RELEASE_NOTES.md`。
+2. 在 release-record commit 上由 `publish.ps1` 创建并推送与版本完全一致的 annotated tag，例如 `v1.6.6`。
+3. 由 `publish.ps1` 创建 GitHub Release，标题使用 `FocusLink v1.6.6`，正文使用本地 `RELEASE_NOTES.md`。
 4. 上传安装版、便携版和 `SHA256SUMS.txt`。
-5. 回读 Release 页面，确认 tag、正文、资产名称、文件大小和下载链接正确。
+5. `publish.ps1` 回读 Release，确认 tag、正文、资产名称、文件大小和下载链接正确。
 6. 在仓库首页/README 更新当前版本链接（若版本链接存在）。
 
 只执行 `git push` 或只推 tag 不等于发布。GitHub Release 创建失败时，报告为“构建完成，发布受阻”，不得宣告版本已发布。

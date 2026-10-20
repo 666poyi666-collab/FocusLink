@@ -247,6 +247,15 @@ export function TemporalRibbon({
     let raf = 0;
     let wakeTimer: number | null = null;
     let disposed = false;
+    /* 暂停稳态限频（v1.6.7 A5）：过渡收敛后画面只剩约 8px/s 的连续镜头平移，
+       逐帧重绘不再带来新信息。这里沿用 MiniWindow 的同一套 32ms 节流
+       （src/features/mini/MiniWindow.tsx:791-806）：rAF 照旧连续跑，但距上次重绘不足
+       32ms 时直接跳过一次重绘。60fps → 约 30fps，每帧位移约 8px/s × 33ms ≈ 0.26px，
+       远低于可辨阈值；也不会像「整秒才画一帧」那样在秒边界留下约 6.7px 的硬跳。 */
+    const PAUSE_STEADY_FRAME_MS = 32;
+    let lastDrawAtMs = 0;
+    /* 上一次实际重绘时是否处于「暂停且过渡已收敛」，决定当前这帧要不要走节流。 */
+    let pausedConverged = false;
     let paintStyle = readBandPaintStyle();
     const viewport = { width: 0, height: 0 };
 
@@ -297,11 +306,27 @@ export function TemporalRibbon({
       }, delay);
     };
 
-    function draw() {
+    function draw(timestamp = performance.now()) {
       raf = 0;
       if (disposed) return;
 
       const currentState = stateRef.current;
+      /* 暂停稳态的节流闸门（v1.6.7 A5）。闸门只在「上一帧已经是暂停且过渡收敛」时生效，
+         所以过渡刚出现的那一帧（重新暂停、变焦、尾离子）永远不被挡，仍然满帧重绘。
+         pausedConverged 用 renderBand 的返回值（zooming || ashAlive）判定：离子最晚在暂停
+         开始约 6.6s 后全部熄灭，此后稳态只剩连续镜头平移。暂停期间墙钟投影仍逐帧推进，
+         只是重绘频率从 60fps 降到约 30fps（间隔 ≈33.4ms，位移 ≈8px/s × 33.4ms ≈ 0.27px/帧）。 */
+      if (
+        !reducedMotion &&
+        currentState === 'paused' &&
+        pausedConverged &&
+        timestamp - lastDrawAtMs < PAUSE_STEADY_FRAME_MS
+      ) {
+        schedule();
+        return;
+      }
+      lastDrawAtMs = timestamp;
+
       const wallNowMs = Date.now();
       const needsNextFrame = renderBand(context, engineRef.current, {
         snapshot: snapshotRef.current,
@@ -313,8 +338,10 @@ export function TemporalRibbon({
         paintStyle,
         viewport,
       });
+      pausedConverged = currentState === 'paused' && !needsNextFrame;
 
       if (!reducedMotion && (currentState === 'running' || currentState === 'paused')) {
+        // 暂停稳态由上面的闸门降频；running 与暂停过渡期仍是满帧。
         schedule();
       } else if (!reducedMotion && needsNextFrame) {
         // 变焦动画与暂停尾灰在恢复/结束后仍需自然演完。

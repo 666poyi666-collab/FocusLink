@@ -1,6 +1,6 @@
 # FocusLink 前端设计索引
 
-> 当前 Windows 候选：v1.6.5（专注小窗真实双列架构精工对齐与微光雕琢落地：彻底杜绝非真机原型中的挤压折行与截断，20px 顶部栏 + ~150px 左列大时间 + 104px 右列精密控制台，微发丝受光边框与暗曜石悬浮阴影。2026-10-15 用户限定只开发 PC，Android 不纳入本轮安装与功能验收。）
+> 当前 Windows 版本：v1.6.7（去重减负：安装包剔除 @fontsource 原包/多余语言包/其它平台原生模块，字体表按住入口拆成 font-faces.css 与 mini-font-faces.css，暂停态重绘限频到约 30 次/秒，清理零 import 动效层与 frosted 死皮肤；界面视觉零改动，界面基线仍是 v1.6.5 的小窗精修。2026-10-20 用户批准本轮，仍只开发 PC，Android 不纳入本轮安装与功能验收。）
 >
 > 文档责任：只描述产品体验、renderer 结构和可验收的视觉/交互规则。
 
@@ -35,7 +35,7 @@
 | `src/mobile/` | Web/PWA/Android 共用的多端专注控制台与同步账本；能力边界与桌面端分开声明 |
 | `src/ui/` | 无业务含义的基础 UI 组件 |
 | `mobile/` | 移动端 HTML、manifest、service worker 与图标，不保存业务逻辑 |
-| `src/styles/` | `main.css` / `mini.css`（入口组合导入）、`temporal-foundation.css`（token/字体）、`legacy-support.css`（沿用规则清理版）、`linear-workbench.css`（唯一表现层）、`temporal-mini.css`（小窗） |
+| `src/styles/` | `main.css` / `mini.css`（入口组合导入）、`temporal-foundation.css`（token）、`font-faces.css`（全站字体表）/ `mini-font-faces.css`（小窗可达字体表，v1.6.7 起拆开）、`legacy-support.css`（沿用规则清理版）、`linear-workbench.css`（唯一表现层）、`temporal-mini.css`（小窗） |
 | `shared/focus/bandMath.ts` | 时间之带缩放/步进/变焦纯函数内核 |
 | `shared/timerInstruments.ts` | 7×9 像素点阵、翻页状态机与专注核心几何 |
 | `shared/ipc/api.ts` | renderer 唯一允许调用的主进程 API 类型 |

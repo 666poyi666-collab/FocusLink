@@ -81,15 +81,17 @@ function StatValue({ value, className }: { value: string; className: string }) {
 const CORE_GOAL_MS = 45 * 60_000;
 
 export function TimerPanel() {
-  const {
-    snapshot,
-    settings,
-    addToast,
-    pendingTask,
-    setPendingTask,
-    taskPickerRequest,
-    consumeTaskPickerRequest,
-  } = useStore();
+  /* 按字段订阅（v1.6.7 A6）：原来是 useStore() 整仓订阅 —— 任何一次 set()（包括每秒 tick、
+     toast、同步队列写入）都会把整个专注页重建一遍。改成逐字段选择器后，触发条件收敛到
+     「该字段真的变了」；7 个字段取到的值与引用和整仓订阅完全一致（两个 setter 与 addToast
+     在 store 里是恒定引用，pendingTask / taskPickerRequest 是直接取值），所以行为等价。 */
+  const snapshot = useStore((state) => state.snapshot);
+  const settings = useStore((state) => state.settings);
+  const addToast = useStore((state) => state.addToast);
+  const pendingTask = useStore((state) => state.pendingTask);
+  const setPendingTask = useStore((state) => state.setPendingTask);
+  const taskPickerRequest = useStore((state) => state.taskPickerRequest);
+  const consumeTaskPickerRequest = useStore((state) => state.consumeTaskPickerRequest);
   const { now, mainMs, cumulativeActiveMs, cumulativePauseMs, wallMs } = useDisplayValues(snapshot);
   const state = snapshot?.state ?? 'idle';
   const [pickerMode, setPickerMode] = useState<'segment' | 'session' | 'preselect' | null>(null);

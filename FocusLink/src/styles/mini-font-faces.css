@@ -1,0 +1,116 @@
+/* 小窗（mini.html）专用字体表：只声明 184×44 / 256×70 小窗链路上可达的族。
+ * 取值依据：temporal-mini.css:101 是唯一的 --font-number 用法（.mini-display-time /
+ * .mini-data-time），其余文字全部继承 body 的 --font-ui；而 MiniWindow.tsx:147-150 会把
+ * 全局字体档 class 挂到小窗根节点（默认 wenkai），用户在小窗里看到的就是自己选的那一档，
+ * 所以 8 档字体的首选族必须齐全，少一族就是可见变化。
+ * 剔除项只有三处不可达引用：Oswald / Bodoni Moda（只被 --font-timer-flip/thin 引用，小窗
+ * 没有计时器字形）、JetBrains Mono 的非 latin 分片与 woff 备份（小窗 --font-number 只渲染
+ * ASCII 时间与时长）。 */
+
+/* 两款 Noto 中文族分别是 noto 与 noto-serif 两档的首选，也是其余各档缺字时的承接者。
+ * 全部 unicode-range 分片必须保留，否则中文会掉到系统雅黑 / 系统宋体。 */
+@import '@fontsource-variable/noto-sans-sc/wght.css';
+@import '@fontsource-variable/noto-serif-sc/wght.css';
+
+@font-face {
+  font-family: 'LXGW WenKai';
+  src: url('../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-500-normal.woff2')
+    format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'LXGW Neo ZhiSong';
+  src: url('../assets/fonts/LXGWNeoZhiSong.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'LXGW Neo XiHei';
+  src: url('../assets/fonts/LXGWNeoXiHei.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'Smiley Sans';
+  src: url('../assets/fonts/SmileySans-Oblique.woff2') format('woff2');
+  font-display: swap;
+  font-style: oblique;
+  font-weight: 100 900;
+}
+
+@font-face {
+  font-family: 'LXGW Marker Gothic';
+  src: url('../assets/fonts/LXGWMarkerGothic-Regular.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Fontsource's default ZCOOL stylesheet emits woff2 + legacy woff for every
+   CJK shard. Electron and the supported Android WebViews all read woff2, so
+   use the two aggregate woff2 subsets and avoid packaging duplicate formats. */
+@font-face {
+  font-family: 'ZCOOL KuaiLe';
+  src: url('../../node_modules/@fontsource/zcool-kuaile/files/zcool-kuaile-chinese-simplified-400-normal.woff2')
+    format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'ZCOOL KuaiLe';
+  src: url('../../node_modules/@fontsource/zcool-kuaile/files/zcool-kuaile-latin-400-normal.woff2')
+    format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  unicode-range:
+    U+0000-00ff, U+0131, U+0152-0153, U+02bb-02bc, U+02c6, U+02da, U+02dc, U+0304, U+0308, U+0329,
+    U+2000-206f, U+20ac, U+2122, U+2191, U+2193, U+2212, U+2215, U+feff, U+fffd;
+}
+
+/* --font-number 的等宽族：时间与时长都是 ASCII 数字，只声明 latin 分片的 woff2；
+ * 非 latin 字形由上面的 Noto Sans SC 承接，不会掉到系统等宽字体。 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2')
+    format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2')
+    format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2')
+    format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 600;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

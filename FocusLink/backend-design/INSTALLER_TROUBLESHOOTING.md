@@ -120,6 +120,8 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue   # 拉起 GU
 
 **2026-10-02 10:37 补充证据（v1.3.20）**：既有 `smoke:window-visible` 会接受 `FocusLink Mini` 的非零句柄，且两天日志按文件倒序拼接后可能引用旧成功记录。本次首启当天日志明确 `visible:false`，脚本仍输出 PASS，因此不能直接采信。复核应只取本次主进程 PID / 启动之后的日志，并以只读 `EnumWindows` 枚举同 PID、标题恰为 `FocusLink`、`IsWindowVisible=True` 的主窗口；小窗单独统计。普通打开后当前 PID 21420 的主窗口 330220 可见，当天 `second-instance visible:true`，此独立回读通过。脚本判据缺口尚未修改；后续使用必须补做这项独立核验。
 
+**2026-10-15 22:28–22:33 复发（v1.6.5 验收后遗留实例）**：安装 1.6.5 后用户点桌面图标「打不开」。只读实测：5 个 `FocusLink` 进程（pid 20036/22160/23596/27052/46636，同一 session）`MainWindowHandle` 全为 0，`EnumWindows` 在这些 PID 下枚举不到任何顶层窗口，而同一次启动的当天日志确实写过 `main window shown {"trigger":"ready-to-show","force":false,"visible":true,"pid":46636}` —— 日志证据为真、窗口仍不可见，与本条原判据一致。该实例由本轮 `npm run smoke:window-visible` 验收期拉起（同一 pid 被记为验收通过），验收结束后未被回收，于是占着单实例锁：22:28:08 用户点击拉起的新实例走到 `createMainWindow` / `mini window pre-warmed` / `ipc handlers registered` 后退出，日志里没有 `main window shown`，用户看到的就是「点了没反应」。按本条处置顺序（确认无窗口 → 结束当前账户下的 `FocusLink.exe` → 由用户从桌面启动）后 22:33:47 恢复，`MainWindowHandle=1641632`。**教训**：验收脚本必须回收自己拉起的实例；`smoke:window-visible` 通过只证明「验收上下文里窗口可见」，既不等于用户桌面可见，也不等于实例已被清理。
+
 **症状**：安装新版本后应用打不开。进程长期存活（本次实测跑了 2 天），事件循环正常，**应用自己的日志里有 `main window shown {"trigger":"ready-to-show","visible":true}`**，但从用户桌面看不到任何窗口、`MainWindowHandle` 为 0、`EnumWindows` 也枚举不到该进程的任何顶层窗口；实例占着单实例锁，用户之后每次点图标都只拉起一个注定退出的第二实例。
 
 **与 `FL-INSTALL-011` 的区别**：011 是「窗口从未创建 / 从未显示」；012 是**窗口显示成功了，但不在用户所在的桌面上**。用户侧表现与处置一样，但判据不同 —— 012 的日志证据是「为真」的，所以**不能只靠日志**。

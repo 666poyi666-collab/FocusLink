@@ -1,6 +1,6 @@
 {
   "name": "focuslink",
-  "version": "1.6.5",
+  "version": "1.6.7",
   "description": "FocusLink - 本地优先的任务、专注与多端时间账本工作台",
   "author": "FocusLink",
   "main": "dist-electron/main.js",
@@ -51,6 +51,9 @@
     "smoke:stats": "node scripts/regression/stats-responsive-smoke.cjs",
     "smoke:performance": "node scripts/regression/desktop-performance-smoke.cjs",
     "smoke:window-visible": "node scripts/smoke/main-window-visible.cjs",
+    "smoke:window-visible:launch": "node scripts/smoke/launch-and-verify-main-window.cjs",
+    "release:verify": "node scripts/release/verify-release-record.mjs",
+    "release:publish": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/publish.ps1",
     "smoke:live-fallback": "node scripts/smoke/live-fallback-packaged-smoke.cjs",
     "smoke:dida": "node scripts/smoke/dida-real-smoke.cjs",
     "smoke:dida:state": "npm run build:selftest && node dist-selftest/dida-task-state-smoke.cjs",

@@ -2558,7 +2558,9 @@ button {
 
 /* ═════════════════════════════════════════════════════════════════════════
    【卡贴质感外观系统 (Tactile Card Plaque Skins Architecture)】
-   ▫️ 纯白陶瓷 (Pure Ceramic) / 🪟 微光磨砂 (Frosted Glass) / ⚙️ 极客钛金 (Titanium Sheen)
+   ▫️ 纯白陶瓷 (Pure Ceramic) / ⚙️ 极客钛金 (Titanium Sheen)
+   注：微光磨砂 (Frosted Glass) 档已于 v1.6.7 删除——data-skin 只可能是 ceramic（HistoryPanel.tsx:90/550），
+   该档的 backdrop-filter 规则永不匹配。钛金档目前同样没有写入方，保留待后续接线或一并清理。
    ═════════════════════════════════════════════════════════════════════════ */
 
 /* 动态光效：自适应鼠标镜面微光 (Specular Sheen) & 边缘感应高光 (Border Spotlight) */
@@ -2632,42 +2634,6 @@ html:not([data-skin]) .card-widget {
 html:not([data-skin]) .card-widget:hover {
   border-color: var(--border-default) !important;
   box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.06) !important;
-  transform: translateY(-2px) !important;
-}
-
-/* 2. 🪟 微光磨砂 (Frosted Glass) - 顶级毛玻璃与内发光金属内圈 */
-[data-skin='frosted'] .card-widget {
-  background: rgba(255, 255, 255, 0.78) !important;
-  backdrop-filter: blur(18px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.65) !important;
-  box-shadow:
-    0 8px 30px rgba(0, 0, 0, 0.035),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
-}
-[data-skin='frosted'] .card-widget:hover {
-  background: rgba(255, 255, 255, 0.88) !important;
-  border-color: var(--spotlight-border) !important;
-  box-shadow:
-    0 12px 36px var(--spotlight-sheen),
-    inset 0 1px 0 #ffffff !important;
-  transform: translateY(-2px) !important;
-}
-[data-theme='dark'][data-skin='frosted'] .card-widget {
-  background: rgba(24, 27, 33, 0.75) !important;
-  backdrop-filter: blur(20px) saturate(190%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(190%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow:
-    0 10px 36px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
-}
-[data-theme='dark'][data-skin='frosted'] .card-widget:hover {
-  background: rgba(30, 34, 42, 0.85) !important;
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   transform: translateY(-2px) !important;
 }
 
@@ -3549,7 +3515,6 @@ html:not([data-skin]) .card-widget:hover {
   border-radius: 12px !important;
   box-shadow: none !important;
   transform: none !important;
-  backdrop-filter: none !important;
   animation: none !important;
 }
 .stats-page .dashboard-card-tile {

@@ -20,6 +20,7 @@
   - 安装目录 EXE 回读：`%LOCALAPPDATA%\Programs\FocusLink\FocusLink.exe` 回读 `FileVersion=1.6.5`、`ProductVersion=1.6.5.0`。
   - 启动验收：`scripts/review/verify-startup.cjs` 对已安装 EXE 与便携版 EXE 均通过，回读 `version=1.6.5`、`commit=142a64e`、`hasShell=true`、`hasRail=true`、`pauseToken="210 67 57"`。
   - 主窗口可见性验收：`npm run smoke:window-visible` 退出码 0，pid 46636 存在可见主窗口 `handle=1577830`，日志回读证据 `main window shown {"trigger":"ready-to-show","force":false,"visible":true,"pid":46636}`。
+- **验收后遗留实例导致用户「打不开」（2026-10-15 22:28–22:33 本机只读实测，`FL-INSTALL-012` 复发）**：验收记录里的 pid 46636 在验收结束后仍存活，用户 22:28 点桌面图标时被它的单实例锁吞掉。当天日志 22:28:08 的第二实例走到 `createMainWindow` / `mini window pre-warmed` / `ipc handlers registered` 后退出，**从未出现 `main window shown`**；日志中也没有任何 close / hide / tray 行。22:29 独立回读：5 个 `FocusLink` 进程（pid 20036/22160/23596/27052/46636，同一 session）`MainWindowHandle` 全为 0，只读 `EnumWindows` 在这些 PID 下枚举不到任何顶层窗口，而同一次启动的日志写着 `main window shown {"visible":true,"pid":46636}` —— 日志证据为真而窗口不可见，与 `FL-INSTALL-012` 原判据一致。处置：结束当前账户下的 `FocusLink.exe` 后由用户从桌面图标重启，22:33:47 恢复（`main window shown ... pid 12656`，`MainWindowHandle=1641632`），22:34:40 起用户已正常最小化主窗口、展开/拖动/收起小窗（`[settings] saved {"theme":"dark","syncMode":"local-only"}`）。教训固化在 `INSTALLER_TROUBLESHOOTING.md` 的 `FL-INSTALL-012`：验收脚本必须回收自己拉起的实例，「验收期可见」不等于「用户桌面可见」。
 - **LFS 卫生与交付边界**：打包前后 `.git/lfs/tmp` 始终为 0 文件 / 0 B；本轮严格遵循用户指令仅开发 PC，Android APK 未构建未宣称通过；未获公开 GitHub 发布授权，所有产物保留本地仓库与发行目录。
 
 ## 2026-10-15 · `FL-UI-20261015-MINI-WINDOW-LEGIBILITY`：桌面小窗字体清晰度与高对比度深度打磨（Windows v1.6.4）

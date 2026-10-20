@@ -8,7 +8,7 @@ directories:
   # 以及仓库「只保留最新三个 release-v*」的约定都不一致。
   # 因此这里与 shared/version.ts 的 APP_RELEASE_DIR 一样是**手工同步点**：
   # 升版本时必须同时改这两处，并确认 `npm run dist:win` 的 appOutDir 落在正确目录。
-  output: ../release-v165
+  output: ../release-v167
   buildResources: build
 files:
   - dist/**/*
@@ -27,6 +27,28 @@ files:
   # ② 不要按 `*/android/build` 之类的层数去写，实测层级不统一（app 与 android 两包的
   # 嵌套深度不同），按层数写必然漏。
   - '!**/node_modules/@capacitor/**/build/**'
+  # v1.6.7 包体瘦身（一）：@fontsource 原包永不进包。
+  # 实测 node_modules/@fontsource + @fontsource-variable 共 7 个包、70.74 MiB；
+  # 而构建产物 dist/assets 里已经有一份被 Vite 哈希过的 woff2 副本。
+  # 运行期没有任何代码 require 这些包，它们只在构建期被 CSS @import 读取。
+  - '!**/node_modules/@fontsource/**'
+  - '!**/node_modules/@fontsource-variable/**'
+  # v1.6.7 包体瘦身（二）：better-sqlite3 只留 Windows x64 的 N-API prebuild。
+  # 实测 prebuilds 下 8 个平台文件合计 16.11 MiB，win32-x64.node 只有 1.90 MiB；
+  # deps/ 的 9.78 MiB 是 sqlite3 C 源码，npmRebuild:false 时打包期不需要。
+  # lib/win32-x64.js 只 require ../prebuilds/win32-x64.node，其余平台文件永不加载。
+  - '!**/node_modules/better-sqlite3/prebuilds/darwin-*'
+  - '!**/node_modules/better-sqlite3/prebuilds/linux*'
+  - '!**/node_modules/better-sqlite3/prebuilds/win32-arm64.node'
+  - '!**/node_modules/better-sqlite3/deps/**'
+  # v1.6.7 包体瘦身（三）：renderer 专用依赖已由 Vite 打进 dist/assets，主进程不 require
+  # 它们（vite.config.ts:29 的 external 只有 better-sqlite3 / ws / undici）。
+  - '!**/node_modules/lucide-react/**'
+  - '!**/node_modules/framer-motion/**'
+  - '!**/node_modules/motion-dom/**'
+  - '!**/node_modules/motion-utils/**'
+  - '!**/node_modules/zustand/**'
+  - '!**/node_modules/use-sync-external-store/**'
 asar: true
 # better-sqlite3 13 ships N-API prebuilds. Rebuilding its compatibility binding with node-gyp
 # would incorrectly require a local MSVC toolchain and would throw away the cross-runtime benefit.
@@ -40,6 +62,12 @@ extraResources:
     to: build/
     filter: ["**/*"]
 publish: null
+# v1.6.7 包体瘦身（四）：只保留中英文 locale。
+# 实测 node_modules/electron/dist/locales 下 55 个 .pak 合计 46.65 MiB，
+# 其中 zh-CN + en-US 只有 1.09 MiB，其余语言包在本产品运行期永不读取。
+electronLanguages:
+  - zh-CN
+  - en-US
 win:
   target:
     - nsis

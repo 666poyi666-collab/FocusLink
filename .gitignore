@@ -48,6 +48,10 @@ design-pack/
 # 2026-09-28：发布产物不再进 Git（见 .gitattributes 顶部说明）。
 # 每个 EXE 约 200MB，走 LFS 会吃满 GitHub 配额并阻断所有推送；
 # 发布产物只作为 GitHub Releases 附件分发，本地目录保留但不再跟踪。
-release-v*/
-# （上面这条 release-v*/*.exe 已被 release-v*/ 覆盖，保留作说明）
+# 2026-10-17：安装包永远不进 Git（用户 2026-10-17 拍板），只作为 GitHub Release 附件。
+# 每个 release 目录里只有 `RELEASE_NOTES.md` 入库：它是该版本可核对的发布记录。
+# 这里必须用 `release-v*/*` 而不是目录级 `release-v*/`——父目录一旦被整体忽略，
+# Git 就无法再用 `!` 把里面的 RELEASE_NOTES.md 重新包含进来。
+release-v*/*
+!release-v*/RELEASE_NOTES.md
 release-v*/win-unpacked/

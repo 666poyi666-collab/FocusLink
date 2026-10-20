@@ -19,6 +19,25 @@ Do not turn it into a chat app, generic dashboard, or landing page.
 - This read is a hard gate, not optional background material. Record new product-level Bug evidence and root cause in `IMPLEMENTATION_LOG.md`; put repeatable diagnosis under a stable `FL-SYNC-*` or `FL-INSTALL-*` entry. Do not create parallel Bug logs, one-off incident reports, or a new `docs/` tree.
 - When a prior failure and the current probe disagree, preserve both facts with timestamps. Classify transport reachability, authentication, durable conflicts, and third-party delivery separately; a non-empty historical `lastError` must not by itself be presented as a current connection failure.
 
+## Report Output Standard (报告输出规范)
+
+Every user-facing report — analysis, audit, iteration summary, failure review — uses this exact skeleton, in this order, for both chat replies and documents committed to the repo.
+
+1. `结论` — at most 3 lines: one judgement sentence plus a status word (`已完成` / `进行中` / `阻塞`).
+2. `事实` — one table with exactly these columns: `序号 | 事实 | 证据位置 | 证据类型`. `证据位置` is `path:line`; `证据类型` is exactly one of `实测` / `证据记录` / `推断`.
+3. `问题` — grouped `P0` / `P1` / `P2`, one line each: `级别 + 标题 — 影响 — 证据序号`.
+4. `改动` — files changed (`path` + one phrase each; write `无` when nothing changed), then at most one open decision question.
+
+Hard rules:
+
+- Never present a revision of an earlier statement inside the body ("上一版说错了…"). The corrected version is the only version; list the delta as one line under `改动`.
+- No repeated conclusions, no heading nesting deeper than 2 levels, no list item longer than 2 lines, no table longer than 10 rows.
+- Never mix verified fact with inference: anything not actually run or read this round is `证据记录` or `推断`, never `实测`.
+- `实测` means the command was run and its exit code or output read in that round; a document claim is never `实测`.
+- No long URLs in the body; link with a short label only.
+- Every number carries a unit and how it was obtained.
+- Do not emit a report whose `事实` table repeats what the `问题` lines already say.
+
 ## Directory Ownership
 
 - `FocusLink/src/`: renderer UI only.
@@ -31,8 +50,8 @@ Do not turn it into a chat app, generic dashboard, or landing page.
 - `FocusLink/frontend-design/`: the only product/UI/interaction documentation tree; begin at `FocusLink/frontend-design/README.md`.
 - `FocusLink/backend-design/`: the only architecture/IPC/data/test/release documentation tree; begin at `FocusLink/backend-design/README.md`.
 - `FocusLink/`: the only source workspace. Build, test, design, and development commands run from here.
-- `.github/`: issue forms, the canonical GitHub Release notes template, and the formal release workflow only.
-- `release-v*/`: packaged release artifacts and that version's `RELEASE_NOTES.md` only.
+- `.github/`: issue forms, the canonical GitHub Release notes template, and the release-record gate workflow only. The workflow verifies metadata and source gates; it never publishes.
+- `release-v*/`: the local four-file delivery directory. Installers, portable executables and `SHA256SUMS.txt` **never enter Git**; only `RELEASE_NOTES.md` is tracked as that version's release record.
 
 Do not recreate `docs/`, `backend/`, `shared-contract/`, design archives, one-off fix reports, or parallel handoff documents. Reusable conclusions belong in one of the two specifications; version history belongs in root `CHANGELOG.md` and the matching release notes.
 
@@ -113,11 +132,12 @@ For dida sync changes, also run a real temporary dida task test:
 
 ## Git LFS Disk Safety
 
-- Release executables are Git LFS objects. Do not run an unrestricted ordinary `git diff`, GUI change scan, or repeated status poll across `release-v*/FocusLink-*-x64*.exe`; a dirty 200 MB executable can repeatedly invoke `git-lfs filter-process` and fill `.git/lfs/tmp` with hundreds of gigabytes.
-- For read-only repository inspection, exclude release executables from the pathspec or explicitly disable LFS filters for that command. Keep LFS enabled for every add, commit, fetch, pull, push, and release operation.
+- Since 2026-10-17 (user directive) release executables **never enter Git**: `release-v*/` tracks only `RELEASE_NOTES.md`, and installers/portables/`SHA256SUMS.txt` are distributed as GitHub Release assets. The ~2.6 GB of already-committed LFS objects stay in Git history, so an ordinary `git diff`, GUI change scan, or repeated status poll across historical `release-v*/FocusLink-*-x64*.exe` paths can still invoke `git-lfs filter-process` and fill `.git/lfs/tmp` with hundreds of gigabytes. Keep excluding those paths from read-only inspection.
+- Never `git add` an installer, portable executable, or `SHA256SUMS.txt`, and never re-enable a directory-level `release-v*/` ignore rule: `.gitignore` must keep `release-v*/*` plus `!release-v*/RELEASE_NOTES.md`, otherwise Git cannot re-include the notes file.
 - If `.git/lfs/tmp` grows unexpectedly, stop the repeating Git client/command and identify the parent process before deleting anything. Delete temporary files only after no `git-lfs` process is active; never delete `.git/lfs/objects` as if it were temporary storage.
-- A local `.git/info/attributes` override may be used to stop a broken GUI watcher, but it must never be committed. Before staging a release executable, remove that override and run `git check-attr filter diff -- <installer> <portable>`; both files must report `filter: lfs` and `diff: lfs`.
+- A local `.git/info/attributes` override may be used to stop a broken GUI watcher, but it must never be committed.
 - Before and after packaging, record the size of `.git/lfs/tmp`. A non-empty or growing directory is a failed release hygiene check and must be resolved before continuing.
+- Any script that launches the GUI must reap the instance it started and read the pid back as gone. A leftover "visible-looking" instance holds the Electron single-instance lock and makes the user's desktop icon appear dead (`FL-INSTALL-012`); use `npm run smoke:window-visible:launch` for scripted launches and never `Stop-Process` every `FocusLink.exe`.
 
 ## Release Rules
 
@@ -125,14 +145,14 @@ For dida sync changes, also run a real temporary dida task test:
 
 - Follow `FocusLink/backend-design/TEST_AND_RELEASE.md`; its gates are mandatory.
 - Push every change and every version to GitHub `main` as it lands. The former five-version (`0`/`5`) checkpoint cadence is removed (user directive, 2026-07-26); do not hold source back locally.
-- Every patch still requires a completed CHANGELOG entry, the device install matrix, a four-file local release directory, and a backed-up Android APK.
+- Every patch still requires a completed CHANGELOG entry, the device install matrix, a four-file local release directory, `npm run release:verify` green on the release record, and a backed-up Android APK. Installers stay local files and GitHub Release assets; they are never Git objects.
 - Formal GitHub Releases (public tag + uploaded executables) are created when the user explicitly asks for one; the remaining rules in this section govern that flow.
 - Bump `FocusLink/package.json`, `FocusLink/package-lock.json`, `FocusLink/shared/version.ts`, `FocusLink/electron-builder.yml`, root README, root CHANGELOG, both design-spec versions, and release notes together.
 - Use release directories like `release-v029` for `0.2.9` and `release-v0210` for `0.2.10`.
 - Keep only the latest three release directories in the repo.
-- Each release directory may contain only the installer, portable executable, `SHA256SUMS.txt`, and `RELEASE_NOTES.md`; remove `win-unpacked`, debug YAML, blockmaps, logs, screenshots, and test results.
+- Each release directory may contain only the installer, portable executable, `SHA256SUMS.txt`, and `RELEASE_NOTES.md`; remove `win-unpacked`, debug YAML, blockmaps, logs, screenshots, and test results. Only `RELEASE_NOTES.md` is tracked by Git.
 - Generate the final artifacts from a clean commit, then verify installer/portable startup and recompute SHA256.
-- Copy the completed `.github/RELEASE_NOTES_TEMPLATE.md` to the matching release directory and keep it consistent with the top CHANGELOG entry.
-- Push `main` and the matching annotated tag, then create a GitHub Release with the same notes and attach both executables plus SHA256.
+- Copy the completed `.github/RELEASE_NOTES_TEMPLATE.md` to the matching release directory and keep it consistent with the top CHANGELOG entry; a local candidate may say `候选补丁`, a public release must say `正式版` plus `验证状态：已通过`.
+- `.github/workflows/release.yml` is a record-and-source gate only; it never publishes. Publishing is `npm run release:publish` (`FocusLink/scripts/release/publish.ps1`) run locally after the device gates pass: it creates the annotated tag, pushes `main` and the tag, creates the GitHub Release with the locally built assets, then reads the Release back.
 - Git push or tag push alone is never a completed release. Read back the GitHub Release and verify its tag, target commit, body, asset names, sizes, and download links.
 - If authenticated GitHub Release creation fails, report the release as blocked; do not claim it is published.

@@ -1,3 +1,6 @@
-/* Mini window uses the same new tokens, with its own fixed-size composition. */
+/* Mini window uses the same new tokens, with its own fixed-size composition.
+   字体表与 token 已拆开：foundation 不再带 @font-face，小窗只 import 自己可达的族，
+   剔除清单见 mini-font-faces.css 顶部。 */
 @import './temporal-foundation.css';
+@import './mini-font-faces.css';
 @import './temporal-mini.css';

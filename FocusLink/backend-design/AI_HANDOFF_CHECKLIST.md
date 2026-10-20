@@ -1,6 +1,54 @@
 # 后端 AI 接手清单
 
 > 所有 `npm` / `node` 命令默认从仓库内 `FocusLink/` 执行。
+> 本文件是**唯一**的跨会话交接入口；不要另建一次性 handoff / 修复报告。
+
+## 当前接手状态（2026-10-17，v1.6.6 进行中）
+
+**一句话**：v1.6.6 是「交付管道修复 + 仓库打扫」，产品行为零改动。代码与文档改动已完成并在工作区，
+尚未提交；剩 6 步收尾，全部门禁与 Windows 实装通过后才算交付。
+
+### 已完成（工作区未提交，勿回退）
+
+| 事项 | 结果 |
+| --- | --- |
+| 积压提交 | `git push origin main` 已把 15 个提交推上去，`origin/main` = `35eb3778817c96eac0cbc7bc64b1b2aefc2a1036` |
+| 旧发布目录 | 删掉 `release-v1319/1321/155–162`，只留 `release-v163/164/165`（各 4 文件，约 409.7 MB） |
+| 文档去重 | `git rm -r docs`（4 文件）；`CLOUD-SYNC.md` 顶部标「历史架构，仅存档」；`backend-design/README.md` 并入原 `PROJECT-STANDARDS.md` 的 5 条产品标准 |
+| 根 README | 第 5 行改成 `> 当前版本：v1.6.6`；结构树根名 `time1/` → `focuslink/`；`## 发布资产` 与 `### 当前发布` 重写（只有 notes 入库、未创建公开 tag 或 Release） |
+| 发布管线 | 新增 `scripts/release/verify-release-record.mjs`（纯函数 + CLI）与 `.d.mts`；`tests/releaseRecordContract.test.ts` 实测 **10/10 通过**；`.github/workflows/release.yml` 收敛为「发布记录 + 源码门禁」（不再发布）；新增 `scripts/release/publish.ps1`（tag → 推送 → `gh release create` → 回读） |
+| 可见性验收 | 新增 `scripts/smoke/launch-and-verify-main-window.cjs`（自己拉起、只读枚举自己进程树、finally 回收并回读 pid 消失）；`main-window-visible.cjs` 加 `FL-INSTALL-012` 只读诊断块 |
+| 规则改写 | `AGENTS.md`、`backend-design/TEST_AND_RELEASE.md`、`.gitignore`：安装包永不进 Git，`release-v*/` 只跟踪 `RELEASE_NOTES.md` |
+| 版本 | 已同步 1.6.6：`package.json`、`package-lock.json`（两处）、`shared/version.ts`、`electron-builder.yml`（`../release-v166`）、`android/app/build.gradle`（`1.6.6` / `1342`）、`FocusLinkConfigTest.java`、根 README、两份设计文档（`frontend-design/README.md`、`FRONTEND_SPEC.md`） |
+
+### 剩余步骤（按顺序做完即可交付）
+
+1. 写根 `CHANGELOG.md` 的 v1.6.6 顶条、`frontend-design/USER_REQUIREMENTS.md` 的 `FL-REQ-20261017-CLEANUP`、`backend-design/IMPLEMENTATION_LOG.md` 的 2026-10-17 条目。
+2. 跑门禁：`npm run format:check`、`npm run typecheck`、`npm run lint`、`npm test`、`npm run build`。
+3. `npm run dist` 生成 `release-v166/` 两个安装包 → 计算 SHA256 → 写 `release-v166/RELEASE_NOTES.md`（从 `.github/RELEASE_NOTES_TEMPLATE.md` 复制；本地候选写「候选补丁」+ 真实验证状态）。
+4. Windows 实装：`release-v166\FocusLink-1.6.6-x64.exe /S` → 回读卸载注册表 `21cd4128-7715-582c-bf2a-6446eb8ab7a5` 的 `DisplayVersion` 与 `%LOCALAPPDATA%\Programs\FocusLink\FocusLink.exe` 的 `FileVersion` → `npm run smoke:window-visible` → `npm run smoke:window-visible:launch`（必须打印 `cleanup pid=… removed=true`）。
+5. 回填 notes 与实施日志里的真实哈希；`npm run release:verify` 必须全绿；`git status --short` 只应剩预期改动。
+6. 提交并推 `main`：`git add -A` 之后检查**不要**包含任何 exe/portable/SHA256SUMS；三个 `release-v*/RELEASE_NOTES.md` 要入库。
+
+### 关键决策（接手时不要重新讨论）
+
+- **安装包永不进 Git**（用户 2026-10-17 拍板）：Git 只保存源码与发布记录；安装包作为 GitHub Release 附件分发；CI 只做记录与源码门禁，正式发布由本机 `npm run release:publish` 完成。
+- **报告格式**按 `AGENTS.md` 的 `Report Output Standard`：结论 / 事实 / 问题 / 改动，事实必须标 `实测` / `证据记录` / `推断`。
+- **1.6.6 不做功能**：时间之带留给 1.6.8（草稿已在 `frontend-design/FRONTEND_SPEC.md` §6，原样保留）；番茄投递节流、132 条历史补传、132 条冲突收口留给 1.6.7。
+
+### 已知坑（会浪费一小时的那种）
+
+- `FL-INSTALL-012`：验收脚本必须回收自己拉起的实例。只读枚举通过、日志写着 `visible:true`，都不等于用户桌面可见；遗留实例占住单实例锁时，用户点图标「没反应」。
+- `FocusLink/scripts/maintenance/focuslink-report.cjs` 有一处不属于本轮的合法改动（日报新增「待批准」列表），必须保留。
+- 本机默认 Node 是 `24.19.0`，项目门禁基线是 Node 22.x；打包前先确认用的是 Node 22，否则包内元数据可能不符合门禁。
+- 本轮的两个队友（pipeline / smokereap）中途失联，T4/T5 已由 Lead 亲自完成；不要再把同一任务派给它们。
+- `.gitignore` 现在是 `release-v*/*` + `!release-v*/RELEASE_NOTES.md`。改回目录级 `release-v*/` 会重新吞掉 notes，导致发布记录无法入库。
+
+### 接手时不要做
+
+- 不要 `git checkout --`、`git reset --hard` 或覆盖工作区里的未提交改动；这些改动归用户。
+- 不要新建平行交接文档、一次性修复报告或 `docs/` 目录。
+- 不要在没跑测试的情况下改 `.github/workflows/release.yml` 或 `publish.ps1` 的门禁判据。
 
 ## 开始前
 
@@ -58,13 +106,13 @@
 
 ## 交付前
 
-- [ ] 本轮跨端 UI/行为候选已递增补丁版本，Windows、指定华为平板和指定小米手机均安装并回读到同一版本；任一端不一致时停止打包、tag 和发布。
+- [ ] 本轮跨端 UI/行为候选已递增补丁版本，Windows、指定华为平板和指定小米手机均安装并回读到同一版本；任一端不一致时停止打包、tag 和发布。用户明确「只开发 PC」的迭代按 `TEST_AND_RELEASE.md` 的 PC 范围例外执行，并在矩阵里如实写 Android 未构建、未安装。
 - [ ] 在 [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md) 与前端 [USER_REQUIREMENTS.md](../frontend-design/USER_REQUIREMENTS.md) 给出 Windows、手机、平板实现/测试/部署矩阵；适用终端缺少结论时不得标记完成。
 - [ ] 更新 `BACKEND_SPEC.md`、根 [CHANGELOG.md](../../CHANGELOG.md) 和当前 Release 正文源。
 - [ ] 完成 [TEST_AND_RELEASE.md](TEST_AND_RELEASE.md) 全部门禁。
 - [ ] 多端改动额外构建 Web/PWA 与测试云；Android 必须通过 Capacitor sync、unit/lint/assemble、前台通知/Tile instrumentation 与华为/小米双机 smoke。
 - [ ] 真实 UI smoke 完成“完成 → 撤销 → 再完成 → 完成列表找回 → 恢复”并清理临时任务。
-- [ ] release 目录只有两个 exe、SHA256 和 Release notes。
-- [ ] Git commit 元数据干净后重新构建正式包，校验 hash。
-- [ ] 推送 main/tag 后创建 GitHub Release、附加两个 exe 与 SHA，并回读核验。
+- [ ] release 目录只有安装版、便携版、`SHA256SUMS.txt` 与 `RELEASE_NOTES.md` 四个文件；其中**只有 `RELEASE_NOTES.md` 入库**，三个安装/校验资产只作 GitHub Release 附件。
+- [ ] Git commit 元数据干净后重新构建正式包，校验 hash，并跑 `npm run release:verify`。
+- [ ] 授权发布时用 `npm run release:publish` 创建 annotated tag、推送 `main` 与 tag、上传附件并回读核验。
 - [ ] 未创建 GitHub Release 时，版本不得宣告“已发布”。

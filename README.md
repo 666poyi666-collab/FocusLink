@@ -2,11 +2,11 @@
 
 FocusLink 是一个本地优先的专注与任务工作台：主进程精确记录专注、暂停与自然跨度，任务、清单和层级由 FocusLink 自己管理；第三方任务服务只在你主动选择导入或同步时出现。
 
-> 当前 Windows 候选：v1.6.5；专注小窗细节深度精修与双列架构彻底对齐（严格对齐真实双列架构，根除挤压折行与截断，字体清晰度与高对比度强化，微光雕琢质感）。2026-10-15 用户明确本轮只开发 PC，验收范围为 Windows；Android 仅同步版本元数据，不构建或宣称手机/平板已验证。
+> 当前版本：v1.6.7
 >
-> 1.3 聚焦移动端可用性：设置页使用可预览的主题与字体选择，root 设备权限逐项申请并回读；Dashboard 支持今天、昨天、前后 7/30 天与自定义范围，24 小时时间段可查看任务状态；清单归属、完成/恢复和计时支架与电脑端保持同一语义。本轮完成 Windows、小米和华为同版实装前不标记为已发布；OPPO 手表保持退役/冻结。
+> 1.6.7 只做「去重减负」，界面视觉零改动：安装包剔除 @fontsource 原包、永不读取的 45 个语言包与其它平台原生模块；专注小窗不再加载整副字体表；时间之带暂停静止后停帧；专注页按字段订阅收窄每秒重建范围；清掉一批永不匹配的死样式。本轮仍只开发 PC（Windows），Android 只同步版本元数据、不构建不宣称。
 >
-> 版本主题：FocusLink 2.0 任务优先工作区 · 三端统一视觉系统 · 本地任务默认 · 第三方连接改为可选
+> 版本主题：本地优先的专注账本 · 三端同一套界面 · 交付管线可验证
 
 ## 产品边界
 
@@ -156,7 +156,7 @@ reverse 或 LAN bearer。现有 `fl2` 设备凭据可继续同步；全新设备
 ## 项目结构
 
 ```text
-time1/
+focuslink/                  # 仓库根
 ├── FocusLink/              # 唯一源码工作区
 │   ├── src/                # renderer：app / features / ui / styles
 │   ├── electron/           # 主进程、SQLite、计时、Provider、同步和系统能力
@@ -168,8 +168,8 @@ time1/
 │   ├── scripts/            # build / regression / smoke
 │   ├── frontend-design/    # 唯一前端设计与交接规范
 │   └── backend-design/     # 唯一后端、测试与发布规范
-├── .github/                # Issue 表单、Release 模板与自动发布 workflow
-├── release-v*/             # 最近三个版本的正式资产与 Release notes
+├── .github/                # Issue 表单、Release notes 模板与发布记录校验 workflow
+├── release-v*/             # 最近三个版本的本地正式资产（只有 RELEASE_NOTES.md 入库）
 ├── AGENTS.md               # AI 必须遵守的仓库规则
 └── CHANGELOG.md            # 全版本变化历史
 ```
@@ -206,7 +206,9 @@ React renderer
 
 ## 发布资产
 
-每个 `release-vXYZ/` 只保留四类文件：
+安装包永远不进入 Git。Git 只保存源码与可核对的发布记录（`RELEASE_NOTES.md`、CHANGELOG、版本源），安装包只作为 GitHub Release 附件分发，所以仓库不会每发一版就增重 800 MB。
+
+每个本地 `release-vXYZ/` 目录只保留四类文件；目录整体被 `.gitignore` 忽略，只有 `RELEASE_NOTES.md` 会被跟踪：
 
 ```text
 FocusLink-x.y.z-x64.exe
@@ -215,23 +217,19 @@ SHA256SUMS.txt
 RELEASE_NOTES.md
 ```
 
-当前本地保留的版本资产（线上状态以 GitHub Releases 为准）：
+本地只保留最新三个版本目录：
 
-| 版本    | 本地安装版                                                     | 版本说明                                    |
-| ------- | -------------------------------------------------------------- | ------------------------------------------- |
-| 0.12.87 | GitHub 预发布候选：四文件目录、Windows/小米实装完成；华为待恢复，正式三设备门禁未闭合 | [GitHub 下载](https://github.com/666poyi666-collab/time-dida/releases/tag/v0.12.87) / [本地说明](release-v01287/RELEASE_NOTES.md) |
-| 0.12.86 | 历史候选：四文件目录、Windows/小米实装已完成；后续源码变化后不再复用 | [v0.12.86](release-v01286/RELEASE_NOTES.md) |
-| 0.12.85 | 已被 0.12.86 取代：三设备已安装回读；OPPO 已退役；已推送 main（40d6dec），未创建 tag/Release | [v0.12.85](release-v01285/RELEASE_NOTES.md) |
-| 0.12.84 | 已被 0.12.85 取代：Windows/小米曾回读；华为/OPPO 与四端门禁未完成；不完整发布目录已移除 | v0.12.84 |
-| 0.12.76 | 作废候选：漏装 OPPO 且候选后继续修改跨端行为                   | [v0.12.76](release-v01276/RELEASE_NOTES.md) |
-| 0.12.75 | 设备授权登录修复：Android 浏览器打开与授权页重定向             | [v0.12.75](release-v01275/RELEASE_NOTES.md) |
-| 0.12.74 | 账号过渡与 native lease 最终封口、instrumentation 生产偏好隔离 | v0.12.74 |
-| 0.12.72 | 单账号 canonical 同步与 Windows/Android 四端实装               | v0.12.72 |
+| 版本  | 状态                                   | 版本说明                                                       |
+| ----- | -------------------------------------- | -------------------------------------------------------------- |
+| 1.6.7 | 当前：去重减负（仅 Windows）           | [release-v167/RELEASE_NOTES.md](release-v167/RELEASE_NOTES.md) |
+| 1.6.5 | 前版：小窗真实双列架构精工             | [release-v165/RELEASE_NOTES.md](release-v165/RELEASE_NOTES.md) |
+| 1.6.4 | 前版：小窗字体清晰度与高对比度         | [release-v164/RELEASE_NOTES.md](release-v164/RELEASE_NOTES.md) |
 
-每次版本迭代必须同步更新 `CHANGELOG.md`、本地 `RELEASE_NOTES.md`、四文件发布目录与 Android APK 备份，并推送 GitHub `main`。只有用户明确要求时才创建公开 tag、上传资产和 GitHub Release；该正式发布流程中只推送代码或 tag 不算发布完成。
+1.6.6 是只改交付管道与仓库清理的补丁，没有产生安装产物，记录只保留在 `CHANGELOG.md`。
 
-v0.12.11 因校验表格式被阻断；v0.12.12 的源码、回归和便携版门禁已通过，但 GitHub Windows runner 上 NSIS 连续两次出现已知的瞬时访问冲突。公开 tag 均保持不移动，v0.12.13 保留真实安装验收并增加有界重试与递增退避。线上状态以 GitHub Releases 回读结果为准。
+这些版本尚未创建公开 tag 或 GitHub Release（公开发布需要用户明确授权），因此没有下载链接。授权后按 [测试与发布门禁](FocusLink/backend-design/TEST_AND_RELEASE.md) §5 执行 `npm run release:publish`，由它创建 tag、上传三个附件并回读核对；只推送代码或 tag 不算发布完成。
 
+每次版本迭代必须同步更新 `CHANGELOG.md`、本地 `RELEASE_NOTES.md`、四文件发布目录、版本源与 Android 版本元数据，并推送 GitHub `main`。
 ## 文档入口
 
 ### 前端档案
@@ -250,12 +248,9 @@ v0.12.11 因校验表格式被阻断；v0.12.12 的源码、回归和便携版�
 
 ### 当前发布
 
-- [v0.12.87 GitHub 预发布说明](https://github.com/666poyi666-collab/time-dida/releases/tag/v0.12.87) / [本地说明](release-v01287/RELEASE_NOTES.md)（Windows/小米已实装，华为待恢复；不等同于正式三设备交付）
-- [v0.12.86 版本说明](release-v01286/RELEASE_NOTES.md)（历史候选；Windows/小米曾实装，后续源码变化后不再复用；未推送 main、未创建 tag 或 GitHub Release）
-- [v0.12.85 版本说明](release-v01285/RELEASE_NOTES.md)（历史；已推送 GitHub main 提交 `40d6dec`；未创建 tag 或 GitHub Release）
-- v0.12.74 账号过渡封口与 native lease 版本说明（历史记录，发布目录已移除）
-- [版本历史](CHANGELOG.md)
-
+- 本地 1.6.6 资产：[release-v166/RELEASE_NOTES.md](release-v166/RELEASE_NOTES.md)（未创建公开 tag 或 GitHub Release）
+- 历史下载入口：[GitHub Releases](https://github.com/666poyi666-collab/FocusLink/releases)
+- [完整版本历史](CHANGELOG.md)
 ## License
 
 [MIT](LICENSE)
