@@ -2,7 +2,7 @@
 
 > 适用版本：v1.x
 >
-> 当前 Windows 版本：v1.6.7（去重减负：安装包剔除 @fontsource 原包、多余 locale 与其它平台 sqlite prebuild，渲染入口字体表拆分，暂停态重绘限频，清理零 import 动效层。不改数据库、IPC 语义与同步协议；2026-10-20 用户批准本轮，仅验收 Windows，Android 仅同步版本元数据。）
+> 当前 Windows 版本：v1.6.8（切页不卡：页面过渡 240→约 140ms，设置页首访 481→202ms、统计页 128→72ms、任务页 63→38ms；补齐 verify:budget 的逐页诊断与产物体积/延迟棘轮。不改数据库、IPC 语义与同步协议；2026-10-21 用户点名三页卡顿，仅验收 Windows，Android 仅同步版本元数据。）
 >
 > 文档责任：Electron 主进程、SQLite、IPC、任务 Provider、同步、测试与发布。
 

@@ -1,5 +1,36 @@
 # FocusLink Windows 安装器错误索引
 
+## FL-INSTALL-017：`smoke:window-visible:launch` 报「当天日志里没有本次 pid 的 `main window shown` 证据」（假失败）
+
+### 症状
+
+`npm run smoke:window-visible:launch` 退出码 1，输出里同时出现：
+
+- `[launch-verify] window=pid=… handle=…`（窗口确实被枚举到）
+- `[launch-verify] cleanup … removed=true`（实例确实被回收）
+- 但断言报 `当天日志里没有本次 pid 的 `main window shown` 证据`
+
+而 `%APPDATA%\FocusLink\logs\focuslink-<日期>.log` 里明明有那一行：
+`main window shown {"trigger":"ready-to-show","force":false,"visible":true,"pid":<本次 pid>,…`。
+
+### 根因（两个叠加，v1.6.8 实测）
+
+1. **日志是「按文件分别增长」的**：日志按天分文件，新行追加在**最新**文件尾部。旧实现把最新两个文件拼成一条数组，再 `slice(启动前的总行数)` 取尾部 —— 新行其实插在数组**中间**（最新文件末尾），尾部拿到的是次新文件的旧行。只要目录里有两个以上日志文件，这个判定就永远看不到新行。
+2. **窗口出现与日志落盘有时间差**：轮询循环里 `if (visibleWindow || failureLine) break;` 会在窗口可见的第一时间跳出，此时日志可能还没缓冲写盘，`shownLine` 仍为 `null`。
+
+### 修法
+
+- 按文件比行数差：`logSnapshot()` 记下每个文件的基线行数，`linesSince()` 只取每个文件超出基线的部分。
+- 循环跳出后补一段**只等日志行**的短轮询（上限 2s、120ms 间隔），拿到就停。
+
+修后实测：`通过：pid 82900 主窗口 handle=33886818 可见，且实例已回收。` 退出码 0。
+
+### 判定规则（别放宽）
+
+- 这条门禁的「通过」必须同时具备：本次 pid 的进程树里出现标题恰为 `FocusLink` 的可见顶层窗口、当日日志有本次 pid 的 `main window shown` 且 `"visible":true`、实例已回收（pid 消失）。
+- 日志里随后出现的 `render process gone … reason crashed exitCode -1` 是脚本 `finally` 杀进程树导致的，属预期，不要当成崩溃证据。
+- 端口/进程判据不要用「目录里最近的日志行」代替「本次 pid」，否则多实例并存时会误判。
+
 ## FL-INSTALL-016：新打包产物启动即崩（`verify-startup` 报 code 2147483651 / 0x80000003）
 
 ### 症状

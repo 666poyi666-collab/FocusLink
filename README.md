@@ -2,9 +2,9 @@
 
 FocusLink 是一个本地优先的专注与任务工作台：主进程精确记录专注、暂停与自然跨度，任务、清单和层级由 FocusLink 自己管理；第三方任务服务只在你主动选择导入或同步时出现。
 
-> 当前版本：v1.6.7
+> 当前版本：v1.6.8
 >
-> 1.6.7 只做「去重减负」，界面视觉零改动：**安装包 204.95 → 119.87 MiB（−41.5%）**，靠把 13 个纯构建期依赖移出 `dependencies`、裁掉其它平台 sqlite prebuild 与 53 个永不读取的语言包；专注小窗不再加载整副字体表（小窗 CSS −10.4%）；时间之带暂停后重绘减半；专注页按字段订阅收窄每秒重建范围；样式层删掉 197 行可证明永不匹配的死规则并把两套圆角阶梯收敛为一套。另新增 `npm run verify:packaged` 打包启动门禁。仍只开发 PC（Windows），Android 只同步版本元数据、不构建不宣称。
+> 1.6.8 只解决「切页不丝滑」，界面视觉零改动：一次切页从点击到完全可见 **240ms → 约 140ms**；三个页面的首访同步重活分别压到 **任务 63 → 38ms（0 个长任务）/ 统计 128 → 72ms / 设置 481 → 202ms**（导航点击 p75 77–120 → **39ms**，最慢一次 564 → **165ms**）。设置页挪走 17.1MB 预览字体的解码、统计页不再在首绘后改写 `<html>` 触发整轮样式重算、任务页把整页提交 4 次压到 2 次。另补齐 `npm run verify:budget` 的逐页诊断（`--detail` / `--style` / `--probe`），并修掉 `smoke:window-visible:launch` 的日志比对假失败。仍只开发 PC（Windows），Android 只同步版本元数据、不构建不宣称。
 >
 > 版本主题：本地优先的专注账本 · 三端同一套界面 · 交付管线可验证
 
@@ -221,9 +221,9 @@ RELEASE_NOTES.md
 
 | 版本  | 状态                                   | 版本说明                                                       |
 | ----- | -------------------------------------- | -------------------------------------------------------------- |
-| 1.6.7 | 当前：去重减负（仅 Windows）           | [release-v167/RELEASE_NOTES.md](release-v167/RELEASE_NOTES.md) |
+| 1.6.8 | 当前：切页不卡（仅 Windows）           | [release-v168/RELEASE_NOTES.md](release-v168/RELEASE_NOTES.md) |
+| 1.6.7 | 前版：去重减负                         | [release-v167/RELEASE_NOTES.md](release-v167/RELEASE_NOTES.md) |
 | 1.6.5 | 前版：小窗真实双列架构精工             | [release-v165/RELEASE_NOTES.md](release-v165/RELEASE_NOTES.md) |
-| 1.6.4 | 前版：小窗字体清晰度与高对比度         | [release-v164/RELEASE_NOTES.md](release-v164/RELEASE_NOTES.md) |
 
 1.6.6 是只改交付管道与仓库清理的补丁，没有产生安装产物，记录只保留在 `CHANGELOG.md`。
 

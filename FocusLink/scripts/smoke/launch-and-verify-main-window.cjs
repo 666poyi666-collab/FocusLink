@@ -168,21 +168,37 @@ function logDir() {
   return path.join(appData, 'FocusLink', 'logs');
 }
 
-function recentLogLines(limitFiles = 2) {
+/* 日志是「按文件分别增长」的：新行追加在 newest 文件的尾部，而不是拼成一条长流。
+ * v1.6.8 之前这里用 recentLogLines().slice(logLinesBefore) —— 把 newest 与次新文件拼成一个数组再取尾部，
+ * 新行其实插在数组中间（newest 文件末尾），尾部拿到的是次新文件的旧行，于是窗口明明已显示、
+ * 日志明明已写，验收仍报「没有 main window shown 证据」。必须按文件比行数差。 */
+function logSnapshot(limitFiles = 2) {
   const dir = logDir();
   if (!fs.existsSync(dir)) return [];
-  const files = fs
+  return fs
     .readdirSync(dir)
     .filter((name) => /^focuslink-\d{4}-\d{2}-\d{2}\.log$/.test(name))
     .sort()
     .reverse()
-    .slice(0, limitFiles);
-  const lines = [];
-  for (const file of files) {
-    for (const line of fs.readFileSync(path.join(dir, file), 'utf8').split('\n'))
-      lines.push(line.trim());
+    .slice(0, limitFiles)
+    .map((file) => ({
+      file,
+      lines: fs
+        .readFileSync(path.join(dir, file), 'utf8')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    }));
+}
+
+function linesSince(baseline, snapshot) {
+  const added = [];
+  for (const { file, lines } of snapshot) {
+    const base = baseline.find((entry) => entry.file === file);
+    for (let index = base ? base.lines.length : 0; index < lines.length; index += 1)
+      added.push(lines[index]);
   }
-  return lines;
+  return added;
 }
 
 async function main() {
@@ -197,7 +213,7 @@ async function main() {
   delete env.ELECTRON_RUN_AS_NODE;
 
   const startedAt = Date.now();
-  const logLinesBefore = recentLogLines().length;
+  const logBaseline = logSnapshot();
   const child = spawn(options.exe, [], {
     detached: false,
     stdio: 'ignore',
@@ -221,7 +237,7 @@ async function main() {
         enumerateWindows().find(
           (window) => tree.has(window.pid) && window.visible && window.title === 'FocusLink',
         ) ?? null;
-      const lines = recentLogLines().slice(logLinesBefore);
+      const lines = linesSince(logBaseline, logSnapshot());
       shownLine =
         lines
           .filter((line) => line.includes('main window shown') && line.includes(`"pid":${pid}`))
@@ -236,6 +252,18 @@ async function main() {
           .pop() ?? null;
       if (visibleWindow || failureLine) break;
       await new Promise((resolve) => setTimeout(resolve, options.interval));
+    }
+
+    // 窗口可见与日志落盘之间有时间差（枚举 400ms 一次，日志缓冲后写盘）：
+    // 窗口已出现时补一段只等日志行的短轮询，避免「窗口在、日志也在，却判失败」。
+    const logDeadline = Date.now() + 2000;
+    while (!shownLine && !failureLine && Date.now() < logDeadline) {
+      shownLine =
+        linesSince(logBaseline, logSnapshot())
+          .filter((line) => line.includes('main window shown') && line.includes(`"pid":${pid}`))
+          .pop() ?? null;
+      if (shownLine) break;
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
   } catch (error) {
     firstError = error;

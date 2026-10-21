@@ -1,5 +1,22 @@
 # FocusLink 实施日志
 
+## 2026-10-21 · `FL-PERF-20261021-PAGE-SWITCH`：切页不卡（Windows v1.6.8，已交付）
+
+- **用户范围（原文）**：「我说的是以下几个界面的卡顿问题，感觉整体不丝滑：1. 从『专注』切换到『任务点』的卡顿，任务界面可能需要加载，我不知道那个问题解决没。2. 切换到『统计』的卡顿，加载的过渡感觉很差劲，导致显示出来不丝滑。3. 切换到『设置』的卡顿。现在就是 UI 细节的打磨。」
+- **测量口径（先说清楚再改）**：`perf-budget.mjs --detail` 在刚冷启的实例上按 任务→统计→设置→专注 连点三轮，round0 = 首访、round1/2 = 再访；每次点击记 `frameMs`（点击→两帧）、`settledMs`（点击→主线程空闲，`requestIdleCallback` 1200ms 超时）、是否出现 `.task-loading-list` 骨架、窗口内 longtask、DOM 节点数。测量前等 3000ms 并连做两次 idle，让首访量的是「页面挂载成本」而不是启动债。
+- **改前基线（release-v167 便携版，warm）**：任务 44/63ms（0 长任务）｜统计 75/128ms（66ms 长任务）｜设置 275/481ms（209ms 长任务）｜专注 60/62ms（50ms 长任务）；再访 21–49ms。另记冷启直测口径：任务 191/210ms（162ms 长任务）——那 162ms 主体是启动债，不是页面成本。
+- **逐页真因（全部实测，不靠猜）**：
+  1. **设置页**：`--style settings` 把一次切换拆成脚本 30.9ms + 样式重算 19.6ms（17 次）+ 布局 162.5ms（7 次）+ 其它（绘制/栅格/解码）433.2ms；`probe-settings-layout.js` 量到进入设置后 `document.fonts` 加载 30 条 / 11 族，其中 6 个中文预览族合计约 17.1MB（文楷 6.90 + 新致宋 4.15 + 新晰黑 3.07 + 漫黑 1.18 + 得意黑 1.10 + 快乐体 0.69）。再访 21–49ms 说明贵的是「只发生一次」的部分。
+  2. **统计页**：根因不是算得慢（`focus_sessions` 176 行 / `focus_segments` 430 行 / `tasks_cache` 60 行，旧 `filteredSessions` 只有数 ms），而是首绘之后才写 `<html>` 的 `data-pal` / `data-font`，而 `stats-workbench.css` 有 10 条 `html[data-pal=…]` + 1 条 `html[data-font=…]` 前缀规则 → 一次写入触发整轮全文档样式重算。
+  3. **任务页**：`shared/taskTreeUtils.ts:96-106` 的 `finalize` 每次深克隆整棵树，页面里三处各组装一次得到三个引用 → 整页提交 4 次；暖态首访还先去重读本地再出内容。
+  4. **共用**：`src/ui/WorkspaceColumns.tsx` 用 `useEffect` 量宽（初值 1200），首访必然「先按 1200 布局、再重排」多一次提交。
+  5. **过渡本身**：`PAGE_ENTER` 0.2s + 0.04s 延迟、`PAGE_EXIT` 0.18s，一次切页 240ms 才有完整画面。
+- **落地改动**：见 `CHANGELOG.md` v1.6.8 与 `FRONTEND_SPEC.md`「v1.6.8 切页响应」；关键点是 `App.tsx` 过渡 0.14/0.09、启动空闲期预热 7 族预览字体、`.instrument-choice` 预览内 `will-change` 退回 `auto`、统计页首绘前同步写外观属性、任务页树组装按引用记忆 + 骨架 140ms + 暖态同步选中、`WorkspaceColumns` 改 `useLayoutEffect`。
+- **改后实测（release-v168、commit 4f0ad11、`--detail` 三轮）**：任务 36/38ms（0 长任务，DOM 333）｜统计 70/72ms（63ms 长任务，DOM 819）｜设置 165/202ms（117ms 长任务，DOM 1566）｜专注 31/33ms（DOM 1080）；再访 12–47ms。导航点击 p75 77–120 → **39ms**，最慢一次 290–564 → **165ms**；冷启动 1666ms。
+- **试过并否掉（别再重做）**：`.instrument-choice` 加 `content-visibility:auto` + `contain-intrinsic-size:auto 142px` —— 设置页首访 172/241ms、长任务拆成 90+54ms，与不加时的 172/207ms（123ms 单长任务）相比没有收益，且首访 DOM 1566→1004（离屏不渲染让快滚跳空），整段撤回。
+- **门禁侧的两个发现**：① `verify:budget` 原把 portable 冷启动算进预算，实测 6.5–16.1s 且随负载漂移（每次拉起自解包约 120MB），改为 portable 不判冷启动、其余照判。② `smoke:window-visible:launch` 假失败：日志按天分文件、新行追加在最新文件尾部，旧实现把最新两个文件拼成一条数组再 `slice(旧长度)` 取尾部，实际拿到旧文件的行 → 窗口已显示、日志已写仍报「没有 `main window shown` 证据」。改为按文件比行数差 + 窗口出现后补 2s 只等日志行的短轮询，修后通过（pid 82900 / handle 33886818）。
+- **交付状态**：安装包 119.87 MiB、便携版 119.66 MiB、`app.asar` 31.41 MiB；静默覆盖安装退出码 0，注册表 `DisplayName=FocusLink 1.6.8` / `DisplayVersion=1.6.8`，已安装 EXE `FileVersion=1.6.8` / `ProductVersion=1.6.8.0`，安装目录 345.00 MiB / 78 文件。Android 未构建未安装（本机全盘找不到 `adb`），仅同步版本元数据（1.6.8 / 1344）。
+
 ## 2026-10-21 · `FL-PERF-20261021-BUDGET`：渲染预算门禁落地（不升产品版本）
 
 - **用户要求**：「先进行一轮调研搜索，看看优质方案 ai 时代，时效性和质量」→ 三路调研后用户说「你自己判断」。判断结果：先立预算，再谈改版；**虚拟化暂不做**。

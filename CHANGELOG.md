@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.6.8 - 2026-10-21（切页不再卡：三页首访重活、过渡时长与度量工具）
+
+- **一次切页从点击到完全可见 240ms 收到约 140ms**：`src/app/App.tsx` 的页面过渡 `PAGE_ENTER` 0.2s + 0.04s 延迟 → 0.14s 无延迟、`PAGE_EXIT` 0.18 → 0.09s（原 40ms 空白延迟 + 200ms 淡入 + 180ms 淡出）。只改时长，不动任何形状、颜色与布局。
+- **设置页首访 481 → 202ms（最长任务 209 → 117ms）**：`SettingsPanel` 从整仓 `useStore()` 收到 3 个字段选择器；9 台仪表预览收进 `memo` 组件；挂载期 4 次状态查询挪到 `requestIdleCallback`（800ms 兜底、卸载取消）；启动后在空闲期预热 7 族「只在设置页预览出现」的字体（约 17.1MB CJK 解码不再压在首次切页上）；预览区 4 处 `will-change` 退回 `auto`，9 台仪表不再常驻约 25 个合成层。
+- **统计页首访 128 → 72ms，根因不是算得慢**：旧代码在首绘之后才写 `<html>` 的 `data-pal` / `data-font`，而 `stats-workbench.css` 有 11 条 `html[...]` 前缀规则，一次属性写入就触发整轮全文档样式重算。改为首绘前同步写、值相同不写、卸载还原原始值；`filteredSessions` 改单遍 `Map` 索引，8 个回调 `useCallback`，3 个子组件 `memo`。
+- **任务页首访 63 → 38ms、0 个长任务**：整页提交从 4 次压到 2 次——树组装按引用记忆（`shared/taskTreeUtils.ts` 的 `finalize` 每次深克隆整棵树，三处各组装一次就得到三个引用）、去掉挂载期强制本地重读、骨架延迟 140ms 上屏、暖首访同步选中默认任务。冷启首次进入不再闪骨架。
+- **量宽在首绘前完成**：`src/ui/WorkspaceColumns.tsx` 的量宽从 `useEffect` 改 `useLayoutEffect`，任务页与统计页首访不再「先按 1200 布局、再重排一次」多付一次提交。
+- **度量与门禁补全**：`npm run verify:budget` 新增 `--detail`（逐页首访/再访、骨架、长任务、DOM）、`--style <页>`（把一次切换拆成脚本/样式重算/布局/其它）、`--probe <表达式>`（页内求值），并新增 `scripts/verify/probe-settings-layout.js` 量设置页几何与字体装载。便携版冷启动不再计入预算：它每次拉起都要自解包约 120MB，实测 6.5–16.1s 随负载漂移，量的是解包器不是界面。
+- **修 `smoke:window-visible:launch` 的假失败**：日志是「按文件分别增长」的，旧实现把最新两个日志文件拼成一条数组再取尾部，新行其实落在数组中间，于是窗口已显示、日志已写仍判「没有 `main window shown` 证据」。改为按文件比行数差，并在窗口出现后补 2s 只等日志行的短轮询（`scripts/smoke/launch-and-verify-main-window.cjs`）。
+- **实测（release-v168，`--detail` 三轮；点击→两帧 / 点击→主线程空闲）**：任务 36/38ms（0 长任务）｜统计 70/72ms｜设置 165/202ms（117ms 长任务）｜专注 31/33ms；再访 12–47ms。导航点击 p75 77–120 → 39ms，最慢一次 290–564 → 165ms；冷启动 1666ms。体积与依赖不变：安装包 119.87 MiB、便携版 119.66 MiB、`app.asar` 31.41 MiB、运行时依赖 3 个。
+- **试过并否掉（别重做）**：给 `.instrument-choice` 加 `content-visibility:auto` + `contain-intrinsic-size:auto 142px`——设置页首访无收益（172/241ms，长任务拆成 90+54ms），首访 DOM 从 1566 掉到 1004 反而让快滚跳空，已整段撤回。
+- **范围**：仍只开发 PC（Windows）；Android 未构建未安装（本机全盘找不到 `adb`），仅同步版本元数据（1.6.8 / 1344），不得宣称 Android 已验证。`format:check` / `typecheck` / `lint` / `npm test`（150 文件 1271 项）/ `build` / `dist` / `verify:packaged` / `verify:budget` / 静默覆盖安装与版本回读 / `smoke:window-visible:launch` 全部通过。
+
 ## v1.6.7 - 2026-10-20（去重减负：包体、字体表、暂停重绘与死代码）
 
 - **安装包从 204.95 MiB 降到 119.87 MiB（−85.08 MiB，−41.5%）**，便携版 204.73 → 119.66 MiB，`app.asar` 109.51 → 31.41 MiB，安装目录 492.76 → 345.01 MiB。两处根因分开治：① `dependencies` 从 16 个收到 3 个（只留运行期真被主进程 require 的 `better-sqlite3` / `undici` / `ws`），`@fontsource*`、`lucide-react`、`framer-motion`、`zustand`、`@capacitor/*` 共 13 个纯构建期包移入 devDependencies，electron-builder 自然不再打包；② `electron-builder.yml` 继续排除 better-sqlite3 其它平台的 7 份 prebuild 与 9.78 MiB 的 sqlite3 C 源码（只留 `win32-x64.node`），并把 `electronLanguages` 收到 `zh-CN` + `en-US`（55 个 locale pak → 2 个）。
