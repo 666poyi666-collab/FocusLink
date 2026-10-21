@@ -34,9 +34,15 @@ const ROOT = path.resolve(HERE, '..', '..');
  * 两类数字必须分开，不要混为一谈：
  *   · 行业目标（尚未达标，作为债务记在文档里）：点击反馈 ≤100ms、INP p75 ≤200ms、0 个 >50ms 长任务。
  *   · 门禁棘轮（本脚本判定用）：当前实测基线 + 余量，作用只是「不许更差」。
- * 2026-10-21 五次采样基线：冷启动 1661–2296ms、导航点击 p75 77–120ms、
+ * 2026-10-21 v1.6.7 基线（冷启后立即测、未预热）：导航点击 p75 77–120ms、
  * 最慢一次导航（设置页）290–564ms、>50ms 长任务 2–3 个（最长 215–358ms）、DOM 1004–1610、JS 堆 7–8.4MB。
- * 结论：切页这一下确实有 300–500ms 的同步重活，这就是「不够丝滑」的实证债，下一轮专门还。*/
+ * 2026-10-21 v1.6.8 复测（--detail 三轮中位）：任务首访 35/38ms、统计 66/132ms、设置 167/191ms、
+ * 专注 35/51ms；三类再访 13–43ms；设置页最慢长任务 209 → 111–123ms。冷启动 1330–2603ms。
+ *
+ * 冷启动门槛只量 win-unpacked：它等于静默安装后的形态（%LOCALAPPDATA%\Programs\FocusLink）。
+ * portable 版**不计入冷启动判定**——它每次拉起都要把约 120MB 自解包到临时目录，
+ * 实测 6.5s / 16.1s / 15.6s 且随机器负载漂移，量的是解包器而不是界面手感；
+ * 它的导航/长任务/DOM/堆仍然照判。*/
 const BUDGET = {
   installerMB: 130, // 棘轮：当前 119.87（Electron 空白应用 158.8，Tauri 2.84）
   portableMB: 130, // 棘轮：当前 119.66
@@ -55,6 +61,16 @@ const PORT_MIN = 9400;
 const PORT_MAX = 9900;
 const args = process.argv.slice(2);
 const reportOnly = args.includes('--report');
+const detailMode = args.includes('--detail');
+/* --style <页面名>：只点一次该页，用 CDP Performance 指标把这次切换拆成
+ * 「脚本 / 样式重算 / 布局 / 其它」四块，回答「卡在 JS 还是在样式层」。
+ * 页面名用导航按钮的 aria-label（专注/任务/统计/设置）。 */
+const styleIdx = args.indexOf('--style');
+const stylePage = styleIdx >= 0 ? args[styleIdx + 1] : null;
+/* --probe <js 表达式>：在页内求值并打印 JSON。
+ * 用来量真实尺寸/计算样式/字体装载情况，避免按经验猜 contain-intrinsic-size。 */
+const probeIdx = args.indexOf('--probe');
+const probeExpr = probeIdx >= 0 ? args[probeIdx + 1] : null;
 const dirArg = args.indexOf('--dir') >= 0 ? args[args.indexOf('--dir') + 1] : null;
 
 function out(line) {
@@ -249,6 +265,101 @@ const MEASURE_EXPR = `(async () => {
   };
 })()`;
 
+/* 逐页明细（--detail）：`MEASURE_EXPR` 只报总体 p75/最慢值，无法回答
+ * 「哪一页顿、顿在哪」以及「是首次挂载贵还是每次切换都贵」。
+ * 这里在**刚冷启动**的实例上按 任务→统计→设置→专注 连点三轮：
+ *   · round 0 = 每页首次挂载；round 1/2 = 再次访问（命中模块缓存）。
+ *   · frameMs  = 点击到两帧后（视觉响应）
+ *   · settledMs= 点击到主线程真正空下来（含同步挂载 + 淡入动画）。
+ *   · skeleton = 该页首帧就出现骨架占位时记 true（任务页 IPC 加载）。
+ * 首次与再次的差值就是「页面挂载成本」，这决定了要不要做保活(mount-once)策略。*/
+const DETAIL_EXPR = `(async () => {
+  const longTasks = [];
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries())
+        longTasks.push({ start: entry.startTime, dur: Math.round(entry.duration) });
+    }).observe({ type: 'longtask', buffered: false });
+  } catch (error) {
+    /* 旧内核没有 longtask */
+  }
+  const buttons = [...document.querySelectorAll('.edge-dock-button')];
+  const byLabel = new Map(
+    buttons.map((b) => [b.getAttribute('aria-label') || (b.textContent || '').trim(), b]),
+  );
+  const order = ['任务', '统计', '设置', '专注'];
+  const idle = () =>
+    new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      try {
+        requestIdleCallback(finish, { timeout: 1200 });
+      } catch (error) {
+        setTimeout(finish, 60);
+      }
+    });
+  const rows = [];
+  for (let round = 0; round < 3; round++) {
+    for (const label of order) {
+      const button = byLabel.get(label);
+      if (!button) continue;
+      const from = longTasks.length;
+      const started = performance.now();
+      button.click();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const frameMs = Math.round(performance.now() - started);
+      const skeleton = !!document.querySelector('.task-loading-list');
+      await idle();
+      const settledMs = Math.round(performance.now() - started);
+      rows.push({
+        round,
+        label,
+        frameMs,
+        settledMs,
+        skeleton,
+        longTasks: longTasks.slice(from).map((entry) => entry.dur),
+        dom: document.getElementsByTagName('*').length,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 140));
+    }
+  }
+  return rows;
+})()`;
+
+function styleExpr(label) {
+  return (
+    '(async () => {' +
+    'const target = ' +
+    JSON.stringify(label) +
+    ';' +
+    'const buttons = [...document.querySelectorAll(".edge-dock-button")];' +
+    'const button = buttons.find((b) => (b.getAttribute("aria-label") || "") === target);' +
+    'if (!button) return { clicked: false, available: buttons.map((b) => b.getAttribute("aria-label")) };' +
+    'const idle = () => new Promise((resolve) => {' +
+    '  let done = false;' +
+    '  const finish = () => { if (done) return; done = true; resolve(); };' +
+    '  try { requestIdleCallback(finish, { timeout: 1200 }); } catch (error) { setTimeout(finish, 60); }' +
+    '});' +
+    'const started = performance.now();' +
+    'button.click();' +
+    'await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));' +
+    'const frameMs = Math.round(performance.now() - started);' +
+    'await idle();' +
+    'return { clicked: true, frameMs, settledMs: Math.round(performance.now() - started) };' +
+    '})()'
+  );
+}
+
+function metricMap(entries) {
+  const map = {};
+  for (const entry of entries || []) map[entry.name] = entry.value;
+  return map;
+}
+
 function p75(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -311,13 +422,62 @@ async function measureTarget(target, problems) {
     } catch {
       /* 外壳断言另有人管 */
     }
-    await delay(2000);
-    const measured = await cdp.evaluate(MEASURE_EXPR);
-    metrics.nav = measured.nav || [];
-    metrics.navP75 = p75(metrics.nav);
-    metrics.navMax = metrics.nav.length ? Math.max(...metrics.nav) : 0;
-    metrics.longTasks = measured.longTasks || [];
-    metrics.domNodes = measured.domNodes || 0;
+    // 明细模式也要让启动期的后台活（字体、IPC 水化）先跑完，
+    // 否则「首次访问某页」测得的是启动债，不是该页的挂载成本。
+    await delay(detailMode || stylePage || probeExpr ? 3000 : 2000);
+    if (probeExpr) {
+      const probeCode = probeExpr.startsWith('@')
+        ? fs.readFileSync(path.resolve(ROOT, probeExpr.slice(1)), 'utf8')
+        : probeExpr;
+      await cdp.evaluate(
+        '(async () => { const b = [...document.querySelectorAll(".edge-dock-button")].find((x) => (x.getAttribute("aria-label") || "") === ' +
+          JSON.stringify(process.env.FL_PROBE_PAGE || '') +
+          '); if (b) b.click(); await new Promise((r) => setTimeout(r, 1200)); })()',
+      );
+      metrics.probe = await cdp.evaluate(probeCode);
+      metrics.nav = [];
+      metrics.longTasks = [];
+      metrics.domNodes = 0;
+    } else if (stylePage) {
+      // 单页拆解：脚本 / 样式重算 / 布局各占多少毫秒。
+      await cdp.send('Performance.enable');
+      const before = metricMap((await cdp.send('Performance.getMetrics')).metrics);
+      const click = await cdp.evaluate(styleExpr(stylePage));
+      await delay(250);
+      const after = metricMap((await cdp.send('Performance.getMetrics')).metrics);
+      const delta = (key) => Math.round(((after[key] || 0) - (before[key] || 0)) * 1000 * 10) / 10;
+      const count = (key) => Math.round((after[key] || 0) - (before[key] || 0));
+      metrics.style = {
+        page: stylePage,
+        click,
+        taskMs: delta('TaskDuration'),
+        scriptMs: delta('ScriptDuration'),
+        styleMs: delta('RecalcStyleDuration'),
+        layoutMs: delta('LayoutDuration'),
+        styleCount: count('RecalcStyleCount'),
+        layoutCount: count('LayoutCount'),
+      };
+      metrics.nav = [click.frameMs || 0];
+      metrics.navP75 = click.frameMs || 0;
+      metrics.navMax = click.frameMs || 0;
+      metrics.longTasks = [];
+      metrics.domNodes = 0;
+    } else if (detailMode) {
+      // 明细模式必须在「还没访问过任何页面」的实例上跑，否则首次挂载成本被提前吃掉。
+      metrics.detail = await cdp.evaluate(DETAIL_EXPR);
+      metrics.nav = metrics.detail.map((row) => row.frameMs);
+      metrics.navP75 = p75(metrics.nav);
+      metrics.navMax = metrics.nav.length ? Math.max(...metrics.nav) : 0;
+      metrics.longTasks = metrics.detail.flatMap((row) => row.longTasks);
+      metrics.domNodes = metrics.detail.length ? metrics.detail[metrics.detail.length - 1].dom : 0;
+    } else {
+      const measured = await cdp.evaluate(MEASURE_EXPR);
+      metrics.nav = measured.nav || [];
+      metrics.navP75 = p75(metrics.nav);
+      metrics.navMax = metrics.nav.length ? Math.max(...metrics.nav) : 0;
+      metrics.longTasks = measured.longTasks || [];
+      metrics.domNodes = measured.domNodes || 0;
+    }
     try {
       const heap = await cdp.send('Runtime.getHeapUsage');
       metrics.heapUsedMB = Math.round((heap.usedSize / 1048576) * 10) / 10;
@@ -367,9 +527,9 @@ async function measureTarget(target, problems) {
   return metrics;
 }
 
-function assertMetrics(metrics, problems) {
+function assertMetrics(metrics, problems, kind) {
   if (!metrics.coldStartMs) return;
-  if (metrics.coldStartMs > BUDGET.coldStartMs) {
+  if (kind !== 'portable' && metrics.coldStartMs > BUDGET.coldStartMs) {
     problems.push('冷启动 ' + metrics.coldStartMs + 'ms 超过预算 ' + BUDGET.coldStartMs + 'ms');
   }
   if (metrics.navP75 > BUDGET.navClickP75Ms) {
@@ -444,7 +604,71 @@ async function main() {
         metrics.heapUsedMB +
         'MB',
     );
-    if (!reportOnly) assertMetrics(metrics, problems);
+    if (detailMode && metrics.detail) {
+      out('    页面 | 轮次 | 点击→两帧 | 点击→主线程空闲 | 骨架 | 长任务 | DOM');
+      for (const row of metrics.detail) {
+        out(
+          '    ' +
+            row.label +
+            ' | ' +
+            (row.round === 0 ? '首访' : '再访' + row.round) +
+            ' | ' +
+            row.frameMs +
+            'ms | ' +
+            row.settledMs +
+            'ms | ' +
+            (row.skeleton ? '有' : '无') +
+            ' | ' +
+            (row.longTasks.length ? row.longTasks.join('+') + 'ms' : '0') +
+            ' | ' +
+            row.dom,
+        );
+      }
+    }
+    if (probeExpr) {
+      out('    probe = ' + JSON.stringify(metrics.probe, null, 1));
+    }
+    if (stylePage && metrics.style) {
+      const s = metrics.style;
+      if (!s.click.clicked) {
+        out('    未找到导航按钮，可用：' + JSON.stringify(s.click.available));
+      } else {
+        out(
+          '    单页拆解 ' +
+            s.page +
+            '：点击→两帧 ' +
+            s.click.frameMs +
+            'ms｜点击→空闲 ' +
+            s.click.settledMs +
+            'ms',
+        );
+        out(
+          '    主线程任务总时长 ' +
+            s.taskMs +
+            'ms = 脚本 ' +
+            s.scriptMs +
+            'ms + 样式重算 ' +
+            s.styleMs +
+            'ms（' +
+            s.styleCount +
+            ' 次）+ 布局 ' +
+            s.layoutMs +
+            'ms（' +
+            s.layoutCount +
+            ' 次）+ 其它 ' +
+            Math.round((s.taskMs - s.scriptMs - s.styleMs - s.layoutMs) * 10) / 10 +
+            'ms',
+        );
+      }
+    }
+    if (target.kind === 'portable') {
+      out(
+        '    注：portable 冷启动 ' +
+          metrics.coldStartMs +
+          'ms 不计入预算——每次拉起都要把约 120MB 自解包到临时目录，量的是解包器不是界面；其余项照判。',
+      );
+    }
+    if (!reportOnly && !stylePage) assertMetrics(metrics, problems, target.kind);
   }
   if (!measuredCount) {
     out('[perf-budget] 没有任何产物完成测量');

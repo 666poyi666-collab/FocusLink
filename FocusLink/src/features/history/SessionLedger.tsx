@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import type { FocusSession, TomatodoSubject } from '@shared/types';
 import type { SessionDetail, TomatodoSyncStatus } from '@shared/ipc/api';
 import { formatDuration, formatMinutes } from '../../lib/time';
@@ -156,7 +156,7 @@ function TomatodoSessionField({
   );
 }
 
-export function SessionLedger({
+function SessionLedgerImpl({
   sessions,
   selectedId,
   onSelect,
@@ -571,3 +571,7 @@ export function SessionLedger({
     </aside>
   );
 }
+
+/* memo：账本的入参在父级已全部稳定（sessions/range/clippedActive 走 useMemo，
+   回调用 useCallback），因此勾选、拖列宽、敲搜索框都不该让账本整列重渲染。 */
+export const SessionLedger = memo(SessionLedgerImpl);

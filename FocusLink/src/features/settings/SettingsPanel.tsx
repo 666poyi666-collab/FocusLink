@@ -4,7 +4,7 @@
 // - 开关统一 42×24px，关闭态有清楚边界，disabled 可识别；
 // - 语义标签：已同步/未同步/同步失败仅用于同步队列；
 //   番茄 To-do 使用「已写入本地/等待同步确认/上传已确认/历史已停止重试」。
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/store';
 import { ipcErrorMessage } from '../../app/ipcError';
 import {
@@ -162,6 +162,18 @@ const TIMER_STYLE_OPTIONS = [
   note: string;
 }>;
 
+/* 计时仪表预览：9 台真实 TimerDial 常驻在「外观 → 计时仪表」，props 恒定。
+   每台都是数百个节点的仪器，而 TimerDial 本身没有 memo；不把预览单独 memo 的话，
+   设置页任何一次 setState（挂载期 4 个 IPC 回包、配对倒计时、搜索输入）都会把 9 台
+   仪器整体重算一遍。这里只固定 props 并 memo，渲染结果与原内联写法完全一致。 */
+const InstrumentPreview = memo(function InstrumentPreview({
+  style,
+}: {
+  style: AppSettings['timerStyle'];
+}) {
+  return <TimerDial ms={25 * 60_000 + 16_000} state="running" style={style} coreRatio={0.62} />;
+});
+
 type HotkeyKey = keyof AppSettings['hotkeys'];
 type HotkeyRegistrationStatus = {
   registered: Partial<Record<HotkeyKey, { action: HotkeyKey; accelerator: string }>>;
@@ -175,7 +187,11 @@ type HotkeyBadgeState = {
 type DeviceSyncBusyAction = 'revoke' | 'logout' | 'pair-code' | 'redeem' | null;
 
 export function SettingsPanel() {
-  const { settings, setSettings, addToast } = useStore();
+  /* 按字段订阅：整仓订阅会让计时器每秒 tick、toast、同步队列写入都重渲染整个设置页
+     （含下面 9 台计时仪表预览）。这里只取真正用到的三个字段，行为不变。 */
+  const settings = useStore((state) => state.settings);
+  const setSettings = useStore((state) => state.setSettings);
+  const addToast = useStore((state) => state.addToast);
   const [capturing, setCapturing] = useState<keyof AppSettings['hotkeys'] | null>(null);
   // captureKey 清理函数 ref：组件卸载时若仍在捕获，需移除全局监听
   const captureCleanupRef = useRef<(() => void) | null>(null);
@@ -232,11 +248,29 @@ export function SettingsPanel() {
     const timer = window.setInterval(update, 1_000);
     return () => window.clearInterval(timer);
   }, [devicePairingOffer]);
+  /* 挂载期的 4 次状态查询挪到首帧之后的空闲时段。
+     它们各自 await 一次 IPC，回包会各触发一次整页重渲染 —— 这正是设置页首访
+     「点击→主线程空闲」远大于「点击→两帧」的那一段。查询内容、顺序、失败处理全不变，
+     变的只是**何时发起**：用户看到的第一帧不再被回包打断。
+     requestIdleCallback 带 800ms 超时兜底，长时间不空闲时照常执行，不会丢状态。 */
   useEffect(() => {
-    refreshHotkeyStatus();
-    refreshTomatodoPending();
-    refreshTomatodoBridge();
-    refreshDeviceSyncStatus();
+    let cancelled = false;
+    const loadLiveStatus = () => {
+      if (cancelled) return;
+      void refreshHotkeyStatus();
+      void refreshTomatodoPending();
+      void refreshTomatodoBridge();
+      void refreshDeviceSyncStatus();
+    };
+    const handle =
+      typeof window.requestIdleCallback === 'function'
+        ? window.requestIdleCallback(loadLiveStatus, { timeout: 800 })
+        : window.setTimeout(loadLiveStatus, 0);
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
   }, []);
 
   // 搜索会把任意分组的状态条拉到眼前，因此搜索期间也必须保持轮询，
@@ -838,12 +872,7 @@ export function SettingsPanel() {
                 >
                   <span className="ic-name">{style.label}</span>
                   <span className="ic-preview">
-                    <TimerDial
-                      ms={25 * 60_000 + 16_000}
-                      state="running"
-                      style={style.id}
-                      coreRatio={0.62}
-                    />
+                    <InstrumentPreview style={style.id} />
                   </span>
                   <span className="ic-note">{style.note}</span>
                 </button>

@@ -6,11 +6,14 @@ import {
   type TaskRecurrenceDefinition,
   type TaskWorkspaceAppearance,
 } from '@shared/types';
-import { assembleTaskTree } from '@shared/taskTreeUtils';
 import { resolveThemeAppearance } from '@shared/theme';
 import { TASK_PROJECT_COLOR_PALETTE } from '@shared/taskProjectPolicy';
 import { useStore } from '../../app/store';
-import { readTaskWorkspace, refreshTaskWorkspace } from './taskWorkspaceData';
+import {
+  assembleWorkspaceTree,
+  readTaskWorkspace,
+  refreshTaskWorkspace,
+} from './taskWorkspaceData';
 import '../../styles/task-workbench.css';
 import { createPortal } from 'react-dom';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
@@ -25,10 +28,54 @@ import {
 
 const DAY_MS = 86_400_000;
 
+/**
+ * 骨架延后出现的时间窗。数据通常在一个 IPC 往返内到达（挂载时 store 里往往已经有值），
+ * 立刻画 6 行骨架再在下一次 commit 里撤掉，就是用户说的「切过来先闪一下」。
+ * 超过这个窗口还没数据才认为「确实要等」，骨架照旧出现，语义不变。
+ */
+const SKELETON_DELAY_MS = 140;
+
 function getNowMidnight(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+/**
+ * 把非首帧必需的活（后台刷新）排到空闲期：冷启时启动债已经很重，
+ * 挂载后立刻再排一次整页渲染只会把首屏推后，用户看到的就是「切过来先卡一下」。
+ */
+function deferToIdle(task: () => void): () => void {
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+  if (typeof idleWindow.requestIdleCallback === 'function') {
+    const handle = idleWindow.requestIdleCallback(task, { timeout: 400 });
+    return () => idleWindow.cancelIdleCallback?.(handle);
+  }
+  const timer = window.setTimeout(task, 0);
+  return () => window.clearTimeout(timer);
+}
+
+/** 会话列表只喂「每个任务的累计专注时长」，内容没变就不写 state，省掉一次整页渲染。 */
+function sameSessionRows(
+  previous: readonly TaskWorkspaceSession[],
+  next: readonly TaskWorkspaceSession[],
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    const a = previous[index];
+    const b = next[index];
+    if (
+      a.id !== b.id ||
+      a.defaultTaskId !== b.defaultTaskId ||
+      a.activeElapsedMs !== b.activeElapsedMs
+    )
+      return false;
+  }
+  return true;
 }
 
 const ICONS: Record<string, string> = {
@@ -362,7 +409,7 @@ export function TaskWorkspace() {
   const backgroundError = useStore((state) => state.taskWorkspaceRefreshError);
   const [tasks, setTasks] = useState<Task[]>(() =>
     useStore.getState().taskWorkspaceLoaded
-      ? assembleTaskTree(useStore.getState().ticktickTasks)
+      ? assembleWorkspaceTree(useStore.getState().ticktickTasks)
       : (taskWorkspaceSnapshot?.tasks ?? []),
   );
   const [projects, setProjects] = useState<Project[]>(() =>
@@ -375,12 +422,27 @@ export function TaskWorkspace() {
   );
   const [viewId, setViewId] = useState<string>('all');
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
-    () => taskWorkspaceSnapshot?.selectedTaskId ?? null,
-  );
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => {
+    if (taskWorkspaceSnapshot) return taskWorkspaceSnapshot.selectedTaskId;
+    if (!useStore.getState().taskWorkspaceLoaded) return null;
+    // 暖首访：数据已经在 store 里，这里同步选中默认任务（与 refresh 里的兜底表达式一致），
+    // 否则详情栏要先画一帧空态，等后台刷新回来才被真内容顶掉。
+    const assembled = assembleWorkspaceTree(useStore.getState().ticktickTasks);
+    return assembled.find((task) => !task.isCompleted)?.id ?? assembled[0]?.id ?? null;
+  });
   const [tasksLoaded, setTasksLoaded] = useState(
     () => useStore.getState().taskWorkspaceLoaded || Boolean(taskWorkspaceSnapshot),
   );
+  // 见 SKELETON_DELAY_MS：骨架只在超出等待窗口后才上屏。
+  const [skeletonDue, setSkeletonDue] = useState(false);
+  useEffect(() => {
+    if (tasksLoaded) {
+      setSkeletonDue(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSkeletonDue(true), SKELETON_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [tasksLoaded]);
   const [completedCollapsed, setCompletedCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -586,11 +648,13 @@ export function TaskWorkspace() {
       setRefreshing(true);
       setLoadError(null);
       try {
-        const data = await readTaskWorkspace(true);
+        // 手动刷新（force）才强制重读本地库；普通挂载走 store 已有的同一份数据。
+        // 同一次挂载里再排一次整页渲染对首帧没有收益，只有成本。
+        const data = await readTaskWorkspace(force);
         {
-          const assembled = assembleTaskTree(data.tasks);
-          setTasks(assembled);
-          setProjects(data.projects);
+          const assembled = assembleWorkspaceTree(data.tasks);
+          setTasks((previous) => (previous === assembled ? previous : assembled));
+          setProjects((previous) => (previous === data.projects ? previous : data.projects));
           setTasksLoaded(true);
           setSelectedTaskId((current) =>
             current && assembled.some((task) => task.id === current)
@@ -600,7 +664,9 @@ export function TaskWorkspace() {
         }
         void window.focuslink.sessions
           ?.list(100)
-          .then(setSessions)
+          .then((rows) =>
+            setSessions((previous) => (sameSessionRows(previous, rows) ? previous : rows)),
+          )
           .catch(() => undefined);
         if (force) await refreshTaskWorkspace(true);
         else void refreshTaskWorkspace().catch(() => undefined);
@@ -622,13 +688,22 @@ export function TaskWorkspace() {
 
   useEffect(() => {
     if (!sharedLoaded) return;
-    setTasks(assembleTaskTree(sharedTasks));
-    setProjects(sharedProjects);
+    const assembled = assembleWorkspaceTree(sharedTasks);
+    setTasks((previous) => (previous === assembled ? previous : assembled));
+    setProjects((previous) => (previous === sharedProjects ? previous : sharedProjects));
     setTasksLoaded(true);
   }, [sharedTasks, sharedProjects, sharedLoaded]);
 
+  // 挂载时是否已经有数据：决定这次刷新能不能让位给首帧。
+  const loadedAtMountRef = useRef(useStore.getState().taskWorkspaceLoaded);
   useEffect(() => {
-    void refresh();
+    // 冷启首次进入没有数据，必须立刻按 IPC 时间线取数，否则骨架要多留一帧；
+    // 已有数据（暖首访/二次进入）时把刷新推到空闲期，避免第二次整页渲染和首帧抢同一帧。
+    if (!loadedAtMountRef.current) {
+      void refresh();
+      return;
+    }
+    return deferToIdle(() => void refresh());
   }, [refresh]);
 
   // 每次快照变化都写回模块缓存，供下一次挂载同步复用。
@@ -781,7 +856,7 @@ export function TaskWorkspace() {
       await window.focuslink.tasks.reorder(next.map((task) => task.id));
     } catch {
       addToast('子任务顺序保存失败，已重新读取', 'error');
-      await refresh();
+      await refresh(true);
     } finally {
       setReorderingSubtasks(false);
     }
@@ -952,7 +1027,7 @@ export function TaskWorkspace() {
     } catch (e) {
       console.error('Failed to set completed', e);
       addToast('操作失败，已还原', 'error');
-      void refresh();
+      void refresh(true);
     }
   };
 
@@ -1467,7 +1542,7 @@ export function TaskWorkspace() {
       await window.focuslink.tasks.reorder(next.map((task) => task.id));
     } catch {
       addToast('任务顺序保存失败，已重新读取', 'error');
-      await refresh();
+      await refresh(true);
     } finally {
       setReorderingTasks(false);
     }
@@ -1803,7 +1878,9 @@ export function TaskWorkspace() {
             {/* 未完成任务区域 (黄金分割 1/2 沉底) */}
             <div className="uncompleted-group">
               {!tasksLoaded ? (
-                pendingList
+                skeletonDue ? (
+                  pendingList
+                ) : null
               ) : loadError && tasks.length === 0 ? null : viewId === 'done' ? (
                 completedTasks.length === 0 ? (
                   <div

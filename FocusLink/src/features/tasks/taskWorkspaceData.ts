@@ -1,4 +1,6 @@
 import type { TaskWorkspaceRefreshData } from '@shared/ipc/api';
+import type { Task } from '@shared/types';
+import { assembleTaskTree } from '@shared/taskTreeUtils';
 import { useStore } from '../../app/store';
 import { ipcErrorMessage } from '../../app/ipcError';
 
@@ -17,6 +19,25 @@ function cachedWorkspace(): TaskWorkspaceRefreshData {
     projects: state.ticktickProjects,
     refreshedAt: lastRefreshAt,
   };
+}
+
+/**
+ * 同一份任务数组只组装一次树，且组装结果按引用复用。
+ *
+ * 为什么必须按引用记录：挂载初始化、refresh 回写、store 订阅三处都会组装同一份
+ * store 任务数组，而 assembleTaskTree 每次都会克隆整棵树（shared/taskTreeUtils.ts:96-106），
+ * 于是三次组装得到三个内容相同、引用不同的数组，setTasks 每次都判定「变了」，
+ * 首访因此多出两次整页渲染。store 的任务数组是不可变替换，引用相同即内容相同，
+ * 所以按引用记忆是安全的；本地变更走 map/filter 生成新数组，不会污染这份缓存。
+ */
+let assembledInput: readonly Task[] | null = null;
+let assembledOutput: Task[] | null = null;
+
+export function assembleWorkspaceTree(tasks: readonly Task[]): Task[] {
+  if (assembledInput === tasks && assembledOutput) return assembledOutput;
+  assembledOutput = assembleTaskTree(tasks);
+  assembledInput = tasks;
+  return assembledOutput;
 }
 
 /** An acknowledged local mutation supersedes any older background read. */

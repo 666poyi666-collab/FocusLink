@@ -13,7 +13,11 @@ import {
   type TimeRange,
 } from './historyStats';
 import type { FocusSession } from '@shared/types';
-import type { SessionAnalyticsDaily, SessionAnalyticsResult } from '@shared/ipc/api';
+import type {
+  SessionAnalyticsDaily,
+  SessionAnalyticsResult,
+  SessionAnalyticsTimelineItem,
+} from '@shared/ipc/api';
 import { HistoryInsights } from './HistoryInsights';
 import { StatsSidebar, type StatsSidebarView } from './StatsSidebar';
 import { TaskPicker } from '../tasks/TaskPicker';
@@ -62,6 +66,17 @@ function playWebAudioChime(kind: 'kpi' | 'click') {
   } catch {}
 }
 
+/* 只在取值真的变化时才写 <html> 属性：重复写同值是白做，还会让浏览器把整棵文档标记为
+   样式失效。 */
+function applyStatsAppearance(root: HTMLElement, attributes: Record<string, string>) {
+  for (const [key, value] of Object.entries(attributes)) {
+    if (root.getAttribute(key) !== value) root.setAttribute(key, value);
+  }
+}
+
+/* HistoryInsights 的 onSelectRange 目前没有任何消费方：用模块级常量避免每次 render 换身份。 */
+const NO_SELECT_RANGE = () => undefined;
+
 export function HistoryPanel() {
   const columns = useWorkspaceColumns('focuslink.stats.columns', { left: 168, right: 300 });
   const [ledgerOpen, setLedgerOpen] = useState(false);
@@ -72,7 +87,6 @@ export function HistoryPanel() {
   const [projectFilter, setProjectFilter] = useState<string>('all');
   const [curSelectedSession, setCurSelectedSession] = useState<string | null>(null);
   const [activePeriod, setActivePeriod] = useState<number>(-1);
-  const [hoveredTaskIdx, setHoveredTaskIdx] = useState<number | null>(null);
 
   // 外观设置
   const [palette, setPalette] = useState<'linear' | 'rose' | 'contrast'>('linear');
@@ -82,7 +96,16 @@ export function HistoryPanel() {
   const [font, setFont] = useState<'sans' | 'serif'>('sans');
   const [soundEnabled, setSoundEnabled] = useState(false);
 
-  useEffect(() => {
+  /* 外观属性（data-pal/data-font/data-skin/data-sound）写在 <html> 上。
+     stats-workbench.css 有一批 html[data-pal=...] 前缀选择器，改 <html> 属性会让整棵树
+     重新匹配样式；这段原来只在 useEffect 里写，等于「首次提交绘制完 → 再写属性 → 整棵树
+     重算一遍样式」。现在第一次 render 就同步写入（取值没变则不写），首次样式计算直接带上
+     正确取值，effect 只负责「后续变更」与「卸载时还原」。 */
+  const appearanceSynced = useRef(false);
+  /* 卸载时要还原的「进页面之前的原始值」必须在写入之前抓，否则 cleanup 只会还原成自己写进去的值。 */
+  const appearanceOriginal = useRef<Array<readonly [string, string | null]> | null>(null);
+  if (!appearanceSynced.current) {
+    appearanceSynced.current = true;
     const root = document.documentElement;
     const attributes = {
       'data-pal': palette,
@@ -90,10 +113,23 @@ export function HistoryPanel() {
       'data-skin': 'ceramic',
       'data-sound': soundEnabled ? 'on' : 'off',
     };
-    const previous = Object.keys(attributes).map((key) => [key, root.getAttribute(key)] as const);
-    Object.entries(attributes).forEach(([key, value]) => root.setAttribute(key, value));
+    appearanceOriginal.current = Object.keys(attributes).map(
+      (key) => [key, root.getAttribute(key)] as const,
+    );
+    applyStatsAppearance(root, attributes);
+  }
+
+  useEffect(() => {
+    const root = document.documentElement;
+    applyStatsAppearance(root, {
+      'data-pal': palette,
+      'data-font': font,
+      'data-skin': 'ceramic',
+      'data-sound': soundEnabled ? 'on' : 'off',
+    });
+    const original = appearanceOriginal.current ?? [];
     return () =>
-      previous.forEach(([key, value]) =>
+      original.forEach(([key, value]) =>
         value === null ? root.removeAttribute(key) : root.setAttribute(key, value),
       );
   }, [palette, font, soundEnabled]);
@@ -332,29 +368,51 @@ export function HistoryPanel() {
     [sidebarWindows, curRange],
   );
 
-  /* 账本行读画卷数据（分类已由主进程筛过），关键词只筛账本、不改画卷。 */
+  /* 账本行读画卷数据（分类已由主进程筛过），关键词只筛账本、不改画卷。
+     原实现对**每个会话**都把全量 timeline filter 一遍，再对其中每个片段做一次
+     tasks.find() —— 复杂度 O(会话 × 片段 × 分类)，且每轮都要重建数组。这里先按会话把
+     timeline 分桶、把分类 key 映射成 taskId，单次遍历即可，结果与旧实现逐项等价。 */
   const filteredSessions = useMemo(() => {
     const query = taskQuery.trim().toLowerCase();
-    return (viewAnalytics?.sessions ?? []).filter((session: FocusSession) => {
-      const timeline = (viewAnalytics?.timeline ?? []).filter(
-        (item) => item.sessionId === session.id && item.kind === 'focus',
-      );
+    const sessions = viewAnalytics?.sessions ?? [];
+    /* 分类 key → taskId 只查一次（旧实现对每个片段各 find 一次）。 */
+    let filterTaskId: string | null | undefined;
+    const focusBySession = new Map<string, SessionAnalyticsTimelineItem[]>();
+    for (const item of viewAnalytics?.timeline ?? []) {
+      if (item.kind !== 'focus') continue;
+      const bucket = focusBySession.get(item.sessionId);
+      if (bucket) bucket.push(item);
+      else focusBySession.set(item.sessionId, [item]);
+    }
+    if (projectFilter !== 'all') {
+      filterTaskId =
+        viewAnalytics?.tasks.find((task) => task.key === projectFilter)?.taskId ?? undefined;
+    }
+    return sessions.filter((session: FocusSession) => {
+      const timeline = focusBySession.get(session.id);
       const matchesCategory =
         projectFilter === 'all' ||
-        timeline.some((item) =>
-          item.taskId
-            ? item.taskId ===
-              viewAnalytics?.tasks.find((task) => task.key === projectFilter)?.taskId
-            : `unlinked:${item.title}` === projectFilter,
+        (timeline ?? []).some((item) =>
+          item.taskId ? item.taskId === filterTaskId : `unlinked:${item.title}` === projectFilter,
         );
       const matchesQuery =
         !query ||
-        [session.title, session.defaultTaskTitle, ...timeline.map((item) => item.title)].some(
-          (title) => title?.toLowerCase().includes(query),
-        );
+        [
+          session.title,
+          session.defaultTaskTitle,
+          ...(timeline ?? []).map((item) => item.title),
+        ].some((title) => title?.toLowerCase().includes(query));
       return matchesCategory && matchesQuery;
     });
   }, [viewAnalytics, projectFilter, taskQuery]);
+
+  /* HistoryInsights 的 summary 以前是 render 里直接调用的：父级任何 state 变化（悬停、菜单、
+     选中行）都会重建这个对象，让整棵 5 卡子树白重渲染一遍。 */
+  const insightsSummary = useMemo(
+    () =>
+      summarizeAnalyticsRange(viewAnalytics?.daily ?? [], viewAnalytics?.totals?.sessionCount ?? 0),
+    [viewAnalytics?.daily, viewAnalytics?.totals?.sessionCount],
+  );
 
   // 快捷键 Ctrl+K 搜索聚焦
   useEffect(() => {
@@ -416,11 +474,11 @@ export function HistoryPanel() {
   handleSwitchPresetRef.current = handleSwitchPreset;
 
   // 切换清单分类
-  const handleFilterProject = (catKey: string) => {
+  const handleFilterProject = useCallback((catKey: string) => {
     playWebAudioChime('click');
     setProjectFilter(catKey);
     setCurSelectedSession(null);
-  };
+  }, []);
 
   /* 侧栏「清单分类」点击：把真实分类名交给筛选。
      原实现写死 dev/ui/read 三个假键，与真实分类永远对不上。 */
@@ -457,13 +515,12 @@ export function HistoryPanel() {
     }
   };
 
-  const handleSelectSidebarCategory = (key: string) => {
-    if (key === 'all') {
-      handleFilterProject('all');
-      return;
-    }
-    handleFilterProject(key);
-  };
+  const handleSelectSidebarCategory = useCallback(
+    (key: string) => {
+      handleFilterProject(key);
+    },
+    [handleFilterProject],
+  );
 
   // 前后日期导航
   const handleStepDate = (d: number) => {
@@ -484,27 +541,26 @@ export function HistoryPanel() {
   };
 
   // 时段高亮
-  const handlePeriodClick = (idx: number) => {
+  const handlePeriodClick = useCallback((idx: number) => {
     playWebAudioChime('click');
-    if (activePeriod === idx) {
-      setActivePeriod(-1);
-    } else {
-      setActivePeriod(idx);
-    }
-  };
+    setActivePeriod((current) => (current === idx ? -1 : idx));
+  }, []);
 
   // 任务选择联动
-  const handleTaskSelect = (taskId: string | null, title: string) => {
-    const match = filteredSessions.find((session) =>
-      (viewAnalytics?.timeline ?? []).some(
-        (item) =>
-          item.sessionId === session.id &&
-          item.kind === 'focus' &&
-          (taskId ? item.taskId === taskId : !item.taskId && item.title === title),
-      ),
-    );
-    if (match) setCurSelectedSession(match.id);
-  };
+  const handleTaskSelect = useCallback(
+    (taskId: string | null, title: string) => {
+      const match = filteredSessions.find((session) =>
+        (viewAnalytics?.timeline ?? []).some(
+          (item) =>
+            item.sessionId === session.id &&
+            item.kind === 'focus' &&
+            (taskId ? item.taskId === taskId : !item.taskId && item.title === title),
+        ),
+      );
+      if (match) setCurSelectedSession(match.id);
+    },
+    [filteredSessions, viewAnalytics],
+  );
 
   const dayDate = new Date(dayCursor);
   const dayDateStr = `${dayDate.getFullYear()}年${dayDate.getMonth() + 1}月${dayDate.getDate()}日`;
@@ -540,6 +596,31 @@ export function HistoryPanel() {
   const activeCategoryLabel = activeTaskKey
     ? (sidebarCategories.find((category) => category.key === activeTaskKey)?.label ?? activeTaskKey)
     : null;
+
+  /* 账本回调一律 useCallback：SessionLedger 是 memo 组件，每帧新建的箭头函数会让它白渲染。 */
+  const handleLedgerLink = useCallback((session: FocusSession, segmentId?: string) => {
+    setLinkTarget({
+      sessionId: session.id,
+      label: session.title || '专注会话',
+      segmentId,
+      taskId: session.defaultTaskId,
+    });
+  }, []);
+
+  const handleLedgerDeleted = useCallback((sessionId: string) => {
+    setCurSelectedSession((current) => (current === sessionId ? null : current));
+    setAnalyticsReloadToken((token) => token + 1);
+  }, []);
+
+  const handleResetFilter = useCallback(() => setProjectFilter('all'), []);
+
+  const ledgerFilterLabel = useMemo(
+    () =>
+      projectFilter === 'all'
+        ? undefined
+        : sidebarCategories.find((category) => category.key === projectFilter)?.label,
+    [projectFilter, sidebarCategories],
+  );
 
   return (
     <div
@@ -702,20 +783,15 @@ export function HistoryPanel() {
             )}
             <HistoryInsights
               heatmapDaily={heatmapDaily}
-              summary={summarizeAnalyticsRange(
-                viewAnalytics?.daily ?? [],
-                viewAnalytics?.totals?.sessionCount ?? 0,
-              )}
+              summary={insightsSummary}
               range={range}
               analytics={viewAnalytics}
               slideDirection={0}
-              onSelectRange={() => undefined}
+              onSelectRange={NO_SELECT_RANGE}
               taskQuery={taskQuery}
               activePeriod={activePeriod}
               onPeriodClick={handlePeriodClick}
               onTaskSelect={handleTaskSelect}
-              onTaskHover={setHoveredTaskIdx}
-              hoveredTaskIndex={hoveredTaskIdx}
               /* 「每日记录」(168 天) 也是多日范围：此前只认 7d/30d，于是这个预设把 168 天
                  按钟点累加成 24 根柱，多日视图的时间线也停在最后一天。 */
               multiDayMode={curRange === '7d' || curRange === '30d' || curRange === 'heatmap'}
@@ -738,28 +814,14 @@ export function HistoryPanel() {
           sessions={filteredSessions}
           selectedId={curSelectedSession}
           onSelect={setCurSelectedSession}
-          onLink={(session, segmentId) =>
-            setLinkTarget({
-              sessionId: session.id,
-              label: session.title || '专注会话',
-              segmentId,
-              taskId: session.defaultTaskId,
-            })
-          }
-          onDeleted={(sessionId) => {
-            setCurSelectedSession((current) => (current === sessionId ? null : current));
-            setAnalyticsReloadToken((token) => token + 1);
-          }}
+          onLink={handleLedgerLink}
+          onDeleted={handleLedgerDeleted}
           reloadToken={analyticsReloadToken}
           notify={showToast}
           range={range}
           clippedActiveBySession={clippedActiveBySession}
-          filterLabel={
-            projectFilter === 'all'
-              ? undefined
-              : sidebarCategories.find((category) => category.key === projectFilter)?.label
-          }
-          onResetFilter={() => setProjectFilter('all')}
+          filterLabel={ledgerFilterLabel}
+          onResetFilter={handleResetFilter}
         />
       </div>
 

@@ -3812,6 +3812,16 @@ button.stats-ledger-block:focus-visible {
   transform-origin: left center;
   white-space: nowrap;
 }
+/* 预览里的仪表只用于「看一眼样子」，不会像专注页那样逐帧翻牌/滚筒。
+   仪表内部有 4 处常驻 will-change: transform（翻牌上下、滚筒、游标），9 台预览
+   会一次性建 25 个合成层，并在挂载瞬间把整段内容栅格化再丢弃。预览态退回普通
+   渲染：不改变任何像素输出，只去掉白付的层与栅格化成本。 */
+.instrument-choice .ic-preview .flip-flap-top,
+.instrument-choice .ic-preview .flip-flap-bottom,
+.instrument-choice .ic-preview .counter-strip,
+.instrument-choice .ic-preview .vernier-strip {
+  will-change: auto;
+}
 .instrument-choice .ic-preview .dial-standard {
   min-width: 184px;
 }

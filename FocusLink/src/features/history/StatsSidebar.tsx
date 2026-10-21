@@ -3,6 +3,7 @@
 // 这是「统计页自己的导航列」，不是全局导航。客户端的全局图标导航 `.edge-dock`
 // （专注/任务/统计/设置）保持不变并继续占据左侧 64px —— 见 stats-workbench.css 第 10 节
 // 的说明：用统计侧栏替换全局导航会让用户到不了任务页与设置页，因此这里是新增一列。
+import { memo } from 'react';
 import type { StatsSidebarCategory } from './statsLedgerModel';
 
 export type StatsSidebarViewId = 'today' | '7d' | '30d' | 'heatmap';
@@ -65,7 +66,7 @@ function ViewIcon({ id }: { id: StatsSidebarViewId }) {
   );
 }
 
-export function StatsSidebar({
+function StatsSidebarImpl({
   views,
   categories,
   activeCategory,
@@ -152,3 +153,7 @@ export function StatsSidebar({
     </aside>
   );
 }
+
+/* memo：views / categories 由父级 useMemo 提供，分类回调已 useCallback，
+   于是页头的翻日、搜索输入、账本选中都不会让侧栏重渲染。 */
+export const StatsSidebar = memo(StatsSidebarImpl);

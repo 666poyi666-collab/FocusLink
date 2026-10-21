@@ -1,5 +1,5 @@
 // 真实账本统计：概览、时间线、按小时/自然日分布、任务分配和每日记录。
-import { useMemo, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useMemo, useState, type CSSProperties } from 'react';
 import type {
   SessionAnalyticsDaily,
   SessionAnalyticsHourly,
@@ -39,7 +39,7 @@ function duration(ms: number): string {
   return formatMinutes(Math.max(0, ms));
 }
 
-export function HistoryInsights({
+function HistoryInsightsImpl({
   summary,
   heatmapDaily,
   range,
@@ -53,6 +53,18 @@ export function HistoryInsights({
   hoveredTaskIndex = null,
   multiDayMode = false,
 }: HistoryInsightsProps) {
+  /* 排行榜的悬停高亮是纯本组件的视觉状态：以前挂在 HistoryPanel 上，鼠标每划过一行都要把
+     整棵画卷（5 张卡 + 168 格热力图）重渲染一次。现在下沉到这里，父级不再参与。 */
+  const [internalHoveredTask, setInternalHoveredTask] = useState<number | null>(null);
+  const effectiveHoveredTaskIndex = hoveredTaskIndex ?? internalHoveredTask;
+  const handleTaskHover = useCallback(
+    (idx: number | null) => {
+      setInternalHoveredTask(idx);
+      onTaskHover?.(idx);
+    },
+    [onTaskHover],
+  );
+
   const singleDay = isSameLocalDay(range.start, range.end - 1);
   const dayLedgers = useMemo(() => analytics?.dayLedgers ?? [], [analytics?.dayLedgers]);
   const selectedLedger = singleDay
@@ -191,9 +203,9 @@ export function HistoryInsights({
           <TopTasksLeaderboard
             tasks={effectiveTasks}
             query={taskQuery}
-            hoveredIndex={hoveredTaskIndex}
+            hoveredIndex={effectiveHoveredTaskIndex}
             onTaskSelect={onTaskSelect}
-            onTaskHover={onTaskHover}
+            onTaskHover={handleTaskHover}
           />
         </div>
 
@@ -205,6 +217,10 @@ export function HistoryInsights({
     </section>
   );
 }
+
+/* memo：父级的高频 state（悬停、外观菜单、账本选中、搜索框输入）不再让这棵
+   「5 张卡 + 168 格热力图」的重量级子树整体重渲染。 */
+export const HistoryInsights = memo(HistoryInsightsImpl);
 
 /** 🌟 卡贴一：专注概览 (THE FOCUS HERO CARD) */
 function HeroFocusCard({

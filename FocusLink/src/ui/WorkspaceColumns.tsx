@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import './workspace-columns.css';
 
 type Columns = { left: number; right: number };
@@ -23,12 +23,21 @@ export function useWorkspaceColumns(storageKey: string, defaults: Columns) {
       return defaults;
     }
   });
-  useEffect(() => {
+  /* 首帧宽度必须与真实 clientWidth 一致（v1.6.8）：原来用 useEffect 在首绘之后才量宽，
+   * 于是任务页 / 统计页首访都多一次「先按 1200 布局、再按真实宽度重排」的提交，
+   * CDP 里能看到 4 次布局。改成 useLayoutEffect 后这次修正发生在**首绘之前**，
+   * 页面不会再出现列宽跳动；宽度没变时用函数式 bail-out 让 React 直接跳过重渲染。
+   * 任务页与统计页共用本 hook，两页默认列宽都远小于 1200 的预算，故修正常常是等值写入。*/
+  useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return;
-    const observer = new ResizeObserver(() => setWidth(node.clientWidth));
+    const sync = () => {
+      const next = node.clientWidth;
+      setWidth((current) => (current === next ? current : next));
+    };
+    const observer = new ResizeObserver(sync);
     observer.observe(node);
-    setWidth(node.clientWidth);
+    sync();
     return () => observer.disconnect();
   }, []);
   useEffect(() => {

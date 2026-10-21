@@ -40,17 +40,22 @@ type View = 'timer' | 'tasks' | 'history' | 'settings';
  * 擦过去，观感就是用户说的「收缩/挤了一下」；同时两层在交叉期间各自平移 + 半透明
  * 重叠，移动中的文字互相叠着，读起来发虚。
  *
- * 第三版（当前）：**整页不再位移，只做不透明度交叉**。内容原位淡出、原位淡入，
- * 既没有横向擦除，也不存在两页文字错位叠加。位移量由 `__flPageShiftPx` 控制，
+ * 第三版：整页不再位移，只做不透明度交叉。位移量由 `__flPageShiftPx` 控制，
  * 默认 0；诊断时可注入 18 复现旧观感。
+ *
+ * 第四版（当前）：**缩短并去掉延迟**。第三版是 40ms 延迟 + 200ms 淡入 + 180ms 淡出，
+ * 一次切页从点击到完全可见要 240ms；用户反馈「过渡很差劲、显示出来不丝滑」。
+ * 现在 0 延迟 + 140ms 淡入 + 90ms 淡出，点击后第一帧就开始显影，总时长约 140ms。
+ * 注意：过渡再短也压不掉挂载期的同步长任务——挂载重活必须由页面自己解决，
+ * 这段时间主线程被占，浏览器连第一帧都画不出来（见 FL-PERF-20261021-PAGE-SWITCH）。
  */
 const PAGE_ENTER = {
-  duration: 0.2,
-  delay: 0.04,
+  duration: 0.14,
+  delay: 0,
   ease: [0.16, 1, 0.3, 1] as const,
 };
 const PAGE_EXIT = {
-  duration: 0.18,
+  duration: 0.09,
   ease: [0.4, 0, 0.2, 1] as const,
 };
 
@@ -73,6 +78,23 @@ const PAGE_VARIANTS = {
     transition: PAGE_EXIT,
   }),
 };
+
+/**
+ * 只在设置页样张与仪表预览里出现、主界面默认不会用到的字族。
+ *
+ * 实测（2026-10-21，release-v167）：进入设置页后 document.fonts 里处于 loaded 的
+ * 字族比启动时多出这 7 个（其中 6 个是中文族），合计约 17MB woff2；它们的解码正是
+ * 「第一次切到设置页」变慢的主因。启动后空闲预热见下方 useEffect。
+ */
+const PREVIEW_ONLY_FONT_FAMILIES = [
+  'LXGW WenKai',
+  'LXGW Neo ZhiSong',
+  'LXGW Neo XiHei',
+  'LXGW Marker Gothic',
+  'Smiley Sans',
+  'ZCOOL KuaiLe',
+  'Noto Serif SC Variable',
+];
 
 const VIEW_ORDER: Record<View, number> = {
   timer: 0,
@@ -213,6 +235,34 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
+
+  // 设置页的外观 Tab 会同时渲染 6 个字体样张和 9 台仪表预览，各自需要不同的中文族；
+  // 这 6 族合计约 17MB woff2，浏览器在「第一次真正用到」那一刻才解码 —— 也就是第一次
+  // 切到设置页的那一下（实测把首访从 40ms 抬到 275ms，再访只要 21–49ms）。
+  // 启动后趁空闲预热，把这次性成本挪出关键路径：字体本身、样张渲染结果、切换行为都不变。
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts) return;
+    let cancelled = false;
+    const warm = () => {
+      if (cancelled) return;
+      for (const family of PREVIEW_ONLY_FONT_FAMILIES) {
+        try {
+          void document.fonts.load('16px "' + family + '"');
+        } catch {
+          /* 字体缺失只影响样张字重，不影响功能 */
+        }
+      }
+    };
+    const hasIdle = typeof requestIdleCallback === 'function';
+    const handle = hasIdle
+      ? requestIdleCallback(warm, { timeout: 6000 })
+      : window.setTimeout(warm, 2500);
+    return () => {
+      cancelled = true;
+      if (hasIdle && typeof cancelIdleCallback === 'function') cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
   }, []);
 
   useEffect(() => {
