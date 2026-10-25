@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createMobileAccountLifecycle,
   createMobileAccountRequestCoalescer,
+  createMobileAccountRequestGroup,
   createMobileAccountRequestLifecycle,
   createMobileStartupRestoreCoordinator,
   isMobileAccountRequestCommitCurrent,
@@ -338,5 +339,50 @@ describe('mobile account operation lifecycle', () => {
 
     await expect(pending).resolves.toEqual({ current: false, issues: [] });
     expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
+describe('mobile account request group', () => {
+  it('keeps concurrent writes current until an account transition invalidates them all', () => {
+    const group = createMobileAccountRequestGroup();
+    const first = group.issue('account-a');
+    const second = group.issue('account-a');
+    expect(group.activeCount()).toBe(2);
+    expect(first.isCurrent()).toBe(true);
+    expect(second.isCurrent()).toBe(true);
+
+    group.invalidate();
+
+    expect(first.isCurrent()).toBe(false);
+    expect(second.isCurrent()).toBe(false);
+    expect(first.signal.aborted).toBe(true);
+    expect(second.signal.aborted).toBe(true);
+    expect(group.activeCount()).toBe(0);
+  });
+
+  it('treats a released lease as stale and keeps new leases valid after invalidation', () => {
+    const group = createMobileAccountRequestGroup();
+    const finished = group.issue('account-a');
+    finished.release();
+    expect(finished.isCurrent()).toBe(false);
+    expect(group.activeCount()).toBe(0);
+
+    group.invalidate();
+    const afterTransition = group.issue('account-b');
+    expect(afterTransition.isCurrent()).toBe(true);
+    expect(afterTransition.signal.aborted).toBe(false);
+    expect(group.activeCount()).toBe(1);
+  });
+
+  it('releasing one write leaves sibling writes live', () => {
+    const group = createMobileAccountRequestGroup();
+    const finished = group.issue('account-a');
+    const running = group.issue('account-a');
+    finished.release();
+
+    expect(finished.isCurrent()).toBe(false);
+    expect(running.isCurrent()).toBe(true);
+    expect(running.signal.aborted).toBe(false);
+    expect(group.activeCount()).toBe(1);
   });
 });

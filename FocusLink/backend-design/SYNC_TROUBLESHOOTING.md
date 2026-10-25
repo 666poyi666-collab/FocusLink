@@ -558,3 +558,23 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 ### 已知事实
 
 2026-10-13 代理修复实例有真实成功；2026-10-15 15:33 的新 Node/代理探测仍得到 `ECONNRESET` 或 `/healthz` 超时。两者时间不同、可以同时成立，不能仅凭旧日志把当前故障说成已修复，也不能把当前失败反推成旧成功无效。
+
+## FL-SYNC-026：手机上切换账号或「忘记配对」后，旧账号的任务清单自己回来了
+
+### 区分症状
+
+1. 操作顺序是「任务页有一次创建/改名/移动/勾完成正在等云端」→ 立刻在设置里换账号或点「忘记配对」→ 界面先显示新账号，几秒后旧账号的清单又出现在任务页；杀进程重开仍在，说明 IndexedDB 缓存也被写进去了。
+2. 若只是任务页刷新回旧列表、杀进程后没有，那是读通道的旧快照（FL-SYNC-006 口径），不是本条。本条的特征是**写响应**越权提交。
+3. 结束专注时的离线补交是另一条链路（原生队列 + 索引库两份写入），不要按本条处理。
+
+### 含义
+
+2026-10-26 之前的移动端只有任务/清单的**读**通道做了连接身份重验（`connectionKey` + 代际 + 提交前 `isMobileAccountRequestCommitCurrent`）。任务**写**通道（`createCloudTask` / `createCloudProject` / `updateCloudProject` / `deleteCloudProject` / `moveCloudTask` / `toggleCloudTaskComplete`）既不带 `AbortSignal`，也不在写回前复核账号身份：切账号只 abort 了实时与账本请求，写请求的 `await` 照常返回，直接把旧账号的 `TaskSnapshotResponse` 写进 `taskSnapshotRef`、`setTaskSnapshot` 和 `writeCachedTaskSnapshot`。
+
+### 处理步骤
+
+1. 先确认安装的版本；1.6.8 及更早的构建都有此缺口。修复在 `src/mobile/MobileApp.tsx` 的 `beginTaskWrite` 与 `src/mobile/accountLifecycle.ts` 的 `createMobileAccountRequestGroup`。
+2. 复现后先看是否「内存与缓存同时回退」。只回退内存的按读通道处理；两者都回退的按本条记录 Bug 证据。
+3. 修复后的判定口径：切账号 / 忘记配对 / 清缓存时 `taskWrites.invalidate()` 必须 abort 掉在途写，且响应回来时 `canCommit()` 为 false 则不写内存、不写缓存；这两点由 `tests/mobileTaskWriteCommit.test.ts`（源码契约）与 `tests/mobileAccountLifecycle.test.ts`（请求组语义）覆盖。
+4. 不要把「写请求被取消」当成失败提示给用户；账号已经切换，该操作本来就不该生效，静默丢弃是正确的。
+

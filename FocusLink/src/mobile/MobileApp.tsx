@@ -127,6 +127,7 @@ import {
 import {
   createMobileAccountLifecycle,
   createMobileAccountRequestCoalescer,
+  createMobileAccountRequestGroup,
   createMobileAccountRequestLifecycle,
   createMobileStartupRestoreCoordinator,
   isMobileAccountRequestCommitCurrent,
@@ -277,6 +278,7 @@ export function MobileApp() {
   ).current;
   const ledgerPulls = useRef(createMobileAccountRequestCoalescer<void>()).current;
   const commandRequests = useRef(createMobileAccountRequestLifecycle()).current;
+  const taskWrites = useRef(createMobileAccountRequestGroup()).current;
   const cacheMutationQueue = useRef<Promise<void>>(Promise.resolve());
   const nativeQueueRunning = useRef(false);
   const nativeConnectionLeaseRef = useRef<string | null>(null);
@@ -300,8 +302,9 @@ export function MobileApp() {
       liveRequest.current?.abort();
       liveRequest.current = null;
       commandRequests.invalidate();
+      taskWrites.invalidate();
     },
-    [commandRequests, ledgerPulls, taskRefreshes, taskRequests],
+    [commandRequests, ledgerPulls, taskRefreshes, taskRequests, taskWrites],
   );
 
   const finishAccountTransition = useCallback((operation: number) => {
@@ -315,12 +318,36 @@ export function MobileApp() {
       setManagedDevices([]);
       return;
     }
+    const sourceConnectionKey = mobileAccountConnectionKey(connection);
     try {
-      setManagedDevices(await listDeviceSyncDevices(connection));
+      const devices = await listDeviceSyncDevices(connection);
+      if (accountTransitionOperation.current !== null) return;
+      if (connectionKeyRef.current !== sourceConnectionKey) return;
+      setManagedDevices(devices);
     } catch {
+      if (accountTransitionOperation.current !== null) return;
+      if (connectionKeyRef.current !== sourceConnectionKey) return;
       setManagedDevices([]);
     }
   }, []);
+
+  // Task writes are user-initiated and must not be coalesced, but every one of them has to be
+  // cancellable and re-checked against the live account identity before it may commit.
+  const beginTaskWrite = useCallback(() => {
+    const connectionKey = mobileAccountConnectionKey(preferencesRef.current);
+    const lease = taskWrites.issue(connectionKey);
+    return {
+      signal: lease.signal,
+      canCommit: () =>
+        isMobileAccountRequestCommitCurrent({
+          requestCurrent: lease.isCurrent(),
+          requestConnectionKey: connectionKey,
+          currentConnectionKey: connectionKeyRef.current,
+          transitionOperation: accountTransitionOperation.current,
+        }),
+      finish: () => lease.release(),
+    };
+  }, [taskWrites]);
 
   const commitNativeConnectionLease = useCallback((lease: string | null) => {
     nativeConnectionLeaseRef.current = lease;
@@ -901,9 +928,10 @@ export function MobileApp() {
       try {
         const accountId = mobileAccountId(preferencesRef.current);
         if (accountId) {
-          await enqueueMutation(cacheMutationQueue, () =>
-            writeCachedLiveFocusSnapshot(mapped, accountId),
-          );
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!canCommit()) return;
+            await writeCachedLiveFocusSnapshot(mapped, accountId);
+          });
         }
       } catch (error) {
         if (canCommit()) {
@@ -979,42 +1007,50 @@ export function MobileApp() {
     async (title: string, projectId: string | null) => {
       const now = Date.now();
       const snapshot = await requireLatestEditableTaskSnapshot();
-      const response = await publishTaskSnapshot({
-        endpoint: preferences.endpoint,
-        token: preferences.token,
-        deviceId,
-        snapshot: {
-          publishedAt: now,
-          projects: snapshot.projects,
-          tasks: [
-            ...snapshot.tasks,
-            {
-              id: crypto.randomUUID(),
-              source: 'local',
-              projectId: projectId || FOCUSLINK_INBOX_PROJECT_ID,
-              title,
-              status: 'incomplete',
-              priority: null,
-              dueDate: null,
-              tags: [],
-              parentId: null,
-              isCompleted: false,
-              updatedAt: now,
-            },
-          ],
-        },
-      });
-      taskSnapshotRef.current = response;
-      setTaskSnapshot(response);
-      const accountId = mobileAccountId(preferences);
-      if (accountId) {
-        await enqueueMutation(cacheMutationQueue, () =>
-          writeCachedTaskSnapshot(response, accountId),
-        );
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: {
+            publishedAt: now,
+            projects: snapshot.projects,
+            tasks: [
+              ...snapshot.tasks,
+              {
+                id: crypto.randomUUID(),
+                source: 'local',
+                projectId: projectId || FOCUSLINK_INBOX_PROJECT_ID,
+                title,
+                status: 'incomplete',
+                priority: null,
+                dueDate: null,
+                tags: [],
+                parentId: null,
+                isCompleted: false,
+                updatedAt: now,
+              },
+            ],
+          },
+        });
+        if (!write.canCommit()) return;
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice('任务已保存到 FocusLink 云端');
+      } finally {
+        write.finish();
       }
-      setCommandNotice('任务已保存到 FocusLink 云端');
     },
-    [deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
   const createCloudProject = useCallback(
@@ -1025,36 +1061,44 @@ export function MobileApp() {
         (project) => !isFocusLinkInboxProject(project.id),
       ).length;
       const projectId = crypto.randomUUID();
-      const response = await publishTaskSnapshot({
-        endpoint: preferences.endpoint,
-        token: preferences.token,
-        deviceId,
-        snapshot: {
-          ...snapshot,
-          publishedAt: now,
-          projects: [
-            ...snapshot.projects,
-            {
-              id: projectId,
-              source: 'local',
-              name,
-              color: defaultTaskProjectColor(projectCount + 1),
-            },
-          ],
-        },
-      });
-      taskSnapshotRef.current = response;
-      setTaskSnapshot(response);
-      const accountId = mobileAccountId(preferences);
-      if (accountId) {
-        await enqueueMutation(cacheMutationQueue, () =>
-          writeCachedTaskSnapshot(response, accountId),
-        );
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: {
+            ...snapshot,
+            publishedAt: now,
+            projects: [
+              ...snapshot.projects,
+              {
+                id: projectId,
+                source: 'local',
+                name,
+                color: defaultTaskProjectColor(projectCount + 1),
+              },
+            ],
+          },
+        });
+        if (!write.canCommit()) throw new Error('账号已切换，本次清单创建已取消');
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice('清单已保存到 FocusLink 云端');
+        return projectId;
+      } finally {
+        write.finish();
       }
-      setCommandNotice('清单已保存到 FocusLink 云端');
-      return projectId;
     },
-    [deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
   const updateCloudProject = useCallback(
@@ -1063,23 +1107,31 @@ export function MobileApp() {
       const freshProject = snapshot.projects.find((candidate) => candidate.id === project.id);
       if (!freshProject) throw new Error('FocusLink 清单不存在，请刷新后重试');
       const now = Date.now();
-      const response = await publishTaskSnapshot({
-        endpoint: preferences.endpoint,
-        token: preferences.token,
-        deviceId,
-        snapshot: updateTaskSnapshotProject(snapshot, freshProject, input, now),
-      });
-      taskSnapshotRef.current = response;
-      setTaskSnapshot(response);
-      const accountId = mobileAccountId(preferences);
-      if (accountId) {
-        await enqueueMutation(cacheMutationQueue, () =>
-          writeCachedTaskSnapshot(response, accountId),
-        );
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: updateTaskSnapshotProject(snapshot, freshProject, input, now),
+        });
+        if (!write.canCommit()) return;
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice('清单名称与颜色已同步');
+      } finally {
+        write.finish();
       }
-      setCommandNotice('清单名称与颜色已同步');
     },
-    [deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
   const deleteCloudProject = useCallback(
@@ -1089,23 +1141,31 @@ export function MobileApp() {
       if (!freshProject) throw new Error('FocusLink 清单不存在，请刷新后重试');
       const now = Date.now();
       const next = deleteTaskSnapshotProject(snapshot, freshProject, now);
-      const response = await publishTaskSnapshot({
-        endpoint: preferences.endpoint,
-        token: preferences.token,
-        deviceId,
-        snapshot: next.snapshot,
-      });
-      taskSnapshotRef.current = response;
-      setTaskSnapshot(response);
-      const accountId = mobileAccountId(preferences);
-      if (accountId) {
-        await enqueueMutation(cacheMutationQueue, () =>
-          writeCachedTaskSnapshot(response, accountId),
-        );
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: next.snapshot,
+        });
+        if (!write.canCommit()) return;
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice(`清单已删除，${next.movedTaskCount} 项任务已移到收件箱`);
+      } finally {
+        write.finish();
       }
-      setCommandNotice(`清单已删除，${next.movedTaskCount} 项任务已移到收件箱`);
     },
-    [deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
   const moveCloudTask = useCallback(
@@ -1115,26 +1175,34 @@ export function MobileApp() {
       if (!freshTask) throw new Error('FocusLink 任务不存在，请刷新后重试');
       const projectId = targetProjectId || FOCUSLINK_INBOX_PROJECT_ID;
       const now = Date.now();
-      const response = await publishTaskSnapshot({
-        endpoint: preferences.endpoint,
-        token: preferences.token,
-        deviceId,
-        snapshot: moveTaskSnapshotSubtree(snapshot, freshTask.id, projectId, now),
-      });
-      taskSnapshotRef.current = response;
-      setTaskSnapshot(response);
-      const accountId = mobileAccountId(preferences);
-      if (accountId) {
-        await enqueueMutation(cacheMutationQueue, () =>
-          writeCachedTaskSnapshot(response, accountId),
-        );
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: moveTaskSnapshotSubtree(snapshot, freshTask.id, projectId, now),
+        });
+        if (!write.canCommit()) return;
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        const destination = response.snapshot?.projects.find(
+          (project) => project.id === projectId,
+        )?.name;
+        setCommandNotice(`任务已移到「${destination ?? '收件箱'}」`);
+      } finally {
+        write.finish();
       }
-      const destination = response.snapshot?.projects.find(
-        (project) => project.id === projectId,
-      )?.name;
-      setCommandNotice(`任务已移到「${destination ?? '收件箱'}」`);
     },
-    [deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
   const toggleCloudTaskComplete = useCallback(
@@ -1147,40 +1215,48 @@ export function MobileApp() {
       const freshTask = confirmed.snapshot?.tasks.find((candidate) => candidate.id === task.id);
       if (!freshTask) throw new Error('FocusLink 任务不存在，请刷新后重试');
       const completing = !freshTask.isCompleted;
-      const response = await mutateTaskSnapshot({
-        endpoint: preferences.endpoint,
-        token: preferences.token,
-        deviceId,
-        operationId: mobileTaskCompletionOperationId({
+      const write = beginTaskWrite();
+      try {
+        const response = await mutateTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
           deviceId,
-          taskId: freshTask.id,
-          completed: completing,
+          signal: write.signal,
+          operationId: mobileTaskCompletionOperationId({
+            deviceId,
+            taskId: freshTask.id,
+            completed: completing,
+            expectedRevision: confirmed.revision,
+          }),
           expectedRevision: confirmed.revision,
-        }),
-        expectedRevision: confirmed.revision,
-        mutation: {
-          kind: 'set_task_completed',
-          taskId: freshTask.id,
-          completed: completing,
-        },
-      });
-      taskSnapshotRef.current = response;
-      setTaskSnapshot(response);
-      const accountId = mobileAccountId(preferences);
-      if (accountId) {
-        await enqueueMutation(cacheMutationQueue, () =>
-          writeCachedTaskSnapshot(response, accountId),
+          mutation: {
+            kind: 'set_task_completed',
+            taskId: freshTask.id,
+            completed: completing,
+          },
+        });
+        if (!write.canCommit()) return;
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice(
+          completing && response.result.recurrenceRolled
+            ? '本次已完成，下次循环已推进'
+            : completing
+              ? '任务已完成'
+              : '任务已恢复',
         );
+      } finally {
+        write.finish();
       }
-      setCommandNotice(
-        completing && response.result.recurrenceRolled
-          ? '本次已完成，下次循环已推进'
-          : completing
-            ? '任务已完成'
-            : '任务已恢复',
-      );
     },
-    [deviceId, preferences, refreshTasks],
+    [beginTaskWrite, deviceId, preferences, refreshTasks],
   );
 
   const pullLedger = useCallback(
@@ -1274,6 +1350,7 @@ export function MobileApp() {
             unresolvedConflicts: v2Status?.conflicts ?? 0,
             rejected: v2Status?.rejected ?? 0,
           });
+          if (!isCurrent()) return;
           await updateNativeAuthorityProjectionHistory({
             deviceId,
             connectionLease: sourceNativeLease,

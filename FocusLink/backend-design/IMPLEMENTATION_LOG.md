@@ -1,5 +1,22 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-WRITE`：移动端任务写通道的取消与身份重验（不升产品版本）
+
+- **用户范围**：用户整份粘贴《FocusLink 移动端架构与交互改版方案》并写明「以下方案可直接交给 DeepSeek 执行」；本轮只做其中 §二「同步一致性」的 P0 项，不改视觉。
+- **先审计再动手（只读，两路并行）**：产物 `FocusLink/test-data/audit/sync-dispatch.md`（178 行，调度触发点表 + 9 条缺口）与 `FocusLink/test-data/audit/durability.md`（结束耐久提交 / 重试分类 / 冲突闭环 / 状态分域）；两份都在已 gitignore 的 `FocusLink/test-data/`，未动产品源码。
+- **本轮修掉的缺口（证据来自审计，file:line 已核）**：
+  1. **P0 任务写通道无取消、无提交前身份重验**：6 个写站点（`createCloudTask` / `createCloudProject` / `updateCloudProject` / `deleteCloudProject` / `moveCloudTask` / `toggleCloudTaskComplete`）调 `publishTaskSnapshot` / `mutateTaskSnapshot` 时不带 `signal`，响应回来无条件写 `taskSnapshotRef` + `setTaskSnapshot` + `writeCachedTaskSnapshot`；`beginAccountTransition` 只 abort 实时与账本通道 → 切账号 / 忘记配对 / 清缓存后旧账号响应仍写内存与缓存（`src/mobile/MobileApp.tsx:1005-1259`）。客户端层其实早已支持取消（`src/mobile/syncClient.ts:582-586` 的 `LiveFocusConnectionInput.signal` 经 `liveFocusFetch` 传到 `fetchWithTimeout`），缺的只是调用方不传。
+  2. **P2 原生账本投影写早于最终身份判定**：`pullLedger` 的错误分支在写 `updateNativeAuthorityProjectionHistory` 前缺一次 `isCurrent()`。
+  3. **P2 实时快照缓存写不再复核身份**：`applyLiveSnapshot` 在 `canCommit()` 之后把 `writeCachedLiveFocusSnapshot` 排进队列，入队到执行之间身份可能已变。
+  4. **P2 设备列表刷新无身份屏障**：`refreshManagedDevices` 的 `await` 回来直接 `setManagedDevices`。
+- **落地改动**：
+  1. `src/mobile/accountLifecycle.ts` 新增 `createMobileAccountRequestGroup()`（多 lease、`invalidate()` 全量 abort + 代际失效、`activeCount()`），配 `MobileAccountRequestGroup` / `MobileAccountRequestGroupLease` 接口。读通道仍用原有的单 lease / coalescer，不动。
+  2. `src/mobile/MobileApp.tsx` 新增 `taskWrites` 请求组与 `beginTaskWrite()`：每个写站点拿到自己的 `signal`、`canCommit()`（复用 `isMobileAccountRequestCommitCurrent`）与 `finish()`；6 个站点统一改成 `try { 带 signal 的写 → canCommit() 不成立则丢弃 → 写内存 → 入队写缓存（闭包内再判一次 canCommit）} finally { finish() }`；`beginAccountTransition` 增加 `taskWrites.invalidate()`。
+  3. 三处 P2 补身份判定（账本投影写前、实时缓存写闭包内、设备列表提交前）。
+- **门禁（全部实测）**：`format:check` exit 0、`typecheck`（含 Worker）exit 0、`lint` exit 0、`npm test` **151 文件 / 1278 用例全过** exit 0（新增 `tests/mobileTaskWriteCommit.test.ts` 4 项源码契约、`tests/mobileAccountLifecycle.test.ts` 由 15 → 18 项）、`npm run build:web` exit 0。10-21 那轮偶发的 `tests/cliProvider.test.ts` ENOENT flake 本轮未复现（该文件单跑与全量跑均 37/37）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb（`where adb` 无结果、`ANDROID_HOME` 为空、`android/local.properties` 指向不存在的 SDK 目录、`Get-PnpDevice` 无任何手机/平板），三设备同版安装门禁无法执行，因此按 AGENTS.md 不升补丁版本、不出安装包、不改版本元数据。用户在用的 Windows 端仍是已发布的 1.6.8。
+- **下一轮候选（审计已给出证据，尚未动手）**：重复结束的双写分叉（`offlineCompletion.ts:17-22` 的 opId 含 `endedAt`，同 `entityId` 第二份被服务端判 `revision_conflict`）、`nativeQueued` 布尔值语义过载导致「已安全保存」误报、冲突闭环缺「查看差异 → 选择 → `POST /v2/conflicts/:id/resolve` → 回读」、429/5xx 被折叠成 `contract_error` 且无退避调度、设置页未分区账本/任务/第三方投递状态。
+
 ## 2026-10-21 · `FL-PERF-20261021-PAGE-SWITCH`：切页不卡（Windows v1.6.8，已交付）
 
 - **用户范围（原文）**：「我说的是以下几个界面的卡顿问题，感觉整体不丝滑：1. 从『专注』切换到『任务点』的卡顿，任务界面可能需要加载，我不知道那个问题解决没。2. 切换到『统计』的卡顿，加载的过渡感觉很差劲，导致显示出来不丝滑。3. 切换到『设置』的卡顿。现在就是 UI 细节的打磨。」

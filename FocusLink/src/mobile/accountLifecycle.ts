@@ -118,6 +118,62 @@ export function createMobileAccountRequestCoalescer<T>(): MobileAccountRequestCo
   };
 }
 
+/**
+ * Tracks many concurrent requests for one connection so an account transition can cancel and
+ * disqualify all of them at once. Read channels already coalesce; writes must stay concurrent,
+ * so they need a group rather than a single superseding lease.
+ */
+export interface MobileAccountRequestGroupLease {
+  signal: AbortSignal;
+  isCurrent(): boolean;
+  release(): void;
+}
+
+export interface MobileAccountRequestGroup {
+  issue(connectionKey: string): MobileAccountRequestGroupLease;
+  invalidate(): void;
+  activeCount(): number;
+}
+
+export function createMobileAccountRequestGroup(): MobileAccountRequestGroup {
+  let generation = 0;
+  const leases = new Set<{
+    generation: number;
+    connectionKey: string;
+    controller: AbortController;
+  }>();
+
+  return {
+    issue(connectionKey) {
+      const controller = new AbortController();
+      const lease = { generation, connectionKey, controller };
+      leases.add(lease);
+      return {
+        signal: controller.signal,
+        isCurrent() {
+          return (
+            lease.generation === generation &&
+            lease.connectionKey === connectionKey &&
+            leases.has(lease) &&
+            !controller.signal.aborted
+          );
+        },
+        release() {
+          leases.delete(lease);
+        },
+      };
+    },
+    invalidate() {
+      generation += 1;
+      for (const lease of leases) lease.controller.abort();
+      leases.clear();
+    },
+    activeCount() {
+      return leases.size;
+    },
+  };
+}
+
 export function isMobileAccountRequestCommitCurrent(
   state: MobileAccountRequestCommitState,
 ): boolean {
