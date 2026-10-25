@@ -1,5 +1,26 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-RETRY`：移动端账本失败的重试分类与退避（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 4 个 P0 切片「重试分类」（前三个：任务写通道取消与身份重验、离线结束身份固化、冲突决定闭环）。
+- **审计证据（只读）**：`FocusLink/test-data/audit/durability.md` 的 P1-4——改前 `src/mobile/v2Sync.ts:494-506`、`520-522`、`268-273` 把 429 与 5xx 一律折叠成 `contract_error`（界面显示「云端账本响应异常」），与 `src/mobile/syncClient.ts:849-861` 的口径相反；重试固定 30 秒、无上限、无定时器，只在下次结束/重启/连接变更时触发；`cloud/deviceSyncServer.ts:135-141` 的 `Retry-After` 从未被读取。
+- **修掉的缺口**：
+  1. **P1 退让信号被当成契约错误**：429 限流与 5xx 故障和「云端账本响应格式不对」共用同一个码，用户被引导去排查一条并不存在的契约问题，重试策略也拿不到可判定的类别。
+  2. **P1 固定 30 秒重试、无退避无上限**：云端持续限流时每 30 秒打一次，没有 `Retry-After` 概念，也没有「这次失败是终局、该等用户动作」的表达。
+  3. **P2 失败后无人驱动重试**：除用户手点「重新检查」或重启外，没有定时器排下一次，与 §四「低耗」和 §二「统一调度入口」都不相容。
+- **落地改动**：
+  1. `shared/sync/v2ClientError.ts`：错误码扩到 12 个（新增 `rate_limited`、`server_error`）；`SyncV2ClientError` 增加第四参数 `retryAfterMs`（仅接受 >0 的安全整数，服务端提示只作调度用、不落 durable code）；`classifySyncV2Error()` 增加两条正则并排在 `timeout` 之前；注释写明可重试集合（`network_error`/`timeout`/`rate_limited`/`server_error`）与终止集合。
+  2. `src/mobile/v2RetryPolicy.ts`（新，纯模块）：`MOBILE_V2_RETRY_BASE_MS=15_000`、`MOBILE_V2_RETRY_CAP_MS=900_000`、`MOBILE_V2_RETRY_MAX_ATTEMPTS=12`、`Retry-After` 夹在 1 秒–5 分钟；`mobileV2RetryDelayMs()` 指数退避且把服务端提示当**下限**（不缩短自己的退避）、再夹到上限；`decideMobileV2Retry()` 返回 `{attempt, retryable, exhausted, delayMs}`，终止性失败统一停在上限（等用户动作）而不是按网络节奏猛打；`describeMobileV2RetryWait()` 给「约 N 秒/分钟后自动重试」。策略无随机抖动，durable 时间可在测试里精确断言。
+  3. `src/mobile/v2Sync.ts`：请求层先判状态再判 content-type——`429` → `rate_limited`、`>=500` → `server_error`（因此非 JSON 的 5xx 也不再算契约错误），两者都带 `readRetryAfterMs()`（只认 delta-seconds，忽略 HTTP-date 并夹取，畸形头不能把设备钉住）；`drain()` 的 catch 用同租约行的最大 `attemptCount` 调 `decideMobileV2Retry()`，再写 `retryMobileV2Lease()`。
+  4. `src/mobile/v2Cache.ts`：新增 `readMobileV2RetryState()`，从 outbox 直接读出 `attemptCount` / 下一个 `nextRetryAt` / `pending` 条数，供驱动方判断。
+  5. `src/mobile/MobileApp.tsx`：`ledgerRetryAttempts` ref + `ledgerRetryAt` state；`pullLedger()` 成功即清零，失败分支按策略决定是否排下一次、把「约 N 秒后自动重试」并入账本提示并登记时间；单个 `useEffect` 定时器到点后只在「应用活跃 + 无账号切换 + 连接仍有效」时调一次 `pullLedger()`，cleanup 清掉；切账号清空。纯拉取失败没有 outbox 行携带 `attemptCount`，因此用 ref 让退避也逐次加宽，避免长期每 15 秒轮询。
+  6. `src/mobile/settingsStatusPresentation.ts` + `src/mobile/SettingsView.tsx`：账本新鲜度行的失败文案末尾追加「· 约 N 秒后自动重试」（可选参数；无提示时原文案逐字不变）。
+  7. 文案分域：`MobileApp.syncV2ErrorMessage()` 与 `NativeSystemControls.nativeCloudPollErrorCopy()` 新增 `rate_limited`→「云端暂时限流，稍后自动重试」、`server_error`→「云端暂时不可用，稍后自动重试」。
+- **测试**：新增 `tests/mobileV2RetryPolicy.test.ts` 15 项——退避序列 15/30/60/120/240 秒与封顶、提示作为下限与越界夹取、可重试码集合、终止性失败停在上限、超出 12 次仍在封顶重试、秒/分钟文案、429/503 归类与 `retryAfterMs` 校验；IndexedDB 侧＝真实 `runMobileSyncV2` 下 429 推流按 `Retry-After` 45 秒落盘、契约失败停在上限、非 JSON 5xx 为 `server_error`、非 JSON 200 仍是 `contract_error`、`readMobileV2RetryState()` 的 attempt/next/pending 口径；源码契约＝`MobileApp` 只排一次后续拉取、成功/切账号/终局都会清空调度、两处文案分域、设置页透传 `retryNotice`。`tests/mobileSettingsStatusPresentation.test.ts` 增 1 项覆盖失败文案追加重试提示（含无提示时逐字不变的对照）。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **154 文件 / 1321 用例全过** exit 0、`npm run build:web` exit 0（index JS 574.89 → 578.08 kB、CSS 570.59 kB 不变，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无手机与平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。用户在用的 Windows 端仍是 1.6.8，因此退避在真机上的实际节奏属于「证据记录」，不是「实测」。
+- **下一轮候选（审计已有证据）**：原生命令 drain 取消（P1-2，`src/mobile/MobileApp.tsx:1708-1775`、`2374-2390`）、同连接重复拉取去重（P1-3）、设置页状态分域（P1-5，`src/mobile/SettingsView.tsx:96-107` + `settingsStatusPresentation.ts:16-125`）、孤立组件 `src/mobile/SyncV2Management.tsx` 挂载或删除、§三 界面统一、§四 低耗与框架评估。
+
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-CONFLICT`：移动端同步冲突的决定闭环（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 3 个 P0 切片（前两轮：任务写通道取消与身份重验、离线结束身份固化）。

@@ -102,4 +102,35 @@ describe('mobile settings sync status presentation', () => {
       }),
     ).toMatchObject({ value: '未启用', tone: 'neutral' });
   });
+
+  it('says when a failed refresh retries itself instead of looking stalled', () => {
+    const lastSyncAt = 1_700_000_000_000;
+    expect(
+      presentMobileLedgerFreshness({
+        authenticated: true,
+        lastSyncAt,
+        pullState: 'error',
+        now: lastSyncAt + 60_000,
+        retryNotice: '约 15 秒后自动重试',
+      }).detail,
+    ).toBe('最后成功 1 分钟前 · 最近刷新失败 · 约 15 秒后自动重试');
+    expect(
+      presentMobileLedgerFreshness({
+        authenticated: true,
+        lastSyncAt: null,
+        pullState: 'error',
+        retryNotice: '约 1 分钟后自动重试',
+      }).detail,
+    ).toBe('最近一次账本请求失败；本机记录已保留，可重新检查 · 约 1 分钟后自动重试');
+    // A terminal failure carries no retry notice, so the row keeps its old copy.
+    expect(
+      presentMobileLedgerFreshness({
+        authenticated: true,
+        lastSyncAt,
+        pullState: 'error',
+        now: lastSyncAt + 60_000,
+        retryNotice: null,
+      }).detail,
+    ).toBe('最后成功 1 分钟前 · 最近刷新失败');
+  });
 });

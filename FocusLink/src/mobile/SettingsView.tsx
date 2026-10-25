@@ -47,6 +47,7 @@ interface SettingsViewProps {
   conflicts: MobileV2ConflictPresentation[];
   conflictBusyId: string | null;
   conflictNotice: string | null;
+  retryNotice: string | null;
   onResolveConflict: (conflictId: string, side: MobileV2ConflictSide) => void;
 }
 
@@ -66,6 +67,7 @@ export function SettingsView({
   conflicts,
   conflictBusyId,
   conflictNotice,
+  retryNotice,
   onResolveConflict,
 }: SettingsViewProps) {
   const connectionFact = presentMobileSettingsConnection({
@@ -74,7 +76,12 @@ export function SettingsView({
     connection,
     accountLabel,
   });
-  const ledgerFact = presentMobileLedgerFreshness({ authenticated, lastSyncAt, pullState });
+  const ledgerFact = presentMobileLedgerFreshness({
+    authenticated,
+    lastSyncAt,
+    pullState,
+    retryNotice,
+  });
   return (
     <section className="settings-view view-surface" aria-labelledby="settings-view-title">
       <header className="view-heading">

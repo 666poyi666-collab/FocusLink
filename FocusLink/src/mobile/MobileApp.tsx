@@ -156,6 +156,7 @@ import {
   readMobileV2Bootstrap,
   readMobileV2Conflicts,
   readMobileV2OperationHistory,
+  readMobileV2RetryState,
   readMobileV2Status,
   supersedeMobileV2PendingMutations,
 } from './v2Cache';
@@ -167,6 +168,7 @@ import {
   type MobileV2ConflictRecord,
   type MobileV2ConflictSide,
 } from './v2ConflictResolution';
+import { decideMobileV2Retry, describeMobileV2RetryWait } from './v2RetryPolicy';
 import { offlineCompletionNotice, persistCompletedOfflineFocus } from './offlineCompletion';
 import type { DeviceSyncManagedDevice } from '@shared/ipc/api';
 import {
@@ -253,6 +255,14 @@ export function MobileApp() {
   const [syncConflicts, setSyncConflicts] = useState<MobileV2ConflictRecord[]>([]);
   const [conflictBusyId, setConflictBusyId] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
+  // One scheduled follow-up pull for a retryable ledger failure. Durable retry
+  // timestamps live on the outbox rows; this is only the UI-side driver so a
+  // throttled cloud is retried on the backoff schedule instead of on user taps.
+  const [ledgerRetryAt, setLedgerRetryAt] = useState<number | null>(null);
+  // Consecutive retryable ledger failures. It only feeds the backoff exponent, so
+  // a pull-only failure (no outbox row to carry attemptCount) also widens
+  // instead of polling the cloud forever at the base delay.
+  const ledgerRetryAttempts = useRef(0);
   const [appearance, setAppearance] = useState<MobileAppearance>(() => loadMobileAppearance());
   const [clearCacheDialogOpen, setClearCacheDialogOpen] = useState(false);
   const [nativeSystemControls, setNativeSystemControls] = useState<NativeFocusConsoleControls>(
@@ -323,6 +333,8 @@ export function MobileApp() {
       liveRequest.current = null;
       commandRequests.invalidate();
       taskWrites.invalidate();
+      ledgerRetryAttempts.current = 0;
+      setLedgerRetryAt(null);
     },
     [commandRequests, ledgerPulls, taskRefreshes, taskRequests, taskWrites],
   );
@@ -1350,6 +1362,8 @@ export function MobileApp() {
           setCache(snapshot);
           setPullState(presentation.pullState);
           setLedgerNotice(presentation.notice);
+          ledgerRetryAttempts.current = 0;
+          setLedgerRetryAt(null);
           const conflicts = await readMobileV2Conflicts().catch(() => []);
           if (!isCurrent()) return;
           setSyncConflicts(conflicts);
@@ -1384,6 +1398,22 @@ export function MobileApp() {
             lastErrorCode: classifySyncV2Error(error),
           }).catch(() => false);
           if (!isCurrent()) return;
+          // Retry classification: transport/backpressure failures are retried on
+          // the exponential schedule (15 s doubling to 15 min, server Retry-After
+          // as a floor); contract/credential failures are parked and wait for a
+          // user action instead of being retried on the network cadence.
+          const retryState = await readMobileV2RetryState(deviceId).catch(() => null);
+          if (!isCurrent()) return;
+          const attemptCount = Math.max(retryState?.attemptCount ?? 0, ledgerRetryAttempts.current);
+          const retry = decideMobileV2Retry({
+            code: classifySyncV2Error(error),
+            attemptCount,
+            retryAfterMs: error instanceof SyncV2ClientError ? error.retryAfterMs : null,
+          });
+          ledgerRetryAttempts.current = retry.retryable ? attemptCount + 1 : 0;
+          const retryDelayMs = retryState?.nextRetryAt
+            ? Math.max(1_000, retryState.nextRetryAt - Date.now())
+            : retry.delayMs;
           setPendingUploadCount(presentation.pendingCount);
           setPullState('error');
           setLedgerNotice(
@@ -1391,9 +1421,13 @@ export function MobileApp() {
               errorMessage(error),
               presentation.pullState === 'partial' ? presentation.notice : null,
               cacheRef.current.bundles.length > 0 ? '已结束账本继续显示本机缓存' : null,
+              retry.retryable ? describeMobileV2RetryWait(retryDelayMs) : null,
             ]
               .filter(Boolean)
               .join('；'),
+          );
+          setLedgerRetryAt(
+            retry.retryable ? (retryState?.nextRetryAt ?? Date.now() + retry.delayMs) : null,
           );
           const conflicts = await readMobileV2Conflicts().catch(() => []);
           if (!isCurrent()) return;
@@ -1405,6 +1439,24 @@ export function MobileApp() {
     },
     [deviceId, ledgerPulls, nativeConnectionLease],
   );
+
+  // A retryable ledger failure schedules exactly one follow-up pull on the
+  // backoff its outbox rows already carry. The timer is dropped while the app is
+  // suspended, during an account transition, or once the connection changed
+  // underneath it; nothing here is durable state.
+  useEffect(() => {
+    if (ledgerRetryAt === null) return undefined;
+    const delay = Math.max(1_000, ledgerRetryAt - Date.now());
+    const timer = window.setTimeout(() => {
+      setLedgerRetryAt(null);
+      if (!mobileAppActive.current) return;
+      if (accountTransitionOperation.current !== null) return;
+      const connection = preferencesRef.current;
+      if (!connection.endpoint || !connection.token) return;
+      void pullLedger(connection, cacheRef.current.cursor);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [ledgerRetryAt, pullLedger]);
 
   // Conflict decisions run through the normal exchange: the cloud has no
   // conflict row for a revision divergence, so the choice becomes a fresh
@@ -2449,6 +2501,11 @@ export function MobileApp() {
                   conflicts={presentMobileV2Conflicts(syncConflicts)}
                   conflictBusyId={conflictBusyId}
                   conflictNotice={conflictNotice}
+                  retryNotice={
+                    ledgerRetryAt === null
+                      ? null
+                      : describeMobileV2RetryWait(Math.max(1_000, ledgerRetryAt - Date.now()))
+                  }
                   onResolveConflict={(conflictId, side) =>
                     void resolveSyncConflict(conflictId, side)
                   }
@@ -2630,6 +2687,8 @@ function syncV2ErrorMessage(code: SyncV2ClientErrorCode): string {
   if (code === 'authorization_failed') return '当前设备没有账本同步权限';
   if (code === 'network_error') return '暂时无法连接云端';
   if (code === 'timeout') return '云端连接超时';
+  if (code === 'rate_limited') return '云端暂时限流，稍后自动重试';
+  if (code === 'server_error') return '云端暂时不可用，稍后自动重试';
   if (code === 'response_too_large') return '云端账本超过单次同步上限';
   if (code === 'cursor_ahead' || code === 'contract_error') return '云端账本响应异常';
   if (code === 'aborted') return '本次同步已取消';

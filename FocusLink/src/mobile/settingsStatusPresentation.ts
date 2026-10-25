@@ -69,6 +69,11 @@ export function presentMobileLedgerFreshness(input: {
   lastSyncAt: number | null;
   pullState: MobileSettingsPullState;
   now?: number;
+  /**
+   * A retryable failure schedules its own next attempt; the settings row says
+   * when, because "刷新失败" alone reads as "nothing will happen".
+   */
+  retryNotice?: string | null;
 }): MobileSettingsFact {
   if (!input.authenticated) {
     return {
@@ -80,6 +85,7 @@ export function presentMobileLedgerFreshness(input: {
 
   const now = input.now ?? Date.now();
   const observed = presentObservedTime(input.lastSyncAt, now);
+  const retrySuffix = input.retryNotice ? ` · ${input.retryNotice}` : '';
   if (input.pullState === 'pulling') {
     return {
       value: '正在刷新',
@@ -103,7 +109,7 @@ export function presentMobileLedgerFreshness(input: {
       value: input.pullState === 'error' ? '首次同步未完成' : '尚未确认',
       detail:
         input.pullState === 'error'
-          ? '最近一次账本请求失败；本机记录已保留，可重新检查'
+          ? `最近一次账本请求失败；本机记录已保留，可重新检查${retrySuffix}`
           : '已有本机记录不会因此丢失',
       tone: 'warning',
     };
@@ -113,7 +119,7 @@ export function presentMobileLedgerFreshness(input: {
   if (input.pullState === 'error') {
     return {
       value: fresh ? '缓存仍新鲜' : '缓存待刷新',
-      detail: `最后成功 ${observed.relative} · 最近刷新失败`,
+      detail: `最后成功 ${observed.relative} · 最近刷新失败${retrySuffix}`,
       tone: 'warning',
     };
   }

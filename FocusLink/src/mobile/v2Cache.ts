@@ -809,6 +809,36 @@ export async function readMobileV2Status(boundDeviceId: string): Promise<{
   };
 }
 
+/**
+ * Durable retry bookkeeping for the ledger driver. The driver needs to know
+ * when the next attempt may run and how many attempts a mutation already
+ * spent, without re-deriving the whole outbox projection in the UI.
+ */
+export async function readMobileV2RetryState(
+  boundDeviceId: string,
+  now = Date.now(),
+): Promise<{ attemptCount: number; nextRetryAt: number | null; pending: number }> {
+  const database = await openMobileDatabase();
+  const transaction = database.transaction(OUTBOX, 'readonly');
+  const records = (await request(transaction.objectStore(OUTBOX).getAll())) as SyncV2OutboxItem[];
+  await done(transaction);
+  database.close();
+  const retryable = records.filter(
+    (item) =>
+      item.deviceId === boundDeviceId &&
+      (item.state === 'pending' || item.state === 'uploading' || item.state === 'retry'),
+  );
+  const attemptCount = retryable.reduce((highest, item) => Math.max(highest, item.attemptCount), 0);
+  const future = retryable
+    .map((item) => item.nextRetryAt)
+    .filter((nextRetryAt) => Number.isSafeInteger(nextRetryAt) && nextRetryAt > now);
+  return {
+    attemptCount,
+    nextRetryAt: future.length > 0 ? Math.min(...future) : null,
+    pending: retryable.length,
+  };
+}
+
 export async function writeMobileV2SyncFailure(deviceId: string, errorCode: string): Promise<void> {
   const database = await openMobileDatabase();
   const transaction = database.transaction(META, 'readwrite');

@@ -49,6 +49,7 @@ import {
   writeMobileV2BootstrapIfOwned,
   type MobileV2BootstrapCheckpoint,
 } from './v2Cache';
+import { decideMobileV2Retry } from './v2RetryPolicy';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_PAGES_PER_RUN = 500;
@@ -267,7 +268,20 @@ async function drain(
       result.cursor = response.nextCursor;
     } catch (error) {
       if (claimed.items.length > 0) {
-        await retryMobileV2Lease(claimed.leaseId, classifySyncV2Error(error), Date.now() + 30_000);
+        // Backpressure and transport failures are retried on an exponential
+        // schedule that honours the server's Retry-After hint; a terminal
+        // failure (contract/authentication) is parked at the cap instead of
+        // being hammered on the network cadence.
+        const attemptCount = claimed.items.reduce(
+          (highest, item) => Math.max(highest, item.attemptCount),
+          0,
+        );
+        const decision = decideMobileV2Retry({
+          code: classifySyncV2Error(error),
+          attemptCount,
+          retryAfterMs: error instanceof SyncV2ClientError ? error.retryAfterMs : null,
+        });
+        await retryMobileV2Lease(claimed.leaseId, decision.code, Date.now() + decision.delayMs);
       }
       throw error;
     }
@@ -485,14 +499,22 @@ async function requestJsonOnce(
       referrerPolicy: 'no-referrer',
       signal: controller.signal,
     });
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.toLowerCase().startsWith('application/json')) {
-      throw new SyncV2ClientError('contract_error');
-    }
-    const value = await readDeviceSyncJsonResponse(response, SYNC_V2_MAX_RESPONSE_BYTES);
+    const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+    const isJson = contentType.startsWith('application/json');
     if (!response.ok) {
       if (response.status === 401) throw new SyncV2ClientError('authentication_failed');
       if (response.status === 403) throw new SyncV2ClientError('authorization_failed');
+      // 429 and 5xx are backpressure, not a contract violation. Keep them
+      // distinguishable so the retry policy and the UI can say "wait" instead
+      // of "the cloud ledger response is broken".
+      if (response.status === 429) {
+        throw new SyncV2ClientError('rate_limited', undefined, [], readRetryAfterMs(response));
+      }
+      if (response.status >= 500) {
+        throw new SyncV2ClientError('server_error', undefined, [], readRetryAfterMs(response));
+      }
+      if (!isJson) throw new SyncV2ClientError('contract_error');
+      const value = await readDeviceSyncJsonResponse(response, SYNC_V2_MAX_RESPONSE_BYTES);
       if (response.status === 400 && readServerErrorCode(value) === 'invalid_exchange_request') {
         const routed = parseDeviceToken(input.token.trim());
         const expectedDeviceId = routed ? `device-${routed.devicePublicId}` : null;
@@ -505,7 +527,8 @@ async function requestJsonOnce(
       }
       throw new SyncV2ClientError('contract_error');
     }
-    return value;
+    if (!isJson) throw new SyncV2ClientError('contract_error');
+    return await readDeviceSyncJsonResponse(response, SYNC_V2_MAX_RESPONSE_BYTES);
   } catch (error) {
     if (input.signal?.aborted) throw abortError();
     if (timedOut) throw new SyncV2ClientError('timeout');
@@ -519,6 +542,19 @@ async function requestJsonOnce(
 
 function isRetryableSyncTransportError(error: SyncV2ClientError): boolean {
   return error.code === 'network_error' || error.code === 'timeout';
+}
+
+/**
+ * Reads the server's `Retry-After` wait hint in milliseconds.
+ * Only the delta-seconds form is honoured; an HTTP-date or garbage value is
+ * ignored so a malformed header cannot pin the device.
+ */
+function readRetryAfterMs(response: Response): number | null {
+  const raw = response.headers.get('retry-after');
+  if (raw === null) return null;
+  const seconds = Number(raw.trim());
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.min(300_000, Math.max(1_000, Math.round(seconds * 1_000)));
 }
 
 function assertNotAborted(signal: AbortSignal | undefined): void {

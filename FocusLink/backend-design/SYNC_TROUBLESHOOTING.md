@@ -615,3 +615,22 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 2. 核对显示：设置 →「同步冲突」，每条应显示标题、原因、本机/云端两列差异；`blockedReason` 非空时两个按钮禁用并给出原因（版本号缺失、payload 类型不符）。
 3. 判定口径：点下决定后必须出现六种结局之一（已按你的选择收敛 / 这次选择此前已提交过 / 冲突还在 / 云端拒绝了这次选择 / 已排队 / 还没拿到回执）；同一行应收敛为 `resolved`，`resolutionOpId === resolve:<conflictId>:<side>`；同一实体的旧 pending 上传必须被 `supersedeMobileV2PendingMutations()` 清掉，不能与决定一起上传。
 4. 云端同时被别的设备改过时会得到 `conflict`，冲突仍在——刷新账本按新差异再选一次即可；不要手改 IndexedDB，也不要用 `POST /v2/conflicts/:id/resolve` 去凑本地记录（云端没有那行，必然 404）。
+
+## FL-SYNC-029：手机上账本同步失败，界面说「云端账本响应异常」，但其实只是被限流或云端在重启
+
+### 区分症状
+
+1. 设置页的账本新鲜度显示「最近刷新失败」，账本提示是「云端账本响应异常」，而同一台电脑端此刻能正常同步，或者过几分钟自己就恢复了。这种「一会儿坏一会儿好」不符合契约错误的特征。
+2. 老版本（1.6.8 及更早）没有重试提示：失败后就一直停着，只能靠手点「重新检查」或重启 App，用户会以为同步坏了。新版本会多一句「约 N 秒后自动重试」。
+3. 与契约错误的分界：真正的契约错误（响应格式/字段集不符、`invalid_exchange_request`）重试多少次都不会好，文案是「云端账本响应异常」或「云端拒绝」；429/5xx 属于可自愈的退让信号。
+
+### 含义
+
+2026-10-26 之前，`src/mobile/v2Sync.ts` 的请求层只映射 401/403/400+`invalid_exchange_request`，其余非 2xx 一律 `contract_error`，于是 429 限流与 5xx 故障被显示成「云端账本响应异常」；同时 `drain()` 对任何失败都固定 `now + 30_000` 重试、无上限，也不读 `cloud/deviceSyncServer.ts` 给出的 `Retry-After`。结果是既误导了排查方向，又在该退让的时候按固定节奏猛打。
+
+### 处理步骤
+
+1. 先确认版本：可重试分类与退避在 1.6.9 及以后；1.6.8 及更早按老口径排查（没有 `rate_limited` / `server_error` 两个码）。
+2. 判定当前失败属于哪一类：看设置页账本提示与 `Meta` 里的 `LAST_ERROR.code`——`rate_limited`（429）、`server_error`（5xx）、`network_error` / `timeout` 属可自愈；`contract_error` / `invalid_exchange_request` / `authentication_failed` / `authorization_failed` 属终止类，重试无意义，应查凭据、版本与服务端字段集。
+3. 看退避是否生效：outbox 行的 `attemptCount` 应随失败增长，`nextRetryAt` 应落在 `15s × 2^(n-1)` 与封顶 15 分钟之间，且不早于服务端 `Retry-After`；终止类失败应停在封顶（等用户动作），不应每 30 秒重来。
+4. 不要手工改 outbox 的 `nextRetryAt` 或 `attemptCount` 来「催」同步：调度器只认这两个字段，改小会让限流更严重；需要立刻重试用设置页的「重新检查」入口。

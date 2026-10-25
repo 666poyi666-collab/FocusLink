@@ -511,6 +511,8 @@ export function TerminalLedgerRepairControl({
 export function nativeCloudPollErrorCopy(code: string | undefined): string {
   if (code === 'network_error') return '暂时无法连接云端';
   if (code === 'timeout') return '云端连接超时';
+  if (code === 'rate_limited') return '云端暂时限流，稍后自动重试';
+  if (code === 'server_error') return '云端暂时不可用，稍后自动重试';
   if (code === 'authentication_failed') return '设备凭据已失效，请重新配对';
   if (code === 'authorization_failed') return '当前设备没有云端同步权限';
   if (code === 'contract_error') return '云端响应异常';
