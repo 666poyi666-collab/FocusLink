@@ -1,5 +1,23 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-DISPATCH`：移动端原生命令取消与账本拉取去重（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮收尾第 1 个 P0 切片「统一调度入口」的剩余两处缺口（P1-2 原生命令 drain 不可取消、P1-3 同连接重复拉取，含审计 P2-4 后台定时器判据）；前三轮已分别完成写通道身份闸门、离线结束身份固化、冲突决定闭环，上一轮完成重试分类。
+- **审计证据（只读）**：`FocusLink/test-data/audit/sync-dispatch.md` 的 P1-2——改前 `src/mobile/MobileApp.tsx:1708-1775` 的 drain 循环与 `:2374-2390` 的 `sendNativeCommand()` 都不带 `AbortSignal`，`suspend` 分支（改前 `:1468-1474`）只 abort live 请求，锁屏/后台时在途命令仍会发包并写缓存，5 秒定时器（改前 `:1795`）继续触发；P1-3——生命周期 effect（改前 `:1504-1508`）、`pullLedger` 对 `nativeConnectionLease` 的依赖（改前 `:1303`）、多处 `connectionEpoch` 自增，以及命令完成后主动拉账本（改前 `:1931`、`:1749`），使启动恢复/前后台切换/每条命令完成各多打一次 ledger+task；P2-4——任务快照刷新与后台轮询按 `document.visibilityState` 判定（改前 `:1513`、`:1517`），而不是应用活跃态。
+- **修掉的缺口**：
+  1. **P1 在途原生命令不可取消**：切账号、忘记配对、进入后台只有 live 通道被中止，原生命令继续执行完毕并写回快照，正是「身份已换、响应照写」的另一条路径。
+  2. **P1 同连接反复拉账本**：同一连接上前后台恢复与每条 finish 命令各自触发一次完整同步，页数与请求量都翻倍，与 §四「低耗」冲突。
+  3. **P2 后台判据用错信号**：`document.visibilityState` 在 Capacitor WebView 里与 OEM 前后台事件不一致，锁屏后仍可能被当成可见。
+- **落地改动**：
+  1. `src/mobile/ledgerPullPolicy.ts`（新，纯模块，无 DOM 依赖）：`decideMobileLedgerPull({reason,connectionKey,now,trace})` 把「该不该真的发起拉取」变成可测判断——无记录或连接已换必发起；`manual`/`retry` 永不丢弃（在途由既有 coalescer 合并）；同连接有在途请求返回 `in-flight`；`foreground` 在 `MOBILE_LEDGER_PULL_FRESH_MS=1500` 内返回 `fresh`；其余发起。`shouldDrainNativeCommands()` 的四个否决条件＝应用非活跃、文档不可见、连接非 live、无离线运行时。模块注释写明 `in-flight` 的语义是「join 并在结束后补一次」，只有 `fresh` 才真正丢弃触发。
+  2. `src/mobile/MobileApp.tsx` 唯一入口：`ledgerPullTrace` / `pendingLedgerPull` 两个 ref + `requestLedgerPull(reason)`；`pullLedger()` 自身记录 `startedAt`、在 finally 写 `finishedAt`（只有仍是自己那次才写，避免覆盖后来者）；被登记的挂起触发在**成功**回调里补一次（失败已由退避调度负责，不重复打）。五处触发全部改道：重试调度器 `retry`、生命周期恢复 `foreground`、`resolveSyncConflict` 与刷新按钮 `manual`、命令完成 `command`；切账号时清 trace 与挂起项。
+  3. 原生命令可取消：`processNativeQueue()` 用 `shouldDrainNativeCommands()` 前置守卫，每轮新建 `AbortController` 存进 `nativeCommandAbort` 并把 `signal` 传给 `sendNativeCommand()`（第四参数，最终传给早已支持 `signal` 的 `sendLiveFocusCommand`）；循环开头与每个 `await` 之后都检查 `signal.aborted` 并直接退出，不提交快照、不清原生行；`suspend` 分支与 `beginAccountTransition()` 都 abort 在途命令。
+  4. 拉取收敛到每轮一次：命令循环内不再逐条拉账本，改为 `finishedLedgerCommand` 标记，循环正常结束后只补一次 `requestLedgerPull('command')`；5 秒定时器与任务快照刷新谓词改为「应用活跃 + 文档可见」双条件。
+- **测试**：新增 `tests/mobileLedgerPullPolicy.test.ts` 14 项——纯决策 9 项（首拉、换连接、`foreground`/`command` 的在途合并、`manual`/`retry` 在途仍发起、1499 毫秒内 `fresh` 而 1500 毫秒与 20 秒发起、`command` 不受新鲜度影响、窗口常量）、drain 门 1 项（四个否决条件逐条）、源码契约 4 项（五处触发只走 `requestLedgerPull`、唯一的直接 `pullLedger()` 调用是补拉、在途命令 abort 两处、`sendNativeCommand` 带 `signal`、`finishedLedgerCommand` 三处、后台判据不再用可见性单独判定）。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **155 文件 / 1335 用例全过** exit 0、`npm run build:web` exit 0（index JS 578.08 → 579.62 kB、CSS 570.59 → 570.62 kB，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无手机与平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。用户在用的 Windows 端仍是 1.6.8，因此锁屏取消与去重在真机上的实际收益属于「证据记录」，不是「实测」。
+- **下一轮候选（审计已有证据）**：设置页状态分域（P1-5，`src/mobile/SettingsView.tsx:96-107` + `src/mobile/settingsStatusPresentation.ts:16-125`：任务同步格用缓存快照冒充已确认、账本待处理/冲突/拒绝无独立格、`ledgerNotice` 是死代码）、孤立组件 `src/mobile/SyncV2Management.tsx` 挂载或删除、原生账本投影写的最终守序（P2-6 已修但可复核）、§三 界面统一、§四 低耗与框架评估。
+
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-RETRY`：移动端账本失败的重试分类与退避（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 4 个 P0 切片「重试分类」（前三个：任务写通道取消与身份重验、离线结束身份固化、冲突决定闭环）。

@@ -634,3 +634,22 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 2. 判定当前失败属于哪一类：看设置页账本提示与 `Meta` 里的 `LAST_ERROR.code`——`rate_limited`（429）、`server_error`（5xx）、`network_error` / `timeout` 属可自愈；`contract_error` / `invalid_exchange_request` / `authentication_failed` / `authorization_failed` 属终止类，重试无意义，应查凭据、版本与服务端字段集。
 3. 看退避是否生效：outbox 行的 `attemptCount` 应随失败增长，`nextRetryAt` 应落在 `15s × 2^(n-1)` 与封顶 15 分钟之间，且不早于服务端 `Retry-After`；终止类失败应停在封顶（等用户动作），不应每 30 秒重来。
 4. 不要手工改 outbox 的 `nextRetryAt` 或 `attemptCount` 来「催」同步：调度器只认这两个字段，改小会让限流更严重；需要立刻重试用设置页的「重新检查」入口。
+
+## FL-SYNC-030：锁屏或切账号之后，通知栏快捷动作还在后台发包
+
+### 区分症状
+
+1. 在锁屏、通知栏或系统快捷动作上结束专注后，回到 App 会看到这次动作像是「已经发出去又没生效」：账本多拉了一次、快照里出现过不属于当前账号的任务，或者切账号后旧账号的清单自己回来了。这类现象只在「锁屏/切后台那一刻正好有原生命令在途」时出现。
+2. 老版本（1.6.8 及更早）在进入后台时只中止 live 请求，原生命令的 drain 循环没有任何 `AbortSignal`，5 秒定时器也照旧触发，因此在后台持续发包与写缓存。1.6.9 及以后的构建里，切账号、忘记配对、进入后台都会 abort 在途命令。
+3. 单纯「账本刷新次数多、耗电偏快」但没有旧账号数据复活，属于同一轮修掉的第二条缺口（同连接重复拉取）；而离线结束双写是 FL-SYNC-027，任务写越权是 FL-SYNC-026。
+
+### 含义
+
+2026-10-26 之前，`src/mobile/MobileApp.tsx` 的 `processNativeQueue()` 与 `sendNativeCommand()` 都不接受取消信号：`suspend` 分支只调 `liveRequest.current?.abort()`，而 drain 循环里每条命令执行完仍会无条件写回 `taskSnapshotRef` 并清掉原生行。同一段代码还在每条 finish 命令之后主动拉一次账本。判断「该不该在后台跑」用的是 `document.visibilityState`，在 Capacitor WebView 与 OEM 前台服务下与真实应用活跃态不一致。修复落在 `src/mobile/ledgerPullPolicy.ts` 的 `shouldDrainNativeCommands()` / `decideMobileLedgerPull()` 与 `MobileApp.tsx` 的 `nativeCommandAbort` / `requestLedgerPull()`。
+
+### 处理步骤
+
+1. 先确认版本：1.6.8 及更早没有这些守卫；1.6.9 及以后进入后台、切账号、忘记配对都会中止在途命令，并且每轮 drain 结束只补一次账本拉取。
+2. 复现时看行为而不是看日志：在被 abort 的那一轮里，`setTaskSnapshot` 与 `writeCachedTaskSnapshot` 都不应执行，原生行也不应被清掉（下次前台会重放）；界面不应出现「已提交」提示。
+3. 判定口径：同一连接上连续触发前台恢复与命令完成，只应有一次真实 exchange；1500 毫秒内的重复 `foreground` 触发必须被 `fresh` 丢弃，而 `manual`/`retry` 无论何时都必须发起（在途由 coalescer 合并）。对应测试是 `tests/mobileLedgerPullPolicy.test.ts`。
+4. 不要用「把 5 秒定时器调成 0」或「在后台强杀进程」来绕：前者把小请求变成密集轮询，后者会丢掉原生队列里的在途项；也不要手改 outbox 或原生 SQLite 表去清残留。

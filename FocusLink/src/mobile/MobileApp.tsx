@@ -169,6 +169,12 @@ import {
   type MobileV2ConflictSide,
 } from './v2ConflictResolution';
 import { decideMobileV2Retry, describeMobileV2RetryWait } from './v2RetryPolicy';
+import {
+  decideMobileLedgerPull,
+  shouldDrainNativeCommands,
+  type MobileLedgerPullReason,
+  type MobileLedgerPullTrace,
+} from './ledgerPullPolicy';
 import { offlineCompletionNotice, persistCompletedOfflineFocus } from './offlineCompletion';
 import type { DeviceSyncManagedDevice } from '@shared/ipc/api';
 import {
@@ -307,10 +313,13 @@ export function MobileApp() {
     createMobileAccountRequestCoalescer<TaskSnapshotResponse | null>(),
   ).current;
   const ledgerPulls = useRef(createMobileAccountRequestCoalescer<void>()).current;
+  const ledgerPullTrace = useRef<MobileLedgerPullTrace | null>(null);
+  const pendingLedgerPull = useRef<MobileLedgerPullReason | null>(null);
   const commandRequests = useRef(createMobileAccountRequestLifecycle()).current;
   const taskWrites = useRef(createMobileAccountRequestGroup()).current;
   const cacheMutationQueue = useRef<Promise<void>>(Promise.resolve());
   const nativeQueueRunning = useRef(false);
+  const nativeCommandAbort = useRef<AbortController | null>(null);
   const nativeConnectionLeaseRef = useRef<string | null>(null);
   const lastResumeRefreshAt = useRef(0);
   const mobileAppActive = useRef(true);
@@ -333,6 +342,10 @@ export function MobileApp() {
       liveRequest.current = null;
       commandRequests.invalidate();
       taskWrites.invalidate();
+      nativeCommandAbort.current?.abort();
+      nativeCommandAbort.current = null;
+      ledgerPullTrace.current = null;
+      pendingLedgerPull.current = null;
       ledgerRetryAttempts.current = 0;
       setLedgerRetryAt(null);
     },
@@ -1297,6 +1310,12 @@ export function MobileApp() {
       if (accountTransitionOperation.current !== null) return Promise.resolve();
       return ledgerPulls.run(sourceConnectionKey, async () => {
         const sourceNativeLease = nativeConnectionLease;
+        const pullStartedAt = Date.now();
+        ledgerPullTrace.current = {
+          connectionKey: sourceConnectionKey,
+          startedAt: pullStartedAt,
+          finishedAt: null,
+        };
         ledgerRequest.current?.abort();
         const controller = new AbortController();
         const generation = ledgerGeneration.current + 1;
@@ -1434,10 +1453,57 @@ export function MobileApp() {
           setSyncConflicts(conflicts);
         } finally {
           if (ledgerRequest.current === controller) ledgerRequest.current = null;
+          const trace = ledgerPullTrace.current;
+          if (trace === null || trace.startedAt === pullStartedAt) {
+            ledgerPullTrace.current = {
+              connectionKey: sourceConnectionKey,
+              startedAt: pullStartedAt,
+              finishedAt: Date.now(),
+            };
+          }
         }
       });
     },
     [deviceId, ledgerPulls, nativeConnectionLease],
+  );
+
+  // Single entry point for every automatic ledger pull. Identity and freshness
+  // come from the pure policy, so a resume storm, a rebuilt pull callback and a
+  // drained native command cannot stack three identical round trips.
+  const requestLedgerPull = useCallback(
+    (reason: MobileLedgerPullReason): Promise<void> => {
+      const connection = preferencesRef.current;
+      if (!connection.endpoint || !connection.token) return Promise.resolve();
+      const decision = decideMobileLedgerPull({
+        reason,
+        connectionKey: mobileAccountConnectionKey(connection),
+        now: Date.now(),
+        trace: ledgerPullTrace.current,
+      });
+      if (!decision.start) {
+        // A joined trigger is replayed once instead of dropped, otherwise a
+        // native command that finished during an in-flight pull would leave the
+        // new ledger row unconfirmed until some unrelated trigger happened.
+        if (decision.skipReason === 'in-flight') pendingLedgerPull.current = reason;
+        return Promise.resolve();
+      }
+      const settled = pullLedger(connection, cacheRef.current.cursor);
+      void settled.then(
+        () => {
+          if (pendingLedgerPull.current === null) return;
+          pendingLedgerPull.current = null;
+          const next = preferencesRef.current;
+          if (!next.endpoint || !next.token) return;
+          if (accountTransitionOperation.current !== null) return;
+          // The replay bypasses the freshness window on purpose: it represents a
+          // trigger that arrived while the previous pull was already running.
+          void pullLedger(next, cacheRef.current.cursor);
+        },
+        () => undefined,
+      );
+      return settled;
+    },
+    [pullLedger],
   );
 
   // A retryable ledger failure schedules exactly one follow-up pull on the
@@ -1451,12 +1517,10 @@ export function MobileApp() {
       setLedgerRetryAt(null);
       if (!mobileAppActive.current) return;
       if (accountTransitionOperation.current !== null) return;
-      const connection = preferencesRef.current;
-      if (!connection.endpoint || !connection.token) return;
-      void pullLedger(connection, cacheRef.current.cursor);
+      void requestLedgerPull('retry');
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [ledgerRetryAt, pullLedger]);
+  }, [ledgerRetryAt, requestLedgerPull]);
 
   // Conflict decisions run through the normal exchange: the cloud has no
   // conflict row for a revision divergence, so the choice becomes a fresh
@@ -1489,7 +1553,7 @@ export function MobileApp() {
           keepOpId: resolution.opId,
         }).catch(() => 0);
         await enqueueMobileV2Mutation(resolution.mutation, checkpoint);
-        await pullLedger(preferencesRef.current, cacheRef.current.cursor);
+        await requestLedgerPull('manual');
         const history = (await readMobileV2OperationHistory().catch(() => [])) as Array<{
           opId?: unknown;
           status?: unknown;
@@ -1514,7 +1578,7 @@ export function MobileApp() {
         setConflictBusyId(null);
       }
     },
-    [pullLedger, syncConflicts],
+    [requestLedgerPull, syncConflicts],
   );
 
   useEffect(() => {
@@ -1696,6 +1760,10 @@ export function MobileApp() {
         // arrive less than a second apart; the timestamp only deduplicates active-side events.
         lastResumeRefreshAt.current = 0;
         liveRequest.current?.abort();
+        // Commands in flight are cancelled with the connection. Their rows stay
+        // durable in the native store and drain on the next visible resume.
+        nativeCommandAbort.current?.abort();
+        nativeCommandAbort.current = null;
         return;
       }
       if (action === 'wait') {
@@ -1729,9 +1797,9 @@ export function MobileApp() {
 
   useEffect(() => {
     if (!cacheReady || !online || !preferences.endpoint || !preferences.token) return;
-    void pullLedger(preferences, cacheRef.current.cursor);
+    void requestLedgerPull('foreground');
     void refreshTasks(preferences);
-  }, [cacheReady, connectionEpoch, online, preferences, pullLedger, refreshTasks]);
+  }, [cacheReady, connectionEpoch, online, preferences, requestLedgerPull, refreshTasks]);
 
   useEffect(() => {
     if (!cacheReady || !online || !preferences.endpoint || !preferences.token) return;
@@ -1740,7 +1808,7 @@ export function MobileApp() {
     };
     const stopInterval = startVisibleTaskSnapshotRefresh(
       () => void refreshTasks(preferencesRef.current),
-      () => document.visibilityState === 'visible',
+      () => mobileAppActive.current && document.visibilityState === 'visible',
     );
     document.addEventListener('visibilitychange', refreshVisibleTasks);
     window.addEventListener('focus', refreshVisibleTasks);
@@ -1932,27 +2000,41 @@ export function MobileApp() {
   }, [liveSnapshot?.state, nativeSystemControls.immersiveSystemBars]);
 
   const processNativeQueue = useCallback(async () => {
+    if (nativeQueueRunning.current) return;
     if (
-      nativeQueueRunning.current ||
-      liveConnectionRef.current !== 'live' ||
-      offlineRuntimeRef.current
+      !shouldDrainNativeCommands({
+        appActive: mobileAppActive.current,
+        documentVisible: document.visibilityState === 'visible',
+        liveConnection: liveConnectionRef.current === 'live',
+        offlineRuntime: offlineRuntimeRef.current !== null,
+      })
     ) {
       return;
     }
     nativeQueueRunning.current = true;
     const sourceNativeLease = nativeConnectionLease;
+    const controller = new AbortController();
+    nativeCommandAbort.current = controller;
+    const signal = controller.signal;
+    let finishedLedgerCommand = false;
     try {
       const commands = await drainNativeFocusCommands(deviceId, sourceNativeLease);
       for (const nativeCommand of commands) {
+        if (signal.aborted) break;
         const connection = preferencesRef.current;
         if (!connection.endpoint || !connection.token || liveConnectionRef.current !== 'live') {
           break;
         }
         try {
           const sourceConnectionKey = mobileAccountConnectionKey(connection);
-          const response = await sendNativeCommand(connection, deviceId, nativeCommand);
+          const response = await sendNativeCommand(connection, deviceId, nativeCommand, signal);
+          // Suspending, switching accounts or clearing the pairing while the
+          // command was in flight must not commit its snapshot or clear its
+          // durable native row.
+          if (signal.aborted) break;
           const committed = await commitLiveSnapshot(response, sourceConnectionKey);
           if (!committed || connectionKeyRef.current !== sourceConnectionKey) break;
+          if (signal.aborted) break;
           if (
             response.ack.status === 'applied' ||
             response.ack.status === 'duplicate' ||
@@ -1971,9 +2053,7 @@ export function MobileApp() {
                 response,
               ),
             );
-            if (nativeCommand.type === 'finish') {
-              void pullLedger(connection, cacheRef.current.cursor);
-            }
+            if (nativeCommand.type === 'finish') finishedLedgerCommand = true;
           } else {
             setCommandNotice(
               nativeCommandAckNotice(
@@ -1985,7 +2065,7 @@ export function MobileApp() {
             );
           }
         } catch (error) {
-          if (!isAbortError(error)) {
+          if (!isAbortError(error) && !signal.aborted) {
             setCommandNotice(`${errorMessage(error)}；系统动作已保留，将自动重试`);
           }
           break;
@@ -1997,8 +2077,11 @@ export function MobileApp() {
       }
     } finally {
       nativeQueueRunning.current = false;
+      if (nativeCommandAbort.current === controller) nativeCommandAbort.current = null;
     }
-  }, [commitLiveSnapshot, deviceId, nativeConnectionLease, pullLedger]);
+    // One ledger pull per drained batch instead of one per finished command.
+    if (finishedLedgerCommand && !signal.aborted) void requestLedgerPull('command');
+  }, [commitLiveSnapshot, deviceId, nativeConnectionLease, requestLedgerPull]);
 
   useEffect(() => {
     if (liveConnection !== 'live') return;
@@ -2018,7 +2101,13 @@ export function MobileApp() {
       if (!disposed && document.visibilityState === 'visible') void processNativeQueue();
     };
     void processNativeQueue();
-    const interval = window.setInterval(() => void processNativeQueue(), 5_000);
+    // A backgrounded app keeps its queued commands durable in the native store;
+    // polling it every 5 s while invisible is pure battery cost.
+    const interval = window.setInterval(() => {
+      if (mobileAppActive.current && document.visibilityState === 'visible') {
+        void processNativeQueue();
+      }
+    }, 5_000);
     document.addEventListener('visibilitychange', processWhenForegrounded);
     window.addEventListener('focus', processWhenForegrounded);
     window.addEventListener('pageshow', processWhenForegrounded);
@@ -2159,7 +2248,7 @@ export function MobileApp() {
         if (response.ack.status === 'applied' || response.ack.status === 'duplicate') {
           if (action === 'start') setTitleDraft('');
           if (action === 'start') setSelectedTaskId('');
-          if (action === 'finish') void pullLedger(connection, cacheRef.current.cursor);
+          if (action === 'finish') void requestLedgerPull('command');
         }
       } catch (error) {
         if (
@@ -2183,7 +2272,7 @@ export function MobileApp() {
       commitLiveSnapshot,
       deviceId,
       online,
-      pullLedger,
+      requestLedgerPull,
       selectedTaskId,
       taskSnapshot,
       titleDraft,
@@ -2196,6 +2285,9 @@ export function MobileApp() {
       setCommandNotice('完成设备配对后即可自动同步');
       return;
     }
+    // The explicit refresh must never be dropped by the de-duplication policy;
+    // joining an in-flight pull is the one case where it does no new work.
+    void requestLedgerPull('manual');
     setConnectionEpoch((value) => value + 1);
   };
 
@@ -2617,6 +2709,7 @@ async function sendNativeCommand(
   connection: MobileConnectionPreferences,
   deviceId: string,
   nativeCommand: NativeFocusCommand,
+  signal: AbortSignal,
 ) {
   return sendLiveFocusCommand({
     endpoint: connection.endpoint,
@@ -2628,6 +2721,7 @@ async function sendNativeCommand(
       expectedRevision: nativeCommand.stateRevision,
       sessionId: nativeCommand.sessionId,
     },
+    signal,
   });
 }
 
