@@ -1,5 +1,23 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-COMPLETION`：移动端离线结束的身份固化与三态化（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 2 个 P0 切片（上一轮修了任务写通道的取消与身份重验）。
+- **审计证据（只读）**：`FocusLink/test-data/audit/durability.md` 的 P0-1（改前 `src/mobile/offlineCompletion.ts:17-22`、`src/mobile/cache.ts:818`、`android/app/src/main/java/com/focuslink/app/FocusLedgerNativeOutboxStore.java:110-120`）与 P0-2（改前 `src/mobile/offlineCompletion.ts:17-22`、`src/mobile/MobileApp.tsx:1866-1868`）。
+- **修掉的缺口**：
+  1. **P0 重复结束的双写分叉**：待传记录的 `opId = makeDeviceSyncOperationId(session.id,'put',0,bundle)` 由含 `endedAt` 的 payload 派生；草稿在提交失败后重开再结束会得到第二个 opId。原生队列按 `bundleId` 去重并对异 payload 抛 `IllegalArgumentException('completed ledger identity already exists')`，而这个错误被调用方的 `.catch(() => false)` 吞成「未排队」→ 同一 `entityId` 的第二份被服务端判 `revision_conflict`（`cloud/syncV2Store.ts:245-255`），账本永久不收敛。
+  2. **P0「已安全保存」误报**：`nativeQueued` 一个布尔同时代表「没有原生环境 / 原生 lease 失效 / 原生 identity 冲突」，`finish` 分支无条件提示安全保存并把草稿清空；IDB 提交失败时原生可能已排队、草稿也仍在。
+- **落地改动**：
+  1. `src/mobile/offlineCompletionIdentity.ts`（新，163 行）：`FrozenOfflineCompletion`（`sessionId` / `endedAt` / `bundle` / `frozenAt`，:14）、`resolveFrozenCompletion()`（首次结束获胜；复用需 sessionId 一致、`endedAt` 与 bundle 内一致、`validateDeviceSyncBundle()` 通过，:47）、`isFrozenOfflineCompletion()` 守卫（损坏的 meta 记录不抛错、回退到重新固化，:75）、`classifyNativeCompletion()` 六态（`queued` / `duplicate` / `unavailable` / `identity-conflict` / `stale-lease` / `failed`，:97）、`offlineCompletionNotice()`（`pending===null` 与 conflict/rejected 时不再声称安全保存，:107）。
+  2. `src/mobile/cache.ts`：新增 `COMPLETION_FREEZE_PREFIX='offlineCompletionFreeze.'`（:43）与 `readOfflineCompletionFreeze`（:335）/ `writeOfflineCompletionFreeze`（:352）/ `clearOfflineCompletionFreeze`（:369）；`completeOfflineFocusRuntime` 先读冻结身份再算 opId（:291），已存在待传记录时原样返回（保留 `state` / `attemptCount`，不把 uploading/conflict 打回 pending）；`completeOfflineBundleInTransaction` 的 `finish()` 在写 pending 记录的同一事务里写冻结记录（:833-860）；`removePendingDeviceSyncBundle` 的事务加入 `META_STORE` 并随记录删除冻结（:409）。
+  3. `src/mobile/offlineCompletion.ts`（重写，95 行）：`persistCompletedOfflineFocus()` 固定顺序＝固化身份 → 原生入队 → 提交 canonical 队列；返回 `{freeze, reusedFreeze, native, nativeDetail, pending, error}`，`pending===null` 表示本机没落地、调用方必须保留草稿。
+  4. `src/mobile/MobileApp.tsx:1942-1956`：finish 分支改用 `offlineCompletionNotice(completion)`，`if (!completion.pending) return;` 保住草稿，只有落地成功才清 `offlineRuntime` 并转 `cloud-live`；原先写死的「离线会话已安全保存；联网后自动补传」已移除。
+- **测试**：新增 `tests/mobileOfflineCompletionIdempotency.test.ts` 12 项、修改 `tests/mobileOfflineCompletionEntry.test.ts` 2 项。覆盖：同 session 两次不同 `endedAt` → 同 opId、`endedAt` 保持首次、待传记录 1 条、v2 待传计数不重复；原生返回 `{queued:false}` → `duplicate` 且文案为「未重复排队」；原生抛 `completed ledger identity already exists` → `identity-conflict`；`removePendingDeviceSyncBundle` 清冻结；6 种原生结局与 3 条提示语；源码契约断言固化调用先于原生入队、`MobileApp` 仍以 `completion.pending` 决定是否清草稿。
+- **门禁（全部实测）**：`npm run typecheck`（含 Worker）exit 0、`npm run lint` exit 0、`npm run format:check` 全绿、`npm test` **152 文件 / 1290 用例全过** exit 0、`npm run build:web` exit 0。
+- **本轮环境事故（已处理，非产品缺陷）**：05:42 的一次 `npx vitest` 以 `Error: ENOSPC: no space left on device, write` 失败；实测 C: 剩余 0 B。根因是 `%TEMP%` 下 91 个 `ybt-edge-*` Edge 无头配置目录（每个约 482 MB）与 866 个 `--user-data-dir=...ybt-edge-*` 的 `msedge.exe` 进程堆积，来自本机另一套浏览器自动化在后台反复拉起，与 FocusLink 无关。已终止这 866 个 msedge 进程并删除残留目录，C: 剩余恢复到 22.73 GB；`.git/lfs/tmp` 仅 1 个条目、无增长。删除只针对 `%TEMP%` 的 `ybt-edge-*`，未动 `.git/lfs/objects`。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。用户在用的 Windows 端仍是 1.6.8。
+- **下一轮候选（审计已有证据）**：冲突闭环（差异 → 选择 → `POST /v2/conflicts/:id/resolve` → 回读；`src/mobile/SyncV2Management.tsx:21` 写好但全仓无 import）、429/5xx 与 `contract_error` 分域 + 指数退避 + `Retry-After`（`src/mobile/v2Sync.ts:494-506`、`src/mobile/v2Cache.ts:494-519`）、原生命令 drain 取消（P1-2）、同连接重复拉取去重（P1-3）、设置页状态分域。
+
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-WRITE`：移动端任务写通道的取消与身份重验（不升产品版本）
 
 - **用户范围**：用户整份粘贴《FocusLink 移动端架构与交互改版方案》并写明「以下方案可直接交给 DeepSeek 执行」；本轮只做其中 §二「同步一致性」的 P0 项，不改视觉。

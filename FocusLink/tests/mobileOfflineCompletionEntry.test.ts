@@ -41,7 +41,8 @@ describe('MobileApp offline completion entry', () => {
   it('durably fans one real completion into native WorkManager and canonical v2 outboxes', async () => {
     const result = await persistCompletedOfflineFocus(bundle(), DEVICE_ID, '0');
 
-    expect(result.nativeQueued).toBe(true);
+    expect(result.native).toBe('queued');
+    expect(result.reusedFreeze).toBe(false);
     expect(result.pending).toMatchObject({
       entityId: 'session-entry',
       state: 'pending',
@@ -77,7 +78,7 @@ describe('MobileApp offline completion entry', () => {
     );
 
     await expect(persistCompletedOfflineFocus(bundle(), DEVICE_ID, '0')).resolves.toMatchObject({
-      nativeQueued: false,
+      native: 'failed',
       pending: { entityId: 'session-entry', state: 'pending' },
     });
     expect(await readMobileV2Status(DEVICE_ID)).toMatchObject({

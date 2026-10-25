@@ -10,6 +10,10 @@ import {
   type SyncV2OutboxItem,
   type SyncV2Payload,
 } from '@shared/sync/v2Protocol';
+import {
+  isFrozenOfflineCompletion,
+  type FrozenOfflineCompletion,
+} from './offlineCompletionIdentity';
 import { isOfflineFocusRuntime, type OfflineFocusRuntime } from './offlineFocusRuntime';
 import type { LiveFocusSnapshotLike } from './runtimeModel';
 import {
@@ -36,6 +40,7 @@ const SERVER_TIME_KEY = 'serverTime';
 const LIVE_FOCUS_KEY = 'liveFocusSnapshot';
 const TASK_SNAPSHOT_KEY = 'taskSnapshot';
 const OFFLINE_FOCUS_KEY = 'offlineFocusRuntime';
+const COMPLETION_FREEZE_PREFIX = 'offlineCompletionFreeze.';
 
 export interface CachedBundle {
   entityId: string;
@@ -275,16 +280,27 @@ export async function enqueuePendingDeviceSyncBundle(
   return record;
 }
 
+/**
+ * Commits one completed offline session. The first completed payload for a
+ * session id is frozen and reused, so a draft that survived a failed commit
+ * cannot enqueue a second operation with a newer `endedAt`.
+ */
 export async function completeOfflineFocusRuntime(
   bundle: DeviceSyncSessionBundle,
 ): Promise<PendingDeviceSyncBundle> {
-  const validation = validateDeviceSyncBundle(bundle);
+  const freeze = await readOfflineCompletionFreeze(bundle.session.id);
+  const frozenBundle = freeze && validateDeviceSyncBundle(freeze.bundle).ok ? freeze.bundle : null;
+  const target = frozenBundle ?? bundle;
+  const validation = validateDeviceSyncBundle(target);
   if (!validation.ok) throw new Error(`无法保存离线会话：${validation.error ?? '格式无效'}`);
+  const opId = makeDeviceSyncOperationId(target.session.id, 'put', 0, target);
+  const existing = await readPendingDeviceSyncBundleRecord(opId);
+  if (existing) return existing;
   const now = Date.now();
   const record: PendingDeviceSyncBundle = {
-    opId: makeDeviceSyncOperationId(bundle.session.id, 'put', 0, bundle),
-    entityId: bundle.session.id,
-    bundle,
+    opId,
+    entityId: target.session.id,
+    bundle: target,
     state: 'pending',
     attemptCount: 0,
     nextRetryAt: 0,
@@ -300,7 +316,7 @@ export async function completeOfflineFocusRuntime(
   );
   const completion = transactionDone(transaction);
   try {
-    await completeOfflineBundleInTransaction(transaction, bundle, record, now);
+    await completeOfflineBundleInTransaction(transaction, target, record, now);
     await completion;
     return record;
   } catch (error) {
@@ -316,14 +332,81 @@ export async function completeOfflineFocusRuntime(
   }
 }
 
+export async function readOfflineCompletionFreeze(
+  sessionId: string,
+): Promise<FrozenOfflineCompletion | null> {
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return null;
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(META_STORE, 'readonly');
+    const record = await requestValue<MetaRecord | undefined>(
+      transaction.objectStore(META_STORE).get(COMPLETION_FREEZE_PREFIX + sessionId),
+    );
+    await transactionDone(transaction);
+    return isFrozenOfflineCompletion(record?.value) ? record.value : null;
+  } finally {
+    database.close();
+  }
+}
+
+export async function writeOfflineCompletionFreeze(freeze: FrozenOfflineCompletion): Promise<void> {
+  if (!isFrozenOfflineCompletion(freeze)) {
+    throw new Error('无法固化离线会话结束时间：记录无效');
+  }
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(META_STORE, 'readwrite');
+    transaction.objectStore(META_STORE).put({
+      key: COMPLETION_FREEZE_PREFIX + freeze.sessionId,
+      value: freeze,
+    } satisfies MetaRecord);
+    await transactionDone(transaction);
+  } finally {
+    database.close();
+  }
+}
+
+export async function clearOfflineCompletionFreeze(sessionId: string): Promise<void> {
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(META_STORE, 'readwrite');
+    transaction.objectStore(META_STORE).delete(COMPLETION_FREEZE_PREFIX + sessionId);
+    await transactionDone(transaction);
+  } finally {
+    database.close();
+  }
+}
+
+async function readPendingDeviceSyncBundleRecord(
+  opId: string,
+): Promise<PendingDeviceSyncBundle | null> {
+  if (!opId) return null;
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(PENDING_STORE, 'readonly');
+    const record = await requestValue<PendingDeviceSyncBundle | undefined>(
+      transaction.objectStore(PENDING_STORE).get(opId),
+    );
+    await transactionDone(transaction);
+    return record ?? null;
+  } finally {
+    database.close();
+  }
+}
+
 export async function removePendingDeviceSyncBundle(opId: string): Promise<void> {
   const database = await openDatabase();
-  const transaction = database.transaction([PENDING_STORE, SESSION_SYNC_META_STORE], 'readwrite');
+  const transaction = database.transaction(
+    [PENDING_STORE, SESSION_SYNC_META_STORE, META_STORE],
+    'readwrite',
+  );
   const pendingStore = transaction.objectStore(PENDING_STORE);
   const existing = await requestValue<PendingDeviceSyncBundle | undefined>(pendingStore.get(opId));
   pendingStore.delete(opId);
   if (existing?.entityId) {
     transaction.objectStore(SESSION_SYNC_META_STORE).delete(existing.entityId);
+    transaction.objectStore(META_STORE).delete(COMPLETION_FREEZE_PREFIX + existing.entityId);
   }
   await transactionDone(transaction);
   database.close();
@@ -768,6 +851,15 @@ function completeOfflineBundleInTransaction(
     const finish = () => {
       if (settled) return;
       pendingStore.put(record);
+      metaStore.put({
+        key: COMPLETION_FREEZE_PREFIX + bundle.session.id,
+        value: {
+          sessionId: bundle.session.id,
+          endedAt: bundle.session.endedAt,
+          bundle,
+          frozenAt: now,
+        },
+      } satisfies MetaRecord);
       metaStore.delete(OFFLINE_FOCUS_KEY);
       settled = true;
       resolve();

@@ -578,3 +578,22 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 3. 修复后的判定口径：切账号 / 忘记配对 / 清缓存时 `taskWrites.invalidate()` 必须 abort 掉在途写，且响应回来时 `canCommit()` 为 false 则不写内存、不写缓存；这两点由 `tests/mobileTaskWriteCommit.test.ts`（源码契约）与 `tests/mobileAccountLifecycle.test.ts`（请求组语义）覆盖。
 4. 不要把「写请求被取消」当成失败提示给用户；账号已经切换，该操作本来就不该生效，静默丢弃是正确的。
 
+## FL-SYNC-027：同一场专注在手机上结束两次后，账本再也对不上
+
+### 区分症状
+
+1. 结束一场离线专注时提交失败（例如存储写失败或原生队列报错），草稿还在；过一会儿重开草稿再点结束，之后这条会话在云端/桌面端反复出现 `revision_conflict`，待传数量降不下去，删除重试也不收敛。
+2. 界面上先看到「离线会话已安全保存」，但实际原生队列里已经有第一份记录；这是 `nativeQueued` 单布尔把「没排队 / 已排队 / 身份冲突」压成一个 `false` 造成的误报，不是网络问题。
+3. 只有「同一 session id 结束两次」才会触发。普通断网重试、切账号后的写取消是另两条链路（FL-SYNC-026 与本条无关）。
+
+### 含义
+
+2026-10-26 之前，待传记录的 `opId` 由含 `endedAt` 的 payload 派生（`makeDeviceSyncOperationId(session.id,'put',0,bundle)`），而 Android 原生队列按 `bundleId` 去重、对异 payload 直接抛 `IllegalArgumentException('completed ledger identity already exists')`；该异常被调用方的 `.catch(() => false)` 吞掉。于是 IndexedDB 侧排进第二份 payload，服务端按 revision 判冲突，而本地没有消费冲突的入口，账本永久不收敛。
+
+### 处理步骤
+
+1. 先确认安装版本：1.6.8 及更早的构建都有此缺口；修复在 `src/mobile/offlineCompletionIdentity.ts` 的冻结身份与 `src/mobile/cache.ts` 的 `COMPLETION_FREEZE_PREFIX`。
+2. 复现后看 IndexedDB：`meta` 里 `offlineCompletionFreeze.<sessionId>` 应存在且 `endedAt` 等于第一次结束的值；`pendingBundles` 里该会话只应有 1 条记录，`bundle.session.endedAt` 与冻结值一致。
+3. 修复后的判定口径：同一 session 第二次结束必须是 `reusedFreeze:true` + `native:'duplicate'` 或 `'identity-conflict'`，提示文案不得出现「已安全保存」；`pending===null` 时草稿必须保留。对应测试为 `tests/mobileOfflineCompletionIdempotency.test.ts`。
+4. 已经产生的双写分叉不会自动消失：服务端冲突需要人工处理，不要通过改本地 `endedAt` 或伪造 revision 来「修好」。
+

@@ -152,7 +152,7 @@ import {
 } from './ledgerSyncPresentation';
 import { runMobileSyncV2 } from './v2Sync';
 import { readMobileV2Bootstrap, readMobileV2Status } from './v2Cache';
-import { persistCompletedOfflineFocus } from './offlineCompletion';
+import { offlineCompletionNotice, persistCompletedOfflineFocus } from './offlineCompletion';
 import type { DeviceSyncManagedDevice } from '@shared/ipc/api';
 import {
   createTaskSnapshotRequestLifecycle,
@@ -1941,12 +1941,17 @@ export function MobileApp() {
             setCommandNotice('本机专注已继续');
           } else if (action === 'finish' && nextRuntime) {
             const bundle = finishOfflineFocus(nextRuntime, now);
-            await persistCompletedOfflineFocus(bundle, deviceId, sourceNativeLease);
+            const completion = await persistCompletedOfflineFocus(
+              bundle,
+              deviceId,
+              sourceNativeLease,
+            );
+            setCommandNotice(offlineCompletionNotice(completion));
+            if (!completion.pending) return;
             nextRuntime = null;
             authorityModeRef.current = 'cloud-live';
             setAuthorityMode('cloud-live');
             setPendingUploadCount((count) => count + 1);
-            setCommandNotice('离线会话已安全保存；联网后自动补传');
           } else {
             throw new Error('本机离线专注状态与操作不匹配');
           }
