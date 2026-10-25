@@ -982,7 +982,8 @@
   outline: 0;
   background: var(--surface-2);
   color: var(--text);
-  font-size: 13px;
+  /* 16px: 低于该字号时 iOS/WebView 会在聚焦时放大整页。 */
+  font-size: 16px;
   font-weight: 620;
   text-overflow: ellipsis;
 }

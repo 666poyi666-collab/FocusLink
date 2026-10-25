@@ -499,7 +499,8 @@ body {
 .task-search input,
 .project-filter select {
   color: var(--text);
-  font-size: 14px;
+  /* 16px: iOS/WebView 低于该字号会在聚焦时整页放大，输入框必须停在 16px。 */
+  font-size: 16px;
 }
 
 .task-view-switch {
@@ -1142,9 +1143,9 @@ body {
 
 .account-device-row button {
   display: grid;
-  width: 40px;
-  min-height: 40px;
-  flex: 0 0 40px;
+  width: 44px;
+  min-height: 44px;
+  flex: 0 0 44px;
   padding: 0;
   place-items: center;
   border: 1px solid var(--border-strong);
@@ -1154,8 +1155,8 @@ body {
 }
 
 .account-device-row button svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .account-device-current {

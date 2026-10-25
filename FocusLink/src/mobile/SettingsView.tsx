@@ -57,6 +57,8 @@ interface SettingsViewProps {
   conflictNotice: string | null;
   retryNotice: string | null;
   onResolveConflict: (conflictId: string, side: MobileV2ConflictSide) => void;
+  /** The settings card only polls the native runtime while the app is in front. */
+  foregroundActive: boolean;
 }
 
 export function SettingsView({
@@ -80,6 +82,7 @@ export function SettingsView({
   conflictNotice,
   retryNotice,
   onResolveConflict,
+  foregroundActive,
 }: SettingsViewProps) {
   const connectionFact = presentMobileSettingsConnection({
     authenticated,
@@ -338,7 +341,7 @@ export function SettingsView({
         </div>
       </section>
 
-      <NativeSystemControls />
+      <NativeSystemControls foregroundActive={foregroundActive} />
 
       {/* 版本与构建号从产品标题栏移到这里：排查时找得到，日常不占主界面。 */}
       <section className="settings-card">

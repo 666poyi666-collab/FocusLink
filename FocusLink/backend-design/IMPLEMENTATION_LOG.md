@@ -1,5 +1,27 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-PERF-20261026-MOBILE-FOREGROUND`：移动端前台门控与触控/字号终层层叠（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》，本轮进入 §四「低耗」的第一个切片（时间显示不靠每秒 JS、后台不按周期唤醒）＋ §三「界面统一」的纯 CSS 切片（44px 触控目标、16px 输入字号）；原生 WakeLock/WorkManager 未动，原因见交付边界。
+- **审计证据（只读）**：`FocusLink/test-data/audit/mobile-low-power.md` 的 P0-1——改前 `src/mobile/FocusConsole.tsx:93-106` 是一条自续期 `setTimeout` 链，每 `1_000 - (Date.now() % 1_000) + 12` 毫秒 `setNow`，判据只有 `current.state !== 'idle'`（改前 `:89`），没有 `document.visibilityState`／Capacitor 前后台信号，整棵专注面板每秒重渲染；同为 5 秒/15 秒的三条链（改前 `src/mobile/MobileApp.tsx:1830-1833` 任务快照、改前 `:2127-2131` 原生命令、改前 `src/mobile/NativeSystemControls.tsx:90-94` 原生读数）都是「醒了再判」，而不是「后台就停链」；`src/mobile/MobileApp.tsx:332` 与 `:1804-1810` 存在 Capacitor `appStateChange` 与 DOM `visibilityState` 两套不等价的后台信号。`FocusLink/test-data/audit/mobile-ui-touch.md`——`src/mobile/mobile.css:880-887` 看板完成勾选 18×18（最高频点击）、`focuslink-2-mobile.css:2071-2072` 时间段轨道高 32px 且是 `div`、`focuslink-2-mobile.css:1143-1151` 设备行按钮 40×40、`src/mobile/NativeSystemControls.tsx:504` 的 `.native-terminal-ledger-repair` 在 51 个 CSS 文件里 0 条规则；输入侧 `focuslink-2-mobile.css:499-503` 用 14px 覆盖了 `mobile.css:2910-2919` 的 16px、`mobile-1-3.css:985` 为 13px；`tests/mobileResponsiveA11yContract.test.ts:56-90` 的 `findRule` 只在单文件 AST 内匹配，上述回退全部能通过现有断言。
+- **修掉的缺口**：
+  1. **P0 每秒 JS 唤醒不看前后台**：锁屏后仍每秒 `setNow`，与 §四「时间不靠每秒 JS」直接冲突。
+  2. **P1 定时器的判据是「醒了再判」**：任务快照、原生命令、原生读数三条链在后台仍被按 5/5/15 秒唤醒后早退，唤醒本身就是成本。
+  3. **P1 一排低于 44px 的触控目标**：看板完成勾选 18px、设备行按钮 40px、原生「重新检查」无任何尺寸规则；统计轨道 32px 且不是可聚焦控件，语义修复需改 TSX，本轮只记录。
+  4. **P1 三个输入低于 16px**：聚焦时 WebView 会放大整页。
+  5. **P2 触控与字号契约存在层叠盲区**：后导入的样式表能把 44px 改回 40px、16px 改回 14px，现有断言仍然全绿。
+- **落地改动**：
+  1. `src/mobile/backgroundPolicy.ts`（新，纯模块）：`isMobileForegroundActive({appActive,documentVisible})` 作为唯一前后台判据；`nextMobileSecondBoundaryDelay()` 按墙钟秒对齐（`MOBILE_TICK_ALIGN_SLACK_MS = 12`）；`createMobileSecondTicker()` 在闸门关闭时立刻 `clearTimeout` 停链，重新进入前台先补一拍再排下一跳，关闭期间过期的跳被丢弃。
+  2. `src/mobile/FocusConsole.tsx:22`、`:88-114`：秒表改由 ticker 驱动（新增可选 `appActive`/`documentVisible`，默认 true 以保持静态渲染兼容），删除原自续期链；live 快照换 `revision` 时单独补一拍对齐读数，不重建定时链。
+  3. `src/mobile/MobileApp.tsx:247`、`:1782-1783`、`:1843`、`:2143`：新增 `appActive`/`documentVisible` 两个状态并在 `applyLifecycle()` 里同步，派生 `foregroundActive`；任务快照链改为 `foregroundActive ? startVisibleTaskSnapshotRefresh(...) : () => undefined`，原生命令链改为 `foregroundActive ? window.setInterval(...) : 0`，两处依赖数组加入 `foregroundActive`；`FocusConsole` 与 `SettingsView` 分别接收这两个布尔。
+  4. `src/mobile/NativeSystemControls.tsx:28-33`、`:85`、`:106` 与 `src/mobile/SettingsView.tsx:61`、`:85`、`:344`：15 秒读数改为 `if (!available || !foregroundActive) return;`，删除 `readWhenVisible` 与三个可见性监听；`foregroundActive` 由 `MobileApp` 一路透传，不在组件内新引 `@capacitor/app`，以免破坏只 mock `@capacitor/core` 的既有测试。
+  5. 触控与字号（纯 CSS）：`mobile.css:880-905` 勾选视觉 18→22px、图标 11→13px，并用不可见 `::after` 把命中区扩到 44×44（不撑开卡片布局）；`focuslink-2-mobile.css:499-503` 两个输入 14→16px、`:1143-1160` 设备行按钮 40→44px；`mobile-1-3.css:986` 新建任务目标 13→16px；`mobile-2-0.css:1499` 新增 `.native-terminal-ledger-repair button { min-height: 44px }`。
+- **测试**：新增 `tests/mobileBackgroundCost.test.ts` 9 项——前后台真值表、秒对齐边界（0/500/999/1000/1234/-500 与 slack 0）、激活立即一拍后每秒一拍、后台停链且计时器数为 0、恢复立即对齐、过期跳丢弃、空闲不 tick、三文件源码契约；新增 `tests/mobileTouchTargetContract.test.ts` 4 项——按 `src/mobile/main.tsx:8-15` 的导入顺序解析六张样式表并断言最终生效值（22/44/44/16/16/16/44），并把 `html[data-runtime='mobile-focus']` 前缀写法纳入解析，避免把最新层当成不存在。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **158 文件 / 1363 用例全过** exit 0、`npm run build:web` exit 0（index JS 581.77 → 582.68 kB、CSS 570.62 → 571.01 kB，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无小米手机与华为平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。因此「后台不再被 JS 每秒唤醒」属于代码与单测可证的范围，而真机耗电曲线、锁屏持锁时长均未实测，属**证据记录/推断**。
+- **未做（原生侧，需先补环境）**：审计 `mobile-low-power.md` 的 W1–W3 一行未改——`FocusRuntimeContract.java:34-36` 把 `paused` 当活跃态、`FocusNotificationService.java:447-456` 只在 `!isActive` 释放 WakeLock、`:480` 的 `acquire(35min)` 被每 20 秒 `:465` 续期且 `stopCloudPolling(:177-181)` 不释放、`MainActivity.java:45-46` 无 `onTaskRemoved`／`ACTION_SCREEN_OFF`；这些是 Kotlin/Java，本机无法编译也无法在真机验证，改完只能靠读代码声称，违反「不得把文档断言写成实测」。
+- **下一轮候选**：WakeLock 收敛（W1–W3，需 SDK 与真机）、统计页时间段轨道语义化（`div` → 可聚焦控件，需改 TSX 并真机验收）、任务快照条件请求（`MobileApp.tsx:1013` 无 `If-None-Match`，空闲前台每分钟 12 次全量 GET）、三设备同版安装门禁（缺环境）。
+
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-DOMAINS`：移动端设置页的同步状态分域（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 6 个也是最后一个 P0 切片「状态分域」（前五轮：任务写通道取消与身份重验、离线结束身份固化、冲突决定闭环、重试分类、原生命令取消与拉取去重）；顺带清掉审计点名的孤立组件 `src/mobile/SyncV2Management.tsx`。

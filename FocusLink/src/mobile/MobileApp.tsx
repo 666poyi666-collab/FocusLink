@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { APP_VERSION } from '@shared/version';
 
 import { AppNavigation, type MobileView } from './AppNavigation';
+import { isMobileForegroundActive } from './backgroundPolicy';
 import { normalizeDeviceSyncEndpoint } from '@shared/sync/deviceProtocol';
 import { parseDeviceToken } from '@shared/sync/v2Protocol';
 import {
@@ -236,6 +237,14 @@ export function MobileApp() {
   // console and keeps login available as an explicit action.
   const [configOpen, setConfigOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
+  // Foreground state comes from two sources that disagree on some OEM builds (the WebView
+  // can report a visible document while the app sits behind the lock screen). One policy
+  // decides; every periodic reader below follows it instead of re-deriving its own rule.
+  const [appActive, setAppActive] = useState(true);
+  const [documentVisible, setDocumentVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState === 'visible',
+  );
+  const foregroundActive = isMobileForegroundActive({ appActive, documentVisible });
   const [pullState, setPullState] = useState<PullState>('idle');
   const [, setLedgerNotice] = useState('正在读取本机会话账本…');
   const [liveSnapshot, setLiveSnapshot] = useState<LiveFocusSnapshotLike | null>(null);
@@ -1770,6 +1779,8 @@ export function MobileApp() {
     let removeAppStateListener: (() => Promise<void>) | null = null;
     const applyLifecycle = () => {
       if (disposed) return;
+      setAppActive(mobileAppActive.current);
+      setDocumentVisible(document.visibilityState === 'visible');
       const action = resolveMobileLiveLifecycleAction({
         appActive: mobileAppActive.current,
         documentVisible: document.visibilityState === 'visible',
@@ -1827,10 +1838,14 @@ export function MobileApp() {
     const refreshVisibleTasks = () => {
       if (document.visibilityState === 'visible') void refreshTasks(preferencesRef.current);
     };
-    const stopInterval = startVisibleTaskSnapshotRefresh(
-      () => void refreshTasks(preferencesRef.current),
-      () => mobileAppActive.current && document.visibilityState === 'visible',
-    );
+    // Task snapshots poll every 5 s while the user is watching and not at all once the app
+    // goes behind another app; the next foreground transition refreshes before the first tick.
+    const stopInterval = foregroundActive
+      ? startVisibleTaskSnapshotRefresh(
+          () => void refreshTasks(preferencesRef.current),
+          () => mobileAppActive.current && document.visibilityState === 'visible',
+        )
+      : () => undefined;
     document.addEventListener('visibilitychange', refreshVisibleTasks);
     window.addEventListener('focus', refreshVisibleTasks);
     window.addEventListener('pageshow', refreshVisibleTasks);
@@ -1840,7 +1855,7 @@ export function MobileApp() {
       window.removeEventListener('focus', refreshVisibleTasks);
       window.removeEventListener('pageshow', refreshVisibleTasks);
     };
-  }, [cacheReady, online, preferences.endpoint, preferences.token, refreshTasks]);
+  }, [cacheReady, online, preferences.endpoint, preferences.token, refreshTasks, foregroundActive]);
 
   useEffect(() => {
     liveRequest.current?.abort();
@@ -2121,14 +2136,17 @@ export function MobileApp() {
     const processWhenForegrounded = () => {
       if (!disposed && document.visibilityState === 'visible') void processNativeQueue();
     };
-    void processNativeQueue();
+    if (foregroundActive) void processNativeQueue();
     // A backgrounded app keeps its queued commands durable in the native store;
-    // polling it every 5 s while invisible is pure battery cost.
-    const interval = window.setInterval(() => {
-      if (mobileAppActive.current && document.visibilityState === 'visible') {
-        void processNativeQueue();
-      }
-    }, 5_000);
+    // polling it every 5 s while invisible is pure battery cost. The interval only
+    // exists while the console is in front; the durable queue drains on resume.
+    const interval = foregroundActive
+      ? window.setInterval(() => {
+          if (mobileAppActive.current && document.visibilityState === 'visible') {
+            void processNativeQueue();
+          }
+        }, 5_000)
+      : 0;
     document.addEventListener('visibilitychange', processWhenForegrounded);
     window.addEventListener('focus', processWhenForegrounded);
     window.addEventListener('pageshow', processWhenForegrounded);
@@ -2140,7 +2158,7 @@ export function MobileApp() {
       window.removeEventListener('pageshow', processWhenForegrounded);
       if (unsubscribe) void unsubscribe();
     };
-  }, [liveConnection, processNativeQueue]);
+  }, [liveConnection, processNativeQueue, foregroundActive]);
 
   const handleCommand = useCallback(
     async (action: MobileFocusCommand, taskOverride?: SyncedTask, titleOverride?: string) => {
@@ -2556,6 +2574,8 @@ export function MobileApp() {
                   authorityMode={authorityMode}
                   allowOfflineStart={offlineRuntime === null && liveConnection !== 'live'}
                   timerStyle={appearance.timerStyle}
+                  appActive={appActive}
+                  documentVisible={documentVisible}
                 />
               )}
               {activeView === 'tasks' && (
@@ -2626,6 +2646,7 @@ export function MobileApp() {
                   onResolveConflict={(conflictId, side) =>
                     void resolveSyncConflict(conflictId, side)
                   }
+                  foregroundActive={foregroundActive}
                 />
               )}
             </motion.div>

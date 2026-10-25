@@ -22,7 +22,15 @@ import {
   type NativePermissionState,
 } from './nativeFocusRuntime';
 
-export function NativeSystemControls() {
+export interface NativeSystemControlsProps {
+  /**
+   * Whether the app is actually in front. The settings card re-reads the native runtime
+   * only then; a backgrounded app must not wake every 15 s just to repaint a card nobody sees.
+   */
+  foregroundActive?: boolean;
+}
+
+export function NativeSystemControls({ foregroundActive = true }: NativeSystemControlsProps = {}) {
   const [available, setAvailable] = useState(() => isNativeFocusRuntimeAvailable());
   const [readinessEpoch, setReadinessEpoch] = useState(0);
   const [status, setStatus] = useState<NativeFocusStatus | null>(null);
@@ -74,7 +82,7 @@ export function NativeSystemControls() {
   }, [available]);
 
   useEffect(() => {
-    if (!available) return;
+    if (!available || !foregroundActive) return;
     let active = true;
     const read = () => {
       void Promise.all([readNativeFocusStatus(), readNativePauseReminderPreference()])
@@ -87,20 +95,15 @@ export function NativeSystemControls() {
           // Native capability actions remain available for an explicit retry.
         });
     };
-    const readWhenVisible = () => {
-      if (document.visibilityState === 'visible') read();
-    };
+    // The interval exists only while the card is in front. Returning to the foreground
+    // re-runs this effect, which reads once before the first tick instead of after it.
     read();
-    const interval = window.setInterval(readWhenVisible, 15_000);
-    document.addEventListener('visibilitychange', readWhenVisible);
-    window.addEventListener('focus', readWhenVisible);
+    const interval = window.setInterval(read, 15_000);
     return () => {
       active = false;
       window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', readWhenVisible);
-      window.removeEventListener('focus', readWhenVisible);
     };
-  }, [available]);
+  }, [available, foregroundActive]);
 
   if (!available) return null;
 

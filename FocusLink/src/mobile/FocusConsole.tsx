@@ -19,6 +19,7 @@ import { focusDeviceLabel, isTabletFocusViewport } from './viewportPolicy';
 import { TimerDial } from '../features/focus/TimerDial';
 import { TemporalRibbon } from '../features/focus/TemporalRibbon';
 import type { MobileAppearance } from './appearance';
+import { createMobileSecondTicker } from './backgroundPolicy';
 
 export type MobileFocusCommand = 'start' | 'pause' | 'resume' | 'finish';
 
@@ -53,6 +54,12 @@ export interface FocusConsoleProps {
   authorityMode: MobileAuthorityMode;
   allowOfflineStart: boolean;
   timerStyle: MobileAppearance['timerStyle'];
+  /**
+   * Foreground flags. The once-per-second readout must not keep waking a backgrounded or
+   * locked app; when either flag is off the ticker stops and only the last reading stays.
+   */
+  appActive?: boolean;
+  documentVisible?: boolean;
 }
 
 export function FocusConsole({
@@ -78,6 +85,8 @@ export function FocusConsole({
   authorityMode,
   allowOfflineStart,
   timerStyle,
+  appActive = true,
+  documentVisible = true,
 }: FocusConsoleProps) {
   const [now, setNow] = useState(() => Date.now());
   const [finishDialogOpen, setFinishDialogOpen] = useState(false);
@@ -93,17 +102,22 @@ export function FocusConsole({
   useEffect(() => {
     setNow(Date.now());
     if (!active) return;
-    let timer = 0;
-    const schedule = () => {
-      const delay = 1_000 - (Date.now() % 1_000) + 12;
-      timer = window.setTimeout(() => {
-        setNow(Date.now());
-        schedule();
-      }, delay);
-    };
-    schedule();
-    return () => window.clearTimeout(timer);
-  }, [active, current.revision, current.serverTime, current.state]);
+    const ticker = createMobileSecondTicker(
+      {
+        now: () => Date.now(),
+        setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
+        clearTimeout: (handle) => window.clearTimeout(handle),
+      },
+      setNow,
+    );
+    ticker.setGate({ active, appActive, documentVisible });
+    return () => ticker.dispose();
+  }, [active, appActive, documentVisible]);
+
+  // A new live revision can arrive mid-second; realign the readout without restarting the ticker.
+  useEffect(() => {
+    setNow(Date.now());
+  }, [current.revision, current.serverTime, current.state]);
 
   useEffect(() => {
     const update = () =>

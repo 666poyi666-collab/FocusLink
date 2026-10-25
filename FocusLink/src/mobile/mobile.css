@@ -878,19 +878,33 @@ code {
 }
 
 .task-board-check {
+  position: relative;
   display: grid;
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   place-items: center;
   border: 1px solid var(--focus);
   border-radius: 50%;
   color: var(--focus);
 }
 
+/* 看板每张卡片最高频的点击是「完成」。视觉圆点保持紧凑，命中区域用不可见伪元素
+ * 扩到 44×44；不改变卡片布局，也不把圆点画大。 */
+.task-board-check::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  content: '';
+  transform: translate(-50%, -50%);
+}
+
 .task-board-check svg {
-  width: 11px;
-  height: 11px;
+  width: 13px;
+  height: 13px;
 }
 
 .task-board-card-meta {

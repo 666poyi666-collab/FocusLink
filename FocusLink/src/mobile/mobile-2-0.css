@@ -1493,3 +1493,16 @@ html[data-runtime='mobile-focus'] .settings-conflict-action-primary {
   border-color: var(--focus);
   color: var(--focus);
 }
+
+/* 26.1 原生「重新检查已结束专注」按钮 */
+/* 该按钮此前没有任何尺寸规则，落到 UA 默认高度（约 20-24px）。44px 是触控下限。 */
+html[data-runtime='mobile-focus'] .native-terminal-ledger-repair button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
