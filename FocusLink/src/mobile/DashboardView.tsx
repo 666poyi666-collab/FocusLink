@@ -538,8 +538,11 @@ function DayLedgerTimeline({
                       </strong>
                       <small>{formatLaneDuration(totalMs)}</small>
                     </span>
+                    {/* 车道条带是下方「时间段明细入口」按钮列表的指针快捷方式；对辅助技术隐藏，
+                        避免暴露一个没有名称、无法聚焦却可点击的区域。 */}
                     <div
                       className="mobile-day-lane-track"
+                      aria-hidden="true"
                       onClick={(event) =>
                         selectTimelineIntervalAt(
                           event,

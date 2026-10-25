@@ -37,6 +37,7 @@ import {
   TASK_SNAPSHOT_PROTOCOL_VERSION,
   TASK_SNAPSHOT_PATH,
   TASK_SNAPSHOT_CAPABILITY_HEADER,
+  TASK_SNAPSHOT_IF_NONE_MATCH_HEADER,
   TASK_SNAPSHOT_SCHEDULING_CAPABILITY,
   parseTaskSnapshotMutationResponse,
   parseTaskSnapshotResponse,
@@ -680,13 +681,40 @@ export async function fetchLiveFocusSnapshot(
   }
 }
 
+export interface TaskSnapshotConditionalFetchInput extends LiveFocusConnectionInput {
+  /** ETag from the previous full read; a match answers a body-free `unchanged` marker. */
+  ifNoneMatch?: string | null;
+}
+
+export interface TaskSnapshotConditionalResult {
+  /** True when the cloud register still matches the caller's ETag; `response.snapshot` is null. */
+  notModified: boolean;
+  etag: string | null;
+  response: TaskSnapshotResponse;
+}
+
+export async function fetchTaskSnapshotConditional(
+  input: TaskSnapshotConditionalFetchInput,
+): Promise<TaskSnapshotConditionalResult> {
+  const ifNoneMatch = input.ifNoneMatch?.trim();
+  const response = await liveFocusFetch(
+    input,
+    TASK_SNAPSHOT_PATH,
+    ifNoneMatch ? { headers: { [TASK_SNAPSHOT_IF_NONE_MATCH_HEADER]: ifNoneMatch } } : {},
+  );
+  const etag = response.headers.get('etag');
+  const value = parseTaskSnapshotResponse(await readDeviceSyncJsonResponse(response));
+  if (!value) throw new Error('任务快照响应无效');
+  return { notModified: value.unchanged === true, etag, response: value };
+}
+
 export async function fetchTaskSnapshot(
   input: LiveFocusConnectionInput,
 ): Promise<TaskSnapshotResponse> {
-  const response = await liveFocusFetch(input, TASK_SNAPSHOT_PATH);
-  const value = parseTaskSnapshotResponse(await readDeviceSyncJsonResponse(response));
-  if (!value) throw new Error('任务快照响应无效');
-  return value;
+  const result = await fetchTaskSnapshotConditional(input);
+  // An unconditional read can never be answered with the marker; treat it as a contract error.
+  if (result.notModified) throw new Error('任务快照响应异常');
+  return result.response;
 }
 
 export async function publishTaskSnapshot(
@@ -785,7 +813,7 @@ export async function sendLiveFocusCommand(
 async function liveFocusFetch(
   input: LiveFocusConnectionInput,
   path: string,
-  init: Pick<RequestInit, 'method' | 'body'> = {},
+  init: Pick<RequestInit, 'method' | 'body'> & { headers?: Record<string, string> } = {},
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const endpoint = normalizeDeviceSyncEndpoint(input.endpoint);
@@ -813,6 +841,7 @@ async function liveFocusFetch(
           headers: {
             Accept: 'application/json',
             Authorization: `Bearer ${token}`,
+            ...(init.headers ?? {}),
             ...(path === TASK_SNAPSHOT_PATH || path === TASK_SNAPSHOT_MUTATION_PATH
               ? { [TASK_SNAPSHOT_CAPABILITY_HEADER]: TASK_SNAPSHOT_SCHEDULING_CAPABILITY }
               : {}),

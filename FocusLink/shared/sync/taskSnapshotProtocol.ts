@@ -25,6 +25,38 @@ export const TASK_SNAPSHOT_MAX_PROJECTS = 500;
 export const TASK_SNAPSHOT_REFRESH_INTERVAL_MS = 5_000;
 /** Server accepts small client clock drift but never lets one future value freeze the register. */
 export const TASK_SNAPSHOT_MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
+/**
+ * Idle mobile polls reuse the register instead of re-downloading it. The mobile client fetches
+ * with `cache: 'no-store'`, so no browser HTTP cache can revalidate on our behalf and a bare 304
+ * would carry no `serverTime`; a matched conditional read therefore answers with a body-free 200
+ * `unchanged` marker and the same `ETag`.
+ */
+export const TASK_SNAPSHOT_IF_NONE_MATCH_HEADER = 'if-none-match' as const;
+const TASK_SNAPSHOT_ETAG_PREFIX = 'flts1';
+
+export function formatTaskSnapshotEtag(input: {
+  revision: number;
+  sourceDeviceId: string | null;
+  includeScheduling: boolean;
+}): string {
+  const capability = input.includeScheduling ? 'sched' : 'legacy';
+  return `"${TASK_SNAPSHOT_ETAG_PREFIX}-${input.revision}-${capability}-${input.sourceDeviceId ?? 'none'}"`;
+}
+
+/** RFC 9110 list syntax, tolerant of weak validators and surrounding whitespace. */
+export function taskSnapshotEtagMatches(
+  ifNoneMatch: string | null | undefined,
+  etag: string,
+): boolean {
+  const header = ifNoneMatch?.trim();
+  if (!header) return false;
+  return header.split(',').some((candidate) => {
+    const value = candidate.trim();
+    if (value === '*') return true;
+    return (value.startsWith('W/') ? value.slice(2).trim() : value) === etag;
+  });
+}
+
 const MAX_TEXT_LENGTH = 1_000;
 
 export interface SyncedTaskProject {
@@ -70,6 +102,8 @@ export interface TaskSnapshotResponse {
   sourceDeviceId: string | null;
   snapshot: TaskSnapshotPayload | null;
   serverTime: number;
+  /** Present only on a conditional read that matched the caller's ETag; `snapshot` is then null. */
+  unchanged?: boolean;
 }
 
 export type TaskSnapshotMutationKind =
@@ -442,16 +476,22 @@ export function isTaskSnapshotPublishedAtWithinFutureSkew(
   );
 }
 
+const TASK_SNAPSHOT_RESPONSE_KEYS = [
+  'protocolVersion',
+  'revision',
+  'sourceDeviceId',
+  'snapshot',
+  'serverTime',
+] as const;
+
 export function parseTaskSnapshotResponse(value: unknown): TaskSnapshotResponse | null {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      'protocolVersion',
-      'revision',
-      'sourceDeviceId',
-      'snapshot',
-      'serverTime',
-    ]) ||
+    !(
+      hasExactKeys(value, TASK_SNAPSHOT_RESPONSE_KEYS) ||
+      (value.unchanged === true &&
+        hasExactKeys(value, [...TASK_SNAPSHOT_RESPONSE_KEYS, 'unchanged']))
+    ) ||
     value.protocolVersion !== TASK_SNAPSHOT_PROTOCOL_VERSION ||
     !Number.isSafeInteger(value.revision) ||
     Number(value.revision) < 0 ||
@@ -470,6 +510,7 @@ export function parseTaskSnapshotResponse(value: unknown): TaskSnapshotResponse 
         ? null
         : normalizeTaskSnapshotPayload(value.snapshot as TaskSnapshotPayload),
     serverTime: value.serverTime as number,
+    ...(value.unchanged === true ? { unchanged: true } : {}),
   };
 }
 

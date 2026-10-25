@@ -1,5 +1,24 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-CONDITIONAL`：移动端任务快照条件请求与统计轨道语义（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》。本轮做两处：§二 的追加项「空闲轮询不再整份下载任务清单」（审计 `mobile-low-power.md` 估算「空闲前台每分钟 12 次全量 GET」的源头），以及 §三 里上一轮只记录未改的统计页时间段轨道（可点 `div`、32px 高）。
+- **审计证据（只读）**：`FocusLink/test-data/audit/mobile-low-power.md`——改前 `src/mobile/MobileApp.tsx:1013` 的 5 秒任务快照轮询没有任何条件请求头，每轮整份 GET；`FocusLink/test-data/audit/mobile-ui-touch.md`——改前 `focuslink-2-mobile.css:2072` 的 `.mobile-day-lane > div` 高 32px，且该 `div` 只有 `onClick`（改前 `src/mobile/DashboardView.tsx:541-552`），对辅助技术是一个没有名称、无法聚焦却可点击的区域；同页下方改前 `:583-602` 已有等价的可聚焦按钮列表。
+- **修掉的缺口**：
+  1. **P1 空闲轮询整份下载**：云端注册表没变时也把整份项目/任务列表拉回手机，5 秒一次。
+  2. **P1 请求不携带已知版本**：WebView 里 `cache:'no-store'` 已关掉浏览器重验，服务端也拿不到任何「我手上是第几版」的线索，条件读无从命中。
+  3. **P2 统计车道是可点但不可聚焦的区域**：视觉条带对辅助技术应不可见，键盘入口是下面的按钮列表。
+- **落地改动**：
+  1. `shared/sync/taskSnapshotProtocol.ts:28-58` 新增 `TASK_SNAPSHOT_IF_NONE_MATCH_HEADER`、`formatTaskSnapshotEtag({revision,sourceDeviceId,includeScheduling})`（`"flts1-<revision>-<sched|legacy>-<deviceId|none>"`）与 `taskSnapshotEtagMatches()`（RFC 9110 列表、弱验证符、`*`、空白容忍）；`:101` 起 `TaskSnapshotResponse` 增可选 `unchanged`；`:479-515` 解析器只接受「原五键」或「原五键 + `unchanged:true`」，多余键仍判契约错误。
+  2. `cloud/deviceSyncServer.ts:437-467` 任务快照 GET 带上 `ETag` 与 `Vary: x-focuslink-task-capabilities`；命中时返回 **200 + `snapshot:null` + `unchanged:true`** 而不是 304：客户端 `cache:'no-store'` 不会走浏览器缓存重验，且 304 带不回 `serverTime`。
+  3. `src/mobile/syncClient.ts:684-718` 新增 `fetchTaskSnapshotConditional()`（返回 `{notModified, etag, response}`，`liveFocusFetch` 的 `init` 增加 `headers` 透传位）；`fetchTaskSnapshot()` 委托它并在拿到 marker 时抛「任务快照响应异常」——无条件读不该被 marker 命中。
+  4. `src/mobile/MobileApp.tsx:338` 新增 `taskSnapshotEtag` ref（记录 `connectionKey` 与 `etag`：ETag 属于某个账号连接，切账号不得回显旧 tag）；`:1024-1044` `refreshTasks()` 带 `ifNoneMatch` 发条件请求，`canCommit()` 过后先存新 tag；`notModified` 时只推进 `setTaskConfirmedAt` 并原样返回本机快照，不再 `reconcileTaskSnapshot`、不再写缓存。
+  5. `src/mobile/DashboardView.tsx:544-545` 车道条带加 `aria-hidden="true"`（注释写明它是按钮列表的指针快捷方式）；`src/mobile/focuslink-2-mobile.css:2073` `.mobile-day-lane > div` 32→44px，`:2078` 给 `.ledger-interval` 加 `inset-block: 8px`（条带本身仍约 28px 高，视觉不变粗）。
+- **测试**：新增 `tests/mobileTaskSnapshotConditional.test.ts` 8 项——ETag 派生（capability 改变 tag、null 设备回退 `none`）、列表/弱验证符/`*`/空值匹配、marker 解析并拒绝 `unchanged:false` 与多余键、条件读发出 `if-none-match` 且读到 marker、首次读不带该头、裸 `fetchTaskSnapshot` 遇 marker 报错、两处源码契约（MobileApp 的 tag 与连接绑定；服务端设 `ETag` 与 `unchanged`）。`tests/taskSnapshotCloud.test.ts` 增 1 项真服务端用例：首发 GET 取 ETag；带 `If-None-Match` 复读得 200 + `unchanged:true` + `snapshot:null` 且响应体小于全量 1/4；换 capability 后同一 tag 不命中（`Vary` 生效）；`*` 命中；新发布后旧 tag 失效回全量（`revision` 2）。`tests/mobileTouchTargetContract.test.ts` 增 1 项终层层叠断言（车道 44px、时间段按钮 48px）；`tests/mobileDashboardInteractionContract.test.ts` 的 `visual-only` 用例增一条断言：车道 class 与 `aria-hidden` 必须相邻出现。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **159 文件 / 1373 用例全过** exit 0、`npm run build:web` exit 0（index JS 578.08 → 583.31 kB、CSS 570.59 → 571.03 kB，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无小米手机与华为平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。因此「空闲轮询省下多少流量」只有单测与真服务端回放可证，真机流量与耗电未实测，属**证据记录/推断**。
+- **未做**：`src/mobile/WatchApp.tsx:263` 的手表页仍走无条件读（手表刷新节奏不同，本轮不动）；原生侧 WakeLock W1–W3 与 WorkManager 周期约束仍缺环境；三设备同版安装门禁仍阻塞。
+- **下一轮候选**：§四 原生侧 WakeLock 收敛（需 SDK 与真机）、§三 剩余语义化（看板/历史里的可点 `div` 清点）、任务快照 5 秒链是否可放宽为「前台且最近有交互」（需真机耗电数据）、三设备同版安装门禁（缺环境）。
 ## 2026-10-26 · `FL-PERF-20261026-MOBILE-FOREGROUND`：移动端前台门控与触控/字号终层层叠（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》，本轮进入 §四「低耗」的第一个切片（时间显示不靠每秒 JS、后台不按周期唤醒）＋ §三「界面统一」的纯 CSS 切片（44px 触控目标、16px 输入字号）；原生 WakeLock/WorkManager 未动，原因见交付边界。

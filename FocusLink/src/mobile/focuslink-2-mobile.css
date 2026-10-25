@@ -2069,11 +2069,13 @@ body {
   font-size: 10px;
 }
 
+/* 车道条带只是时间段列表的指针快捷方式：44px 让它本身也够得着，条形本身仍保持细。 */
 .mobile-day-lane > div {
-  height: 32px;
+  height: 44px;
 }
 
 .mobile-day-lane .ledger-interval {
+  inset-block: 8px;
   min-width: 4px;
   border-radius: var(--radius-sm);
   line-height: 26px;

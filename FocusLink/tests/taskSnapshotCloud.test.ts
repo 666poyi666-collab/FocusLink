@@ -11,6 +11,7 @@ import {
   TASK_SNAPSHOT_SCHEDULING_CAPABILITY,
   TASK_SNAPSHOT_MAX_FUTURE_SKEW_MS,
   TASK_SNAPSHOT_PROTOCOL_VERSION,
+  formatTaskSnapshotEtag,
   toTaskSnapshotPayload,
   validateTaskSnapshotPayload,
   withoutTaskSchedulingFields,
@@ -356,6 +357,103 @@ describe('desktop-authoritative task snapshot', () => {
       startDate: 1_720_000_050_000,
       recurrence: { frequency: 'weekly', count: 4 },
     });
+  });
+
+  it('answers a matched conditional read with a body-free unchanged marker', async () => {
+    const server = createDeviceSyncCloudServer({ tokenAccounts: new Map([[TOKEN, ACCOUNT]]) });
+    servers.push(server);
+    const { url } = await server.listen();
+    const capability = {
+      [TASK_SNAPSHOT_CAPABILITY_HEADER]: TASK_SNAPSHOT_SCHEDULING_CAPABILITY,
+    };
+
+    const published = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        ...capability,
+      },
+      body: JSON.stringify(request()),
+    });
+    expect(published.status).toBe(200);
+
+    const full = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, ...capability },
+    });
+    const fullText = await full.text();
+    const etag = full.headers.get('etag');
+    expect(etag).toBe(
+      formatTaskSnapshotEtag({ revision: 1, sourceDeviceId: 'desktop-a', includeScheduling: true }),
+    );
+    expect(full.headers.get('vary')).toBe(TASK_SNAPSHOT_CAPABILITY_HEADER);
+    expect(full.headers.get('cache-control')).toBe('no-store');
+    expect((JSON.parse(fullText) as TaskSnapshotResponse).snapshot?.tasks.length).toBeGreaterThan(
+      0,
+    );
+
+    const conditional = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, ...capability, 'If-None-Match': etag ?? '' },
+    });
+    const conditionalText = await conditional.text();
+    expect(conditional.status).toBe(200);
+    expect(conditional.headers.get('etag')).toBe(etag);
+    expect(JSON.parse(conditionalText) as TaskSnapshotResponse).toMatchObject({
+      revision: 1,
+      snapshot: null,
+      unchanged: true,
+    });
+    // The marker must be cheap: an idle poll no longer re-downloads the list.
+    expect(conditionalText.length).toBeLessThan(fullText.length / 4);
+
+    // The scheduling capability is a different representation, so its tag cannot be reused.
+    const legacy = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, 'If-None-Match': etag ?? '' },
+    });
+    const legacyBody = (await legacy.json()) as TaskSnapshotResponse;
+    expect(legacyBody.unchanged).toBeUndefined();
+    expect(legacyBody.snapshot?.tasks.length).toBeGreaterThan(0);
+    expect(legacy.headers.get('etag')).toBe(
+      formatTaskSnapshotEtag({
+        revision: 1,
+        sourceDeviceId: 'desktop-a',
+        includeScheduling: false,
+      }),
+    );
+
+    const wildcard = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, ...capability, 'If-None-Match': '*' },
+    });
+    expect((await wildcard.json()) as TaskSnapshotResponse).toMatchObject({ unchanged: true });
+
+    // A newer register invalidates the previous tag.
+    const base = request();
+    const changed = {
+      ...base,
+      snapshot: {
+        ...base.snapshot,
+        publishedAt: base.snapshot.publishedAt + 500,
+        tasks: base.snapshot.tasks.map((task) =>
+          task.id === 'task-a' ? { ...task, title: '复习物理' } : task,
+        ),
+      },
+    };
+    const republished = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        ...capability,
+      },
+      body: JSON.stringify(changed),
+    });
+    expect(republished.status).toBe(200);
+    const stale = await fetch(`${url}${TASK_SNAPSHOT_PATH}`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, ...capability, 'If-None-Match': etag ?? '' },
+    });
+    const staleBody = (await stale.json()) as TaskSnapshotResponse;
+    expect(staleBody.unchanged).toBeUndefined();
+    expect(staleBody.revision).toBe(2);
   });
 
   it('returns a stable 422 for schema-valid but cross-field-invalid task mutations', async () => {

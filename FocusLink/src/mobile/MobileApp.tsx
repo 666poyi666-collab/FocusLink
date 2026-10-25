@@ -111,7 +111,7 @@ import {
   mutateTaskSnapshot,
   revokeDeviceSyncDevice,
   fetchLiveFocusSnapshot,
-  fetchTaskSnapshot,
+  fetchTaskSnapshotConditional,
   publishTaskSnapshot,
   sendLiveFocusCommand,
   waitForLiveFocusSnapshot,
@@ -333,6 +333,9 @@ export function MobileApp() {
   const pendingLedgerPull = useRef<MobileLedgerPullReason | null>(null);
   const commandRequests = useRef(createMobileAccountRequestLifecycle()).current;
   const taskWrites = useRef(createMobileAccountRequestGroup()).current;
+  // The register ETag belongs to one account connection: a pairing/account switch must not echo
+  // the previous cloud's tag, otherwise the next poll could be answered with a stale marker.
+  const taskSnapshotEtag = useRef<{ connectionKey: string; etag: string } | null>(null);
   const cacheMutationQueue = useRef<Promise<void>>(Promise.resolve());
   const nativeQueueRunning = useRef(false);
   const nativeCommandAbort = useRef<AbortController | null>(null);
@@ -1019,12 +1022,24 @@ export function MobileApp() {
             transitionOperation: accountTransitionOperation.current,
           });
         try {
-          const response = await fetchTaskSnapshot({
+          const storedEtag = taskSnapshotEtag.current;
+          const ifNoneMatch =
+            storedEtag && storedEtag.connectionKey === connectionKey ? storedEtag.etag : null;
+          const fetched = await fetchTaskSnapshotConditional({
             endpoint: connection.endpoint,
             token: connection.token,
             signal: request.signal,
+            ifNoneMatch,
           });
           if (!canCommit()) return null;
+          if (fetched.etag) taskSnapshotEtag.current = { connectionKey, etag: fetched.etag };
+          if (fetched.notModified) {
+            // The cloud register still matches our confirmed revision: keep the snapshot and
+            // only move the freshness clock, so an idle poll stops re-downloading the list.
+            setTaskConfirmedAt(Date.now());
+            return taskSnapshotRef.current;
+          }
+          const response = fetched.response;
           const reconciliation = reconcileTaskSnapshot(taskSnapshotRef.current, response);
           if (reconciliation.freshness === 'stale') return taskSnapshotRef.current;
           if (reconciliation.freshness === 'inconsistent') {

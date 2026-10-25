@@ -100,6 +100,13 @@ describe('mobile final cascade contract', () => {
     expectValue('.task-add-destination select', 'min-height', '44px', 'mobile-1-3.css');
   });
 
+  it('keeps the statistics timeline lane reachable and its list buttons at 48px', () => {
+    // The lane bar is only a pointer shortcut; the 44px band keeps it tappable while the
+    // interval fills stay visually thin, and the button list below stays the keyboard path.
+    expectValue('.mobile-day-lane > div', 'height', '44px', 'focuslink-2-mobile.css');
+    expectValue('.timeline-interval-choice', 'min-height', '48px', 'mobile-1-3.css');
+  });
+
   it('keeps the account device actions and the native repair action at 44px', () => {
     expectValue('.account-device-row button', 'width', '44px', 'focuslink-2-mobile.css');
     expectValue('.account-device-row button', 'min-height', '44px', 'focuslink-2-mobile.css');

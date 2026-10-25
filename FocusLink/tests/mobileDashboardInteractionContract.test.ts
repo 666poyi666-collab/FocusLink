@@ -71,6 +71,9 @@ describe('mobile dashboard interaction contract', () => {
 
   it('keeps proportional bars visual-only and provides non-overlapping keyboard targets', () => {
     expect(dashboardSource).toContain('role="group" aria-label="时间段明细入口"');
+    // The lane strip is a pointer shortcut for that list: it must not surface as an
+    // unnamed clickable region to assistive technology.
+    expect(dashboardSource).toMatch(/className="mobile-day-lane-track"\s+aria-hidden="true"/);
     expect(dashboardSource).toContain('className={`timeline-interval-choice ${interval.kind}`}');
     expectRule(mobile13Root, '.mobile-day-lane .ledger-interval', {
       'min-width': '4px',

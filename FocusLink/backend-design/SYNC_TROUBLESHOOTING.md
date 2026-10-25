@@ -672,3 +672,22 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 2. 判断任务域是否真的确认过：看那格是否带「最后确认」时间；只有「N 项（本机）」表示这次清单只在本机，联网后才会被云端确认，此时任务改动仍可能被云端更新的版本覆盖。
 3. 「账本待处理」格要把三个数分开读：待上传会自愈（配合 FL-SYNC-029 的退避）；冲突必须由用户在「同步冲突」分区选择（FL-SYNC-028）；被拒绝是服务端拒收，重试无用，要先看拒绝码再改数据。
 4. 不要用「多刷几次」让「任务同步」格变成已确认，也不要手改 IndexedDB 里的缓存时间戳：确认时间只由真实响应写入，改时间只会让界面替一个没发生的确认背书；第三方投递在手机上永远是「仅桌面端」，需要在电脑端设置里查看与重试。
+
+## FL-SYNC-032：手机停在专注页没动，任务清单明明没改，云端却每 5 秒收到一次整份下载
+
+### 区分症状
+
+1. 手机安静停在专注页（没有切页、没有改任务），抓包或看服务端日志能看到每 5 秒一次 `GET /sync/v2/tasks`，每次响应都带完整的 `projects`/`tasks` 列表。
+2. 手机上任务清单确实没变，但流量与电量花在重复传输上；换成另一台设备改了任务之后，下一次轮询又能正确看到改动——说明不是同步坏了，是**没变的那些轮**也在整份传。
+3. 与 FL-SYNC-030（锁屏后通知栏动作还在发包）不同：那条是后台仍被唤醒，本条是前台轮询本身不经济；与 FL-SYNC-029（失败被限流）也不同，本条没有任何失败码。
+
+### 含义
+
+任务快照走的是 `GET /sync/v2/tasks`，客户端 `src/mobile/syncClient.ts` 的 `liveFocusFetch` 固定 `cache:'no-store'`，浏览器 HTTP 缓存不会替我们做条件重验，因此修复必须让请求自己带上「我手上是第几版」：服务端 `cloud/deviceSyncServer.ts` 在响应上给 `ETag`（形如 `"flts1-<revision>-<sched|legacy>-<deviceId>"`）与 `Vary: x-focuslink-task-capabilities`，客户端 `src/mobile/MobileApp.tsx` 把 `etag` 连同所属 `connectionKey` 存起来，下一轮带 `if-none-match`；命中时服务端回 **200 + `snapshot:null` + `unchanged:true`**，客户端只推进确认时间，不重算也不重写缓存。
+
+### 处理步骤
+
+1. 先确认请求头：抓一次 `GET /sync/v2/tasks`，第二次起应当带 `if-none-match: "flts1-…"`；没有这个头就是条件请求没有接上，先看 `MobileApp.tsx` 的 `refreshTasks` 是否还在调无条件版本。
+2. 再看响应：命中时是 `200` 且 body 里 `snapshot` 为 `null`、`unchanged` 为 `true`；如果每次都是完整列表，检查 `ETag` 是否随 `revision` 变化（同一 `revision` 必须得到同一个 tag，否则说明服务端把内容又算出了新版本）。
+3. 换成另一台设备发布任务后，旧的 `if-none-match` 必须失效并回一次全量：若回到全量但 `revision` 没变，是两个不同内容撞了同一 `revision`，按 FL-SYNC-027 处理数据分叉，不要靠刷缓存掩盖。
+4. 不要用「把 5 秒间隔调大」或「关掉任务轮询」来省流量：那会让跨设备改动延迟可见；也不要手改 IndexedDB 里的 `etag` 或 `taskSnapshot`，条件读只认服务端给的 tag。
