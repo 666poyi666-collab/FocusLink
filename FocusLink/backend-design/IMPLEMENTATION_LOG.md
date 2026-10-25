@@ -1,5 +1,24 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-DOMAINS`：移动端设置页的同步状态分域（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 6 个也是最后一个 P0 切片「状态分域」（前五轮：任务写通道取消与身份重验、离线结束身份固化、冲突决定闭环、重试分类、原生命令取消与拉取去重）；顺带清掉审计点名的孤立组件 `src/mobile/SyncV2Management.tsx`。
+- **审计证据（只读）**：`FocusLink/test-data/audit/durability.md` 的 P1-5——改前 `src/mobile/SettingsView.tsx:96-107` 的「任务同步」格用缓存快照的条数与 `revision` 冒充已确认（无时间、无失败态），`src/mobile/settingsStatusPresentation.ts:16-125` 只有连接与账本两域，账本待处理/冲突/被拒绝没有独立格，第三方投递（滴答清单、番茄 To-do）在移动端零状态面；改前 `src/mobile/SyncV2Management.tsx:21` 写好但全仓无 import、无测试引用。
+- **修掉的缺口**：
+  1. **P1 用缓存条数冒充云端确认**：改前的「任务同步 N 项 / revision R」既可能是云端刚确认，也可能是很久以前的本机缓存，用户无法分辨，直接违背 §二「状态分域」。
+  2. **P1 账本三种失败模式被合并成一个数**：排队上传（会自愈）、冲突（要用户决定）、被拒绝（要改数据）语义完全不同，却只有一个「待上传 N」。
+  3. **P2 第三方投递在手机上没有任何状态**：用户会以为手机也在投递，实际只在桌面端发生。
+- **落地改动**：
+  1. `src/mobile/cache.ts:578` 新增 `readCachedTaskSnapshotConfirmedAt()`：读同一账号的 `cachedAt` 作为任务域自己的确认时间——任务域不得借用账本时间戳，否则两域又粘在一起。
+  2. `src/mobile/settingsStatusPresentation.ts:136` 新增 `MOBILE_SETTINGS_TASK_FRESH_AFTER_MS = 60_000`（任务快照按 5 秒节奏刷新，新鲜阈值必须远紧于账本的 15 分钟）；`:138` `presentMobileTaskSync()` 三态＝未配对 / 只有本机（`N 项（本机）` + warning）/ 已确认（`N 项已确认` + `最后确认 <相对时间> · revision R`，超 60 秒转 warning）；`:175` `presentMobileSettingsLedgerQueue()` 把排队、冲突、被拒绝分列，只有冲突或被拒绝存在时才是 danger；`:198` `presentMobileThirdPartyDelivery()` 明确「仅桌面端」。
+  3. `src/mobile/MobileApp.tsx:249` 新增 `taskConfirmedAt` 与 `ledgerRejectedCount` 两个状态：6 处任务写响应与 `refreshTasks` 对账（`:1027`、`:1095`、`:1143`、`:1178`、`:1213`、`:1248`、`:1300`）各记一次确认时间，两处清空（`:414`、`:2438`）同步清零；启动恢复读 `readCachedTaskSnapshotConfirmedAt(cacheAccountId)`（`:1640`、`:1725`）；账本成功与失败分支各更新被拒绝条数。
+  4. `src/mobile/SettingsView.tsx:96-107` 改成六格：实时连接、账本新鲜度、任务同步（改用 `presentMobileTaskSync`）、账本待处理（新增，`:145`）、本机专注记录（detail 改为「已结束且保存在本机，不代表已上传」）、第三方投递（新增，`:158`）；`:166` 增加一句「这几格互不代偿」，写明四域不互相背书。
+  5. 删除孤立组件 `src/mobile/SyncV2Management.tsx`：它会成为第二套同步/冲突管理界面，与设置页的冲突决定分区重复。
+- **测试**：新增 `tests/mobileSettingsStatusDomains.test.ts` 15 项——任务域 5 项（未配对、只有本机、已确认的精确文案与 revision、60 秒边界内外、未来时间戳不崩）、账本队列 3 项、第三方投递 1 项、分域互斥 1 项（任务格不得出现「账本」「新鲜」，队列格不得出现「任务」「revision」）、IndexedDB 2 项（确认时间随写入落盘、账号之间不串）、源码契约 3 项（六格渲染、真实时间与计数喂入、孤立组件已删除且无人 import）。同步修正 `tests/mobileTaskWriteCommit.test.ts` 的连续片段断言：新增的 `setLedgerRejectedCount` 一行插在身份守卫与原生命中投影写之间，断言需跟着更新而不是放宽。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **156 文件 / 1350 用例全过** exit 0、`npm run build:web` exit 0（index JS 579.62 → 581.77 kB、CSS 570.62 kB 不变，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无手机与平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。用户在用的 Windows 端仍是 1.6.8，因此新状态格在真机上的可读性属于「证据记录」，不是「实测」。
+- **下一轮候选（审计与方案已有证据）**：§三 界面统一（保留专注/任务/统计/设置四页、44px 触控目标、16px 输入字号的一致性复核）、§四 低耗与框架评估（时间显示不靠每秒 JS、后台按场景取值、WakeLock 收敛、WorkManager 周期下限 15 分钟）、三设备同版安装门禁（缺 Android SDK/adb 与设备，需先补环境）。
+
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-DISPATCH`：移动端原生命令取消与账本拉取去重（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮收尾第 1 个 P0 切片「统一调度入口」的剩余两处缺口（P1-2 原生命令 drain 不可取消、P1-3 同连接重复拉取，含审计 P2-4 后台定时器判据）；前三轮已分别完成写通道身份闸门、离线结束身份固化、冲突决定闭环，上一轮完成重试分类。

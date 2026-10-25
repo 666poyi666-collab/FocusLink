@@ -26,6 +26,9 @@ import {
 import {
   presentMobileLedgerFreshness,
   presentMobileSettingsConnection,
+  presentMobileSettingsLedgerQueue,
+  presentMobileTaskSync,
+  presentMobileThirdPartyDelivery,
   type MobileSettingsFactTone,
   type MobileSettingsPullState,
 } from './settingsStatusPresentation';
@@ -40,7 +43,12 @@ interface SettingsViewProps {
   pullState: MobileSettingsPullState;
   taskCount: number;
   taskRevision: number;
+  /** Local receipt time of the last cloud-confirmed task snapshot. */
+  taskConfirmedAt: number | null;
+  /** Ledger queue domain: queued uploads and rejected operations. */
+  ledgerPendingCount: number;
   ledgerCount: number;
+  ledgerRejectedCount: number;
   onOpenAccount: () => void;
   appearance: MobileAppearance;
   onAppearanceChange: (value: MobileAppearance) => void;
@@ -60,7 +68,10 @@ export function SettingsView({
   pullState,
   taskCount,
   taskRevision,
+  taskConfirmedAt,
+  ledgerPendingCount,
   ledgerCount,
+  ledgerRejectedCount,
   onOpenAccount,
   appearance,
   onAppearanceChange,
@@ -82,6 +93,18 @@ export function SettingsView({
     pullState,
     retryNotice,
   });
+  const taskFact = presentMobileTaskSync({
+    authenticated,
+    taskCount,
+    revision: taskRevision,
+    confirmedAt: taskConfirmedAt,
+  });
+  const ledgerQueueFact = presentMobileSettingsLedgerQueue({
+    pending: ledgerPendingCount,
+    conflicts: conflicts.length,
+    rejected: ledgerRejectedCount,
+  });
+  const deliveryFact = presentMobileThirdPartyDelivery();
   return (
     <section className="settings-view view-surface" aria-labelledby="settings-view-title">
       <header className="view-heading">
@@ -113,18 +136,34 @@ export function SettingsView({
         <StatusLine
           icon={ListTodo}
           label="任务同步"
-          value={`${taskCount} 项`}
-          detail={`revision ${taskRevision}`}
+          value={taskFact.value}
+          detail={taskFact.detail}
+          tone={taskFact.tone}
+        />
+        <StatusLine
+          icon={GitMerge}
+          label="账本待处理"
+          value={ledgerQueueFact.value}
+          detail={ledgerQueueFact.detail}
+          tone={ledgerQueueFact.tone}
         />
         <StatusLine
           icon={Database}
           label="本机专注记录"
           value={`${ledgerCount} 场`}
-          detail="已结束且保存在本机"
+          detail="已结束且保存在本机，不代表已上传"
+        />
+        <StatusLine
+          icon={Cloud}
+          label="第三方投递"
+          value={deliveryFact.value}
+          detail={deliveryFact.detail}
+          tone={deliveryFact.tone}
         />
       </div>
       <p className="settings-fact-explainer">
         账本新鲜度 = 最近一次从云端确认专注记录的时间；它不是网速，也不代表任务同步状态。
+        这几格互不代偿：实时连接看当下连通性，任务同步看任务清单是否已确认，账本待处理看排队、冲突与被拒绝的条数。
       </p>
 
       <section

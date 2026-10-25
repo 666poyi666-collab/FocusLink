@@ -129,3 +129,76 @@ export function presentMobileLedgerFreshness(input: {
     tone: fresh ? 'ok' : 'warning',
   };
 }
+
+/** Task snapshots are refreshed on the shared 5 s cadence, so "fresh" here is
+ * much tighter than the ledger's 15 min confirmation window; the two domains
+ * must never borrow each other's thresholds. */
+export const MOBILE_SETTINGS_TASK_FRESH_AFTER_MS = 60_000;
+
+export function presentMobileTaskSync(input: {
+  authenticated: boolean;
+  taskCount: number;
+  revision: number;
+  /**
+   * Local receipt time of the last task snapshot the cloud confirmed. Null means
+   * "never confirmed on this device", which is not the same as "no tasks".
+   */
+  confirmedAt: number | null;
+  now?: number;
+}): MobileSettingsFact {
+  if (!input.authenticated) {
+    return {
+      value: '未启用',
+      detail: '配对设备后才会确认任务清单；本机任务仍可查看',
+      tone: 'neutral',
+    };
+  }
+  if (!input.confirmedAt) {
+    return {
+      value: input.taskCount > 0 ? `${input.taskCount} 项（本机）` : '尚未确认',
+      detail: '还没有从云端确认任务清单；本机改动会在联网后确认',
+      tone: 'warning',
+    };
+  }
+  const now = input.now ?? Date.now();
+  const observed = presentObservedTime(input.confirmedAt, now);
+  const fresh = now - input.confirmedAt <= MOBILE_SETTINGS_TASK_FRESH_AFTER_MS;
+  return {
+    value: `${input.taskCount} 项已确认`,
+    detail: `最后确认 ${observed.relative} · revision ${input.revision}`,
+    tone: fresh ? 'ok' : 'warning',
+  };
+}
+
+/** The ledger queue is its own domain: queued uploads, conflicts, and rejected
+ * operations are three different failure modes and each needs its own count. */
+export function presentMobileSettingsLedgerQueue(input: {
+  pending: number;
+  conflicts: number;
+  rejected: number;
+}): MobileSettingsFact {
+  const total = input.pending + input.conflicts + input.rejected;
+  if (total === 0) {
+    return {
+      value: '无待处理',
+      detail: '没有排队上传、冲突或被拒绝的账本记录',
+      tone: 'ok',
+    };
+  }
+  return {
+    value: `${total} 条待处理`,
+    detail: `待上传 ${input.pending} · 冲突 ${input.conflicts} · 被拒绝 ${input.rejected}`,
+    tone: input.conflicts > 0 || input.rejected > 0 ? 'danger' : 'warning',
+  };
+}
+
+/** Third-party delivery (dida / TomaToDo) has no mobile implementation. Showing
+ * a neutral "desktop only" row is the honest domain split; the alternative is
+ * letting the task row imply that deliveries also synced. */
+export function presentMobileThirdPartyDelivery(): MobileSettingsFact {
+  return {
+    value: '仅桌面端',
+    detail: '滴答清单与番茄 To-do 投递在电脑端设置中管理；手机不发起投递',
+    tone: 'neutral',
+  };
+}

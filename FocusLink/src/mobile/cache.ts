@@ -569,6 +569,31 @@ export async function readCachedTaskSnapshot(
     : null;
 }
 
+/**
+ * When the cached task snapshot was confirmed for this account. The settings
+ * page shows task sync as its own domain ("confirmed at"), so it must not reuse
+ * the ledger timestamp: borrowing another channel's timestamp is exactly how
+ * the old row ended up claiming a confirmation it could not prove.
+ */
+export async function readCachedTaskSnapshotConfirmedAt(
+  expectedAccountId: string | null,
+): Promise<number | null> {
+  const database = await openDatabase();
+  const transaction = database.transaction(META_STORE, 'readonly');
+  const record = await requestValue<MetaRecord | undefined>(
+    transaction.objectStore(META_STORE).get(TASK_SNAPSHOT_KEY),
+  );
+  await transactionDone(transaction);
+  database.close();
+  return expectedAccountId &&
+    isCachedTaskSnapshotRecord(record?.value) &&
+    record.value.accountId === expectedAccountId &&
+    Number.isSafeInteger(record.value.cachedAt) &&
+    record.value.cachedAt > 0
+    ? record.value.cachedAt
+    : null;
+}
+
 export async function writeCachedTaskSnapshot(
   snapshot: TaskSnapshotResponse,
   accountId: string,

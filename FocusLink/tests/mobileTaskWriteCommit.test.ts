@@ -49,7 +49,7 @@ describe('mobile task write commit gate', () => {
     expect(
       countOccurrences(
         mobileAppSource,
-        'if (!isCurrent()) return;\n          await updateNativeAuthorityProjectionHistory(',
+        'if (!isCurrent()) return;\n          setLedgerRejectedCount(v2Status?.rejected ?? 0);\n          await updateNativeAuthorityProjectionHistory(',
       ),
     ).toBe(1);
     expect(

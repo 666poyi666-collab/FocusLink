@@ -31,6 +31,7 @@ import {
   createOfflineFocusRuntime,
   readCachedLiveFocusSnapshot,
   readCachedTaskSnapshot,
+  readCachedTaskSnapshotConfirmedAt,
   readMobileCache,
   readOfflineFocusRuntime,
   readLocalSessionSyncMeta,
@@ -243,6 +244,9 @@ export function MobileApp() {
   );
   const [titleDraft, setTitleDraft] = useState('');
   const [taskSnapshot, setTaskSnapshot] = useState<TaskSnapshotResponse | null>(null);
+  // When this device last had a task snapshot confirmed by the cloud. Task
+  // sync is its own settings domain; it must not borrow the ledger timestamp.
+  const [taskConfirmedAt, setTaskConfirmedAt] = useState<number | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [pendingCommand, setPendingCommand] = useState<MobileFocusCommand | null>(null);
   const [commandNotice, setCommandNotice] = useState<string | null>(null);
@@ -256,6 +260,9 @@ export function MobileApp() {
   const [offlineRuntime, setOfflineRuntime] = useState<OfflineFocusRuntime | null>(null);
   const [authorityMode, setAuthorityMode] = useState<MobileAuthorityMode>('cloud-live');
   const [pendingUploadCount, setPendingUploadCount] = useState(0);
+  // Rejected v2 operations are a different failure mode from queued uploads and
+  // conflicts; the settings row shows all three counts separately.
+  const [ledgerRejectedCount, setLedgerRejectedCount] = useState(0);
   // Sync v2 conflicts used to stop at "recorded": the device showed a count and
   // told the user to fix it on the desktop. Keep the decision on this device.
   const [syncConflicts, setSyncConflicts] = useState<MobileV2ConflictRecord[]>([]);
@@ -404,6 +411,7 @@ export function MobileApp() {
     taskRequests.invalidate();
     taskSnapshotRef.current = null;
     setTaskSnapshot(null);
+    setTaskConfirmedAt(null);
     setSelectedTaskId('');
     setTitleDraft('');
     try {
@@ -1016,6 +1024,7 @@ export function MobileApp() {
           }
           taskSnapshotRef.current = reconciliation.snapshot;
           setTaskSnapshot(reconciliation.snapshot);
+          setTaskConfirmedAt(Date.now());
           const accountId = mobileAccountId(connection);
           await enqueueMutation(cacheMutationQueue, async () => {
             if (canCommit() && accountId) {
@@ -1083,6 +1092,7 @@ export function MobileApp() {
         if (!write.canCommit()) return;
         taskSnapshotRef.current = response;
         setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
         const accountId = mobileAccountId(preferences);
         if (accountId) {
           await enqueueMutation(cacheMutationQueue, async () => {
@@ -1130,6 +1140,7 @@ export function MobileApp() {
         if (!write.canCommit()) throw new Error('账号已切换，本次清单创建已取消');
         taskSnapshotRef.current = response;
         setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
         const accountId = mobileAccountId(preferences);
         if (accountId) {
           await enqueueMutation(cacheMutationQueue, async () => {
@@ -1164,6 +1175,7 @@ export function MobileApp() {
         if (!write.canCommit()) return;
         taskSnapshotRef.current = response;
         setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
         const accountId = mobileAccountId(preferences);
         if (accountId) {
           await enqueueMutation(cacheMutationQueue, async () => {
@@ -1198,6 +1210,7 @@ export function MobileApp() {
         if (!write.canCommit()) return;
         taskSnapshotRef.current = response;
         setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
         const accountId = mobileAccountId(preferences);
         if (accountId) {
           await enqueueMutation(cacheMutationQueue, async () => {
@@ -1232,6 +1245,7 @@ export function MobileApp() {
         if (!write.canCommit()) return;
         taskSnapshotRef.current = response;
         setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
         const accountId = mobileAccountId(preferences);
         if (accountId) {
           await enqueueMutation(cacheMutationQueue, async () => {
@@ -1283,6 +1297,7 @@ export function MobileApp() {
         if (!write.canCommit()) return;
         taskSnapshotRef.current = response;
         setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
         const accountId = mobileAccountId(preferences);
         if (accountId) {
           await enqueueMutation(cacheMutationQueue, async () => {
@@ -1383,6 +1398,7 @@ export function MobileApp() {
           setLedgerNotice(presentation.notice);
           ledgerRetryAttempts.current = 0;
           setLedgerRetryAt(null);
+          setLedgerRejectedCount(synced.rejected);
           const conflicts = await readMobileV2Conflicts().catch(() => []);
           if (!isCurrent()) return;
           setSyncConflicts(conflicts);
@@ -1407,6 +1423,7 @@ export function MobileApp() {
             rejected: v2Status?.rejected ?? 0,
           });
           if (!isCurrent()) return;
+          setLedgerRejectedCount(v2Status?.rejected ?? 0);
           await updateNativeAuthorityProjectionHistory({
             deviceId,
             connectionLease: sourceNativeLease,
@@ -1620,6 +1637,7 @@ export function MobileApp() {
       readMobileCache(),
       readCachedLiveFocusSnapshot(cacheAccountId),
       readCachedTaskSnapshot(cacheAccountId),
+      readCachedTaskSnapshotConfirmedAt(cacheAccountId),
       readOfflineFocusRuntime(),
       readPendingDeviceSyncBundles(),
       readMobileV2Bootstrap(),
@@ -1630,6 +1648,7 @@ export function MobileApp() {
           storedLedger,
           cachedLive,
           cachedTasks,
+          cachedTaskConfirmedAt,
           savedOfflineRuntime,
           pendingUploads,
           checkpoint,
@@ -1695,6 +1714,7 @@ export function MobileApp() {
             if (!savedOfflineRuntime) setLiveSnapshotSource('cache');
           }
           setPendingUploadCount(cachedPresentation.pendingCount);
+          setLedgerRejectedCount(currentV2Status?.rejected ?? 0);
           if (
             cachedTasks &&
             cacheConnectionConfigured &&
@@ -1702,6 +1722,7 @@ export function MobileApp() {
           ) {
             taskSnapshotRef.current = cachedTasks;
             setTaskSnapshot(cachedTasks);
+            setTaskConfirmedAt(cachedTaskConfirmedAt);
           }
           if (cachedPresentation.pullState === 'partial') {
             setPullState('partial');
@@ -2414,6 +2435,7 @@ export function MobileApp() {
       setLiveSnapshotSource('none');
       taskSnapshotRef.current = null;
       setTaskSnapshot(null);
+      setTaskConfirmedAt(null);
       setSelectedTaskId('');
       setPullState('idle');
       setLedgerNotice('本机缓存已清除；云端与桌面端数据未受影响');
@@ -2586,6 +2608,9 @@ export function MobileApp() {
                   pullState={pullState}
                   taskCount={taskSnapshot?.snapshot?.tasks.length ?? 0}
                   taskRevision={taskSnapshot?.revision ?? 0}
+                  taskConfirmedAt={taskConfirmedAt}
+                  ledgerPendingCount={pendingUploadCount}
+                  ledgerRejectedCount={ledgerRejectedCount}
                   ledgerCount={cache.bundles.length}
                   onOpenAccount={() => setConfigOpen(true)}
                   appearance={appearance}
