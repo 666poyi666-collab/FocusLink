@@ -1,5 +1,23 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-CONFLICT`：移动端同步冲突的决定闭环（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 3 个 P0 切片（前两轮：任务写通道取消与身份重验、离线结束身份固化）。
+- **审计证据（只读）**：`FocusLink/test-data/audit/durability.md` 的 P0-3——改前 `src/mobile/v2Cache.ts:478-488`、`525-539` 只写冲突行；`cloud/accountDurableObject.ts:586-593`、`2808-2832` 的 resolve 端点全仓零调用；`src/mobile/SyncV2Management.tsx:21` 写好但无 import；`src/mobile/NativeSystemControls.tsx:500-508` 让用户「去电脑端处理」，桌面端只有 `src/SettingsPanel.tsx:528` 的 toast 计数。
+- **路径更正（重要）**：审计建议走 `POST /v2/conflicts/:id/resolve`，但本地冲突的 `conflictId` 是 `remote-<changeSeq>-<entityType>-<entityId>`，云端没有对应 `v2_conflicts` 行（服务端只在它自己检测到分叉时建行），该端点对本机这种本地记录不可用。闭环因此改走标准 exchange 的普通 mutation：`opId = resolve:<conflictId>:<side>` 幂等、`baseRevision` / `baseFingerprint` 取已物化的远端 revision，ACK `applied`/`duplicate` 即收敛。
+- **修掉的缺口**：
+  1. **P0 冲突只有记录、没有消费方**：本地冲突行带着 `base` / `local` / `remote` 三份 payload 却无人读取，用户在手机上只能看到计数或被支去电脑端。
+  2. **P1 决定后旧写仍会上传**：同一 `entityType`+`entityId` 原来那条 pending outbox 不会因为用户做了决定而失效，语义脏且多打一次注定被判冲突的上传。
+- **落地改动**：
+  1. `src/mobile/v2ConflictResolution.ts`（新，纯模块、无 IndexedDB 依赖）：`MobileV2ConflictRecord`（在 `SyncV2Conflict` 上补 `remoteRevision` / `remoteFingerprint`）、`normalizeMobileV2ConflictRecord()`（兼容旧行，缺字段降级为不可裁决）、`presentMobileV2Conflicts()` / `presentMobileV2Conflict()`（中文实体标签与原因标签）、`describeMobileV2ConflictDifferences()`（账本 8 项、会话信息 5 项、删除/保留的存在性行）、`mobileV2ConflictBlockedReason()`（版本号缺失、payload 与实体类型不符时拒绝提交）、`mobileV2ConflictResolutionOpId()` / `findMobileV2ConflictForResolutionOpId()`（不解析自由格式 id，实体 id 里带冒号也不会错配）、`buildMobileV2ConflictResolution()`（put / delete 与 base revision）、`normalizeMobileV2ConflictResolutionOutcome()` / `describeMobileV2ConflictResolution()`（六种结局文案）。
+  2. `src/mobile/v2Cache.ts`：`putRemoteConflict()` 写入时记录 `remoteRevision` / `remoteFingerprint`；`readMobileV2Conflicts()` 归一化并丢弃损坏行；`applyMobileV2ChangesAndCheckpoint()` 的 ACK 分支在同一事务里把匹配的冲突行置 `resolved`（`resolutionOpId` 记下是哪次决定），冲突行与 ACK 不会出现一半一半；新增 `supersedeMobileV2PendingMutations()`（只删同实体、同设备凭据、状态为 `pending`/`retry` 且 `opId` 不同的行，已 `uploading` 的行留给原 lease，避免 ACK 校验抛「Sync v2 ACK 不属于当前持久 lease」把整轮 drain 打挂）。
+  3. `src/mobile/MobileApp.tsx`：`syncConflicts` / `conflictBusyId` / `conflictNotice` 三个状态；`pullLedger()` 成功与失败分支都刷新冲突列表（仍过身份闸门）；新增 `resolveSyncConflict()`＝取基线 → 构造 mutation → 清掉被取代的旧写 → 入队 → 立即拉账本 → 按操作历史回读结局 → 刷新列表，全程防重复点击；启动时也读一次冲突，切连接后重读。
+  4. `src/mobile/SettingsView.tsx` + `src/mobile/mobile-2-0.css`：设置页新增「同步冲突」分区，逐条显示标题、原因、本机/云端两列差异与提示；两个 44px 按钮「保留本机」「采用云端」，提交中禁用并显示结果文案；空态为「本机与云端当前一致，没有需要你决定的差异。」；不再出现「去电脑端处理」。
+- **测试**：新增 `tests/mobileV2ConflictResolution.test.ts` 15 项（presentation 过滤与排序、账本/会话字段差异、缺失一侧的存在性行、版本号缺失与 payload 类型不符时不可裁决、put/delete 的 base 与 opId、opId 归属查找、六种结局文案、旧行归一化；IndexedDB 侧＝造出真实远端冲突后决定 → ACK 同事务收敛为 `resolved` 且实体 `confirmedRevision` 前进、云端回 `conflict` 时冲突保持 open、已租约的行不被 supersede 删除；源码契约＝设置页有决策入口、`MobileApp` 走标准 exchange）。同步改 `tests/mobileLedgerSyncPresentation.test.ts` 的 import 契约断言（`v2Cache` import 已扩为多行）。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 Worker）exit 0、`npm run lint` exit 0、`npm test` **153 文件 / 1305 用例全过** exit 0、`npm run build:web` exit 0（index JS 557.69 → 574.89 kB、CSS 570.59 kB，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无手机/平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。用户在用的 Windows 端仍是 1.6.8，因此本闭环在真机上的效果属于「证据记录」，不是「实测」。
+- **下一轮候选（审计已有证据）**：429/5xx 与 `contract_error` 分域 + 指数退避 + `Retry-After`（`src/mobile/v2Sync.ts:494-506`、`520-522`、`268-273`；`src/mobile/v2Cache.ts:494-519`）、原生命令 drain 取消（P1-2）、同连接重复拉取去重（P1-3）、设置页状态分域（`src/mobile/SettingsView.tsx:96-107` + `settingsStatusPresentation.ts:16-125`）、孤立组件 `src/mobile/SyncV2Management.tsx` 挂载或删除。
+
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-COMPLETION`：移动端离线结束的身份固化与三态化（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》的 §二「同步一致性」，本轮做第 2 个 P0 切片（上一轮修了任务写通道的取消与身份重验）。

@@ -15,6 +15,11 @@ import {
 } from '@shared/sync/deviceProtocol';
 import type { FocusLedgerV2, FocusMetadataV2, SyncV2Change } from '@shared/sync/v2Protocol';
 import { openMobileDatabase, type CachedBundle } from './cache';
+import {
+  findMobileV2ConflictForResolutionOpId,
+  normalizeMobileV2ConflictRecord,
+  type MobileV2ConflictRecord,
+} from './v2ConflictResolution';
 
 const OUTBOX = 'syncOutbox';
 const ENTITY_STATE = 'syncEntityState';
@@ -75,12 +80,13 @@ export async function applyMobileV2ChangesAndCheckpoint(input: {
   const metaStore = transaction.objectStore(META);
   const completion = done(transaction);
   try {
-    const result = await readFourInTransaction(
+    const result = await readFiveInTransaction(
       metaStore.get(BOOTSTRAP_KEY),
       entityStore.getAll(),
       outboxStore.getAll(),
       bundleStore.getAll(),
-      (ownerRecord, storedStates, pending, cached) => {
+      conflictStore.getAll(),
+      (ownerRecord, storedStates, pending, cached, storedConflicts) => {
         assertCheckpointOwner(
           (ownerRecord as { value?: MobileV2BootstrapCheckpoint } | undefined)?.value,
           input.checkpoint,
@@ -139,6 +145,21 @@ export async function applyMobileV2ChangesAndCheckpoint(input: {
               completedAt: Date.now(),
             });
             outboxStore.delete(ack.opId);
+            // A conflict decision is settled by the same ACK that settles its
+            // mutation, so the conflict row can never stay open after the
+            // chosen version became the confirmed one.
+            const resolvedConflict = findMobileV2ConflictForResolutionOpId(
+              storedConflicts,
+              ack.opId,
+            );
+            if (resolvedConflict) {
+              conflictStore.put({
+                ...resolvedConflict,
+                status: 'resolved',
+                resolvedAt: Date.now(),
+                resolutionOpId: ack.opId,
+              } satisfies MobileV2ConflictRecord);
+            }
             continue;
           }
           outboxStore.put({
@@ -364,6 +385,49 @@ export async function enqueueMobileV2Mutation(
   }
 }
 
+export async function supersedeMobileV2PendingMutations(
+  expectedCheckpoint: MobileV2BootstrapCheckpoint,
+  target: { entityType: SyncV2Mutation['entityType']; entityId: string; keepOpId: string },
+): Promise<number> {
+  const database = await openMobileDatabase();
+  const transaction = database.transaction([OUTBOX, META], 'readwrite');
+  const store = transaction.objectStore(OUTBOX);
+  const completion = done(transaction);
+  try {
+    const removed = await readTwoInTransaction(
+      store.getAll(),
+      transaction.objectStore(META).get(BOOTSTRAP_KEY),
+      (records: SyncV2OutboxItem[], ownerRecord) => {
+        const owner = ownerRecord as { value?: MobileV2BootstrapCheckpoint } | undefined;
+        assertCheckpointOwner(owner?.value, expectedCheckpoint);
+        const superseded = records.filter(
+          (item) =>
+            item.entityType === target.entityType &&
+            item.entityId === target.entityId &&
+            item.opId !== target.keepOpId &&
+            item.deviceId === expectedCheckpoint.boundDeviceId &&
+            item.accountGeneration === expectedCheckpoint.accountGeneration &&
+            (item.state === 'pending' || item.state === 'retry'),
+        );
+        for (const item of superseded) store.delete(item.opId);
+        return superseded.length;
+      },
+    );
+    await completion;
+    return removed;
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      // A request failure can abort the transaction before this catch runs.
+    }
+    await completion.catch(() => undefined);
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
 export async function claimMobileV2Outbox(
   expectedCheckpoint: MobileV2BootstrapCheckpoint,
   limit: number,
@@ -530,13 +594,15 @@ export async function writeMobileV2Conflict(conflict: SyncV2Conflict): Promise<v
   database.close();
 }
 
-export async function readMobileV2Conflicts(): Promise<SyncV2Conflict[]> {
+export async function readMobileV2Conflicts(): Promise<MobileV2ConflictRecord[]> {
   const database = await openMobileDatabase();
   const transaction = database.transaction(CONFLICTS, 'readonly');
-  const values = (await request(transaction.objectStore(CONFLICTS).getAll())) as SyncV2Conflict[];
+  const values = (await request(transaction.objectStore(CONFLICTS).getAll())) as unknown[];
   await done(transaction);
   database.close();
-  return values;
+  return values
+    .map((value) => normalizeMobileV2ConflictRecord(value))
+    .filter((value): value is MobileV2ConflictRecord => value !== null);
 }
 
 export async function readMobileV2OperationHistory(): Promise<unknown[]> {
@@ -835,7 +901,9 @@ function putRemoteConflict(
     createdAt: now,
     resolvedAt: null,
     resolutionOpId: null,
-  } satisfies SyncV2Conflict);
+    remoteRevision: change.revision,
+    remoteFingerprint: change.fingerprint,
+  } satisfies MobileV2ConflictRecord);
   historyStore.put({
     opId: `remote-${change.changeSeq}`,
     entityType: change.entityType,
@@ -950,24 +1018,21 @@ function readTwoInTransaction<A, B, R>(
   });
 }
 
-/**
- * Runs the write phase from the last IndexedDB success callback. Older Android
- * WebViews may auto-commit a readwrite transaction before an awaited Promise
- * continuation can enqueue more requests.
- */
-function readFourInTransaction<A, B, C, D, R>(
+function readFiveInTransaction<A, B, C, D, E, R>(
   first: IDBRequest<A>,
   second: IDBRequest<B>,
   third: IDBRequest<C>,
   fourth: IDBRequest<D>,
-  apply: (first: A, second: B, third: C, fourth: D) => R,
+  fifth: IDBRequest<E>,
+  apply: (first: A, second: B, third: C, fourth: D, fifth: E) => R,
 ): Promise<R> {
   return new Promise((resolve, reject) => {
-    let remaining = 4;
+    let remaining = 5;
     let firstValue: A;
     let secondValue: B;
     let thirdValue: C;
     let fourthValue: D;
+    let fifthValue: E;
     let settled = false;
     const fail = (error: DOMException | null) => {
       if (settled) return;
@@ -979,7 +1044,7 @@ function readFourInTransaction<A, B, C, D, R>(
       if (remaining !== 0 || settled) return;
       try {
         settled = true;
-        resolve(apply(firstValue, secondValue, thirdValue, fourthValue));
+        resolve(apply(firstValue, secondValue, thirdValue, fourthValue, fifthValue));
       } catch (error) {
         settled = true;
         reject(error);
@@ -1001,10 +1066,15 @@ function readFourInTransaction<A, B, C, D, R>(
       fourthValue = fourth.result;
       finish();
     };
+    fifth.onsuccess = () => {
+      fifthValue = fifth.result;
+      finish();
+    };
     first.onerror = () => fail(first.error);
     second.onerror = () => fail(second.error);
     third.onerror = () => fail(third.error);
     fourth.onerror = () => fail(fourth.error);
+    fifth.onerror = () => fail(fifth.error);
   });
 }
 

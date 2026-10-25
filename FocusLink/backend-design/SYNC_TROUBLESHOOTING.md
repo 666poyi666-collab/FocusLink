@@ -597,3 +597,21 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 3. 修复后的判定口径：同一 session 第二次结束必须是 `reusedFreeze:true` + `native:'duplicate'` 或 `'identity-conflict'`，提示文案不得出现「已安全保存」；`pending===null` 时草稿必须保留。对应测试为 `tests/mobileOfflineCompletionIdempotency.test.ts`。
 4. 已经产生的双写分叉不会自动消失：服务端冲突需要人工处理，不要通过改本地 `endedAt` 或伪造 revision 来「修好」。
 
+## FL-SYNC-028：手机上的同步冲突一直挂着，看得到却点不动
+
+### 区分症状
+
+1. 设置页出现「同步冲突」分区并列出同一场专注的两列差异（本机 vs 云端），点「保留本机」或「采用云端」后没有任何结果文案，条目也不消失。只有 1.6.9 及以后的构建有这个分区；1.6.8 及更早根本没有入口。
+2. 老版本表现为：账本卡片显示冲突计数，或被 `NativeSystemControls` 提示「去电脑端处理」，而桌面端只有一条 toast 计数，找不到能点的地方。这是同一条缺口的旧面孔。
+3. 结束专注时的离线双写（FL-SYNC-027）和任务写通道越权（FL-SYNC-026）是另外两条链路，不要按本条处理。
+
+### 含义
+
+2026-10-26 之前，冲突只在本地被「记录」：`src/mobile/v2Cache.ts` 的 `putRemoteConflict()` 往 `syncConflicts` 写一行，带 `base` / `local` / `remote` 三份 payload，但全仓没有消费方。`src/mobile/SyncV2Management.tsx` 写好了却没有任何 import；`POST /v2/conflicts/:id/resolve` 只有服务端实现、零调用，而且对本机这种 `remote-<changeSeq>-<type>-<entityId>` 的本地记录不成立（云端没有对应的冲突行）。结果是账本永远「有 1 条冲突」，用户既看不到差异也做不了决定。
+
+### 处理步骤
+
+1. 先确认版本：本闭环在 1.6.9 及以后；1.6.8 及更早没有设置页分区。代码入口是 `src/mobile/v2ConflictResolution.ts` 与 `src/mobile/MobileApp.tsx` 的 `resolveSyncConflict()`。
+2. 核对显示：设置 →「同步冲突」，每条应显示标题、原因、本机/云端两列差异；`blockedReason` 非空时两个按钮禁用并给出原因（版本号缺失、payload 类型不符）。
+3. 判定口径：点下决定后必须出现六种结局之一（已按你的选择收敛 / 这次选择此前已提交过 / 冲突还在 / 云端拒绝了这次选择 / 已排队 / 还没拿到回执）；同一行应收敛为 `resolved`，`resolutionOpId === resolve:<conflictId>:<side>`；同一实体的旧 pending 上传必须被 `supersedeMobileV2PendingMutations()` 清掉，不能与决定一起上传。
+4. 云端同时被别的设备改过时会得到 `conflict`，冲突仍在——刷新账本按新差异再选一次即可；不要手改 IndexedDB，也不要用 `POST /v2/conflicts/:id/resolve` 去凑本地记录（云端没有那行，必然 404）。

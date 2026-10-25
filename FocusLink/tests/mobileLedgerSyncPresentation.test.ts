@@ -104,8 +104,8 @@ describe('mobile ledger sync presentation', () => {
     expect(mobileAppSource).toContain('currentV2Status?.lastVerifiedAt ?? null');
     expect(mobileAppSource).not.toContain('lastVerifiedAt: ledger.lastSyncAt');
     expect(mobileAppSource).not.toContain('lastVerifiedAt: cacheRef.current.lastSyncAt');
-    expect(mobileAppSource).toContain(
-      "import { readMobileV2Bootstrap, readMobileV2Status } from './v2Cache';",
+    expect(mobileAppSource).toMatch(
+      /import \{[\s\S]*?readMobileV2Bootstrap,[\s\S]*?readMobileV2Status,[\s\S]*?\} from '\.\/v2Cache';/,
     );
     expect(mobileAppSource).not.toContain('账本同步已确认');
   });

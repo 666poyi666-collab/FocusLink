@@ -151,7 +151,22 @@ import {
   presentMobileLedgerSync,
 } from './ledgerSyncPresentation';
 import { runMobileSyncV2 } from './v2Sync';
-import { readMobileV2Bootstrap, readMobileV2Status } from './v2Cache';
+import {
+  enqueueMobileV2Mutation,
+  readMobileV2Bootstrap,
+  readMobileV2Conflicts,
+  readMobileV2OperationHistory,
+  readMobileV2Status,
+  supersedeMobileV2PendingMutations,
+} from './v2Cache';
+import {
+  buildMobileV2ConflictResolution,
+  describeMobileV2ConflictResolution,
+  normalizeMobileV2ConflictResolutionOutcome,
+  presentMobileV2Conflicts,
+  type MobileV2ConflictRecord,
+  type MobileV2ConflictSide,
+} from './v2ConflictResolution';
 import { offlineCompletionNotice, persistCompletedOfflineFocus } from './offlineCompletion';
 import type { DeviceSyncManagedDevice } from '@shared/ipc/api';
 import {
@@ -233,6 +248,11 @@ export function MobileApp() {
   const [offlineRuntime, setOfflineRuntime] = useState<OfflineFocusRuntime | null>(null);
   const [authorityMode, setAuthorityMode] = useState<MobileAuthorityMode>('cloud-live');
   const [pendingUploadCount, setPendingUploadCount] = useState(0);
+  // Sync v2 conflicts used to stop at "recorded": the device showed a count and
+  // told the user to fix it on the desktop. Keep the decision on this device.
+  const [syncConflicts, setSyncConflicts] = useState<MobileV2ConflictRecord[]>([]);
+  const [conflictBusyId, setConflictBusyId] = useState<string | null>(null);
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<MobileAppearance>(() => loadMobileAppearance());
   const [clearCacheDialogOpen, setClearCacheDialogOpen] = useState(false);
   const [nativeSystemControls, setNativeSystemControls] = useState<NativeFocusConsoleControls>(
@@ -1330,6 +1350,9 @@ export function MobileApp() {
           setCache(snapshot);
           setPullState(presentation.pullState);
           setLedgerNotice(presentation.notice);
+          const conflicts = await readMobileV2Conflicts().catch(() => []);
+          if (!isCurrent()) return;
+          setSyncConflicts(conflicts);
         } catch (error) {
           if (!isCurrent() || isAbortError(error)) return;
           const [pending, v2Status] = await Promise.all([
@@ -1372,6 +1395,9 @@ export function MobileApp() {
               .filter(Boolean)
               .join('；'),
           );
+          const conflicts = await readMobileV2Conflicts().catch(() => []);
+          if (!isCurrent()) return;
+          setSyncConflicts(conflicts);
         } finally {
           if (ledgerRequest.current === controller) ledgerRequest.current = null;
         }
@@ -1379,6 +1405,77 @@ export function MobileApp() {
     },
     [deviceId, ledgerPulls, nativeConnectionLease],
   );
+
+  // Conflict decisions run through the normal exchange: the cloud has no
+  // conflict row for a revision divergence, so the choice becomes a fresh
+  // mutation based on the remote revision this device already materialized.
+  const resolveSyncConflict = useCallback(
+    async (conflictId: string, side: MobileV2ConflictSide) => {
+      const record = syncConflicts.find((item) => item.conflictId === conflictId);
+      if (!record) {
+        setConflictNotice('这条冲突已经不在列表里，刷新一次账本再看。');
+        return;
+      }
+      const checkpoint = await readMobileV2Bootstrap().catch(() => null);
+      if (!checkpoint) {
+        setConflictNotice('本机还没有同步基线，先配对设备并刷新一次账本。');
+        return;
+      }
+      const resolution = buildMobileV2ConflictResolution({ conflict: record, side, checkpoint });
+      if (!resolution.ok) {
+        setConflictNotice(resolution.reason);
+        return;
+      }
+      setConflictBusyId(conflictId);
+      setConflictNotice('正在把你的选择提交到云端…');
+      try {
+        // The decision replaces whatever this device had queued for the same
+        // entity; keeping the superseded upload would race the choice.
+        await supersedeMobileV2PendingMutations(checkpoint, {
+          entityType: resolution.mutation.entityType,
+          entityId: resolution.mutation.entityId,
+          keepOpId: resolution.opId,
+        }).catch(() => 0);
+        await enqueueMobileV2Mutation(resolution.mutation, checkpoint);
+        await pullLedger(preferencesRef.current, cacheRef.current.cursor);
+        const history = (await readMobileV2OperationHistory().catch(() => [])) as Array<{
+          opId?: unknown;
+          status?: unknown;
+          errorCode?: unknown;
+        }>;
+        const entry = history.find((item) => item.opId === resolution.opId);
+        setConflictNotice(
+          describeMobileV2ConflictResolution(
+            normalizeMobileV2ConflictResolutionOutcome(entry?.status),
+            typeof entry?.errorCode === 'string' ? entry.errorCode : null,
+          ),
+        );
+        const conflicts = await readMobileV2Conflicts().catch(() => []);
+        setSyncConflicts(conflicts);
+      } catch (error) {
+        setConflictNotice(
+          isAbortError(error)
+            ? '账号连接在提交过程中变了，这次选择没有提交。'
+            : `提交选择失败：${errorMessage(error)}`,
+        );
+      } finally {
+        setConflictBusyId(null);
+      }
+    },
+    [pullLedger, syncConflicts],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void readMobileV2Conflicts()
+      .then((records) => {
+        if (!cancelled) setSyncConflicts(records);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionEpoch, deviceId]);
 
   useEffect(() => {
     preferencesRef.current = preferences;
@@ -2349,6 +2446,12 @@ export function MobileApp() {
                   onOpenAccount={() => setConfigOpen(true)}
                   appearance={appearance}
                   onAppearanceChange={setAppearance}
+                  conflicts={presentMobileV2Conflicts(syncConflicts)}
+                  conflictBusyId={conflictBusyId}
+                  conflictNotice={conflictNotice}
+                  onResolveConflict={(conflictId, side) =>
+                    void resolveSyncConflict(conflictId, side)
+                  }
                 />
               )}
             </motion.div>

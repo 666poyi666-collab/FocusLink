@@ -1369,3 +1369,127 @@ html[data-runtime='mobile-focus'] .task-browser .task-toolbar > .task-status-swi
   background: transparent;
   box-shadow: none;
 }
+
+/* ───────────── 26. 同步冲突：只处理冲突，不再把用户推给电脑端 ─────────────
+   冲突条目沿用设置页的「连续工作面 + 发丝分隔」：透明底、零圆角，只有行间发丝线。
+   决定按钮压到 44px 触控高度（§三 UI 统一的最低触控线），左右各占一半，
+   拇指在单手竖握时都能点到；禁用态只降透明度，不改布局，避免行高跳动。 */
+html[data-runtime='mobile-focus'] .settings-conflict-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-card .settings-section-heading h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-card .settings-section-heading h3 svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-notice {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--focus);
+  background: var(--focus-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-row {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-row header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-row header strong {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-row header span {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-diff div {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-diff dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-diff dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-action {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-action:disabled {
+  opacity: 0.45;
+}
+
+html[data-runtime='mobile-focus'] .settings-conflict-action-primary {
+  border-color: var(--focus);
+  color: var(--focus);
+}

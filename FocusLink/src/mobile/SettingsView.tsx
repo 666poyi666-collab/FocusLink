@@ -1,6 +1,7 @@
 import {
   Cloud,
   Database,
+  GitMerge,
   History,
   ListTodo,
   SlidersHorizontal,
@@ -28,6 +29,7 @@ import {
   type MobileSettingsFactTone,
   type MobileSettingsPullState,
 } from './settingsStatusPresentation';
+import type { MobileV2ConflictPresentation, MobileV2ConflictSide } from './v2ConflictResolution';
 
 interface SettingsViewProps {
   connection: LiveConnectionState;
@@ -42,6 +44,10 @@ interface SettingsViewProps {
   onOpenAccount: () => void;
   appearance: MobileAppearance;
   onAppearanceChange: (value: MobileAppearance) => void;
+  conflicts: MobileV2ConflictPresentation[];
+  conflictBusyId: string | null;
+  conflictNotice: string | null;
+  onResolveConflict: (conflictId: string, side: MobileV2ConflictSide) => void;
 }
 
 export function SettingsView({
@@ -57,6 +63,10 @@ export function SettingsView({
   onOpenAccount,
   appearance,
   onAppearanceChange,
+  conflicts,
+  conflictBusyId,
+  conflictNotice,
+  onResolveConflict,
 }: SettingsViewProps) {
   const connectionFact = presentMobileSettingsConnection({
     authenticated,
@@ -109,6 +119,77 @@ export function SettingsView({
       <p className="settings-fact-explainer">
         账本新鲜度 = 最近一次从云端确认专注记录的时间；它不是网速，也不代表任务同步状态。
       </p>
+
+      <section
+        className="settings-card settings-conflict-card"
+        aria-labelledby="settings-conflicts-title"
+      >
+        <div className="settings-section-heading">
+          <div>
+            <p className="eyebrow">CONFLICT RESOLUTION</p>
+            <h3 id="settings-conflicts-title">
+              <GitMerge aria-hidden="true" />
+              同步冲突
+            </h3>
+          </div>
+          <span className="settings-section-note">
+            {conflicts.length === 0 ? '没有待处理冲突' : `${conflicts.length} 条待决定`}
+          </span>
+        </div>
+        <p className="settings-fact-explainer">
+          同一场专注在两台设备上被改成了不同内容时，云端不会替谁选边。下面逐条列出差异；你选哪一边，云端就按哪一边收敛。
+        </p>
+        {conflictNotice !== null && (
+          <p className="settings-conflict-notice" role="status">
+            {conflictNotice}
+          </p>
+        )}
+        {conflicts.length === 0 ? (
+          <p className="settings-fact-explainer">本机与云端当前一致，没有需要你决定的差异。</p>
+        ) : (
+          <ul className="settings-conflict-list">
+            {conflicts.map((conflict) => (
+              <li className="settings-conflict-row" key={conflict.conflictId}>
+                <header>
+                  <strong>{conflict.headline}</strong>
+                  <span>{conflict.reasonLabel}</span>
+                </header>
+                <dl className="settings-conflict-diff">
+                  {conflict.differences.map((difference) => (
+                    <div key={difference.field}>
+                      <dt>{difference.label}</dt>
+                      <dd>本机：{difference.localValue}</dd>
+                      <dd>云端：{difference.remoteValue}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="settings-conflict-hint">
+                  {conflict.blockedReason ??
+                    '选一边作为这场专注的最终版本；另一边会被这次决定覆盖。'}
+                </p>
+                <div className="settings-conflict-actions">
+                  <button
+                    className="settings-conflict-action"
+                    type="button"
+                    disabled={!conflict.resolvable || conflictBusyId !== null}
+                    onClick={() => onResolveConflict(conflict.conflictId, 'local')}
+                  >
+                    <span>保留本机</span>
+                  </button>
+                  <button
+                    className="settings-conflict-action settings-conflict-action-primary"
+                    type="button"
+                    disabled={!conflict.resolvable || conflictBusyId !== null}
+                    onClick={() => onResolveConflict(conflict.conflictId, 'remote')}
+                  >
+                    <span>采用云端</span>
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="mobile-appearance-panel" aria-labelledby="mobile-appearance-title">
         <div className="settings-section-heading">
