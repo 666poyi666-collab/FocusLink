@@ -187,6 +187,7 @@ import {
   advanceMobileTaskSnapshotStreak,
   nextMobileTaskSnapshotDelayMs,
 } from './taskSnapshotCadence';
+import { presentMobileSyncActivity } from './syncFeedback';
 import { isTabletFocusViewport } from './viewportPolicy';
 import {
   createEmptyTaskSnapshot,
@@ -250,7 +251,7 @@ export function MobileApp() {
   );
   const foregroundActive = isMobileForegroundActive({ appActive, documentVisible });
   const [pullState, setPullState] = useState<PullState>('idle');
-  const [, setLedgerNotice] = useState('正在读取本机会话账本…');
+  const [ledgerNotice, setLedgerNotice] = useState('正在读取本机会话账本…');
   const [liveSnapshot, setLiveSnapshot] = useState<LiveFocusSnapshotLike | null>(null);
   const [liveConnection, setLiveConnection] = useState<LiveConnectionState>(
     initialPreferences.endpoint && initialPreferences.token ? 'connecting' : 'unconfigured',
@@ -2508,6 +2509,9 @@ export function MobileApp() {
   };
 
   const configured = Boolean(preferences.endpoint && preferences.token);
+  // The sync chip doubles as the manual-refresh receipt: while a ledger check runs it
+  // says so, instead of looking like the tap did nothing until the pull settles.
+  const syncActivity = presentMobileSyncActivity({ configured, pullState });
   const activeViewTitle =
     activeView === 'focus'
       ? '专注'
@@ -2543,12 +2547,14 @@ export function MobileApp() {
             }
             aria-label={
               configured
-                ? `多端同步：${connectionTitle(liveConnection)}，点击刷新`
+                ? `多端同步：${syncActivity.detail ?? connectionTitle(liveConnection)}，点击刷新`
                 : '当前为本机模式，点击打开多端同步'
             }
           >
             <span className={`network-dot ${online ? 'online' : 'offline'}`} aria-hidden="true" />
-            <span>{configured ? connectionTitle(liveConnection) : '本机'}</span>
+            <span>
+              {configured ? (syncActivity.label ?? connectionTitle(liveConnection)) : '本机'}
+            </span>
           </button>
           {activeView !== 'settings' && (
             <button
@@ -2669,6 +2675,7 @@ export function MobileApp() {
                   authenticated={configured}
                   lastSyncAt={cache.lastSyncAt}
                   pullState={pullState}
+                  ledgerNotice={ledgerNotice}
                   taskCount={taskSnapshot?.snapshot?.tasks.length ?? 0}
                   taskRevision={taskSnapshot?.revision ?? 0}
                   taskConfirmedAt={taskConfirmedAt}

@@ -33,6 +33,7 @@ import {
   type MobileSettingsPullState,
 } from './settingsStatusPresentation';
 import type { MobileV2ConflictPresentation, MobileV2ConflictSide } from './v2ConflictResolution';
+import { presentMobileLedgerNotice } from './syncFeedback';
 
 interface SettingsViewProps {
   connection: LiveConnectionState;
@@ -41,6 +42,8 @@ interface SettingsViewProps {
   authenticated: boolean;
   lastSyncAt: number | null;
   pullState: MobileSettingsPullState;
+  /** The ledger pull's own sentence: what it is doing, or why it failed. Null hides it. */
+  ledgerNotice: string | null;
   taskCount: number;
   taskRevision: number;
   /** Local receipt time of the last cloud-confirmed task snapshot. */
@@ -68,6 +71,7 @@ export function SettingsView({
   authenticated,
   lastSyncAt,
   pullState,
+  ledgerNotice,
   taskCount,
   taskRevision,
   taskConfirmedAt,
@@ -108,6 +112,7 @@ export function SettingsView({
     rejected: ledgerRejectedCount,
   });
   const deliveryFact = presentMobileThirdPartyDelivery();
+  const ledgerNoticeView = presentMobileLedgerNotice({ notice: ledgerNotice, pullState });
   return (
     <section className="settings-view view-surface" aria-labelledby="settings-view-title">
       <header className="view-heading">
@@ -168,6 +173,15 @@ export function SettingsView({
         账本新鲜度 = 最近一次从云端确认专注记录的时间；它不是网速，也不代表任务同步状态。
         这几格互不代偿：实时连接看当下连通性，任务同步看任务清单是否已确认，账本待处理看排队、冲突与被拒绝的条数。
       </p>
+      {ledgerNoticeView !== null && (
+        <p
+          className={`settings-ledger-notice tone-${ledgerNoticeView.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          {ledgerNoticeView.text}
+        </p>
+      )}
 
       <section
         className="settings-card settings-conflict-card"

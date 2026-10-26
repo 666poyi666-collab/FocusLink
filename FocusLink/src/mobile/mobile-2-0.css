@@ -1506,3 +1506,28 @@ html[data-runtime='mobile-focus'] .native-terminal-ledger-repair button {
   font: inherit;
   font-size: 14px;
 }
+
+/* 27 账本拉取回执 */
+/* 拉取层本来就写了「正在拉取…」「云端账本响应异常」这类句子，但之前没有任何位置渲染它，
+   用户点同步只看到状态没变化。这里给回执一个固定位置：动作中/失败/已完成各一种色调。 */
+html[data-runtime='mobile-focus'] .settings-ledger-notice {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+html[data-runtime='mobile-focus'] .settings-ledger-notice.tone-active {
+  border-left-color: var(--focus);
+  background: var(--focus-soft);
+  color: var(--text);
+}
+
+html[data-runtime='mobile-focus'] .settings-ledger-notice.tone-error {
+  border-left-color: var(--danger);
+  color: var(--text);
+}

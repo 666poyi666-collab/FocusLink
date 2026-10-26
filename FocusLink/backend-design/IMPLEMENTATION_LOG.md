@@ -1,5 +1,23 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-MOBILE-PULL-FEEDBACK`：移动端账本拉取的回执与同步片回执（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》§二「状态分域」的收尾切片。审计 `sync-dispatch.md` 的 P2-5 记着「手动刷新只 `epoch++`、没有任何反馈」；读码后确认比审计记录更严重：拉取层早就写好了回执句子，但 `src/mobile/MobileApp.tsx:253` 是 `const [, setLedgerNotice] = useState(...)`——值被丢弃，「正在拉取已结束会话账本…」「云端账本响应异常」这类句子从来没有渲染过，成功、失败、动作中三种回执全都不在屏幕上。
+- **范围更正（手表）**：动手前核对 AGENTS.md 发现「OPPO OWW221 于 2026-08-11 退役，retired OPPO renderer is frozen and out of scope」，而 `src/mobile/WatchApp.tsx:1` 明确写着这是手表端（OPPO OWW221）渲染层 → 手表侧的条件读与节奏**不做**；上一轮日志与本轮之前的报告里「手表页未跟上条件读」的候选作废，手表渲染层保持冻结。
+- **修掉的缺口**：
+  1. **P2 手动刷新没有可见回执**：点顶栏同步片会触发一次拉取，但按钮文字仍是连接文案，拉取期间与失败后屏幕没有任何变化，用户只能靠「再点一次看有没有不同」判断。
+  2. **P2 拉取回执是死状态**：`ledgerNotice` 被 `setLedgerNotice` 写入却从未读取；失败原因只活在而后的 `retryNotice` 后缀里，一旦重试定时器被清掉，用户就再也看不到上次为什么失败。
+- **落地改动**：
+  1. `src/mobile/syncFeedback.ts`（新，纯模块）：`presentMobileSyncActivity({configured, pullState})` 只在「已配对 + 正在拉取」时把顶栏文案换成「检查中」并给出「正在核对云端账本…」，其余状态一律返回 `null` 让连接文案继续生效（失败态不抢连接信息，原因改在设置页）；`presentMobileLedgerNotice({notice, pullState})` 把回执句子按拉取状态归一成 `active` / `error` / `neutral` 三种色调，空白句子直接返回 `null` 而不是留空占位。
+  2. `src/mobile/MobileApp.tsx:254` 恢复 `ledgerNotice` 的读取；`:2514` 由 `presentMobileSyncActivity` 派生 `syncActivity`；`:2556` 顶栏文案改为 `syncActivity.label ?? connectionTitle(...)`，`:2550` 的 `aria-label` 带上 `syncActivity.detail`（读屏能听到「正在核对云端账本…」）；`:2678` 把 `ledgerNotice` 传给设置页。
+  3. `src/mobile/SettingsView.tsx:46/74/115/176-183` 新增 `ledgerNotice` 入参，用 `presentMobileLedgerNotice` 渲染 `role="status"` + `aria-live="polite"` 的回执行，三种色调各一个 class。
+  4. `src/mobile/mobile-2-0.css:1513/1524/1530` 新增第 27 节：回执行左边框 2px，`tone-active` 用 `--focus` + `--focus-soft`，`tone-error` 用 `--danger`，正文 13px、`overflow-wrap:anywhere`。
+- **测试**：新增 `tests/mobileSyncFeedback.test.ts` 9 项——同步片只在「已配对 + 拉取中」给出「检查中/正在核对云端账本…」，其余四种拉取状态与未配对都返回 `null`；回执空白（`null`/`undefined`/纯空格）返回 `null`、首尾空白被裁掉、色调由拉取状态而非句子内容决定；三处源码契约（MobileApp 用纯函数派生并对 `ledgerNotice` 双向接线、SettingsView 渲染 `role="status"` 与色调 class、CSS 三种色调齐全）。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **161 文件 / 1390 用例全过** exit 0、`npm run build:web` exit 0（index JS 584.05 → 584.63 kB、CSS 571.03 → 571.52 kB，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无小米手机与华为平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。因此「点一下能不能马上看到回执」只有源码契约与纯函数单测可证，真机上的视觉时序未实测，属**证据记录**。
+- **未做**：原生侧 WakeLock W1–W3 与 WorkManager 周期约束仍缺环境；`handleRetry` 仍保留 `setConnectionEpoch` 自增（它同时驱动连接与任务两条链，拆开属独立改动）；回执目前固定在设置页，焦点页只有 `commandNotice` 那条通道。
+- **下一轮候选**：原生侧 WakeLock 收敛（需 SDK 与真机）、三设备同版安装门禁（缺环境）、`handleRetry` 的 `epoch` 自增与拉取去重是否可合并成一次触发。
+
 ## 2026-10-26 · `FL-PERF-20261026-MOBILE-CADENCE`：移动端任务快照的空闲节奏（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》§四「低耗」的第二个切片。上一轮把每次轮询变成条件读（命中只回一个 marker），这一轮解决剩下的那一半：即便每次只回几十字节，空闲手机仍每 5 秒醒一次、打一次 GET；审计 `mobile-low-power.md` 估算的「空闲前台约 12 次请求/分钟」并不会因为响应变小而减少次数。
