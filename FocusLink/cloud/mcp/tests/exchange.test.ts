@@ -464,6 +464,53 @@ describe('canonical /sync/v2 adapter', () => {
     });
     expect(upstream.fetch).not.toHaveBeenCalled();
   });
+
+  it('carries the task conditional read across the canonical hop', async () => {
+    const seen: Array<{ path: string; ifNoneMatch: string | null }> = [];
+    const upstream = binding(async (request) => {
+      seen.push({
+        path: new URL(request.url).pathname,
+        ifNoneMatch: request.headers.get('if-none-match'),
+      });
+      return new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          revision: 3,
+          sourceDeviceId: 'desktop-a',
+          snapshot: null,
+          serverTime: 1,
+          unchanged: true,
+        }),
+        {
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            etag: '"flts1-3-sched-desktop-a"',
+          },
+        },
+      );
+    });
+    const env = exchangeEnv(upstream);
+
+    const conditional = request('/sync/v2/tasks', 'GET', TOKEN);
+    conditional.headers.set('x-focuslink-task-capabilities', 'task-scheduling-v1');
+    conditional.headers.set('if-none-match', '"flts1-3-sched-desktop-a"');
+    conditional.headers.set('origin', 'https://localhost');
+    const response = await handleCanonicalSync(conditional, env);
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([{ path: '/sync/v2/tasks', ifNoneMatch: '"flts1-3-sched-desktop-a"' }]);
+    expect(response.headers.get('etag')).toBe('"flts1-3-sched-desktop-a"');
+    expect(response.headers.get('access-control-expose-headers')).toBe('etag');
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://localhost');
+    expect(await response.json()).toMatchObject({ unchanged: true, snapshot: null });
+
+    await handleCanonicalSync(request('/sync/v2/tasks', 'GET', TOKEN), env);
+    expect(seen[1]).toEqual({ path: '/sync/v2/tasks', ifNoneMatch: null });
+
+    const preflight = await handleCanonicalSync(request('/sync/v2/tasks', 'OPTIONS', TOKEN), env);
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('access-control-allow-headers')).toContain('if-none-match');
+  });
 });
 
 function exchangeEnv(upstream: { fetch: ReturnType<typeof vi.fn> }): ExchangeEnv {

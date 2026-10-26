@@ -1,5 +1,23 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-CONDITIONAL-MCP`：个人云 gateway 的条件读与 Android 构建环境（不升产品版本）
+
+- **用户范围**：评审报告的验收闭环节奏第①②条——先把生产链路的条件请求补完，再补齐 Android 环境让三设备门禁可执行。本轮前一段已修「Worker → Account DO」，这一段补的是手机真正连的那条链路与工具链。
+- **改前证据（file:line 为改前行号）**：手机端生产入口是个人云 gateway `src/mobile` 构建常量 `android/app/build.gradle:46` 的 `CANONICAL_SYNC_ORIGIN = https://foxlink-mcp.focuslink-poyi-6465e9.workers.dev`，即 `cloud/mcp/src/exchange.ts`。该层三处断点：`:130` 的 GET 只转发 `x-focuslink-task-capabilities`，`if-none-match` 被丢弃；`:296-302` 用 `new Response(...)` 重建上游响应且只保留 `syncHeaders()` 白名单，上游 `ETag` 丢失；`:440` 预检 allow-headers 无 `if-none-match`、`:457-463` 的 `withCors()` 无 `access-control-expose-headers`。结论：上一段修好的 DO/Worker 条件读在生产主路径上是到不了客户端的。
+- **修掉的缺口**：
+  1. **P0 生产主路径丢请求头**：gateway 重建上游请求时只带 capability 头，条件读在第一跳就被抹掉。
+  2. **P0 生产主路径丢响应头**：`ETag` 不在重建响应的白名单里，客户端 `headers.get('etag')` 恒为 null。
+  3. **P0 预检与暴露缺失**：`if-none-match` 需被 allow-headers 允许、`etag` 需被 expose 才能穿过 WebView 的 CORS 检查。
+- **落地改动**：
+  1. `cloud/mcp/src/exchange.ts:4-10` import `TASK_SNAPSHOT_IF_NONE_MATCH_HEADER`；`:130-152` GET 分支把该头按原值转发（仅 `/sync/v2/tasks`，其余 GET 路由保持无该头）。
+  2. `cloud/mcp/src/exchange.ts:283-303` `proxyToAuthority()` 读取上游 `etag` 并写回重建响应（有则带上，无则不写空头）。
+  3. `cloud/mcp/src/exchange.ts:439-441` 预检 allow-headers 增 `if-none-match`；`:466-470` `withCors()` 增 `access-control-expose-headers: etag`。
+  4. `cloud/mcp/tests/exchange.test.ts` 新增用例 `carries the task conditional read across the canonical hop`：断言 `if-none-match` 原值到达上游、响应带 `etag` 与 expose 头、`access-control-allow-origin` 正确、body 为 `unchanged` marker、不带该头的第二次请求上游收到 `null`、`OPTIONS` 预检 allow-headers 含 `if-none-match`。
+- **Android 环境（本轮实测补上）**：`C:\Users\16408\AppData\Local\Android\Sdk` 此前不存在，本轮用 `commandlinetools-win` 安装 `platform-tools`（adb 1.0.41 / 37.0.1）、`platforms;android-36`、`build-tools;36.0.0`，`sdkmanager` 全部许可证已接受；`local.properties` 原本就指向该目录，无需改。随后 `npm run android:build:debug`（`build:web` + `cap sync android` + `gradlew assembleDebug`）**BUILD SUCCESSFUL in 36s**，产出 `android/app/build/outputs/apk/debug/app-debug.apk` 32.3 MB，`aapt2 dump badging` 回读 `package=app.focuslink.mobile versionCode=1344 versionName=1.6.8 compileSdkVersion=36`。
+- **测试与门禁（全部实测）**：`cloud/mcp` 全量 `npx vitest run` **11 文件 / 118 用例全过** exit 0；`npm run format:check` 全绿；`npm run typecheck`（含 `typecheck:cloudflare`）exit 0；`npm run lint` exit 0；`cloud/mcp` 的 `tsc --noEmit` 与 `tsc -p tsconfig.tests.json --noEmit` 均 exit 0；根 `npm test` 结果见下一条提交说明。
+- **证据分级**：源码完成＝实测；本地测试通过＝实测；**Android 可构建＝实测**（本机真跑了 assembleDebug）；**生产链路通过＝未验证**（无 Cloudflare 凭据、未 deploy）；**真机安装＝未验证**（`adb devices` 列表为空，本机没有连接小米手机与华为平板）。
+- **交付边界**：按 AGENTS.md 不升 1.6.9、不打包、不打 tag：APK 只是同一 1.6.8 源码的构建验证产物，`android/app/build/` 与本机 SDK 均被 `.gitignore` 排除，未进 Git。
+- **未做 / 下一轮候选**：① 连接小米与华为真机后跑同版安装回读（`adb install -r` + `dumpsys package` 读 versionName/versionCode），这是三设备门禁唯一的缺口；② 同步可靠性真机项（重复结束、响应丢失、杀进程恢复、冲突决定、锁屏控制）；③ 原生 WakeLock W1–W3 与耗电实测；④ `cloud/mcp/src/tasks.ts:226` 的 `/internal/mcp/v1/tasks` 仍是无条件读（MCP 工具路径，非手机路径）。
 ## 2026-10-26 · `FL-SYNC-20261026-CONDITIONAL-PRODUCTION`：任务条件请求的生产链路闭环（不升产品版本）
 
 - **用户范围**：用户新一轮指令（由一份评审报告转达）要求先完成验收闭环的第一项——核对并补齐「生产 gateway → Worker → Account DO」的任务条件请求（请求头透传、CORS、条件命中、客户端轮询节奏），并明确区分「源码完成 / 本地测试通过 / 生产链路通过 / 真机通过」。评审报告的事实⑤称：本地测试后端已支持条件请求，生产 Account DO 仍直接返回整份任务快照，因此「省流只在本机成立」。

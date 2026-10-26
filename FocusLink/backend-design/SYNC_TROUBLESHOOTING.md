@@ -737,3 +737,7 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 2. 线上排查顺序固定为「预检 → 响应头 → DO 行为」：先看 `OPTIONS /sync/v2/tasks` 的 `access-control-allow-headers` 是否含 `if-none-match`；再看实际 GET 响应是否有 `access-control-expose-headers: etag` 与 `ETag`；最后确认响应体是否出现 `unchanged: true`。
 3. 客户端兜底是兜底，不是修复：若 `ETag` 被网关丢弃，客户端会按 `revision + 设备 + capability` 推导 tag 继续条件轮询，但**服务端仍必须**认这个 tag；不要靠改客户端 tag 格式去绕过服务端判定。
 4. 不要为了省事把条件读改回「固定 30 秒全量」：那会把跨设备可见延迟从秒级拉到半分钟（见 FL-SYNC-033），且流量并未下降。
+
+### 补充（2026-10-26 晚）：个人云 gateway 那一跳
+
+手机装的是 1.6.x，拨到的生产入口是 `CANONICAL_SYNC_ORIGIN`（`android/app/build.gradle:46`），它指向 `cloud/mcp/src/exchange.ts` 这一层 gateway，与上面「Worker → Account DO」不是同一跳。该层同样要三件齐：转发 `if-none-match`、把上游 `ETag` 写回重建的响应、预检允许 `if-none-match` 且 `access-control-expose-headers` 暴露 `etag`。缺任何一件，手机上仍然每 5 秒整份下载，而 `npm test` 全绿。核对入口：`npx vitest run tests/exchange.test.ts`（`cloud/mcp` 目录）里的 `carries the task conditional read across the canonical hop`。

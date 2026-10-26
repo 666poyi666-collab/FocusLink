@@ -3,6 +3,7 @@ import { FEED_ENTITY_TYPES, SYNC_PROTOCOL_VERSION } from './feed-types';
 import { focuslinkUpstreamUrl } from './upstream';
 import {
   TASK_SNAPSHOT_CAPABILITY_HEADER,
+  TASK_SNAPSHOT_IF_NONE_MATCH_HEADER,
   TASK_SNAPSHOT_SCHEDULING_CAPABILITY,
   taskSnapshotSupportsScheduling,
 } from '../../../shared/sync/taskSnapshotProtocol';
@@ -127,7 +128,24 @@ export async function handleCanonicalSync(request: Request, env: ExchangeEnv): P
       };
     }
   }
-  if (request.method === 'GET') init = { ...init, headers: schedulingCapability };
+  if (request.method === 'GET') {
+    // 任务快照的条件读必须穿过这一跳：客户端带上 If-None-Match，上游 DO 才会回
+    // `unchanged` marker。这里若只转发 capability 头，生产条件读就停在这一层，
+    // 客户端每 5 秒仍会收到整份任务清单（本地测试后端却是绿的）。
+    const conditionalValidator =
+      url.pathname === '/sync/v2/tasks'
+        ? request.headers.get(TASK_SNAPSHOT_IF_NONE_MATCH_HEADER)
+        : null;
+    init = {
+      ...init,
+      headers: {
+        ...schedulingCapability,
+        ...(conditionalValidator
+          ? { [TASK_SNAPSHOT_IF_NONE_MATCH_HEADER]: conditionalValidator }
+          : {}),
+      },
+    };
+  }
   return withCors(
     request,
     env,
@@ -293,11 +311,15 @@ async function proxyToAuthority(
   if (!contentType.toLowerCase().startsWith('application/json')) {
     return syncError(502, 'authoritative_response_not_json');
   }
+  // 条件读的验证器是响应头，不是响应体：重建响应时丢掉它，客户端就永远存不住 tag，
+  // 下一跳又退回整份下载。
+  const etag = response.headers.get('etag');
   return new Response(exactArrayBuffer(body), {
     status: response.status,
     headers: syncHeaders({
       'x-focuslink-authority': 'durable-object-v2',
       'x-focuslink-adapter': 'canonical-sync-v2-service-binding',
+      ...(etag ? { etag } : {}),
     }),
   });
 }
@@ -437,7 +459,8 @@ function preflight(
     status: 204,
     headers: {
       'access-control-allow-methods': [...methods, 'OPTIONS'].join(', '),
-      'access-control-allow-headers': 'authorization, content-type, x-focuslink-task-capabilities',
+      'access-control-allow-headers':
+        'authorization, content-type, x-focuslink-task-capabilities, if-none-match',
       'access-control-max-age': '600',
       'cache-control': 'no-store',
       vary: 'Origin',
@@ -460,6 +483,8 @@ function withCors(request: Request, env: ExchangeEnv, response: Response): Respo
   const next = new Response(response.body, response);
   next.headers.set('access-control-allow-origin', origin);
   next.headers.append('vary', 'Origin');
+  // ETag 不属于 CORS 安全列表响应头：不显式暴露，WebView 里 headers.get('etag') 恒为 null。
+  next.headers.set('access-control-expose-headers', 'etag');
   return next;
 }
 
