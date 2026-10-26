@@ -51,12 +51,14 @@ import {
   TASK_SNAPSHOT_PROTOCOL_VERSION,
   TASK_SNAPSHOT_MAX_FUTURE_SKEW_MS,
   TASK_SNAPSHOT_CAPABILITY_HEADER,
+  TASK_SNAPSHOT_IF_NONE_MATCH_HEADER,
   applyTaskSnapshotMutation,
   canonicalTaskSnapshotFingerprintPayload,
   isTaskSnapshotPublishedAtWithinFutureSkew,
   mergeLegacyTaskSchedulingFields,
   normalizeTaskSnapshotPayload,
   parseTaskSnapshotMutationResponse,
+  resolveTaskSnapshotConditionalRead,
   validateTaskSnapshotPayload,
   validateTaskSnapshotMutationRequest,
   validateTaskSnapshotPublishRequest,
@@ -634,11 +636,20 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
       if (url.pathname === '/v1/tasks' && request.method === 'GET') {
         await this.authorizeV2(request, 'sync:read');
         rejectUnexpectedQuery(url);
-        return json(
-          this.getTaskSnapshot(
-            taskSnapshotSupportsScheduling(request.headers.get(TASK_SNAPSHOT_CAPABILITY_HEADER)),
-          ),
+        const includeScheduling = taskSnapshotSupportsScheduling(
+          request.headers.get(TASK_SNAPSHOT_CAPABILITY_HEADER),
         );
+        // Idle mobile peers send If-None-Match; without a production-side ETag they would keep
+        // downloading the whole register every poll while the loopback backend stayed cheap.
+        const conditional = resolveTaskSnapshotConditionalRead({
+          response: this.getTaskSnapshot(includeScheduling),
+          includeScheduling,
+          ifNoneMatch: request.headers.get(TASK_SNAPSHOT_IF_NONE_MATCH_HEADER),
+        });
+        return json(conditional.body, 200, {
+          etag: conditional.etag,
+          vary: TASK_SNAPSHOT_CAPABILITY_HEADER,
+        });
       }
       if (url.pathname === '/v1/tasks' && request.method === 'POST') {
         rejectUnexpectedQuery(url);
@@ -4827,10 +4838,14 @@ function isId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200;
 }
 
-function json(value: unknown, status = 200): Response {
+function json(value: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      ...extraHeaders,
+    },
   });
 }
 

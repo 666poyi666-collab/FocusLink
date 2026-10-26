@@ -131,6 +131,28 @@ describe('conditional task snapshot read', () => {
     expect(headers).not.toHaveProperty(TASK_SNAPSHOT_IF_NONE_MATCH_HEADER);
   });
 
+  it('derives the validator when a proxy hides the ETag header', async () => {
+    // No Access-Control-Expose-Headers means the WebView cannot see the tag; the client must
+    // still be able to keep polling conditionally instead of downloading the register forever.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(FULL_BODY)));
+
+    const full = await fetchTaskSnapshotConditional({
+      endpoint: FOCUSLINK_CANONICAL_SYNC_ORIGIN,
+      token: DEVICE_TOKEN,
+    });
+    expect(full.notModified).toBe(false);
+    expect(full.etag).toBe(ETAG);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(MARKER)));
+    const marker = await fetchTaskSnapshotConditional({
+      endpoint: FOCUSLINK_CANONICAL_SYNC_ORIGIN,
+      token: DEVICE_TOKEN,
+      ifNoneMatch: ETAG,
+    });
+    expect(marker.notModified).toBe(true);
+    expect(marker.etag).toBe(ETAG);
+  });
+
   it('treats a marker on an unconditional read as a contract error', async () => {
     vi.stubGlobal(
       'fetch',
@@ -161,8 +183,10 @@ describe('mobile conditional polling wiring', () => {
   });
 
   it('answers a matched conditional read with a body-free marker', () => {
-    expect(serverSource).toContain("response.setHeader('ETag', etag)");
+    // The decision itself lives in the shared protocol module, so both backends share one
+    // marker shape; the server only publishes its headers.
+    expect(serverSource).toContain('resolveTaskSnapshotConditionalRead');
+    expect(serverSource).toContain("response.setHeader('ETag', conditional.etag)");
     expect(serverSource).toContain('TASK_SNAPSHOT_CAPABILITY_HEADER');
-    expect(serverSource).toContain('unchanged: true');
   });
 });

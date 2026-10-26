@@ -23,9 +23,8 @@ import {
   TASK_SNAPSHOT_MUTATION_PATH,
   TASK_SNAPSHOT_PATH,
   TASK_SNAPSHOT_CAPABILITY_HEADER,
-  TASK_SNAPSHOT_PROTOCOL_VERSION,
-  formatTaskSnapshotEtag,
-  taskSnapshotEtagMatches,
+  TASK_SNAPSHOT_IF_NONE_MATCH_HEADER,
+  resolveTaskSnapshotConditionalRead,
   taskSnapshotSupportsScheduling,
   withoutTaskSchedulingMutationFields,
   validateTaskSnapshotMutationRequest,
@@ -443,27 +442,16 @@ async function handleRequest(
       readSingleHeader(request.headers[TASK_SNAPSHOT_CAPABILITY_HEADER]),
     );
     const snapshot = store.getTaskSnapshot(accountId, includeScheduling);
-    const etag = formatTaskSnapshotEtag({
-      revision: snapshot.revision,
-      sourceDeviceId: snapshot.sourceDeviceId,
+    const conditional = resolveTaskSnapshotConditionalRead({
+      response: snapshot,
       includeScheduling,
+      ifNoneMatch: readSingleHeader(request.headers[TASK_SNAPSHOT_IF_NONE_MATCH_HEADER]),
     });
-    response.setHeader('ETag', etag);
+    response.setHeader('ETag', conditional.etag);
     response.setHeader('Vary', TASK_SNAPSHOT_CAPABILITY_HEADER);
     // A conditional miss would still re-download the whole register every poll; the marker keeps
     // an idle peer at a few dozen bytes without relying on browser HTTP-cache revalidation.
-    if (taskSnapshotEtagMatches(readSingleHeader(request.headers['if-none-match']), etag)) {
-      sendJson(response, 200, {
-        protocolVersion: TASK_SNAPSHOT_PROTOCOL_VERSION,
-        revision: snapshot.revision,
-        sourceDeviceId: snapshot.sourceDeviceId,
-        snapshot: null,
-        serverTime: snapshot.serverTime,
-        unchanged: true,
-      });
-      return;
-    }
-    sendJson(response, 200, snapshot);
+    sendJson(response, 200, conditional.body);
     return;
   }
 

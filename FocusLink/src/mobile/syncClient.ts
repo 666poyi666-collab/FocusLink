@@ -39,6 +39,7 @@ import {
   TASK_SNAPSHOT_CAPABILITY_HEADER,
   TASK_SNAPSHOT_IF_NONE_MATCH_HEADER,
   TASK_SNAPSHOT_SCHEDULING_CAPABILITY,
+  formatTaskSnapshotEtag,
   parseTaskSnapshotMutationResponse,
   parseTaskSnapshotResponse,
   type TaskSnapshotPayload,
@@ -702,9 +703,19 @@ export async function fetchTaskSnapshotConditional(
     TASK_SNAPSHOT_PATH,
     ifNoneMatch ? { headers: { [TASK_SNAPSHOT_IF_NONE_MATCH_HEADER]: ifNoneMatch } } : {},
   );
-  const etag = response.headers.get('etag');
+  // A gateway that forgets Access-Control-Expose-Headers hides the validator from the WebView.
+  // The tag is derivable from the confirmed revision, so derive it instead of polling forever.
+  const headerEtag = response.headers.get('etag')?.trim();
   const value = parseTaskSnapshotResponse(await readDeviceSyncJsonResponse(response));
   if (!value) throw new Error('任务快照响应无效');
+  const etag =
+    headerEtag && headerEtag.length > 0
+      ? headerEtag
+      : formatTaskSnapshotEtag({
+          revision: value.revision,
+          sourceDeviceId: value.sourceDeviceId,
+          includeScheduling: true,
+        });
   return { notModified: value.unchanged === true, etag, response: value };
 }
 

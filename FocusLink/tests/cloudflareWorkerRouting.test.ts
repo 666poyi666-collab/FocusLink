@@ -32,6 +32,7 @@ interface ForwardedCall {
   ownerSubject: string | null;
   account: string | null;
   contentType: string | null;
+  ifNoneMatch: string | null;
 }
 
 function makeEnv(forwarded: ForwardedCall[]): WorkerEnv {
@@ -48,6 +49,7 @@ function makeEnv(forwarded: ForwardedCall[]): WorkerEnv {
         ownerSubject: request.headers.get('x-focuslink-owner-subject'),
         account: request.headers.get('x-focuslink-account'),
         contentType: request.headers.get('content-type'),
+        ifNoneMatch: request.headers.get('if-none-match'),
       });
       const ready = new URL(request.url).pathname === '/internal/readyz';
       return new Response(
@@ -58,7 +60,11 @@ function makeEnv(forwarded: ForwardedCall[]): WorkerEnv {
         ),
         {
           status: 200,
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            // Stands in for the Account DO's conditional task-snapshot response.
+            etag: '"flts1-1-sched-device-a"',
+          },
         },
       );
     },
@@ -91,6 +97,7 @@ function call(
     ownerSubject,
     body,
     contentType,
+    ifNoneMatch,
   }: {
     method?: string;
     authorization?: string;
@@ -101,6 +108,7 @@ function call(
     ownerSubject?: string;
     body?: string;
     contentType?: string;
+    ifNoneMatch?: string;
   } = {},
   env: WorkerEnv = makeEnv([]),
 ): Promise<Response> {
@@ -112,6 +120,7 @@ function call(
   if (identityAuthority) headers.set('x-focuslink-identity-authority', identityAuthority);
   if (ownerSubject) headers.set('x-focuslink-owner-subject', ownerSubject);
   if (contentType) headers.set('content-type', contentType);
+  if (ifNoneMatch) headers.set('if-none-match', ifNoneMatch);
   const request = new Request(`https://foxlink-cloud-mcp.example${path}`, {
     method,
     headers,
@@ -507,5 +516,41 @@ describe('FocusLink private authority routing behind foxlink-cloud-mcp', () => {
     );
     expect(response.status).toBe(403);
     expect(forwarded).toHaveLength(0);
+  });
+
+  it('forwards the task-snapshot validator and exposes the ETag to the WebView', async () => {
+    const forwarded: ForwardedCall[] = [];
+    const response = await call(
+      '/sync/v2/tasks',
+      {
+        authorization: `Bearer ${VALID_DEVICE_TOKEN}`,
+        origin: ALLOWED_ORIGIN,
+        ifNoneMatch: '"flts1-7-sched-device-a"',
+      },
+      makeEnv(forwarded),
+    );
+    expect(response.status).toBe(200);
+    expect(forwarded).toHaveLength(1);
+    // Without passthrough the DO never sees the validator and always returns the full register.
+    expect(forwarded[0].ifNoneMatch).toBe('"flts1-7-sched-device-a"');
+    expect(forwarded[0].url).toContain('/v1/tasks');
+    // ETag is not CORS-safelisted: an unexposed tag is invisible to the WebView.
+    expect(response.headers.get('access-control-expose-headers')).toBe('etag');
+    expect(response.headers.get('etag')).toBe('"flts1-1-sched-device-a"');
+    expect(response.headers.get('access-control-allow-origin')).toBe(ALLOWED_ORIGIN);
+  });
+
+  it('advertises if-none-match in the task-snapshot preflight', async () => {
+    const response = await call('/sync/v2/tasks', {
+      method: 'OPTIONS',
+      origin: ALLOWED_ORIGIN,
+      authorization: `Bearer ${VALID_DEVICE_TOKEN}`,
+    });
+    expect(response.status).toBe(204);
+    const allowed = response.headers.get('access-control-allow-headers') ?? '';
+    expect(allowed).toContain('x-focuslink-task-capabilities');
+    // A rejected preflight would stop the conditional GET before it leaves the WebView.
+    expect(allowed).toContain('if-none-match');
+    expect(response.headers.get('access-control-allow-methods')).toContain('GET');
   });
 });

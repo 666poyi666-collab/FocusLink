@@ -57,6 +57,35 @@ export function taskSnapshotEtagMatches(
   });
 }
 
+export interface TaskSnapshotConditionalRead {
+  etag: string;
+  notModified: boolean;
+  body: TaskSnapshotResponse;
+}
+
+/**
+ * The loopback test backend and the production Account Durable Object must answer a
+ * conditional read identically, otherwise "省流 works locally but not in production" becomes
+ * undetectable from source. Both call this one decision.
+ */
+export function resolveTaskSnapshotConditionalRead(input: {
+  response: TaskSnapshotResponse;
+  includeScheduling: boolean;
+  ifNoneMatch: string | null | undefined;
+}): TaskSnapshotConditionalRead {
+  const etag = formatTaskSnapshotEtag({
+    revision: input.response.revision,
+    sourceDeviceId: input.response.sourceDeviceId,
+    includeScheduling: input.includeScheduling,
+  });
+  const notModified = taskSnapshotEtagMatches(input.ifNoneMatch, etag);
+  return {
+    etag,
+    notModified,
+    body: notModified ? { ...input.response, snapshot: null, unchanged: true } : input.response,
+  };
+}
+
 const MAX_TEXT_LENGTH = 1_000;
 
 export interface SyncedTaskProject {

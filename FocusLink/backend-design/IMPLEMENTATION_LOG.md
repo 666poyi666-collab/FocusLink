@@ -1,5 +1,25 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-SYNC-20261026-CONDITIONAL-PRODUCTION`：任务条件请求的生产链路闭环（不升产品版本）
+
+- **用户范围**：用户新一轮指令（由一份评审报告转达）要求先完成验收闭环的第一项——核对并补齐「生产 gateway → Worker → Account DO」的任务条件请求（请求头透传、CORS、条件命中、客户端轮询节奏），并明确区分「源码完成 / 本地测试通过 / 生产链路通过 / 真机通过」。评审报告的事实⑤称：本地测试后端已支持条件请求，生产 Account DO 仍直接返回整份任务快照，因此「省流只在本机成立」。
+- **改前证据（file:line 为改前行号）**：生产 DO `cloudflare/accountDurableObject.ts:634-642` 的 `/v1/tasks` GET 只有 `return json(this.getTaskSnapshot(...))`，没有 ETag、没有 `Vary`、不读 `If-None-Match`；Worker `cloudflare/worker.ts:461` 的预检白名单只有 `authorization, content-type, x-focuslink-task-capabilities`，`:469-476` 的 `withCors()` 只设 `access-control-allow-origin` 与 `vary: Origin`；客户端 `src/mobile/syncClient.ts:705` 只读 `response.headers.get('etag')`。转发层 `cloudflare/worker.ts:243/258-262` 本来就整体复制请求头，`if-none-match` 能到达 DO——真正断的是响应侧与预检侧。
+- **修掉的缺口**：
+  1. **P0 生产端没有条件读**：只有本地测试后端会回 marker，生产每次轮询都是整份注册表；本机测试全绿也发现不了。
+  2. **P0 预检拒绝非 safelisted 请求头**：`if-none-match` 不在 `access-control-allow-headers` 里，浏览器预检先失败，条件 GET 根本发不出去。
+  3. **P0 ETag 对 WebView 不可见**：没有 `access-control-expose-headers`，`headers.get('etag')` 恒为 null，客户端即使收到 ETag 也存不住，下一跳仍是无条件读。
+  4. **P2 两端判定会漂移**：条件判定（tag 生成 + 命中后的 marker 形状）原本内联在本地后端里，生产要照抄一份，抄错就再次变成「本地绿、生产不生效」。
+- **落地改动**：
+  1. `shared/sync/taskSnapshotProtocol.ts:60-89` 新增 `TaskSnapshotConditionalRead` 与 `resolveTaskSnapshotConditionalRead({response, includeScheduling, ifNoneMatch})`，返回 `{etag, notModified, body}`，命中时 `body = {...response, snapshot: null, unchanged: true}`；未命中直接返回原对象（引用相等）。两个后端共用同一判定。
+  2. `cloud/deviceSyncServer.ts:445-451` 改用它，输出与改前逐字等价（200 + `ETag` + `Vary` + marker）；`tests/taskSnapshotCloud.test.ts` 既有 9 项未改动仍全过。
+  3. `cloudflare/accountDurableObject.ts:636-652` 生产 GET 改用同一判定并写出 `etag` 与 `vary: x-focuslink-task-capabilities`；`cloudflare/accountDurableObject.ts:4841` 的 `json()` 增加第三参 `extraHeaders`（默认空对象，其余调用点不变）。
+  4. `cloudflare/worker.ts:461-464` 预检 allow-headers 增加 `if-none-match`；`cloudflare/worker.ts:479` 的 `withCors()` 增加 `access-control-expose-headers: etag`。
+  5. `src/mobile/syncClient.ts:707-720` 响应头缺 ETag 时用 `formatTaskSnapshotEtag({revision, sourceDeviceId, includeScheduling: true})` 本地推导兜底：旧部署或网关漏配 expose 头时，客户端仍能继续条件轮询，而不是退回整份下载。
+- **测试**：新增 `tests/taskSnapshotConditionalRead.test.ts` 6 项——共享判定（命中 marker 可被 `parseTaskSnapshotResponse` 接受且序列化后不含 `tasks`/`projects`、miss 与无 validator 返回原对象、sched 与 legacy 标签互不认证）＋接线契约（两个后端都调用同一判定且都不再内联 `taskSnapshotEtagMatches`、DO 任务 GET 块内存在判定与 `etag`/`vary`、Worker 含 `if-none-match` 与 expose `etag`）。`tests/cloudflareWorkerRouting.test.ts` 新增 2 项**行为**用例（不是源码文本）：带 `if-none-match` 的 `GET /sync/v2/tasks` 转发给 DO 的值与请求一致、响应带 `access-control-expose-headers: etag` 且 `etag` 可读、allow-origin 正确；`OPTIONS /sync/v2/tasks` 预检 allow-headers 含 `if-none-match`。`tests/mobileTaskSnapshotConditional.test.ts` 新增 1 项（响应无 ETag 头时客户端推导出同一 tag，marker 照常识别）并更新 1 项旧的源码断言。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **162 文件 / 1399 用例全过** exit 0、`npm run build:web` exit 0（index JS 584.63 → 584.84 kB、CSS 571.52 kB 不变，chunk>500 kB 属既有）。
+- **证据分级（本轮必须分开写）**：源码完成＝实测（改动已落盘，行号可查）；本地测试通过＝实测（162 文件 / 1399 用例 exit 0）；**生产链路通过＝未验证**——本机没有 Cloudflare 凭据、没有 deploy，公网 gateway 的实现不在本仓（仓库内无 gateway 源码），只能用 Worker 行为测试里的假 DO 证明「头会透传、ETag 会暴露」；**真机通过＝未验证**——无 Android SDK/adb、无小米手机与华为平板。
+- **交付边界**：按 AGENTS.md 不升 1.6.9、不打包、不改版本元数据；三设备同版安装门禁仍因缺环境失败，不得声称移动端已交付。
+- **未做 / 下一轮候选**：① Android SDK 与 adb 环境准备，让三设备门禁可执行（这是验收闭环的真正阻塞点）；② 个人云容器 `cloud/mcp/src/exchange.ts:440` 的同类 CORS——它同样转发 `/sync/v2/tasks` 到 `/internal/mcp/v1/tasks` 且不透传 `if-none-match`，属另一条部署路径，本轮刻意未改；③ 原生 WakeLock W1–W3。
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-PULL-FEEDBACK`：移动端账本拉取的回执与同步片回执（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》§二「状态分域」的收尾切片。审计 `sync-dispatch.md` 的 P2-5 记着「手动刷新只 `epoch++`、没有任何反馈」；读码后确认比审计记录更严重：拉取层早就写好了回执句子，但 `src/mobile/MobileApp.tsx:253` 是 `const [, setLedgerNotice] = useState(...)`——值被丢弃，「正在拉取已结束会话账本…」「云端账本响应异常」这类句子从来没有渲染过，成功、失败、动作中三种回执全都不在屏幕上。

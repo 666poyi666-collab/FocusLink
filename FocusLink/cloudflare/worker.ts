@@ -458,7 +458,10 @@ function preflight(request: Request, env: WorkerEnv): Response {
     status: 204,
     headers: {
       'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-      'access-control-allow-headers': 'authorization, content-type, x-focuslink-task-capabilities',
+      // if-none-match is not a CORS-safelisted request header: without it here the browser
+      // preflight rejects the conditional task-snapshot GET before it ever reaches the DO.
+      'access-control-allow-headers':
+        'authorization, content-type, x-focuslink-task-capabilities, if-none-match',
       'access-control-max-age': '600',
     },
   });
@@ -471,6 +474,9 @@ function withCors(request: Request, env: WorkerEnv, response: Response): Respons
   if (!origin || !allowedOrigins(env).has(origin)) return response;
   const next = new Response(response.body, response);
   next.headers.set('access-control-allow-origin', origin);
+  // ETag is not a CORS-safelisted response header; without this the WebView cannot read the
+  // validator, stores no tag, and every poll stays a full register download.
+  next.headers.set('access-control-expose-headers', 'etag');
   next.headers.append('vary', 'Origin');
   return next;
 }

@@ -718,3 +718,22 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 - **含义**：拉取层写好的回执（「正在拉取已结束会话账本…」「云端账本响应异常」」）此前被 `const [, setLedgerNotice]` 丢弃，是死状态；手动刷新只做 `epoch++`，没有任何可见回执。判定要点：顶栏文案在点按期间应变成「检查中」，设置页应出现一条带左边框的回执行；两者都不出现说明回执通道没接上，而不是网络问题。
 - **处理步骤**：① 顶栏同步片在已配对时点一次，观察文案是否短暂变成「检查中」并带 `aria-label` 的「正在核对云端账本…」；② 打开设置页，看「账本新鲜度」下方是否出现回执行（动作中偏强调色、失败偏危险色、其余中性）；③ 若一直停在「检查中」超过 20 秒，按 FL-SYNC-029 先看退避与限流，再按 FL-SYNC-032 看条件读；④ 回执行与格子里的时间必须分开读：格子回答“最后一次确认是什么时候”，回执行回答“这一次在做什么/为什么失败”。
 - **禁止**：不要把回执文案写回 `presentMobileLedgerFreshness` 的 `detail`——那里是时间域，混进去会让“最后成功 X 分钟前”变成半句网络错误；也不要恢复 `const [, setLedgerNotice]` 的丢弃写法。
+
+## FL-SYNC-035：本机省流明明有效，装到手机连生产云端却每 5 秒整份下载任务清单
+
+### 区分症状
+
+1. 开发机上用本地测试后端（`tests/taskSnapshotCloud.test.ts`、`npm run dev:cloud`）跑条件读，命中时只回几十字节 marker；换到手机连官方云端，抓包或看日志发现每次 `GET /sync/v2/tasks` 都是整份任务清单。
+2. 浏览器/WebView 控制台出现预检失败（`Request header field if-none-match is not allowed by Access-Control-Allow-Headers`），或请求发出去了但客户端 `response.headers.get('etag')` 一直是 `null`。
+3. 手机上「任务同步」的「最后确认」时间照常前进，因此看起来「同步正常」，只是流量与耗电没降下来——这和 FL-SYNC-032（每 5 秒整份下载）表现一致，但原因在生产服务端而不在客户端节奏。
+
+### 含义
+
+条件读要三段同时成立才算省流：① 生产 Account DO 认 `If-None-Match` 并回 `unchanged` marker（`cloudflare/accountDurableObject.ts:636-652`）；② Worker 预检允许 `if-none-match`（`cloudflare/worker.ts:461-464`）、并在响应上暴露 `etag`（`cloudflare/worker.ts:479`）；③ 客户端能拿到 tag（`src/mobile/syncClient.ts:707-720`，拿不到时按 revision 本地推导兜底）。缺任一段，客户端就退回整份下载，而且本地测试永远是绿的。
+
+### 处理步骤
+
+1. 先用行为测试确认转发与暴露：`npx vitest run tests/cloudflareWorkerRouting.test.ts tests/taskSnapshotConditionalRead.test.ts`——前者断言带 `if-none-match` 的 `GET /sync/v2/tasks` 透传到 DO、响应 `access-control-expose-headers` 为 `etag`；后者断言两个后端共用同一判定。
+2. 线上排查顺序固定为「预检 → 响应头 → DO 行为」：先看 `OPTIONS /sync/v2/tasks` 的 `access-control-allow-headers` 是否含 `if-none-match`；再看实际 GET 响应是否有 `access-control-expose-headers: etag` 与 `ETag`；最后确认响应体是否出现 `unchanged: true`。
+3. 客户端兜底是兜底，不是修复：若 `ETag` 被网关丢弃，客户端会按 `revision + 设备 + capability` 推导 tag 继续条件轮询，但**服务端仍必须**认这个 tag；不要靠改客户端 tag 格式去绕过服务端判定。
+4. 不要为了省事把条件读改回「固定 30 秒全量」：那会把跨设备可见延迟从秒级拉到半分钟（见 FL-SYNC-033），且流量并未下降。
