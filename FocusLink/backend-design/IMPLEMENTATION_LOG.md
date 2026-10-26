@@ -1,5 +1,21 @@
 # FocusLink 实施日志
 
+## 2026-10-26 · `FL-PERF-20261026-MOBILE-CADENCE`：移动端任务快照的空闲节奏（不升产品版本）
+
+- **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》§四「低耗」的第二个切片。上一轮把每次轮询变成条件读（命中只回一个 marker），这一轮解决剩下的那一半：即便每次只回几十字节，空闲手机仍每 5 秒醒一次、打一次 GET；审计 `mobile-low-power.md` 估算的「空闲前台约 12 次请求/分钟」并不会因为响应变小而减少次数。
+- **审计证据（只读）**：`FocusLink/test-data/audit/mobile-low-power.md`——改前 `src/mobile/taskSnapshotRefresh.ts:19-22` 是固定 `setInterval(TASK_SNAPSHOT_REFRESH_INTERVAL_MS = 5_000)`，节奏与「云端注册表是否在变」无关；改前 `src/mobile/MobileApp.tsx:1856-1863` 的注释也写着「poll every 5 s」。同一份审计里的原生侧 W1–W3 与 WorkManager 约束本轮仍未动，原因见交付边界。
+- **修掉的缺口**：
+  1. **P1 空闲节奏固定 5 秒**：跨设备真实改动通常是几分钟一次，用 5 秒去问对不上成本；§四 要求的是「后台按场景、空闲不按秒级」。
+  2. **P2 节奏不可解释**：改前没有任何地方说明「这一次为什么要等 30 秒」，一旦有人手改间隔，跨设备可见延迟就跟着悄悄变化。
+- **落地改动**：
+  1. `src/mobile/taskSnapshotCadence.ts`（新，纯模块）：`MOBILE_TASK_SNAPSHOT_IDLE_DELAYS_MS = [5_000, 5_000, 15_000, 30_000]`、`MOBILE_TASK_SNAPSHOT_MAX_IDLE_STREAK = 12`、`nextMobileTaskSnapshotDelayMs(streak)`（非法输入回落 5 秒）、`advanceMobileTaskSnapshotStreak(streak, 'unchanged' | 'changed' | 'failed')`（写回归零、失败不加速放缓）。
+  2. `src/mobile/taskSnapshotRefresh.ts` 重写调度：`setTimeout` 自续期替代固定 `setInterval`，每次重排都向可选的 `TaskSnapshotCadenceSource.delayMs()` 取新间隔；隐藏时仍续期但跳过刷新，`stop()` 后不再有定时器。不给 cadence 时保持 5 秒，`tests/mobileTaskSnapshotRefresh.test.ts` 的既有契约不变。
+  3. `src/mobile/MobileApp.tsx:339-342` 新增 `taskSnapshotCadence` ref（`unchangedStreak`）；`refreshTasks()` 三个出口各自定节奏——`notModified` → `'unchanged'`、拿到新 `revision` → `'changed'`、请求失败 → `'failed'`；`:1856-1872` 前台轮询把 `delayMs` 接到该 ref，并在 `foregroundActive` 变真时把 streak 清零，使回前台第一拍仍按 5 秒。
+- **测试**：新增 `tests/mobileTaskSnapshotCadence.test.ts` 8 项——间隔序列与非法输入回落、streak 三条转移与上限、假计时器下的实际节拍（5s→10s→25s→55s）、写回后立刻回到 5 秒、隐藏期间继续续期但不刷新、`stop()` 后不再触发、cadence 源返回 `NaN` 时回落契约值、两处源码契约（MobileApp 的 streak 接线与回前台清零；调度器用 `setTimeout` 且不含 `setInterval`）。`tests/mobileTaskSnapshotRefresh.test.ts` 2 项未改仍全过，证明缺省路径行为未变。
+- **门禁（全部实测）**：`npm run format:check` 全绿、`npm run typecheck`（含 `typecheck:cloudflare`）exit 0、`npm run lint` exit 0、`npm test` **160 文件 / 1381 用例全过** exit 0、`npm run build:web` exit 0（index JS 583.31 → 584.05 kB、CSS 571.03 kB 不变，chunk>500 kB 警告为既有）。
+- **交付边界（本轮不升版本、不打包、不安装）**：本机仍无 Android SDK / adb、无小米手机与华为平板连接，三设备同版安装门禁无法执行；按 AGENTS.md 不升 1.6.9、不出安装包、不改版本元数据。可用节拍推导：空闲 30 分钟由约 360 次请求降到约 62 次（前 25 秒三拍，其后每 30 秒一拍），这是**推断**；真机耗电与流量未实测，同属**证据记录/推断**。
+- **未做**：`src/mobile/WatchApp.tsx:263` 手表页仍走无条件读且没有节奏模块；原生侧 WakeLock W1–W3、WorkManager 周期约束仍缺环境；跨设备改动的最坏可见延迟在空闲时由 5 秒变为 30 秒，这一段由设置页「任务同步」格的最后确认时间自证（FL-SYNC-031 的分域）。
+- **下一轮候选**：原生侧 WakeLock 收敛（需 SDK 与真机）、手表页条件读与节奏对齐、三设备同版安装门禁（缺环境）。
 ## 2026-10-26 · `FL-SYNC-20261026-MOBILE-CONDITIONAL`：移动端任务快照条件请求与统计轨道语义（不升产品版本）
 
 - **用户范围**：仍是同一份《FocusLink 移动端架构与交互改版方案》。本轮做两处：§二 的追加项「空闲轮询不再整份下载任务清单」（审计 `mobile-low-power.md` 估算「空闲前台每分钟 12 次全量 GET」的源头），以及 §三 里上一轮只记录未改的统计页时间段轨道（可点 `div`、32px 高）。

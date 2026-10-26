@@ -183,6 +183,10 @@ import {
   createTaskSnapshotRequestLifecycle,
   startVisibleTaskSnapshotRefresh,
 } from './taskSnapshotRefresh';
+import {
+  advanceMobileTaskSnapshotStreak,
+  nextMobileTaskSnapshotDelayMs,
+} from './taskSnapshotCadence';
 import { isTabletFocusViewport } from './viewportPolicy';
 import {
   createEmptyTaskSnapshot,
@@ -336,6 +340,9 @@ export function MobileApp() {
   // The register ETag belongs to one account connection: a pairing/account switch must not echo
   // the previous cloud's tag, otherwise the next poll could be answered with a stale marker.
   const taskSnapshotEtag = useRef<{ connectionKey: string; etag: string } | null>(null);
+  // How many consecutive conditional reads answered "unchanged". The foreground poll widens with
+  // this counter, so an idle phone stops asking the cloud every 5 s for a list nobody touched.
+  const taskSnapshotCadence = useRef({ unchangedStreak: 0 });
   const cacheMutationQueue = useRef<Promise<void>>(Promise.resolve());
   const nativeQueueRunning = useRef(false);
   const nativeCommandAbort = useRef<AbortController | null>(null);
@@ -1036,6 +1043,10 @@ export function MobileApp() {
           if (fetched.notModified) {
             // The cloud register still matches our confirmed revision: keep the snapshot and
             // only move the freshness clock, so an idle poll stops re-downloading the list.
+            taskSnapshotCadence.current.unchangedStreak = advanceMobileTaskSnapshotStreak(
+              taskSnapshotCadence.current.unchangedStreak,
+              'unchanged',
+            );
             setTaskConfirmedAt(Date.now());
             return taskSnapshotRef.current;
           }
@@ -1046,6 +1057,11 @@ export function MobileApp() {
             setCommandNotice('任务清单 revision 内容不一致，已保留本机较可信快照并继续重试');
             return null;
           }
+          // A different revision means somebody wrote: go back to the fast 5 s cadence.
+          taskSnapshotCadence.current.unchangedStreak = advanceMobileTaskSnapshotStreak(
+            taskSnapshotCadence.current.unchangedStreak,
+            'changed',
+          );
           taskSnapshotRef.current = reconciliation.snapshot;
           setTaskSnapshot(reconciliation.snapshot);
           setTaskConfirmedAt(Date.now());
@@ -1058,6 +1074,11 @@ export function MobileApp() {
           return reconciliation.snapshot;
         } catch (error) {
           if (!canCommit() || isAbortError(error)) return null;
+          // A failing poll keeps its current cadence; only a confirmed read may slow it down.
+          taskSnapshotCadence.current.unchangedStreak = advanceMobileTaskSnapshotStreak(
+            taskSnapshotCadence.current.unchangedStreak,
+            'failed',
+          );
           setCommandNotice(
             (current) => current ?? `任务清单刷新失败：${errorMessage(error)}；继续使用本机缓存`,
           );
@@ -1853,12 +1874,19 @@ export function MobileApp() {
     const refreshVisibleTasks = () => {
       if (document.visibilityState === 'visible') void refreshTasks(preferencesRef.current);
     };
-    // Task snapshots poll every 5 s while the user is watching and not at all once the app
-    // goes behind another app; the next foreground transition refreshes before the first tick.
+    // Task snapshots poll while the user is watching and not at all once the app goes behind
+    // another app; the next foreground transition refreshes before the first tick. The delay
+    // starts at 5 s and widens while the cloud register keeps answering "unchanged", so an idle
+    // screen stops paying a round trip every 5 s.
+    if (foregroundActive) taskSnapshotCadence.current.unchangedStreak = 0;
     const stopInterval = foregroundActive
       ? startVisibleTaskSnapshotRefresh(
           () => void refreshTasks(preferencesRef.current),
           () => mobileAppActive.current && document.visibilityState === 'visible',
+          {
+            delayMs: () =>
+              nextMobileTaskSnapshotDelayMs(taskSnapshotCadence.current.unchangedStreak),
+          },
         )
       : () => undefined;
     document.addEventListener('visibilitychange', refreshVisibleTasks);
