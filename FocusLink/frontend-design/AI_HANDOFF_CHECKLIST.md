@@ -6,6 +6,7 @@
 
 ## 开始前
 
+- [ ] 移动 UI 重设计先读 `FRONTEND_SPEC.md` 顶部「移动端重设计：设计语言与设计文件」，打开 `mobile-design-board.svg` 与该节官方 kit；本轮以四页整页视觉变化验收，同步补丁不代替设计交付。
 - [ ] 完整阅读 [README.md](README.md) 和 [FRONTEND_SPEC.md](FRONTEND_SPEC.md)。
 - [ ] 阅读 [../backend-design/BACKEND_SPEC.md](../backend-design/BACKEND_SPEC.md) 中的三时间模型、任务 Provider、IPC 和同步不变量。
 - [ ] 用 `rg --files src electron shared tests scripts` 确认真实目录，不创建平行源码树。
@@ -65,6 +66,8 @@
 
 ## 结束前
 
+- [ ] 移动设计稿与真实 renderer 逐页对照：布局层级、主读数、任务树、设置分组、深色、平板和短横屏均有可见结果；长标题、长时长、焦点与键盘实操通过，不以源码字符串测试代替视觉验收。
+- [ ] 新视觉逐区替换旧规则，未新增版本命名覆盖层；八套字体、五种强调色、九种仪表与高级同步/权限入口保持可达，SVG 合成样例未进入产品数据或空态。
 - [ ] 每轮跨端 UI/行为候选已递增补丁版本，Windows、指定华为平板和指定小米手机均安装并回读到同一版本；版本不一致时停止打包、tag 和发布。
 - [ ] 在 [USER_REQUIREMENTS.md](USER_REQUIREMENTS.md) 与后端 [IMPLEMENTATION_LOG.md](../backend-design/IMPLEMENTATION_LOG.md) 给出 Windows、手机、平板矩阵；任一适用端缺少实现与验证结论时不得标记完成。
 - [ ] 更新 `FRONTEND_SPEC.md` 中受影响的界面、token、动效或尺寸规则。

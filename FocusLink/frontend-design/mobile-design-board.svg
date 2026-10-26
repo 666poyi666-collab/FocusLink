@@ -1,0 +1,1659 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2160" viewBox="0 0 1800 2160" role="img" aria-labelledby="board-title board-desc">
+<title id="board-title">FocusLink 移动端设计语言：手机四页、深色与平板</title>
+<desc id="board-desc">2026年10月26日设计提案。独立 SVG 设计文件，可导入 Figma。手机画板使用390乘844设计坐标，包含专注、任务、统计、设置。深色专注显示暂停状态；平板显示任务列表和详情双栏。所有任务和数字为合成设计样例，不是产品运行截图。实施要求见同目录 FRONTEND_SPEC.md 的移动端重设计章节。</desc>
+<defs>
+<symbol id="i-focus" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M9 2h6M12 6v7l3-2"/></g></symbol>
+<symbol id="i-tasks" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="5" rx="1"/><path d="m4 16 2 2 3-4M12 6h9M12 16h9"/></g></symbol>
+<symbol id="i-stats" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V12M12 20V4M20 20V9"/></g></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></g></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></g></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h11a4 4 0 0 0 .5-8A6 6 0 0 0 7 8a5 5 0 0 0 0 10Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<clipPath id="phone-clip"><rect width="390" height="844" rx="24"/></clipPath>
+<clipPath id="tablet-clip"><rect width="1040" height="760" rx="24"/></clipPath>
+</defs>
+<rect x="0" y="0" width="1800" height="2160" rx="0" fill="#ECEDE8"/>
+<text x="64" y="77" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="42" font-weight="650" fill="#181A1D" text-anchor="start">FocusLink</text>
+<text x="293" y="77" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="30" font-weight="550" fill="#181A1D" text-anchor="start">移动端设计语言</text>
+<text x="64" y="117" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#5F6368" text-anchor="start">清晰的时间工具：连续画布 · 时间优先 · 平整列表 · 明确操作</text>
+<text x="1732" y="66" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="end">设计提案 / 2026.10.26</text>
+<text x="1732" y="95" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="end">合成样例 · 非运行截图</text>
+<line x1="64" y1="147" x2="1732" y2="147" stroke="#D7D9D1" stroke-width="1"/>
+<g id="phone-focus-running" transform="translate(64 188)">
+<rect x="0" y="0" width="390" height="844" rx="24" fill="#F5F5F2" stroke="#DDDCD6" stroke-width="1"/>
+<g clip-path="url(#phone-clip)">
+<text x="24" y="27" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#181A1D" text-anchor="start">14:31</text>
+<rect x="306" y="23" width="2.5" height="4" rx="1" fill="#181A1D"/>
+<rect x="310" y="20" width="2.5" height="7" rx="1" fill="#181A1D"/>
+<rect x="314" y="17" width="2.5" height="10" rx="1" fill="#181A1D"/>
+<rect x="318" y="14" width="2.5" height="13" rx="1" fill="#181A1D"/>
+<path d="M331 18q7-6 14 0m-11 4q4-3 8 0" fill="none" stroke="#181A1D" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="353" y="15" width="17" height="11" rx="3" fill="none" stroke="#181A1D" stroke-width="1.2"/>
+<rect x="355" y="17" width="12" height="7" rx="1" fill="#181A1D"/>
+<rect x="371" y="18" width="2" height="5" rx="1" fill="#181A1D"/>
+<text x="24" y="80" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="650" fill="#181A1D" text-anchor="start">专注</text>
+<circle cx="342" cy="68" r="21" fill="#FCFCFA" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-cloud" x="330" y="55" width="24" height="24" color="#5F6368"/>
+<text x="24" y="119" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">当前任务</text>
+<rect x="24" y="134" width="342" height="76" rx="16" fill="#FCFCFA"/>
+<text x="40" y="165" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="550" fill="#181A1D" text-anchor="start">读完这一章，写下要点</text>
+<text x="40" y="191" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">阅读与整理</text>
+<use href="#i-chevron" x="330" y="160" width="20" height="20" color="#5F6368"/>
+<circle cx="147" cy="261" r="3.2" fill="#007A55"/>
+<text x="158" y="266" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="550" fill="#007A55" text-anchor="start">正在专注</text>
+<text x="195" y="359" font-family="'JetBrains Mono', Consolas, monospace" font-size="84" font-weight="550" fill="#181A1D" text-anchor="middle">28:36</text>
+<text x="195" y="394" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="middle">本轮有效专注</text>
+<rect x="24" y="426" width="234" height="56" rx="16" fill="#007A55"/>
+<use href="#i-pause" x="100" y="442" width="24" height="24" color="#FFFFFF"/>
+<text x="149" y="462" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#FFFFFF" text-anchor="middle">暂停</text>
+<rect x="270" y="426" width="96" height="56" rx="16" fill="#FCFCFA" stroke="#DDDCD6" stroke-width="1"/>
+<text x="318" y="462" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="550" fill="#181A1D" text-anchor="middle">结束</text>
+<text x="24" y="536" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#181A1D" text-anchor="start">时间之带</text>
+<text x="366" y="536" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">查看记录</text>
+<circle cx="279.57" cy="567.95" r="0.99" fill="#007A55" opacity="0.75"/>
+<circle cx="43.41" cy="571.00" r="1.10" fill="#007A55" opacity="0.52"/>
+<circle cx="285.43" cy="572.71" r="0.93" fill="#007A55" opacity="0.52"/>
+<circle cx="241.32" cy="569.37" r="1.22" fill="#D24339" opacity="0.69"/>
+<circle cx="361.47" cy="562.63" r="1.11" fill="#007A55" opacity="0.52"/>
+<circle cx="356.34" cy="572.58" r="0.62" fill="#007A55" opacity="0.64"/>
+<circle cx="344.76" cy="569.14" r="0.99" fill="#007A55" opacity="0.82"/>
+<circle cx="310.89" cy="569.93" r="1.22" fill="#007A55" opacity="0.71"/>
+<circle cx="148.58" cy="567.85" r="1.23" fill="#007A55" opacity="0.67"/>
+<circle cx="124.36" cy="566.42" r="0.95" fill="#007A55" opacity="0.63"/>
+<circle cx="66.52" cy="569.21" r="0.99" fill="#007A55" opacity="0.61"/>
+<circle cx="215.90" cy="568.80" r="1.13" fill="#007A55" opacity="0.73"/>
+<circle cx="315.09" cy="561.80" r="0.73" fill="#007A55" opacity="0.48"/>
+<circle cx="325.26" cy="571.80" r="0.76" fill="#007A55" opacity="0.65"/>
+<circle cx="345.40" cy="565.88" r="0.94" fill="#007A55" opacity="0.68"/>
+<circle cx="44.15" cy="571.22" r="0.65" fill="#007A55" opacity="0.51"/>
+<circle cx="210.37" cy="568.51" r="0.86" fill="#007A55" opacity="0.72"/>
+<circle cx="150.53" cy="566.37" r="1.11" fill="#007A55" opacity="0.64"/>
+<circle cx="362.73" cy="572.51" r="0.67" fill="#007A55" opacity="0.64"/>
+<circle cx="292.04" cy="569.92" r="1.21" fill="#007A55" opacity="0.67"/>
+<circle cx="265.61" cy="566.34" r="0.66" fill="#007A55" opacity="0.73"/>
+<circle cx="105.97" cy="567.13" r="0.65" fill="#007A55" opacity="0.63"/>
+<circle cx="69.75" cy="572.04" r="1.19" fill="#007A55" opacity="0.50"/>
+<circle cx="284.21" cy="566.40" r="1.10" fill="#007A55" opacity="0.75"/>
+<circle cx="336.20" cy="567.62" r="0.91" fill="#007A55" opacity="0.77"/>
+<circle cx="157.40" cy="564.43" r="0.62" fill="#007A55" opacity="0.55"/>
+<circle cx="39.08" cy="564.39" r="1.23" fill="#007A55" opacity="0.45"/>
+<circle cx="236.25" cy="566.24" r="1.13" fill="#D24339" opacity="0.66"/>
+<circle cx="186.97" cy="562.69" r="0.62" fill="#007A55" opacity="0.45"/>
+<circle cx="30.55" cy="564.87" r="0.88" fill="#007A55" opacity="0.47"/>
+<circle cx="123.93" cy="566.03" r="0.71" fill="#007A55" opacity="0.62"/>
+<circle cx="57.67" cy="569.38" r="1.00" fill="#007A55" opacity="0.60"/>
+<circle cx="35.30" cy="573.92" r="0.88" fill="#007A55" opacity="0.39"/>
+<circle cx="31.78" cy="568.99" r="1.21" fill="#007A55" opacity="0.57"/>
+<circle cx="191.78" cy="573.64" r="0.96" fill="#007A55" opacity="0.49"/>
+<circle cx="159.16" cy="565.66" r="0.67" fill="#007A55" opacity="0.60"/>
+<circle cx="354.31" cy="565.81" r="0.69" fill="#007A55" opacity="0.68"/>
+<circle cx="227.76" cy="569.55" r="1.24" fill="#D24339" opacity="0.69"/>
+<circle cx="161.43" cy="569.81" r="0.93" fill="#007A55" opacity="0.61"/>
+<circle cx="247.45" cy="562.33" r="1.08" fill="#D24339" opacity="0.50"/>
+<circle cx="341.49" cy="570.77" r="0.76" fill="#007A55" opacity="0.73"/>
+<circle cx="47.01" cy="569.24" r="0.78" fill="#007A55" opacity="0.59"/>
+<circle cx="172.90" cy="569.06" r="0.60" fill="#007A55" opacity="0.67"/>
+<circle cx="336.57" cy="573.00" r="1.06" fill="#007A55" opacity="0.60"/>
+<circle cx="59.44" cy="570.23" r="0.69" fill="#007A55" opacity="0.56"/>
+<circle cx="275.10" cy="573.26" r="0.62" fill="#007A55" opacity="0.48"/>
+<circle cx="236.72" cy="566.12" r="1.12" fill="#D24339" opacity="0.66"/>
+<circle cx="345.34" cy="564.61" r="1.24" fill="#007A55" opacity="0.61"/>
+<circle cx="42.18" cy="566.74" r="1.08" fill="#007A55" opacity="0.54"/>
+<circle cx="94.41" cy="568.22" r="0.71" fill="#007A55" opacity="0.64"/>
+<circle cx="44.28" cy="571.49" r="0.73" fill="#007A55" opacity="0.50"/>
+<circle cx="203.12" cy="569.08" r="1.13" fill="#007A55" opacity="0.72"/>
+<circle cx="270.59" cy="565.93" r="1.11" fill="#007A55" opacity="0.72"/>
+<circle cx="118.15" cy="569.87" r="1.02" fill="#007A55" opacity="0.56"/>
+<circle cx="355.92" cy="565.07" r="0.63" fill="#007A55" opacity="0.65"/>
+<circle cx="113.52" cy="565.41" r="1.22" fill="#007A55" opacity="0.58"/>
+<circle cx="43.45" cy="573.34" r="0.80" fill="#007A55" opacity="0.43"/>
+<circle cx="228.78" cy="570.02" r="0.75" fill="#D24339" opacity="0.67"/>
+<circle cx="99.18" cy="567.81" r="1.05" fill="#007A55" opacity="0.65"/>
+<circle cx="33.62" cy="574.18" r="1.06" fill="#007A55" opacity="0.38"/>
+<circle cx="284.78" cy="565.66" r="0.61" fill="#007A55" opacity="0.71"/>
+<circle cx="358.80" cy="569.01" r="0.66" fill="#007A55" opacity="0.83"/>
+<circle cx="24.37" cy="575.53" r="1.25" fill="#007A55" opacity="0.31"/>
+<circle cx="284.14" cy="570.26" r="1.21" fill="#007A55" opacity="0.64"/>
+<circle cx="300.70" cy="570.91" r="1.02" fill="#007A55" opacity="0.64"/>
+<circle cx="259.41" cy="568.96" r="1.10" fill="#007A55" opacity="0.69"/>
+<circle cx="260.81" cy="570.08" r="1.22" fill="#007A55" opacity="0.64"/>
+<circle cx="244.35" cy="570.32" r="0.72" fill="#D24339" opacity="0.64"/>
+<circle cx="166.79" cy="570.75" r="0.67" fill="#007A55" opacity="0.58"/>
+<circle cx="301.50" cy="566.89" r="1.02" fill="#007A55" opacity="0.76"/>
+<circle cx="150.20" cy="564.61" r="1.05" fill="#007A55" opacity="0.56"/>
+<circle cx="126.90" cy="567.82" r="0.96" fill="#007A55" opacity="0.65"/>
+<circle cx="339.50" cy="566.87" r="0.69" fill="#007A55" opacity="0.73"/>
+<circle cx="194.12" cy="565.86" r="0.63" fill="#007A55" opacity="0.59"/>
+<circle cx="288.30" cy="563.40" r="0.79" fill="#007A55" opacity="0.59"/>
+<circle cx="263.81" cy="568.11" r="0.89" fill="#007A55" opacity="0.73"/>
+<circle cx="175.18" cy="568.68" r="0.65" fill="#007A55" opacity="0.69"/>
+<circle cx="103.64" cy="569.17" r="1.08" fill="#007A55" opacity="0.59"/>
+<circle cx="250.60" cy="567.93" r="0.78" fill="#007A55" opacity="0.75"/>
+<circle cx="257.48" cy="568.31" r="0.76" fill="#007A55" opacity="0.73"/>
+<circle cx="181.24" cy="573.26" r="0.97" fill="#007A55" opacity="0.49"/>
+<circle cx="174.63" cy="572.68" r="1.24" fill="#007A55" opacity="0.51"/>
+<circle cx="197.91" cy="567.88" r="1.22" fill="#007A55" opacity="0.68"/>
+<circle cx="237.68" cy="573.58" r="1.20" fill="#D24339" opacity="0.49"/>
+<circle cx="212.70" cy="567.15" r="0.64" fill="#007A55" opacity="0.66"/>
+<circle cx="361.09" cy="573.70" r="0.93" fill="#007A55" opacity="0.57"/>
+<circle cx="35.25" cy="566.70" r="1.16" fill="#007A55" opacity="0.54"/>
+<circle cx="338.49" cy="573.64" r="0.84" fill="#007A55" opacity="0.57"/>
+<circle cx="329.43" cy="563.77" r="1.17" fill="#007A55" opacity="0.57"/>
+<circle cx="269.13" cy="566.97" r="0.97" fill="#007A55" opacity="0.77"/>
+<circle cx="29.53" cy="564.98" r="0.87" fill="#007A55" opacity="0.48"/>
+<circle cx="33.29" cy="573.51" r="1.16" fill="#007A55" opacity="0.40"/>
+<circle cx="148.10" cy="567.15" r="0.84" fill="#007A55" opacity="0.68"/>
+<circle cx="226.04" cy="565.01" r="0.93" fill="#D24339" opacity="0.58"/>
+<circle cx="340.07" cy="565.81" r="0.96" fill="#007A55" opacity="0.67"/>
+<circle cx="281.52" cy="565.45" r="1.08" fill="#007A55" opacity="0.70"/>
+<circle cx="29.06" cy="560.40" r="0.91" fill="#007A55" opacity="0.30"/>
+<circle cx="78.65" cy="567.54" r="0.69" fill="#007A55" opacity="0.60"/>
+<circle cx="206.99" cy="571.14" r="0.86" fill="#007A55" opacity="0.62"/>
+<circle cx="42.19" cy="562.73" r="0.80" fill="#007A55" opacity="0.38"/>
+<circle cx="226.35" cy="564.70" r="0.73" fill="#D24339" opacity="0.57"/>
+<circle cx="178.50" cy="568.54" r="0.70" fill="#007A55" opacity="0.70"/>
+<circle cx="241.36" cy="569.17" r="1.21" fill="#D24339" opacity="0.70"/>
+<circle cx="32.03" cy="569.98" r="0.83" fill="#007A55" opacity="0.54"/>
+<circle cx="193.66" cy="571.51" r="1.18" fill="#007A55" opacity="0.59"/>
+<circle cx="286.87" cy="569.44" r="0.82" fill="#007A55" opacity="0.68"/>
+<circle cx="157.37" cy="566.54" r="0.81" fill="#007A55" opacity="0.64"/>
+<circle cx="282.70" cy="574.18" r="1.23" fill="#007A55" opacity="0.44"/>
+<circle cx="121.90" cy="562.67" r="0.95" fill="#007A55" opacity="0.47"/>
+<circle cx="341.54" cy="563.81" r="0.78" fill="#007A55" opacity="0.57"/>
+<circle cx="185.29" cy="566.68" r="1.22" fill="#007A55" opacity="0.63"/>
+<circle cx="44.56" cy="571.03" r="0.83" fill="#007A55" opacity="0.52"/>
+<circle cx="360.71" cy="568.11" r="1.17" fill="#007A55" opacity="0.82"/>
+<circle cx="104.60" cy="573.18" r="0.74" fill="#007A55" opacity="0.43"/>
+<circle cx="256.26" cy="572.09" r="1.18" fill="#007A55" opacity="0.54"/>
+<circle cx="333.55" cy="570.71" r="1.19" fill="#007A55" opacity="0.72"/>
+<circle cx="188.86" cy="572.39" r="1.06" fill="#007A55" opacity="0.55"/>
+<circle cx="111.00" cy="558.85" r="1.09" fill="#007A55" opacity="0.30"/>
+<circle cx="199.91" cy="566.80" r="1.14" fill="#007A55" opacity="0.63"/>
+<circle cx="252.31" cy="568.53" r="0.62" fill="#007A55" opacity="0.72"/>
+<circle cx="93.04" cy="572.58" r="1.07" fill="#007A55" opacity="0.46"/>
+<circle cx="140.97" cy="568.43" r="0.72" fill="#007A55" opacity="0.63"/>
+<circle cx="157.52" cy="566.78" r="0.65" fill="#007A55" opacity="0.66"/>
+<circle cx="250.23" cy="566.86" r="1.19" fill="#007A55" opacity="0.73"/>
+<circle cx="219.89" cy="572.52" r="0.77" fill="#007A55" opacity="0.56"/>
+<circle cx="209.32" cy="570.82" r="0.77" fill="#007A55" opacity="0.64"/>
+<circle cx="111.94" cy="570.87" r="0.89" fill="#007A55" opacity="0.52"/>
+<circle cx="364.31" cy="567.72" r="0.89" fill="#007A55" opacity="0.80"/>
+<circle cx="138.66" cy="567.05" r="1.14" fill="#007A55" opacity="0.67"/>
+<circle cx="346.17" cy="570.96" r="0.99" fill="#007A55" opacity="0.72"/>
+<circle cx="236.64" cy="569.14" r="0.84" fill="#D24339" opacity="0.70"/>
+<circle cx="44.84" cy="569.50" r="1.06" fill="#007A55" opacity="0.58"/>
+<circle cx="266.98" cy="569.35" r="0.92" fill="#007A55" opacity="0.67"/>
+<circle cx="44.37" cy="565.67" r="0.87" fill="#007A55" opacity="0.50"/>
+<circle cx="334.83" cy="569.58" r="0.95" fill="#007A55" opacity="0.78"/>
+<circle cx="103.70" cy="572.54" r="0.79" fill="#007A55" opacity="0.45"/>
+<circle cx="58.83" cy="572.61" r="1.15" fill="#007A55" opacity="0.47"/>
+<circle cx="331.75" cy="562.17" r="0.61" fill="#007A55" opacity="0.48"/>
+<circle cx="58.76" cy="568.23" r="1.04" fill="#007A55" opacity="0.60"/>
+<circle cx="229.66" cy="570.32" r="0.82" fill="#D24339" opacity="0.65"/>
+<circle cx="363.86" cy="571.12" r="0.71" fill="#007A55" opacity="0.71"/>
+<circle cx="41.53" cy="568.81" r="0.79" fill="#007A55" opacity="0.60"/>
+<circle cx="253.24" cy="572.15" r="0.75" fill="#007A55" opacity="0.54"/>
+<circle cx="201.41" cy="568.22" r="0.96" fill="#007A55" opacity="0.70"/>
+<circle cx="86.76" cy="564.68" r="1.04" fill="#007A55" opacity="0.49"/>
+<circle cx="62.08" cy="562.13" r="0.97" fill="#007A55" opacity="0.36"/>
+<circle cx="354.80" cy="568.15" r="0.77" fill="#007A55" opacity="0.81"/>
+<circle cx="293.45" cy="564.10" r="0.79" fill="#007A55" opacity="0.63"/>
+<circle cx="355.65" cy="573.43" r="0.70" fill="#007A55" opacity="0.59"/>
+<circle cx="232.56" cy="566.86" r="0.95" fill="#D24339" opacity="0.69"/>
+<circle cx="27.76" cy="572.06" r="0.89" fill="#007A55" opacity="0.45"/>
+<circle cx="68.24" cy="570.15" r="1.10" fill="#007A55" opacity="0.57"/>
+<circle cx="243.72" cy="567.31" r="0.98" fill="#D24339" opacity="0.73"/>
+<circle cx="148.22" cy="573.80" r="1.02" fill="#007A55" opacity="0.41"/>
+<circle cx="67.49" cy="574.07" r="0.93" fill="#007A55" opacity="0.41"/>
+<circle cx="148.78" cy="569.13" r="0.88" fill="#007A55" opacity="0.61"/>
+<circle cx="244.38" cy="571.39" r="0.69" fill="#D24339" opacity="0.59"/>
+<circle cx="341.41" cy="572.68" r="0.77" fill="#007A55" opacity="0.63"/>
+<circle cx="234.42" cy="566.99" r="0.69" fill="#D24339" opacity="0.70"/>
+<circle cx="341.23" cy="567.72" r="1.23" fill="#007A55" opacity="0.78"/>
+<circle cx="315.22" cy="573.64" r="0.82" fill="#007A55" opacity="0.53"/>
+<circle cx="92.95" cy="561.74" r="0.71" fill="#007A55" opacity="0.38"/>
+<circle cx="141.25" cy="569.63" r="1.07" fill="#007A55" opacity="0.58"/>
+<circle cx="198.52" cy="571.60" r="0.64" fill="#007A55" opacity="0.60"/>
+<circle cx="312.91" cy="566.88" r="0.65" fill="#007A55" opacity="0.75"/>
+<circle cx="28.33" cy="575.85" r="0.78" fill="#007A55" opacity="0.30"/>
+<circle cx="243.12" cy="572.01" r="1.11" fill="#D24339" opacity="0.56"/>
+<circle cx="39.05" cy="566.47" r="0.81" fill="#007A55" opacity="0.53"/>
+<circle cx="176.46" cy="568.51" r="0.63" fill="#007A55" opacity="0.70"/>
+<circle cx="86.88" cy="569.47" r="0.73" fill="#007A55" opacity="0.59"/>
+<circle cx="141.96" cy="572.19" r="1.14" fill="#007A55" opacity="0.47"/>
+<circle cx="255.25" cy="568.11" r="0.78" fill="#007A55" opacity="0.74"/>
+<circle cx="191.94" cy="570.33" r="0.98" fill="#007A55" opacity="0.65"/>
+<circle cx="155.83" cy="564.91" r="0.80" fill="#007A55" opacity="0.57"/>
+<circle cx="163.37" cy="571.11" r="0.66" fill="#007A55" opacity="0.55"/>
+<circle cx="259.85" cy="561.68" r="1.12" fill="#007A55" opacity="0.49"/>
+<circle cx="234.37" cy="573.55" r="0.84" fill="#D24339" opacity="0.49"/>
+<circle cx="187.33" cy="574.42" r="1.01" fill="#007A55" opacity="0.45"/>
+<circle cx="105.98" cy="576.22" r="1.01" fill="#007A55" opacity="0.30"/>
+<circle cx="59.69" cy="572.45" r="0.62" fill="#007A55" opacity="0.48"/>
+<circle cx="276.50" cy="576.88" r="0.89" fill="#007A55" opacity="0.30"/>
+<circle cx="272.10" cy="570.33" r="1.02" fill="#007A55" opacity="0.62"/>
+<circle cx="346.42" cy="562.09" r="0.91" fill="#007A55" opacity="0.48"/>
+<circle cx="141.29" cy="571.16" r="0.91" fill="#007A55" opacity="0.51"/>
+<circle cx="114.62" cy="566.17" r="1.16" fill="#007A55" opacity="0.61"/>
+<circle cx="69.77" cy="574.32" r="0.95" fill="#007A55" opacity="0.40"/>
+<circle cx="256.76" cy="562.15" r="1.07" fill="#007A55" opacity="0.51"/>
+<circle cx="188.57" cy="565.72" r="0.64" fill="#007A55" opacity="0.58"/>
+<circle cx="292.47" cy="567.67" r="1.18" fill="#007A55" opacity="0.78"/>
+<circle cx="325.66" cy="570.35" r="0.87" fill="#007A55" opacity="0.72"/>
+<circle cx="190.26" cy="564.93" r="0.93" fill="#007A55" opacity="0.55"/>
+<circle cx="340.83" cy="574.01" r="1.17" fill="#007A55" opacity="0.55"/>
+<circle cx="105.16" cy="566.42" r="0.94" fill="#007A55" opacity="0.60"/>
+<circle cx="72.59" cy="564.21" r="0.63" fill="#007A55" opacity="0.45"/>
+<circle cx="82.04" cy="564.00" r="1.18" fill="#007A55" opacity="0.46"/>
+<circle cx="259.27" cy="568.40" r="0.72" fill="#007A55" opacity="0.72"/>
+<circle cx="159.66" cy="569.72" r="0.74" fill="#007A55" opacity="0.61"/>
+<circle cx="160.55" cy="567.37" r="1.18" fill="#007A55" opacity="0.68"/>
+<circle cx="124.52" cy="570.00" r="0.62" fill="#007A55" opacity="0.55"/>
+<circle cx="62.89" cy="564.06" r="1.08" fill="#007A55" opacity="0.44"/>
+<circle cx="214.26" cy="569.25" r="1.01" fill="#007A55" opacity="0.71"/>
+<circle cx="94.38" cy="572.05" r="1.20" fill="#007A55" opacity="0.48"/>
+<circle cx="196.00" cy="570.53" r="0.65" fill="#007A55" opacity="0.64"/>
+<circle cx="154.16" cy="569.65" r="0.89" fill="#007A55" opacity="0.60"/>
+<circle cx="187.80" cy="568.85" r="0.66" fill="#007A55" opacity="0.71"/>
+<circle cx="201.28" cy="565.39" r="1.25" fill="#007A55" opacity="0.57"/>
+<circle cx="73.66" cy="564.81" r="1.23" fill="#007A55" opacity="0.48"/>
+<circle cx="78.96" cy="566.64" r="1.24" fill="#007A55" opacity="0.56"/>
+<circle cx="141.79" cy="572.58" r="0.85" fill="#007A55" opacity="0.45"/>
+<circle cx="327.16" cy="568.92" r="1.20" fill="#007A55" opacity="0.80"/>
+<circle cx="296.09" cy="570.65" r="0.81" fill="#007A55" opacity="0.64"/>
+<circle cx="160.02" cy="565.22" r="1.15" fill="#007A55" opacity="0.58"/>
+<circle cx="55.68" cy="565.42" r="1.04" fill="#007A55" opacity="0.49"/>
+<circle cx="353.61" cy="570.17" r="0.83" fill="#007A55" opacity="0.77"/>
+<circle cx="229.00" cy="566.33" r="0.80" fill="#D24339" opacity="0.65"/>
+<circle cx="190.05" cy="574.47" r="1.10" fill="#007A55" opacity="0.45"/>
+<circle cx="91.87" cy="563.87" r="1.07" fill="#007A55" opacity="0.47"/>
+<circle cx="350.16" cy="574.12" r="1.14" fill="#007A55" opacity="0.55"/>
+<circle cx="181.52" cy="564.94" r="0.86" fill="#007A55" opacity="0.55"/>
+<circle cx="249.48" cy="564.36" r="1.18" fill="#007A55" opacity="0.60"/>
+<circle cx="173.71" cy="566.17" r="0.84" fill="#007A55" opacity="0.61"/>
+<circle cx="34.94" cy="566.09" r="0.71" fill="#007A55" opacity="0.52"/>
+<circle cx="308.51" cy="561.90" r="0.73" fill="#007A55" opacity="0.50"/>
+<circle cx="314.86" cy="562.73" r="1.02" fill="#007A55" opacity="0.53"/>
+<circle cx="265.25" cy="568.54" r="0.83" fill="#007A55" opacity="0.71"/>
+<circle cx="347.23" cy="576.02" r="0.72" fill="#007A55" opacity="0.45"/>
+<circle cx="319.82" cy="567.50" r="0.62" fill="#007A55" opacity="0.77"/>
+<circle cx="334.00" cy="572.50" r="0.81" fill="#007A55" opacity="0.63"/>
+<circle cx="333.95" cy="563.66" r="0.70" fill="#007A55" opacity="0.56"/>
+<circle cx="26.59" cy="569.33" r="0.94" fill="#007A55" opacity="0.55"/>
+<circle cx="217.77" cy="567.11" r="1.14" fill="#007A55" opacity="0.67"/>
+<circle cx="65.11" cy="569.19" r="1.19" fill="#007A55" opacity="0.61"/>
+<circle cx="176.00" cy="571.74" r="1.06" fill="#007A55" opacity="0.55"/>
+<circle cx="270.96" cy="576.56" r="1.09" fill="#007A55" opacity="0.32"/>
+<circle cx="176.89" cy="566.45" r="0.85" fill="#007A55" opacity="0.62"/>
+<circle cx="90.15" cy="565.24" r="1.06" fill="#007A55" opacity="0.52"/>
+<circle cx="47.60" cy="577.54" r="1.16" fill="#007A55" opacity="0.27"/>
+<circle cx="275.21" cy="575.83" r="0.76" fill="#007A55" opacity="0.35"/>
+<circle cx="353.73" cy="562.34" r="0.86" fill="#007A55" opacity="0.50"/>
+<circle cx="363.74" cy="569.93" r="0.70" fill="#007A55" opacity="0.78"/>
+<circle cx="281.20" cy="574.11" r="1.03" fill="#007A55" opacity="0.44"/>
+<circle cx="286.56" cy="568.75" r="0.68" fill="#007A55" opacity="0.72"/>
+<circle cx="343.54" cy="568.16" r="0.83" fill="#007A55" opacity="0.80"/>
+<circle cx="230.84" cy="569.55" r="1.02" fill="#D24339" opacity="0.69"/>
+<circle cx="35.38" cy="568.05" r="0.96" fill="#007A55" opacity="0.59"/>
+<circle cx="30.67" cy="560.76" r="1.01" fill="#007A55" opacity="0.31"/>
+<circle cx="209.54" cy="562.90" r="1.20" fill="#007A55" opacity="0.46"/>
+<circle cx="95.45" cy="571.95" r="0.73" fill="#007A55" opacity="0.49"/>
+<circle cx="185.80" cy="569.27" r="0.61" fill="#007A55" opacity="0.68"/>
+<circle cx="276.05" cy="562.84" r="1.23" fill="#007A55" opacity="0.57"/>
+<circle cx="332.12" cy="569.30" r="0.76" fill="#007A55" opacity="0.79"/>
+<circle cx="118.83" cy="566.79" r="1.08" fill="#007A55" opacity="0.64"/>
+<circle cx="68.05" cy="567.05" r="0.70" fill="#007A55" opacity="0.56"/>
+<circle cx="315.08" cy="569.97" r="1.17" fill="#007A55" opacity="0.72"/>
+<circle cx="79.16" cy="570.59" r="0.96" fill="#007A55" opacity="0.55"/>
+<circle cx="151.87" cy="569.86" r="0.95" fill="#007A55" opacity="0.59"/>
+<circle cx="354.61" cy="567.09" r="1.21" fill="#007A55" opacity="0.75"/>
+<circle cx="69.25" cy="574.17" r="0.80" fill="#007A55" opacity="0.41"/>
+<circle cx="282.72" cy="564.62" r="0.68" fill="#007A55" opacity="0.66"/>
+<circle cx="291.78" cy="567.85" r="0.77" fill="#007A55" opacity="0.77"/>
+<circle cx="245.26" cy="561.17" r="0.68" fill="#D24339" opacity="0.44"/>
+<circle cx="272.18" cy="566.30" r="0.75" fill="#007A55" opacity="0.73"/>
+<circle cx="320.29" cy="568.41" r="0.95" fill="#007A55" opacity="0.81"/>
+<circle cx="69.35" cy="573.74" r="0.95" fill="#007A55" opacity="0.43"/>
+<circle cx="216.12" cy="573.35" r="0.70" fill="#007A55" opacity="0.52"/>
+<circle cx="201.65" cy="567.57" r="0.64" fill="#007A55" opacity="0.67"/>
+<circle cx="272.04" cy="565.18" r="0.61" fill="#007A55" opacity="0.68"/>
+<circle cx="96.51" cy="562.28" r="0.85" fill="#007A55" opacity="0.41"/>
+<circle cx="339.24" cy="573.91" r="0.84" fill="#007A55" opacity="0.56"/>
+<circle cx="288.01" cy="567.97" r="0.89" fill="#007A55" opacity="0.76"/>
+<circle cx="357.03" cy="567.42" r="0.85" fill="#007A55" opacity="0.77"/>
+<circle cx="194.90" cy="568.17" r="0.91" fill="#007A55" opacity="0.70"/>
+<circle cx="183.59" cy="571.06" r="0.71" fill="#007A55" opacity="0.60"/>
+<circle cx="184.46" cy="572.85" r="0.67" fill="#007A55" opacity="0.52"/>
+<circle cx="172.40" cy="569.80" r="1.20" fill="#007A55" opacity="0.63"/>
+<circle cx="199.00" cy="570.55" r="1.06" fill="#007A55" opacity="0.64"/>
+<circle cx="330.20" cy="564.30" r="1.21" fill="#007A55" opacity="0.60"/>
+<circle cx="149.56" cy="570.59" r="1.23" fill="#007A55" opacity="0.55"/>
+<circle cx="195.26" cy="571.16" r="1.13" fill="#007A55" opacity="0.61"/>
+<circle cx="174.38" cy="567.16" r="0.91" fill="#007A55" opacity="0.66"/>
+<circle cx="208.38" cy="560.11" r="0.94" fill="#007A55" opacity="0.33"/>
+<circle cx="107.20" cy="563.64" r="1.12" fill="#007A55" opacity="0.49"/>
+<circle cx="317.60" cy="566.17" r="1.15" fill="#007A55" opacity="0.71"/>
+<circle cx="219.62" cy="566.59" r="0.76" fill="#007A55" opacity="0.65"/>
+<circle cx="352.33" cy="568.37" r="0.69" fill="#007A55" opacity="0.82"/>
+<circle cx="118.60" cy="567.11" r="1.11" fill="#007A55" opacity="0.66"/>
+<circle cx="178.76" cy="569.40" r="0.71" fill="#007A55" opacity="0.66"/>
+<circle cx="357.25" cy="564.75" r="1.03" fill="#007A55" opacity="0.63"/>
+<circle cx="309.93" cy="565.86" r="0.80" fill="#007A55" opacity="0.70"/>
+<circle cx="78.98" cy="569.36" r="0.97" fill="#007A55" opacity="0.60"/>
+<circle cx="67.01" cy="565.00" r="0.78" fill="#007A55" opacity="0.48"/>
+<circle cx="63.19" cy="576.38" r="1.15" fill="#007A55" opacity="0.32"/>
+<circle cx="50.28" cy="571.74" r="1.06" fill="#007A55" opacity="0.50"/>
+<circle cx="284.72" cy="570.99" r="0.96" fill="#007A55" opacity="0.60"/>
+<circle cx="260.91" cy="572.09" r="0.68" fill="#007A55" opacity="0.54"/>
+<circle cx="122.80" cy="574.44" r="0.86" fill="#007A55" opacity="0.36"/>
+<circle cx="205.77" cy="571.98" r="1.10" fill="#007A55" opacity="0.58"/>
+<circle cx="290.75" cy="565.98" r="1.02" fill="#007A55" opacity="0.72"/>
+<circle cx="195.54" cy="570.78" r="0.93" fill="#007A55" opacity="0.63"/>
+<circle cx="307.16" cy="566.37" r="0.96" fill="#007A55" opacity="0.73"/>
+<circle cx="81.43" cy="569.94" r="1.09" fill="#007A55" opacity="0.58"/>
+<circle cx="37.01" cy="572.96" r="0.72" fill="#007A55" opacity="0.43"/>
+<circle cx="53.01" cy="565.89" r="1.23" fill="#007A55" opacity="0.50"/>
+<circle cx="339.49" cy="574.49" r="0.81" fill="#007A55" opacity="0.53"/>
+<circle cx="205.34" cy="575.11" r="0.82" fill="#007A55" opacity="0.44"/>
+<circle cx="260.51" cy="569.03" r="1.24" fill="#007A55" opacity="0.69"/>
+<circle cx="313.00" cy="573.30" r="0.75" fill="#007A55" opacity="0.54"/>
+<circle cx="103.94" cy="566.59" r="0.70" fill="#007A55" opacity="0.61"/>
+<circle cx="147.10" cy="572.34" r="1.20" fill="#007A55" opacity="0.47"/>
+<circle cx="191.81" cy="567.12" r="0.74" fill="#007A55" opacity="0.65"/>
+<circle cx="113.40" cy="570.24" r="0.90" fill="#007A55" opacity="0.54"/>
+<circle cx="63.79" cy="570.26" r="1.14" fill="#007A55" opacity="0.57"/>
+<circle cx="31.21" cy="566.20" r="1.05" fill="#007A55" opacity="0.52"/>
+<circle cx="53.13" cy="568.82" r="0.77" fill="#007A55" opacity="0.61"/>
+<circle cx="334.05" cy="567.94" r="0.86" fill="#007A55" opacity="0.79"/>
+<circle cx="150.07" cy="574.03" r="0.75" fill="#007A55" opacity="0.40"/>
+<circle cx="148.68" cy="568.39" r="0.83" fill="#007A55" opacity="0.65"/>
+<circle cx="62.75" cy="566.38" r="1.25" fill="#007A55" opacity="0.53"/>
+<circle cx="42.26" cy="566.03" r="1.13" fill="#007A55" opacity="0.51"/>
+<circle cx="328.29" cy="572.99" r="0.98" fill="#007A55" opacity="0.59"/>
+<circle cx="175.91" cy="567.25" r="0.79" fill="#007A55" opacity="0.66"/>
+<circle cx="210.04" cy="567.56" r="1.24" fill="#007A55" opacity="0.68"/>
+<circle cx="311.76" cy="567.70" r="1.02" fill="#007A55" opacity="0.79"/>
+<circle cx="264.99" cy="571.83" r="0.68" fill="#007A55" opacity="0.55"/>
+<circle cx="327.59" cy="565.15" r="0.82" fill="#007A55" opacity="0.64"/>
+<circle cx="234.98" cy="566.56" r="0.88" fill="#D24339" opacity="0.68"/>
+<circle cx="44.39" cy="565.10" r="1.06" fill="#007A55" opacity="0.47"/>
+<circle cx="163.27" cy="569.42" r="0.78" fill="#007A55" opacity="0.63"/>
+<circle cx="235.53" cy="572.69" r="1.21" fill="#D24339" opacity="0.53"/>
+<circle cx="98.47" cy="567.67" r="0.66" fill="#007A55" opacity="0.64"/>
+<circle cx="109.21" cy="572.21" r="1.13" fill="#007A55" opacity="0.46"/>
+<circle cx="112.41" cy="566.64" r="0.66" fill="#007A55" opacity="0.63"/>
+<circle cx="231.42" cy="566.52" r="0.63" fill="#D24339" opacity="0.67"/>
+<circle cx="318.48" cy="565.96" r="1.18" fill="#007A55" opacity="0.69"/>
+<circle cx="291.27" cy="570.57" r="0.88" fill="#007A55" opacity="0.63"/>
+<circle cx="219.64" cy="575.27" r="1.09" fill="#007A55" opacity="0.43"/>
+<circle cx="118.04" cy="559.45" r="1.13" fill="#007A55" opacity="0.33"/>
+<circle cx="245.57" cy="572.56" r="0.91" fill="#D24339" opacity="0.53"/>
+<circle cx="244.51" cy="568.47" r="0.60" fill="#D24339" opacity="0.73"/>
+<circle cx="248.07" cy="565.62" r="1.20" fill="#D24339" opacity="0.66"/>
+<circle cx="309.63" cy="570.83" r="0.78" fill="#007A55" opacity="0.66"/>
+<circle cx="350.05" cy="567.31" r="0.63" fill="#007A55" opacity="0.76"/>
+<circle cx="122.44" cy="565.41" r="1.11" fill="#007A55" opacity="0.59"/>
+<circle cx="76.89" cy="569.97" r="1.09" fill="#007A55" opacity="0.58"/>
+<circle cx="229.16" cy="565.48" r="0.70" fill="#D24339" opacity="0.61"/>
+<circle cx="31.07" cy="565.60" r="1.04" fill="#007A55" opacity="0.50"/>
+<circle cx="82.52" cy="568.84" r="0.97" fill="#007A55" opacity="0.62"/>
+<circle cx="314.70" cy="563.74" r="1.00" fill="#007A55" opacity="0.58"/>
+<circle cx="40.74" cy="576.79" r="0.65" fill="#007A55" opacity="0.29"/>
+<circle cx="75.54" cy="571.54" r="0.65" fill="#007A55" opacity="0.52"/>
+<circle cx="335.97" cy="564.29" r="1.10" fill="#007A55" opacity="0.59"/>
+<circle cx="118.86" cy="569.55" r="1.04" fill="#007A55" opacity="0.57"/>
+<circle cx="84.84" cy="568.14" r="1.19" fill="#007A55" opacity="0.63"/>
+<circle cx="143.13" cy="567.07" r="0.74" fill="#007A55" opacity="0.67"/>
+<circle cx="345.49" cy="569.78" r="0.62" fill="#007A55" opacity="0.78"/>
+<circle cx="133.30" cy="559.19" r="0.63" fill="#007A55" opacity="0.33"/>
+<circle cx="329.61" cy="564.42" r="0.65" fill="#007A55" opacity="0.60"/>
+<circle cx="50.60" cy="565.76" r="1.19" fill="#007A55" opacity="0.50"/>
+<circle cx="88.28" cy="565.47" r="0.93" fill="#007A55" opacity="0.53"/>
+<circle cx="37.84" cy="569.54" r="1.02" fill="#007A55" opacity="0.56"/>
+<circle cx="304.34" cy="564.42" r="1.17" fill="#007A55" opacity="0.63"/>
+<circle cx="100.33" cy="565.97" r="0.70" fill="#007A55" opacity="0.57"/>
+<circle cx="150.10" cy="571.41" r="1.00" fill="#007A55" opacity="0.52"/>
+<circle cx="196.45" cy="567.31" r="0.72" fill="#007A55" opacity="0.66"/>
+<circle cx="79.47" cy="570.26" r="1.18" fill="#007A55" opacity="0.57"/>
+<circle cx="174.99" cy="570.28" r="0.79" fill="#007A55" opacity="0.62"/>
+<circle cx="38.20" cy="573.55" r="1.17" fill="#007A55" opacity="0.41"/>
+<circle cx="230.41" cy="575.14" r="1.19" fill="#D24339" opacity="0.42"/>
+<circle cx="98.50" cy="567.28" r="0.88" fill="#007A55" opacity="0.62"/>
+<circle cx="104.56" cy="567.89" r="1.09" fill="#007A55" opacity="0.65"/>
+<circle cx="224.87" cy="568.60" r="1.18" fill="#D24339" opacity="0.74"/>
+<circle cx="63.86" cy="567.71" r="1.09" fill="#007A55" opacity="0.58"/>
+<circle cx="227.25" cy="569.37" r="0.85" fill="#D24339" opacity="0.70"/>
+<circle cx="219.82" cy="573.17" r="0.91" fill="#007A55" opacity="0.52"/>
+<circle cx="138.15" cy="565.32" r="0.75" fill="#007A55" opacity="0.60"/>
+<circle cx="118.64" cy="569.85" r="0.97" fill="#007A55" opacity="0.56"/>
+<circle cx="222.37" cy="570.46" r="0.69" fill="#007A55" opacity="0.65"/>
+<circle cx="61.26" cy="569.38" r="1.04" fill="#007A55" opacity="0.60"/>
+<circle cx="244.39" cy="568.78" r="0.67" fill="#D24339" opacity="0.71"/>
+<circle cx="347.22" cy="573.17" r="1.13" fill="#007A55" opacity="0.60"/>
+<circle cx="62.52" cy="569.48" r="0.90" fill="#007A55" opacity="0.60"/>
+<circle cx="229.72" cy="563.60" r="1.20" fill="#D24339" opacity="0.52"/>
+<circle cx="41.10" cy="560.70" r="0.96" fill="#007A55" opacity="0.30"/>
+<circle cx="35.95" cy="570.29" r="0.95" fill="#007A55" opacity="0.53"/>
+<circle cx="89.28" cy="566.43" r="0.93" fill="#007A55" opacity="0.57"/>
+<circle cx="238.20" cy="568.98" r="1.20" fill="#D24339" opacity="0.71"/>
+<circle cx="133.37" cy="568.49" r="0.97" fill="#007A55" opacity="0.62"/>
+<circle cx="98.81" cy="568.83" r="0.75" fill="#007A55" opacity="0.61"/>
+<circle cx="302.15" cy="571.07" r="0.77" fill="#007A55" opacity="0.63"/>
+<circle cx="219.00" cy="574.18" r="1.05" fill="#007A55" opacity="0.48"/>
+<circle cx="359.16" cy="566.91" r="1.14" fill="#007A55" opacity="0.75"/>
+<circle cx="313.74" cy="568.36" r="1.00" fill="#007A55" opacity="0.80"/>
+<circle cx="209.28" cy="565.54" r="0.88" fill="#007A55" opacity="0.58"/>
+<circle cx="163.89" cy="567.63" r="0.94" fill="#007A55" opacity="0.69"/>
+<circle cx="265.22" cy="564.82" r="0.96" fill="#007A55" opacity="0.65"/>
+<circle cx="308.63" cy="567.25" r="0.76" fill="#007A55" opacity="0.77"/>
+<circle cx="245.35" cy="561.91" r="0.75" fill="#D24339" opacity="0.48"/>
+<circle cx="147.94" cy="563.92" r="0.85" fill="#007A55" opacity="0.54"/>
+<circle cx="260.83" cy="565.20" r="0.89" fill="#007A55" opacity="0.67"/>
+<circle cx="171.23" cy="566.77" r="0.93" fill="#007A55" opacity="0.64"/>
+<circle cx="252.24" cy="568.91" r="1.18" fill="#007A55" opacity="0.70"/>
+<circle cx="132.93" cy="568.79" r="0.91" fill="#007A55" opacity="0.61"/>
+<circle cx="57.42" cy="565.32" r="0.91" fill="#007A55" opacity="0.48"/>
+<circle cx="278.86" cy="566.85" r="0.75" fill="#007A55" opacity="0.77"/>
+<circle cx="308.00" cy="569.44" r="0.91" fill="#007A55" opacity="0.73"/>
+<circle cx="60.97" cy="562.92" r="1.09" fill="#007A55" opacity="0.39"/>
+<circle cx="349.46" cy="559.44" r="1.25" fill="#007A55" opacity="0.34"/>
+<circle cx="74.30" cy="565.84" r="0.74" fill="#007A55" opacity="0.52"/>
+<circle cx="258.83" cy="564.15" r="0.72" fill="#007A55" opacity="0.61"/>
+<circle cx="224.16" cy="569.73" r="1.22" fill="#D24339" opacity="0.69"/>
+<circle cx="90.40" cy="570.63" r="1.08" fill="#007A55" opacity="0.54"/>
+<circle cx="143.17" cy="561.65" r="0.78" fill="#007A55" opacity="0.44"/>
+<circle cx="140.45" cy="570.16" r="1.00" fill="#007A55" opacity="0.56"/>
+<circle cx="206.51" cy="572.31" r="0.92" fill="#007A55" opacity="0.57"/>
+<circle cx="86.61" cy="567.20" r="1.17" fill="#007A55" opacity="0.60"/>
+<circle cx="286.46" cy="573.34" r="0.61" fill="#007A55" opacity="0.49"/>
+<circle cx="253.04" cy="569.37" r="0.63" fill="#007A55" opacity="0.68"/>
+<circle cx="94.24" cy="564.70" r="0.77" fill="#007A55" opacity="0.51"/>
+<circle cx="103.31" cy="560.25" r="0.76" fill="#007A55" opacity="0.34"/>
+<circle cx="61.86" cy="564.23" r="0.95" fill="#007A55" opacity="0.44"/>
+<circle cx="259.13" cy="567.93" r="0.78" fill="#007A55" opacity="0.74"/>
+<circle cx="227.05" cy="574.12" r="0.73" fill="#D24339" opacity="0.47"/>
+<circle cx="335.81" cy="565.45" r="0.91" fill="#007A55" opacity="0.66"/>
+<circle cx="296.51" cy="563.49" r="0.64" fill="#007A55" opacity="0.59"/>
+<circle cx="352.66" cy="566.36" r="1.09" fill="#007A55" opacity="0.71"/>
+<circle cx="309.81" cy="570.90" r="0.70" fill="#007A55" opacity="0.66"/>
+<circle cx="182.84" cy="568.55" r="0.92" fill="#007A55" opacity="0.71"/>
+<circle cx="124.38" cy="564.44" r="1.20" fill="#007A55" opacity="0.55"/>
+<circle cx="153.50" cy="564.01" r="0.71" fill="#007A55" opacity="0.54"/>
+<circle cx="165.84" cy="567.85" r="1.10" fill="#007A55" opacity="0.70"/>
+<circle cx="134.15" cy="570.52" r="0.73" fill="#007A55" opacity="0.53"/>
+<circle cx="83.28" cy="573.00" r="0.67" fill="#007A55" opacity="0.45"/>
+<circle cx="335.75" cy="567.59" r="0.84" fill="#007A55" opacity="0.77"/>
+<circle cx="351.64" cy="565.43" r="0.92" fill="#007A55" opacity="0.66"/>
+<circle cx="275.12" cy="572.00" r="1.03" fill="#007A55" opacity="0.54"/>
+<circle cx="202.49" cy="567.04" r="0.88" fill="#007A55" opacity="0.65"/>
+<circle cx="310.85" cy="563.34" r="0.93" fill="#007A55" opacity="0.57"/>
+<circle cx="196.01" cy="569.00" r="0.88" fill="#007A55" opacity="0.71"/>
+<circle cx="46.46" cy="572.17" r="1.21" fill="#007A55" opacity="0.48"/>
+<circle cx="301.94" cy="569.38" r="0.72" fill="#007A55" opacity="0.72"/>
+<circle cx="281.90" cy="570.64" r="0.82" fill="#007A55" opacity="0.62"/>
+<circle cx="126.41" cy="564.92" r="1.03" fill="#007A55" opacity="0.57"/>
+<circle cx="101.65" cy="567.21" r="0.74" fill="#007A55" opacity="0.63"/>
+<circle cx="309.37" cy="571.99" r="1.14" fill="#007A55" opacity="0.60"/>
+<circle cx="230.26" cy="563.09" r="0.65" fill="#D24339" opacity="0.50"/>
+<circle cx="267.80" cy="571.34" r="0.67" fill="#007A55" opacity="0.57"/>
+<circle cx="156.17" cy="566.59" r="0.71" fill="#007A55" opacity="0.65"/>
+<circle cx="192.60" cy="563.12" r="0.83" fill="#007A55" opacity="0.46"/>
+<circle cx="335.49" cy="570.67" r="0.94" fill="#007A55" opacity="0.72"/>
+<circle cx="244.32" cy="564.64" r="1.10" fill="#D24339" opacity="0.61"/>
+<circle cx="320.11" cy="571.32" r="0.66" fill="#007A55" opacity="0.66"/>
+<circle cx="166.23" cy="567.03" r="1.23" fill="#007A55" opacity="0.66"/>
+<circle cx="329.53" cy="569.08" r="0.69" fill="#007A55" opacity="0.80"/>
+<circle cx="137.46" cy="571.04" r="1.21" fill="#007A55" opacity="0.51"/>
+<circle cx="251.05" cy="570.94" r="1.03" fill="#007A55" opacity="0.60"/>
+<circle cx="256.83" cy="568.65" r="0.87" fill="#007A55" opacity="0.71"/>
+<circle cx="127.31" cy="570.90" r="1.04" fill="#007A55" opacity="0.51"/>
+<circle cx="154.30" cy="567.19" r="1.23" fill="#007A55" opacity="0.68"/>
+<circle cx="347.76" cy="574.89" r="0.63" fill="#007A55" opacity="0.51"/>
+<circle cx="74.81" cy="574.56" r="0.80" fill="#007A55" opacity="0.39"/>
+<circle cx="115.28" cy="563.54" r="1.12" fill="#007A55" opacity="0.50"/>
+<circle cx="91.86" cy="573.50" r="1.14" fill="#007A55" opacity="0.42"/>
+<circle cx="100.53" cy="569.50" r="1.17" fill="#007A55" opacity="0.58"/>
+<circle cx="83.32" cy="563.88" r="1.19" fill="#007A55" opacity="0.45"/>
+<circle cx="314.58" cy="567.85" r="0.82" fill="#007A55" opacity="0.80"/>
+<circle cx="210.93" cy="577.01" r="0.95" fill="#007A55" opacity="0.35"/>
+<circle cx="106.62" cy="563.24" r="1.06" fill="#007A55" opacity="0.47"/>
+<circle cx="276.49" cy="567.19" r="1.24" fill="#007A55" opacity="0.78"/>
+<circle cx="190.46" cy="570.71" r="0.95" fill="#007A55" opacity="0.63"/>
+<circle cx="207.60" cy="569.02" r="1.11" fill="#007A55" opacity="0.72"/>
+<circle cx="70.20" cy="571.08" r="1.22" fill="#007A55" opacity="0.53"/>
+<circle cx="80.31" cy="565.55" r="1.04" fill="#007A55" opacity="0.52"/>
+<circle cx="128.95" cy="566.69" r="0.91" fill="#007A55" opacity="0.65"/>
+<circle cx="97.26" cy="572.46" r="1.14" fill="#007A55" opacity="0.46"/>
+<circle cx="280.41" cy="564.65" r="0.88" fill="#007A55" opacity="0.66"/>
+<circle cx="270.54" cy="565.89" r="1.01" fill="#007A55" opacity="0.71"/>
+<circle cx="73.90" cy="564.42" r="1.16" fill="#007A55" opacity="0.46"/>
+<circle cx="48.37" cy="563.66" r="0.70" fill="#007A55" opacity="0.42"/>
+<circle cx="65.82" cy="568.41" r="0.90" fill="#007A55" opacity="0.61"/>
+<circle cx="342.78" cy="564.84" r="0.76" fill="#007A55" opacity="0.62"/>
+<circle cx="252.28" cy="565.44" r="1.12" fill="#007A55" opacity="0.66"/>
+<circle cx="214.45" cy="564.98" r="1.07" fill="#007A55" opacity="0.56"/>
+<circle cx="110.28" cy="574.21" r="1.01" fill="#007A55" opacity="0.38"/>
+<circle cx="239.78" cy="568.78" r="1.06" fill="#D24339" opacity="0.72"/>
+<circle cx="56.25" cy="568.65" r="0.96" fill="#007A55" opacity="0.61"/>
+<circle cx="314.19" cy="572.81" r="0.76" fill="#007A55" opacity="0.57"/>
+<circle cx="185.56" cy="570.93" r="0.67" fill="#007A55" opacity="0.61"/>
+<circle cx="154.16" cy="561.60" r="1.03" fill="#007A55" opacity="0.43"/>
+<circle cx="287.88" cy="565.15" r="0.96" fill="#007A55" opacity="0.68"/>
+<circle cx="280.40" cy="561.57" r="0.68" fill="#007A55" opacity="0.50"/>
+<circle cx="301.17" cy="574.98" r="1.01" fill="#007A55" opacity="0.43"/>
+<circle cx="230.59" cy="561.27" r="0.66" fill="#D24339" opacity="0.41"/>
+<circle cx="274.28" cy="563.99" r="0.93" fill="#007A55" opacity="0.62"/>
+<circle cx="102.43" cy="569.93" r="0.97" fill="#007A55" opacity="0.56"/>
+<circle cx="325.80" cy="568.42" r="0.64" fill="#007A55" opacity="0.82"/>
+<circle cx="324.19" cy="571.35" r="0.82" fill="#007A55" opacity="0.67"/>
+<circle cx="74.11" cy="570.15" r="0.76" fill="#007A55" opacity="0.57"/>
+<circle cx="49.00" cy="566.20" r="1.02" fill="#007A55" opacity="0.52"/>
+<circle cx="116.15" cy="572.49" r="0.80" fill="#007A55" opacity="0.45"/>
+<circle cx="145.87" cy="565.33" r="0.76" fill="#007A55" opacity="0.60"/>
+<circle cx="133.23" cy="567.40" r="0.83" fill="#007A55" opacity="0.67"/>
+<circle cx="156.66" cy="578.59" r="0.98" fill="#007A55" opacity="0.21"/>
+<circle cx="308.54" cy="572.15" r="1.13" fill="#007A55" opacity="0.59"/>
+<circle cx="361.22" cy="567.08" r="1.01" fill="#007A55" opacity="0.76"/>
+<circle cx="219.72" cy="571.19" r="0.79" fill="#007A55" opacity="0.62"/>
+<circle cx="100.36" cy="565.05" r="0.97" fill="#007A55" opacity="0.54"/>
+<circle cx="296.29" cy="570.15" r="0.92" fill="#007A55" opacity="0.66"/>
+<circle cx="349.93" cy="571.55" r="0.66" fill="#007A55" opacity="0.69"/>
+<circle cx="104.27" cy="565.79" r="1.06" fill="#007A55" opacity="0.57"/>
+<circle cx="348.99" cy="571.77" r="0.76" fill="#007A55" opacity="0.68"/>
+<circle cx="176.87" cy="569.37" r="1.05" fill="#007A55" opacity="0.66"/>
+<circle cx="308.28" cy="571.07" r="0.62" fill="#007A55" opacity="0.65"/>
+<circle cx="230.42" cy="566.10" r="0.72" fill="#D24339" opacity="0.64"/>
+<circle cx="108.93" cy="565.38" r="0.61" fill="#007A55" opacity="0.57"/>
+<circle cx="166.34" cy="573.72" r="0.86" fill="#007A55" opacity="0.44"/>
+<circle cx="349.62" cy="572.18" r="0.87" fill="#007A55" opacity="0.66"/>
+<circle cx="155.90" cy="564.33" r="0.61" fill="#007A55" opacity="0.55"/>
+<circle cx="281.60" cy="558.46" r="0.71" fill="#007A55" opacity="0.35"/>
+<circle cx="83.77" cy="568.97" r="0.94" fill="#007A55" opacity="0.62"/>
+<circle cx="184.42" cy="571.01" r="1.25" fill="#007A55" opacity="0.60"/>
+<circle cx="99.90" cy="567.14" r="1.11" fill="#007A55" opacity="0.62"/>
+<circle cx="159.66" cy="571.85" r="1.05" fill="#007A55" opacity="0.51"/>
+<circle cx="355.08" cy="566.15" r="1.15" fill="#007A55" opacity="0.70"/>
+<circle cx="58.65" cy="565.71" r="0.74" fill="#007A55" opacity="0.50"/>
+<circle cx="132.04" cy="568.06" r="1.04" fill="#007A55" opacity="0.64"/>
+<circle cx="209.22" cy="568.32" r="0.61" fill="#007A55" opacity="0.71"/>
+<circle cx="34.95" cy="566.31" r="0.97" fill="#007A55" opacity="0.52"/>
+<circle cx="63.63" cy="566.83" r="0.84" fill="#007A55" opacity="0.55"/>
+<circle cx="122.49" cy="563.80" r="0.72" fill="#007A55" opacity="0.52"/>
+<circle cx="316.55" cy="563.20" r="1.08" fill="#007A55" opacity="0.55"/>
+<circle cx="357.35" cy="562.58" r="0.64" fill="#007A55" opacity="0.51"/>
+<circle cx="275.22" cy="566.96" r="1.10" fill="#007A55" opacity="0.77"/>
+<circle cx="54.48" cy="565.25" r="0.94" fill="#007A55" opacity="0.48"/>
+<circle cx="60.97" cy="570.01" r="1.01" fill="#007A55" opacity="0.57"/>
+<circle cx="206.44" cy="574.69" r="1.01" fill="#007A55" opacity="0.46"/>
+<circle cx="289.07" cy="561.12" r="0.60" fill="#007A55" opacity="0.48"/>
+<circle cx="33.29" cy="564.29" r="0.73" fill="#007A55" opacity="0.45"/>
+<circle cx="310.59" cy="567.84" r="0.75" fill="#007A55" opacity="0.80"/>
+<circle cx="273.42" cy="567.88" r="1.20" fill="#007A55" opacity="0.75"/>
+<circle cx="61.21" cy="568.36" r="0.97" fill="#007A55" opacity="0.61"/>
+<circle cx="337.21" cy="562.81" r="0.93" fill="#007A55" opacity="0.52"/>
+<circle cx="310.75" cy="565.55" r="0.81" fill="#007A55" opacity="0.68"/>
+<circle cx="73.47" cy="571.76" r="0.81" fill="#007A55" opacity="0.51"/>
+<circle cx="102.51" cy="568.00" r="0.61" fill="#007A55" opacity="0.64"/>
+<circle cx="30.09" cy="574.35" r="0.84" fill="#007A55" opacity="0.36"/>
+<circle cx="319.05" cy="562.70" r="1.22" fill="#007A55" opacity="0.52"/>
+<circle cx="194.22" cy="568.11" r="0.71" fill="#007A55" opacity="0.69"/>
+<circle cx="101.10" cy="569.22" r="1.05" fill="#007A55" opacity="0.59"/>
+<circle cx="200.71" cy="570.10" r="1.01" fill="#007A55" opacity="0.67"/>
+<circle cx="267.46" cy="570.62" r="0.87" fill="#007A55" opacity="0.61"/>
+<circle cx="203.23" cy="571.75" r="0.85" fill="#007A55" opacity="0.59"/>
+<circle cx="105.89" cy="564.47" r="0.82" fill="#007A55" opacity="0.52"/>
+<circle cx="181.16" cy="566.48" r="0.67" fill="#007A55" opacity="0.62"/>
+<circle cx="347.92" cy="568.90" r="0.72" fill="#007A55" opacity="0.83"/>
+<circle cx="181.76" cy="575.55" r="0.98" fill="#007A55" opacity="0.39"/>
+<circle cx="232.04" cy="561.72" r="1.05" fill="#D24339" opacity="0.44"/>
+<circle cx="36.48" cy="570.22" r="0.88" fill="#007A55" opacity="0.54"/>
+<circle cx="335.89" cy="573.31" r="1.14" fill="#007A55" opacity="0.59"/>
+<circle cx="87.49" cy="573.64" r="0.82" fill="#007A55" opacity="0.42"/>
+<circle cx="114.79" cy="567.60" r="1.12" fill="#007A55" opacity="0.65"/>
+<circle cx="175.06" cy="568.75" r="0.65" fill="#007A55" opacity="0.69"/>
+<circle cx="351.54" cy="574.43" r="1.08" fill="#007A55" opacity="0.54"/>
+<circle cx="81.55" cy="571.59" r="1.11" fill="#007A55" opacity="0.51"/>
+<circle cx="134.41" cy="567.62" r="1.24" fill="#007A55" opacity="0.66"/>
+<circle cx="264.72" cy="572.64" r="0.78" fill="#007A55" opacity="0.51"/>
+<circle cx="364.84" cy="566.55" r="0.86" fill="#007A55" opacity="0.74"/>
+<circle cx="330.24" cy="572.11" r="1.04" fill="#007A55" opacity="0.64"/>
+<circle cx="240.00" cy="560.90" r="1.05" fill="#D24339" opacity="0.42"/>
+<circle cx="256.21" cy="568.45" r="0.76" fill="#007A55" opacity="0.72"/>
+<circle cx="132.44" cy="566.17" r="1.06" fill="#007A55" opacity="0.63"/>
+<circle cx="248.80" cy="570.02" r="0.83" fill="#007A55" opacity="0.65"/>
+<circle cx="266.43" cy="565.66" r="0.99" fill="#007A55" opacity="0.70"/>
+<circle cx="105.24" cy="571.06" r="0.69" fill="#007A55" opacity="0.51"/>
+<circle cx="251.71" cy="559.40" r="0.60" fill="#007A55" opacity="0.37"/>
+<circle cx="301.42" cy="572.23" r="0.90" fill="#007A55" opacity="0.57"/>
+<circle cx="281.66" cy="564.80" r="0.84" fill="#007A55" opacity="0.67"/>
+<circle cx="218.88" cy="567.76" r="1.05" fill="#007A55" opacity="0.70"/>
+<circle cx="180.28" cy="574.77" r="0.86" fill="#007A55" opacity="0.42"/>
+<circle cx="77.03" cy="571.12" r="1.08" fill="#007A55" opacity="0.53"/>
+<circle cx="154.86" cy="566.02" r="0.93" fill="#007A55" opacity="0.62"/>
+<circle cx="174.56" cy="569.23" r="0.66" fill="#007A55" opacity="0.66"/>
+<circle cx="44.01" cy="563.99" r="0.67" fill="#007A55" opacity="0.43"/>
+<circle cx="340.67" cy="565.04" r="1.00" fill="#007A55" opacity="0.63"/>
+<circle cx="293.86" cy="571.71" r="0.77" fill="#007A55" opacity="0.58"/>
+<circle cx="311.52" cy="575.14" r="0.80" fill="#007A55" opacity="0.44"/>
+<circle cx="101.65" cy="567.78" r="1.05" fill="#007A55" opacity="0.65"/>
+<circle cx="82.21" cy="570.69" r="0.73" fill="#007A55" opacity="0.55"/>
+<circle cx="119.35" cy="562.72" r="0.81" fill="#007A55" opacity="0.47"/>
+<circle cx="348.10" cy="568.60" r="1.03" fill="#007A55" opacity="0.83"/>
+<circle cx="149.44" cy="568.33" r="0.65" fill="#007A55" opacity="0.65"/>
+<circle cx="184.59" cy="571.95" r="1.07" fill="#007A55" opacity="0.56"/>
+<circle cx="272.91" cy="567.95" r="0.76" fill="#007A55" opacity="0.74"/>
+<circle cx="159.08" cy="566.49" r="0.99" fill="#007A55" opacity="0.64"/>
+<circle cx="258.53" cy="572.65" r="1.10" fill="#007A55" opacity="0.51"/>
+<circle cx="78.06" cy="565.62" r="0.65" fill="#007A55" opacity="0.52"/>
+<circle cx="82.78" cy="571.21" r="0.61" fill="#007A55" opacity="0.53"/>
+<circle cx="109.03" cy="570.31" r="0.86" fill="#007A55" opacity="0.54"/>
+<circle cx="68.99" cy="568.93" r="0.73" fill="#007A55" opacity="0.62"/>
+<circle cx="246.81" cy="573.00" r="0.99" fill="#D24339" opacity="0.51"/>
+<circle cx="187.83" cy="563.98" r="1.19" fill="#007A55" opacity="0.50"/>
+<circle cx="96.56" cy="570.34" r="0.62" fill="#007A55" opacity="0.55"/>
+<circle cx="294.24" cy="570.63" r="0.99" fill="#007A55" opacity="0.64"/>
+<circle cx="32.97" cy="565.02" r="0.66" fill="#007A55" opacity="0.48"/>
+<circle cx="232.28" cy="568.06" r="0.99" fill="#D24339" opacity="0.74"/>
+<circle cx="181.11" cy="569.06" r="0.75" fill="#007A55" opacity="0.68"/>
+<circle cx="103.68" cy="569.93" r="0.96" fill="#007A55" opacity="0.56"/>
+<circle cx="193.91" cy="569.79" r="0.61" fill="#007A55" opacity="0.67"/>
+<circle cx="193.51" cy="572.99" r="1.14" fill="#007A55" opacity="0.53"/>
+<circle cx="91.95" cy="567.86" r="0.90" fill="#007A55" opacity="0.63"/>
+<circle cx="205.55" cy="573.41" r="0.68" fill="#007A55" opacity="0.52"/>
+<circle cx="366" cy="568" r="3" fill="#007A55"/>
+<text x="24" y="602" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" font-weight="400" fill="#5F6368" text-anchor="start">14:00</text>
+<text x="366" y="602" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" font-weight="400" fill="#5F6368" text-anchor="end">14:31</text>
+<line x1="24" y1="625" x2="366" y2="625" stroke="#DDDCD6" stroke-width="1"/>
+<text x="77" y="660" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">累计专注</text>
+<text x="77" y="694" font-family="'JetBrains Mono', Consolas, monospace" font-size="20" font-weight="500" fill="#181A1D" text-anchor="middle">28:36</text>
+<text x="195" y="660" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">累计暂停</text>
+<text x="195" y="694" font-family="'JetBrains Mono', Consolas, monospace" font-size="20" font-weight="500" fill="#181A1D" text-anchor="middle">02:10</text>
+<text x="313" y="660" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">总历时</text>
+<text x="313" y="694" font-family="'JetBrains Mono', Consolas, monospace" font-size="20" font-weight="500" fill="#181A1D" text-anchor="middle">30:46</text>
+<rect x="0" y="748" width="390" height="96" rx="0" fill="#FCFCFA"/>
+<line x1="0" y1="748" x2="390" y2="748" stroke="#DDDCD6" stroke-width="1"/>
+<rect x="20.75" y="760" width="56" height="32" rx="16" fill="#E4F5EE"/>
+<use href="#i-focus" x="36.75" y="764" width="24" height="24" color="#007A55"/>
+<text x="48.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#007A55" text-anchor="middle">专注</text>
+<use href="#i-tasks" x="134.25" y="764" width="24" height="24" color="#5F6368"/>
+<text x="146.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">任务</text>
+<use href="#i-stats" x="231.75" y="764" width="24" height="24" color="#5F6368"/>
+<text x="243.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">统计</text>
+<use href="#i-settings" x="329.25" y="764" width="24" height="24" color="#5F6368"/>
+<text x="341.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">设置</text>
+<rect x="135" y="833" width="120" height="4" rx="2" fill="#181A1D"/>
+</g></g>
+<g id="phone-tasks" transform="translate(490 188)">
+<rect x="0" y="0" width="390" height="844" rx="24" fill="#F5F5F2" stroke="#DDDCD6" stroke-width="1"/>
+<g clip-path="url(#phone-clip)">
+<text x="24" y="27" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#181A1D" text-anchor="start">14:31</text>
+<rect x="306" y="23" width="2.5" height="4" rx="1" fill="#181A1D"/>
+<rect x="310" y="20" width="2.5" height="7" rx="1" fill="#181A1D"/>
+<rect x="314" y="17" width="2.5" height="10" rx="1" fill="#181A1D"/>
+<rect x="318" y="14" width="2.5" height="13" rx="1" fill="#181A1D"/>
+<path d="M331 18q7-6 14 0m-11 4q4-3 8 0" fill="none" stroke="#181A1D" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="353" y="15" width="17" height="11" rx="3" fill="none" stroke="#181A1D" stroke-width="1.2"/>
+<rect x="355" y="17" width="12" height="7" rx="1" fill="#181A1D"/>
+<rect x="371" y="18" width="2" height="5" rx="1" fill="#181A1D"/>
+<text x="24" y="80" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="650" fill="#181A1D" text-anchor="start">任务</text>
+<rect x="24" y="111" width="342" height="48" rx="12" fill="#FCFCFA"/>
+<use href="#i-search" x="39" y="124" width="21" height="21" color="#5F6368"/>
+<text x="72" y="142" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#5F6368" text-anchor="start">搜索任务</text>
+<rect x="24" y="179" width="342" height="44" rx="12" fill="#F0F0EC"/>
+<rect x="28" y="183" width="165" height="36" rx="9" fill="#FCFCFA"/>
+<text x="110" y="207" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#181A1D" text-anchor="middle">待办</text>
+<text x="280" y="207" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="middle">已完成</text>
+<text x="24" y="267" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="600" fill="#181A1D" text-anchor="start">今天</text>
+<text x="73" y="267" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">4 项</text>
+<use href="#i-plus" x="330" y="246" width="24" height="24" color="#007A55"/>
+<rect x="24" y="286" width="342" height="72" rx="12" fill="#E4F5EE"/>
+<rect x="40" y="309" width="20" height="20" rx="6" fill="none" stroke="#007A55" stroke-width="1.6"/>
+<text x="76" y="317" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="550" fill="#181A1D" text-anchor="start">读完这一章，写下要点</text>
+<text x="76" y="340" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">阅读与整理 · 今天</text>
+<rect x="40" y="381" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="76" y="389" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">整理今日笔记</text>
+<text x="76" y="412" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">阅读与整理</text>
+<rect x="40" y="453" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="76" y="461" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">英语阅读练习</text>
+<text x="76" y="484" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">英语 · 今天</text>
+<rect x="40" y="525" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="76" y="533" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">准备明天的任务</text>
+<text x="76" y="556" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">收件箱</text>
+<rect x="24" y="596" width="342" height="48" rx="12" fill="none" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-plus" x="39" y="608" width="22" height="22" color="#007A55"/>
+<text x="72" y="627" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="550" fill="#007A55" text-anchor="start">新建任务</text>
+<rect x="24" y="668" width="342" height="64" rx="16" fill="#E4F5EE"/>
+<text x="40" y="691" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="start">正在专注</text>
+<text x="40" y="716" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="550" fill="#181A1D" text-anchor="start">阅读与整理</text>
+<text x="308" y="715" font-family="'JetBrains Mono', Consolas, monospace" font-size="21" font-weight="500" fill="#181A1D" text-anchor="end">28:36</text>
+<use href="#i-pause" x="329" y="690" width="20" height="20" color="#007A55"/>
+<rect x="0" y="748" width="390" height="96" rx="0" fill="#FCFCFA"/>
+<line x1="0" y1="748" x2="390" y2="748" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-focus" x="36.75" y="764" width="24" height="24" color="#5F6368"/>
+<text x="48.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">专注</text>
+<rect x="118.25" y="760" width="56" height="32" rx="16" fill="#E4F5EE"/>
+<use href="#i-tasks" x="134.25" y="764" width="24" height="24" color="#007A55"/>
+<text x="146.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#007A55" text-anchor="middle">任务</text>
+<use href="#i-stats" x="231.75" y="764" width="24" height="24" color="#5F6368"/>
+<text x="243.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">统计</text>
+<use href="#i-settings" x="329.25" y="764" width="24" height="24" color="#5F6368"/>
+<text x="341.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">设置</text>
+<rect x="135" y="833" width="120" height="4" rx="2" fill="#181A1D"/>
+</g></g>
+<g id="phone-statistics" transform="translate(916 188)">
+<rect x="0" y="0" width="390" height="844" rx="24" fill="#F5F5F2" stroke="#DDDCD6" stroke-width="1"/>
+<g clip-path="url(#phone-clip)">
+<text x="24" y="27" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#181A1D" text-anchor="start">14:31</text>
+<rect x="306" y="23" width="2.5" height="4" rx="1" fill="#181A1D"/>
+<rect x="310" y="20" width="2.5" height="7" rx="1" fill="#181A1D"/>
+<rect x="314" y="17" width="2.5" height="10" rx="1" fill="#181A1D"/>
+<rect x="318" y="14" width="2.5" height="13" rx="1" fill="#181A1D"/>
+<path d="M331 18q7-6 14 0m-11 4q4-3 8 0" fill="none" stroke="#181A1D" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="353" y="15" width="17" height="11" rx="3" fill="none" stroke="#181A1D" stroke-width="1.2"/>
+<rect x="355" y="17" width="12" height="7" rx="1" fill="#181A1D"/>
+<rect x="371" y="18" width="2" height="5" rx="1" fill="#181A1D"/>
+<text x="24" y="80" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="650" fill="#181A1D" text-anchor="start">统计</text>
+<rect x="24" y="111" width="105" height="40" rx="12" fill="#FCFCFA"/>
+<text x="43" y="137" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="550" fill="#181A1D" text-anchor="start">近 7 天</text>
+<path d="m105 126 4 4 4-4" fill="none" stroke="#5F6368" stroke-width="1.5" stroke-linecap="round"/>
+<text x="24" y="182" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">10月20日 — 10月26日</text>
+<text x="24" y="223" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#5F6368" text-anchor="start">有效专注</text>
+<text x="24" y="273" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="39" font-weight="600" fill="#181A1D" text-anchor="start">12小时48分</text>
+<text x="24" y="306" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">暂停 1小时16分</text>
+<text x="366" y="306" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">已结束专注</text>
+<text x="24" y="354" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#181A1D" text-anchor="start">每日专注</text>
+<text x="366" y="354" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="end">小时</text>
+<line x1="24" y1="490.0" x2="366" y2="490.0" stroke="#DDDCD6" stroke-width="1"/>
+<line x1="24" y1="453.3333333333333" x2="366" y2="453.3333333333333" stroke="#DDDCD6" stroke-width="1"/>
+<line x1="24" y1="416.6666666666667" x2="366" y2="416.6666666666667" stroke="#DDDCD6" stroke-width="1"/>
+<line x1="24" y1="380.0" x2="366" y2="380.0" stroke="#DDDCD6" stroke-width="1"/>
+<text x="24" y="374.0" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="400" fill="#5F6368" text-anchor="start">3</text>
+<rect x="43.0" y="438.7" width="23" height="51.3" rx="5" fill="#B5D9C7"/>
+<text x="54.5" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">20</text>
+<rect x="89.7" y="427.7" width="23" height="62.3" rx="5" fill="#B5D9C7"/>
+<text x="101.2" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">21</text>
+<rect x="136.4" y="453.3" width="23" height="36.7" rx="5" fill="#B5D9C7"/>
+<text x="147.9" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">22</text>
+<rect x="183.1" y="411.8" width="23" height="78.2" rx="5" fill="#B5D9C7"/>
+<text x="194.60000000000002" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">23</text>
+<rect x="229.8" y="431.3" width="23" height="58.7" rx="5" fill="#B5D9C7"/>
+<text x="241.3" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">24</text>
+<rect x="276.5" y="394.7" width="23" height="95.3" rx="5" fill="#B5D9C7"/>
+<text x="288.0" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">25</text>
+<rect x="323.2" y="403.2" width="23" height="86.8" rx="5" fill="#007A55"/>
+<text x="334.70000000000005" y="518" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#181A1D" text-anchor="middle">26</text>
+<text x="24" y="557" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#181A1D" text-anchor="start">今日记录</text>
+<text x="366" y="557" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">查看全部</text>
+<rect x="24" y="575" width="342" height="8" rx="4" fill="#F0F0EC"/>
+<rect x="152.25" y="575" width="9.975" height="8" rx="3" fill="#007A55"/>
+<rect x="223.5" y="575" width="7.3625" height="8" rx="3" fill="#007A55"/>
+<text x="24.0" y="603" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="middle">00</text>
+<text x="109.5" y="603" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="middle">06</text>
+<text x="195.0" y="603" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="middle">12</text>
+<text x="280.5" y="603" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="middle">18</text>
+<text x="366.0" y="603" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="middle">24</text>
+<text x="24" y="632" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="550" fill="#181A1D" text-anchor="start">阅读与整理</text>
+<text x="24" y="653" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" font-weight="400" fill="#5F6368" text-anchor="start">14:00–14:31</text>
+<text x="366" y="642" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="400" fill="#181A1D" text-anchor="end">28分36秒</text>
+<rect x="24" y="668" width="342" height="64" rx="16" fill="#E4F5EE"/>
+<text x="40" y="691" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="start">正在专注</text>
+<text x="40" y="716" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="550" fill="#181A1D" text-anchor="start">阅读与整理</text>
+<text x="308" y="715" font-family="'JetBrains Mono', Consolas, monospace" font-size="21" font-weight="500" fill="#181A1D" text-anchor="end">28:36</text>
+<use href="#i-pause" x="329" y="690" width="20" height="20" color="#007A55"/>
+<rect x="0" y="748" width="390" height="96" rx="0" fill="#FCFCFA"/>
+<line x1="0" y1="748" x2="390" y2="748" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-focus" x="36.75" y="764" width="24" height="24" color="#5F6368"/>
+<text x="48.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">专注</text>
+<use href="#i-tasks" x="134.25" y="764" width="24" height="24" color="#5F6368"/>
+<text x="146.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">任务</text>
+<rect x="215.75" y="760" width="56" height="32" rx="16" fill="#E4F5EE"/>
+<use href="#i-stats" x="231.75" y="764" width="24" height="24" color="#007A55"/>
+<text x="243.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#007A55" text-anchor="middle">统计</text>
+<use href="#i-settings" x="329.25" y="764" width="24" height="24" color="#5F6368"/>
+<text x="341.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">设置</text>
+<rect x="135" y="833" width="120" height="4" rx="2" fill="#181A1D"/>
+</g></g>
+<g id="phone-settings" transform="translate(1342 188)">
+<rect x="0" y="0" width="390" height="844" rx="24" fill="#F5F5F2" stroke="#DDDCD6" stroke-width="1"/>
+<g clip-path="url(#phone-clip)">
+<text x="24" y="27" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#181A1D" text-anchor="start">14:31</text>
+<rect x="306" y="23" width="2.5" height="4" rx="1" fill="#181A1D"/>
+<rect x="310" y="20" width="2.5" height="7" rx="1" fill="#181A1D"/>
+<rect x="314" y="17" width="2.5" height="10" rx="1" fill="#181A1D"/>
+<rect x="318" y="14" width="2.5" height="13" rx="1" fill="#181A1D"/>
+<path d="M331 18q7-6 14 0m-11 4q4-3 8 0" fill="none" stroke="#181A1D" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="353" y="15" width="17" height="11" rx="3" fill="none" stroke="#181A1D" stroke-width="1.2"/>
+<rect x="355" y="17" width="12" height="7" rx="1" fill="#181A1D"/>
+<rect x="371" y="18" width="2" height="5" rx="1" fill="#181A1D"/>
+<text x="24" y="80" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="650" fill="#181A1D" text-anchor="start">设置</text>
+<text x="24" y="119" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">按你的方式专注</text>
+<text x="24" y="166" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#5F6368" text-anchor="start">外观</text>
+<rect x="24" y="183" width="342" height="244" rx="16" fill="#FCFCFA"/>
+<text x="40" y="220" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">主题</text>
+<text x="325" y="220" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">跟随系统</text>
+<use href="#i-chevron" x="334" y="205" width="18" height="18" color="#5F6368"/>
+<line x1="40" y1="244" x2="350" y2="244" stroke="#DDDCD6" stroke-width="1"/>
+<text x="40" y="281" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">字体</text>
+<text x="325" y="281" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">文楷</text>
+<use href="#i-chevron" x="334" y="266" width="18" height="18" color="#5F6368"/>
+<line x1="40" y1="305" x2="350" y2="305" stroke="#DDDCD6" stroke-width="1"/>
+<text x="40" y="342" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">强调色</text>
+<text x="325" y="342" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">翡翠</text>
+<use href="#i-chevron" x="334" y="327" width="18" height="18" color="#5F6368"/>
+<line x1="40" y1="366" x2="350" y2="366" stroke="#DDDCD6" stroke-width="1"/>
+<text x="40" y="403" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">计时仪表</text>
+<text x="325" y="403" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">标准等宽</text>
+<use href="#i-chevron" x="334" y="388" width="18" height="18" color="#5F6368"/>
+<text x="24" y="468" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#5F6368" text-anchor="start">同步与设备</text>
+<rect x="24" y="485" width="342" height="122" rx="16" fill="#FCFCFA"/>
+<text x="40" y="522" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">多端同步</text>
+<text x="325" y="522" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">查看详情</text>
+<use href="#i-chevron" x="334" y="507" width="18" height="18" color="#5F6368"/>
+<line x1="40" y1="546" x2="350" y2="546" stroke="#DDDCD6" stroke-width="1"/>
+<text x="40" y="583" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">系统显示</text>
+<text x="325" y="583" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="end">通知与胶囊</text>
+<use href="#i-chevron" x="334" y="568" width="18" height="18" color="#5F6368"/>
+<text x="40" y="650" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="400" fill="#181A1D" text-anchor="start">版本与帮助</text>
+<use href="#i-chevron" x="334" y="632" width="18" height="18" color="#5F6368"/>
+<rect x="24" y="668" width="342" height="64" rx="16" fill="#E4F5EE"/>
+<text x="40" y="691" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="start">正在专注</text>
+<text x="40" y="716" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="550" fill="#181A1D" text-anchor="start">阅读与整理</text>
+<text x="308" y="715" font-family="'JetBrains Mono', Consolas, monospace" font-size="21" font-weight="500" fill="#181A1D" text-anchor="end">28:36</text>
+<use href="#i-pause" x="329" y="690" width="20" height="20" color="#007A55"/>
+<rect x="0" y="748" width="390" height="96" rx="0" fill="#FCFCFA"/>
+<line x1="0" y1="748" x2="390" y2="748" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-focus" x="36.75" y="764" width="24" height="24" color="#5F6368"/>
+<text x="48.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">专注</text>
+<use href="#i-tasks" x="134.25" y="764" width="24" height="24" color="#5F6368"/>
+<text x="146.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">任务</text>
+<use href="#i-stats" x="231.75" y="764" width="24" height="24" color="#5F6368"/>
+<text x="243.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">统计</text>
+<rect x="313.25" y="760" width="56" height="32" rx="16" fill="#E4F5EE"/>
+<use href="#i-settings" x="329.25" y="764" width="24" height="24" color="#007A55"/>
+<text x="341.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#007A55" text-anchor="middle">设置</text>
+<rect x="135" y="833" width="120" height="4" rx="2" fill="#181A1D"/>
+</g></g>
+<text x="64" y="1076" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="600" fill="#181A1D" text-anchor="start">专注 / 时间与操作优先</text>
+<text x="64" y="1104" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">任务、读数、控制和记录形成一条阅读顺序。</text>
+<text x="490" y="1076" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="600" fill="#181A1D" text-anchor="start">任务 / 平整列表</text>
+<text x="490" y="1104" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">层级靠缩进表达，选择与完成分别操作。</text>
+<text x="916" y="1076" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="600" fill="#181A1D" text-anchor="start">统计 / 结论到记录</text>
+<text x="916" y="1104" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">先读总量，再看趋势，最后定位具体时段。</text>
+<text x="1342" y="1076" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="600" fill="#181A1D" text-anchor="start">设置 / 分组与渐进展开</text>
+<text x="1342" y="1104" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">常用偏好在前，设备与同步诊断进入详情。</text>
+<text x="64" y="1173" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#181A1D" text-anchor="start">深色 / 暂停状态</text>
+<text x="490" y="1173" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#181A1D" text-anchor="start">平板 / 列表与详情同时可见</text>
+<text x="1370" y="1173" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#181A1D" text-anchor="start">设计标注</text>
+<g id="phone-focus-dark-paused" transform="translate(64 1204)">
+<rect x="0" y="0" width="390" height="844" rx="24" fill="#0F1114" stroke="#2F3236" stroke-width="1"/>
+<g clip-path="url(#phone-clip)">
+<text x="24" y="27" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="600" fill="#EFEFEB" text-anchor="start">14:31</text>
+<rect x="306" y="23" width="2.5" height="4" rx="1" fill="#EFEFEB"/>
+<rect x="310" y="20" width="2.5" height="7" rx="1" fill="#EFEFEB"/>
+<rect x="314" y="17" width="2.5" height="10" rx="1" fill="#EFEFEB"/>
+<rect x="318" y="14" width="2.5" height="13" rx="1" fill="#EFEFEB"/>
+<path d="M331 18q7-6 14 0m-11 4q4-3 8 0" fill="none" stroke="#EFEFEB" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="353" y="15" width="17" height="11" rx="3" fill="none" stroke="#EFEFEB" stroke-width="1.2"/>
+<rect x="355" y="17" width="12" height="7" rx="1" fill="#EFEFEB"/>
+<rect x="371" y="18" width="2" height="5" rx="1" fill="#EFEFEB"/>
+<text x="24" y="80" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="650" fill="#EFEFEB" text-anchor="start">专注</text>
+<circle cx="342" cy="68" r="21" fill="#15181C" stroke="#2F3236" stroke-width="1"/>
+<use href="#i-cloud" x="330" y="55" width="24" height="24" color="#9E9F9C"/>
+<text x="24" y="119" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#9E9F9C" text-anchor="start">当前任务</text>
+<rect x="24" y="134" width="342" height="76" rx="16" fill="#15181C"/>
+<text x="40" y="165" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="550" fill="#EFEFEB" text-anchor="start">读完这一章，写下要点</text>
+<text x="40" y="191" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#9E9F9C" text-anchor="start">阅读与整理</text>
+<use href="#i-chevron" x="330" y="160" width="20" height="20" color="#9E9F9C"/>
+<circle cx="155" cy="261" r="3.2" fill="#F47067"/>
+<text x="166" y="266" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="550" fill="#F47067" text-anchor="start">已暂停</text>
+<text x="195" y="359" font-family="'JetBrains Mono', Consolas, monospace" font-size="84" font-weight="550" fill="#EFEFEB" text-anchor="middle">28:36</text>
+<text x="195" y="394" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#9E9F9C" text-anchor="middle">本轮有效专注</text>
+<rect x="24" y="426" width="234" height="56" rx="16" fill="#34D399"/>
+<use href="#i-play" x="100" y="442" width="24" height="24" color="#0C1A30"/>
+<text x="149" y="462" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#0C1A30" text-anchor="middle">继续</text>
+<rect x="270" y="426" width="96" height="56" rx="16" fill="#15181C" stroke="#2F3236" stroke-width="1"/>
+<text x="318" y="462" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="550" fill="#EFEFEB" text-anchor="middle">结束</text>
+<text x="24" y="536" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#EFEFEB" text-anchor="start">时间之带</text>
+<text x="366" y="536" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#9E9F9C" text-anchor="end">查看记录</text>
+<circle cx="279.57" cy="567.95" r="0.99" fill="#34D399" opacity="0.75"/>
+<circle cx="43.41" cy="571.00" r="1.10" fill="#34D399" opacity="0.52"/>
+<circle cx="285.43" cy="572.71" r="0.93" fill="#34D399" opacity="0.52"/>
+<circle cx="241.32" cy="569.37" r="1.22" fill="#F47067" opacity="0.69"/>
+<circle cx="361.47" cy="562.63" r="1.11" fill="#34D399" opacity="0.52"/>
+<circle cx="356.34" cy="572.58" r="0.62" fill="#34D399" opacity="0.64"/>
+<circle cx="344.76" cy="569.14" r="0.99" fill="#34D399" opacity="0.82"/>
+<circle cx="310.89" cy="569.93" r="1.22" fill="#34D399" opacity="0.71"/>
+<circle cx="148.58" cy="567.85" r="1.23" fill="#34D399" opacity="0.67"/>
+<circle cx="124.36" cy="566.42" r="0.95" fill="#34D399" opacity="0.63"/>
+<circle cx="66.52" cy="569.21" r="0.99" fill="#34D399" opacity="0.61"/>
+<circle cx="215.90" cy="568.80" r="1.13" fill="#34D399" opacity="0.73"/>
+<circle cx="315.09" cy="561.80" r="0.73" fill="#34D399" opacity="0.48"/>
+<circle cx="325.26" cy="571.80" r="0.76" fill="#34D399" opacity="0.65"/>
+<circle cx="345.40" cy="565.88" r="0.94" fill="#34D399" opacity="0.68"/>
+<circle cx="44.15" cy="571.22" r="0.65" fill="#34D399" opacity="0.51"/>
+<circle cx="210.37" cy="568.51" r="0.86" fill="#34D399" opacity="0.72"/>
+<circle cx="150.53" cy="566.37" r="1.11" fill="#34D399" opacity="0.64"/>
+<circle cx="362.73" cy="572.51" r="0.67" fill="#34D399" opacity="0.64"/>
+<circle cx="292.04" cy="569.92" r="1.21" fill="#34D399" opacity="0.67"/>
+<circle cx="265.61" cy="566.34" r="0.66" fill="#34D399" opacity="0.73"/>
+<circle cx="105.97" cy="567.13" r="0.65" fill="#34D399" opacity="0.63"/>
+<circle cx="69.75" cy="572.04" r="1.19" fill="#34D399" opacity="0.50"/>
+<circle cx="284.21" cy="566.40" r="1.10" fill="#34D399" opacity="0.75"/>
+<circle cx="336.20" cy="567.62" r="0.91" fill="#34D399" opacity="0.77"/>
+<circle cx="157.40" cy="564.43" r="0.62" fill="#34D399" opacity="0.55"/>
+<circle cx="39.08" cy="564.39" r="1.23" fill="#34D399" opacity="0.45"/>
+<circle cx="236.25" cy="566.24" r="1.13" fill="#F47067" opacity="0.66"/>
+<circle cx="186.97" cy="562.69" r="0.62" fill="#34D399" opacity="0.45"/>
+<circle cx="30.55" cy="564.87" r="0.88" fill="#34D399" opacity="0.47"/>
+<circle cx="123.93" cy="566.03" r="0.71" fill="#34D399" opacity="0.62"/>
+<circle cx="57.67" cy="569.38" r="1.00" fill="#34D399" opacity="0.60"/>
+<circle cx="35.30" cy="573.92" r="0.88" fill="#34D399" opacity="0.39"/>
+<circle cx="31.78" cy="568.99" r="1.21" fill="#34D399" opacity="0.57"/>
+<circle cx="191.78" cy="573.64" r="0.96" fill="#34D399" opacity="0.49"/>
+<circle cx="159.16" cy="565.66" r="0.67" fill="#34D399" opacity="0.60"/>
+<circle cx="354.31" cy="565.81" r="0.69" fill="#34D399" opacity="0.68"/>
+<circle cx="227.76" cy="569.55" r="1.24" fill="#F47067" opacity="0.69"/>
+<circle cx="161.43" cy="569.81" r="0.93" fill="#34D399" opacity="0.61"/>
+<circle cx="247.45" cy="562.33" r="1.08" fill="#F47067" opacity="0.50"/>
+<circle cx="341.49" cy="570.77" r="0.76" fill="#34D399" opacity="0.73"/>
+<circle cx="47.01" cy="569.24" r="0.78" fill="#34D399" opacity="0.59"/>
+<circle cx="172.90" cy="569.06" r="0.60" fill="#34D399" opacity="0.67"/>
+<circle cx="336.57" cy="573.00" r="1.06" fill="#34D399" opacity="0.60"/>
+<circle cx="59.44" cy="570.23" r="0.69" fill="#34D399" opacity="0.56"/>
+<circle cx="275.10" cy="573.26" r="0.62" fill="#34D399" opacity="0.48"/>
+<circle cx="236.72" cy="566.12" r="1.12" fill="#F47067" opacity="0.66"/>
+<circle cx="345.34" cy="564.61" r="1.24" fill="#34D399" opacity="0.61"/>
+<circle cx="42.18" cy="566.74" r="1.08" fill="#34D399" opacity="0.54"/>
+<circle cx="94.41" cy="568.22" r="0.71" fill="#34D399" opacity="0.64"/>
+<circle cx="44.28" cy="571.49" r="0.73" fill="#34D399" opacity="0.50"/>
+<circle cx="203.12" cy="569.08" r="1.13" fill="#34D399" opacity="0.72"/>
+<circle cx="270.59" cy="565.93" r="1.11" fill="#34D399" opacity="0.72"/>
+<circle cx="118.15" cy="569.87" r="1.02" fill="#34D399" opacity="0.56"/>
+<circle cx="355.92" cy="565.07" r="0.63" fill="#34D399" opacity="0.65"/>
+<circle cx="113.52" cy="565.41" r="1.22" fill="#34D399" opacity="0.58"/>
+<circle cx="43.45" cy="573.34" r="0.80" fill="#34D399" opacity="0.43"/>
+<circle cx="228.78" cy="570.02" r="0.75" fill="#F47067" opacity="0.67"/>
+<circle cx="99.18" cy="567.81" r="1.05" fill="#34D399" opacity="0.65"/>
+<circle cx="33.62" cy="574.18" r="1.06" fill="#34D399" opacity="0.38"/>
+<circle cx="284.78" cy="565.66" r="0.61" fill="#34D399" opacity="0.71"/>
+<circle cx="358.80" cy="569.01" r="0.66" fill="#34D399" opacity="0.83"/>
+<circle cx="24.37" cy="575.53" r="1.25" fill="#34D399" opacity="0.31"/>
+<circle cx="284.14" cy="570.26" r="1.21" fill="#34D399" opacity="0.64"/>
+<circle cx="300.70" cy="570.91" r="1.02" fill="#34D399" opacity="0.64"/>
+<circle cx="259.41" cy="568.96" r="1.10" fill="#34D399" opacity="0.69"/>
+<circle cx="260.81" cy="570.08" r="1.22" fill="#34D399" opacity="0.64"/>
+<circle cx="244.35" cy="570.32" r="0.72" fill="#F47067" opacity="0.64"/>
+<circle cx="166.79" cy="570.75" r="0.67" fill="#34D399" opacity="0.58"/>
+<circle cx="301.50" cy="566.89" r="1.02" fill="#34D399" opacity="0.76"/>
+<circle cx="150.20" cy="564.61" r="1.05" fill="#34D399" opacity="0.56"/>
+<circle cx="126.90" cy="567.82" r="0.96" fill="#34D399" opacity="0.65"/>
+<circle cx="339.50" cy="566.87" r="0.69" fill="#34D399" opacity="0.73"/>
+<circle cx="194.12" cy="565.86" r="0.63" fill="#34D399" opacity="0.59"/>
+<circle cx="288.30" cy="563.40" r="0.79" fill="#34D399" opacity="0.59"/>
+<circle cx="263.81" cy="568.11" r="0.89" fill="#34D399" opacity="0.73"/>
+<circle cx="175.18" cy="568.68" r="0.65" fill="#34D399" opacity="0.69"/>
+<circle cx="103.64" cy="569.17" r="1.08" fill="#34D399" opacity="0.59"/>
+<circle cx="250.60" cy="567.93" r="0.78" fill="#34D399" opacity="0.75"/>
+<circle cx="257.48" cy="568.31" r="0.76" fill="#34D399" opacity="0.73"/>
+<circle cx="181.24" cy="573.26" r="0.97" fill="#34D399" opacity="0.49"/>
+<circle cx="174.63" cy="572.68" r="1.24" fill="#34D399" opacity="0.51"/>
+<circle cx="197.91" cy="567.88" r="1.22" fill="#34D399" opacity="0.68"/>
+<circle cx="237.68" cy="573.58" r="1.20" fill="#F47067" opacity="0.49"/>
+<circle cx="212.70" cy="567.15" r="0.64" fill="#34D399" opacity="0.66"/>
+<circle cx="361.09" cy="573.70" r="0.93" fill="#34D399" opacity="0.57"/>
+<circle cx="35.25" cy="566.70" r="1.16" fill="#34D399" opacity="0.54"/>
+<circle cx="338.49" cy="573.64" r="0.84" fill="#34D399" opacity="0.57"/>
+<circle cx="329.43" cy="563.77" r="1.17" fill="#34D399" opacity="0.57"/>
+<circle cx="269.13" cy="566.97" r="0.97" fill="#34D399" opacity="0.77"/>
+<circle cx="29.53" cy="564.98" r="0.87" fill="#34D399" opacity="0.48"/>
+<circle cx="33.29" cy="573.51" r="1.16" fill="#34D399" opacity="0.40"/>
+<circle cx="148.10" cy="567.15" r="0.84" fill="#34D399" opacity="0.68"/>
+<circle cx="226.04" cy="565.01" r="0.93" fill="#F47067" opacity="0.58"/>
+<circle cx="340.07" cy="565.81" r="0.96" fill="#34D399" opacity="0.67"/>
+<circle cx="281.52" cy="565.45" r="1.08" fill="#34D399" opacity="0.70"/>
+<circle cx="29.06" cy="560.40" r="0.91" fill="#34D399" opacity="0.30"/>
+<circle cx="78.65" cy="567.54" r="0.69" fill="#34D399" opacity="0.60"/>
+<circle cx="206.99" cy="571.14" r="0.86" fill="#34D399" opacity="0.62"/>
+<circle cx="42.19" cy="562.73" r="0.80" fill="#34D399" opacity="0.38"/>
+<circle cx="226.35" cy="564.70" r="0.73" fill="#F47067" opacity="0.57"/>
+<circle cx="178.50" cy="568.54" r="0.70" fill="#34D399" opacity="0.70"/>
+<circle cx="241.36" cy="569.17" r="1.21" fill="#F47067" opacity="0.70"/>
+<circle cx="32.03" cy="569.98" r="0.83" fill="#34D399" opacity="0.54"/>
+<circle cx="193.66" cy="571.51" r="1.18" fill="#34D399" opacity="0.59"/>
+<circle cx="286.87" cy="569.44" r="0.82" fill="#34D399" opacity="0.68"/>
+<circle cx="157.37" cy="566.54" r="0.81" fill="#34D399" opacity="0.64"/>
+<circle cx="282.70" cy="574.18" r="1.23" fill="#34D399" opacity="0.44"/>
+<circle cx="121.90" cy="562.67" r="0.95" fill="#34D399" opacity="0.47"/>
+<circle cx="341.54" cy="563.81" r="0.78" fill="#34D399" opacity="0.57"/>
+<circle cx="185.29" cy="566.68" r="1.22" fill="#34D399" opacity="0.63"/>
+<circle cx="44.56" cy="571.03" r="0.83" fill="#34D399" opacity="0.52"/>
+<circle cx="360.71" cy="568.11" r="1.17" fill="#34D399" opacity="0.82"/>
+<circle cx="104.60" cy="573.18" r="0.74" fill="#34D399" opacity="0.43"/>
+<circle cx="256.26" cy="572.09" r="1.18" fill="#34D399" opacity="0.54"/>
+<circle cx="333.55" cy="570.71" r="1.19" fill="#34D399" opacity="0.72"/>
+<circle cx="188.86" cy="572.39" r="1.06" fill="#34D399" opacity="0.55"/>
+<circle cx="111.00" cy="558.85" r="1.09" fill="#34D399" opacity="0.30"/>
+<circle cx="199.91" cy="566.80" r="1.14" fill="#34D399" opacity="0.63"/>
+<circle cx="252.31" cy="568.53" r="0.62" fill="#34D399" opacity="0.72"/>
+<circle cx="93.04" cy="572.58" r="1.07" fill="#34D399" opacity="0.46"/>
+<circle cx="140.97" cy="568.43" r="0.72" fill="#34D399" opacity="0.63"/>
+<circle cx="157.52" cy="566.78" r="0.65" fill="#34D399" opacity="0.66"/>
+<circle cx="250.23" cy="566.86" r="1.19" fill="#34D399" opacity="0.73"/>
+<circle cx="219.89" cy="572.52" r="0.77" fill="#34D399" opacity="0.56"/>
+<circle cx="209.32" cy="570.82" r="0.77" fill="#34D399" opacity="0.64"/>
+<circle cx="111.94" cy="570.87" r="0.89" fill="#34D399" opacity="0.52"/>
+<circle cx="364.31" cy="567.72" r="0.89" fill="#34D399" opacity="0.80"/>
+<circle cx="138.66" cy="567.05" r="1.14" fill="#34D399" opacity="0.67"/>
+<circle cx="346.17" cy="570.96" r="0.99" fill="#34D399" opacity="0.72"/>
+<circle cx="236.64" cy="569.14" r="0.84" fill="#F47067" opacity="0.70"/>
+<circle cx="44.84" cy="569.50" r="1.06" fill="#34D399" opacity="0.58"/>
+<circle cx="266.98" cy="569.35" r="0.92" fill="#34D399" opacity="0.67"/>
+<circle cx="44.37" cy="565.67" r="0.87" fill="#34D399" opacity="0.50"/>
+<circle cx="334.83" cy="569.58" r="0.95" fill="#34D399" opacity="0.78"/>
+<circle cx="103.70" cy="572.54" r="0.79" fill="#34D399" opacity="0.45"/>
+<circle cx="58.83" cy="572.61" r="1.15" fill="#34D399" opacity="0.47"/>
+<circle cx="331.75" cy="562.17" r="0.61" fill="#34D399" opacity="0.48"/>
+<circle cx="58.76" cy="568.23" r="1.04" fill="#34D399" opacity="0.60"/>
+<circle cx="229.66" cy="570.32" r="0.82" fill="#F47067" opacity="0.65"/>
+<circle cx="363.86" cy="571.12" r="0.71" fill="#34D399" opacity="0.71"/>
+<circle cx="41.53" cy="568.81" r="0.79" fill="#34D399" opacity="0.60"/>
+<circle cx="253.24" cy="572.15" r="0.75" fill="#34D399" opacity="0.54"/>
+<circle cx="201.41" cy="568.22" r="0.96" fill="#34D399" opacity="0.70"/>
+<circle cx="86.76" cy="564.68" r="1.04" fill="#34D399" opacity="0.49"/>
+<circle cx="62.08" cy="562.13" r="0.97" fill="#34D399" opacity="0.36"/>
+<circle cx="354.80" cy="568.15" r="0.77" fill="#34D399" opacity="0.81"/>
+<circle cx="293.45" cy="564.10" r="0.79" fill="#34D399" opacity="0.63"/>
+<circle cx="355.65" cy="573.43" r="0.70" fill="#34D399" opacity="0.59"/>
+<circle cx="232.56" cy="566.86" r="0.95" fill="#F47067" opacity="0.69"/>
+<circle cx="27.76" cy="572.06" r="0.89" fill="#34D399" opacity="0.45"/>
+<circle cx="68.24" cy="570.15" r="1.10" fill="#34D399" opacity="0.57"/>
+<circle cx="243.72" cy="567.31" r="0.98" fill="#F47067" opacity="0.73"/>
+<circle cx="148.22" cy="573.80" r="1.02" fill="#34D399" opacity="0.41"/>
+<circle cx="67.49" cy="574.07" r="0.93" fill="#34D399" opacity="0.41"/>
+<circle cx="148.78" cy="569.13" r="0.88" fill="#34D399" opacity="0.61"/>
+<circle cx="244.38" cy="571.39" r="0.69" fill="#F47067" opacity="0.59"/>
+<circle cx="341.41" cy="572.68" r="0.77" fill="#34D399" opacity="0.63"/>
+<circle cx="234.42" cy="566.99" r="0.69" fill="#F47067" opacity="0.70"/>
+<circle cx="341.23" cy="567.72" r="1.23" fill="#34D399" opacity="0.78"/>
+<circle cx="315.22" cy="573.64" r="0.82" fill="#34D399" opacity="0.53"/>
+<circle cx="92.95" cy="561.74" r="0.71" fill="#34D399" opacity="0.38"/>
+<circle cx="141.25" cy="569.63" r="1.07" fill="#34D399" opacity="0.58"/>
+<circle cx="198.52" cy="571.60" r="0.64" fill="#34D399" opacity="0.60"/>
+<circle cx="312.91" cy="566.88" r="0.65" fill="#34D399" opacity="0.75"/>
+<circle cx="28.33" cy="575.85" r="0.78" fill="#34D399" opacity="0.30"/>
+<circle cx="243.12" cy="572.01" r="1.11" fill="#F47067" opacity="0.56"/>
+<circle cx="39.05" cy="566.47" r="0.81" fill="#34D399" opacity="0.53"/>
+<circle cx="176.46" cy="568.51" r="0.63" fill="#34D399" opacity="0.70"/>
+<circle cx="86.88" cy="569.47" r="0.73" fill="#34D399" opacity="0.59"/>
+<circle cx="141.96" cy="572.19" r="1.14" fill="#34D399" opacity="0.47"/>
+<circle cx="255.25" cy="568.11" r="0.78" fill="#34D399" opacity="0.74"/>
+<circle cx="191.94" cy="570.33" r="0.98" fill="#34D399" opacity="0.65"/>
+<circle cx="155.83" cy="564.91" r="0.80" fill="#34D399" opacity="0.57"/>
+<circle cx="163.37" cy="571.11" r="0.66" fill="#34D399" opacity="0.55"/>
+<circle cx="259.85" cy="561.68" r="1.12" fill="#34D399" opacity="0.49"/>
+<circle cx="234.37" cy="573.55" r="0.84" fill="#F47067" opacity="0.49"/>
+<circle cx="187.33" cy="574.42" r="1.01" fill="#34D399" opacity="0.45"/>
+<circle cx="105.98" cy="576.22" r="1.01" fill="#34D399" opacity="0.30"/>
+<circle cx="59.69" cy="572.45" r="0.62" fill="#34D399" opacity="0.48"/>
+<circle cx="276.50" cy="576.88" r="0.89" fill="#34D399" opacity="0.30"/>
+<circle cx="272.10" cy="570.33" r="1.02" fill="#34D399" opacity="0.62"/>
+<circle cx="346.42" cy="562.09" r="0.91" fill="#34D399" opacity="0.48"/>
+<circle cx="141.29" cy="571.16" r="0.91" fill="#34D399" opacity="0.51"/>
+<circle cx="114.62" cy="566.17" r="1.16" fill="#34D399" opacity="0.61"/>
+<circle cx="69.77" cy="574.32" r="0.95" fill="#34D399" opacity="0.40"/>
+<circle cx="256.76" cy="562.15" r="1.07" fill="#34D399" opacity="0.51"/>
+<circle cx="188.57" cy="565.72" r="0.64" fill="#34D399" opacity="0.58"/>
+<circle cx="292.47" cy="567.67" r="1.18" fill="#34D399" opacity="0.78"/>
+<circle cx="325.66" cy="570.35" r="0.87" fill="#34D399" opacity="0.72"/>
+<circle cx="190.26" cy="564.93" r="0.93" fill="#34D399" opacity="0.55"/>
+<circle cx="340.83" cy="574.01" r="1.17" fill="#34D399" opacity="0.55"/>
+<circle cx="105.16" cy="566.42" r="0.94" fill="#34D399" opacity="0.60"/>
+<circle cx="72.59" cy="564.21" r="0.63" fill="#34D399" opacity="0.45"/>
+<circle cx="82.04" cy="564.00" r="1.18" fill="#34D399" opacity="0.46"/>
+<circle cx="259.27" cy="568.40" r="0.72" fill="#34D399" opacity="0.72"/>
+<circle cx="159.66" cy="569.72" r="0.74" fill="#34D399" opacity="0.61"/>
+<circle cx="160.55" cy="567.37" r="1.18" fill="#34D399" opacity="0.68"/>
+<circle cx="124.52" cy="570.00" r="0.62" fill="#34D399" opacity="0.55"/>
+<circle cx="62.89" cy="564.06" r="1.08" fill="#34D399" opacity="0.44"/>
+<circle cx="214.26" cy="569.25" r="1.01" fill="#34D399" opacity="0.71"/>
+<circle cx="94.38" cy="572.05" r="1.20" fill="#34D399" opacity="0.48"/>
+<circle cx="196.00" cy="570.53" r="0.65" fill="#34D399" opacity="0.64"/>
+<circle cx="154.16" cy="569.65" r="0.89" fill="#34D399" opacity="0.60"/>
+<circle cx="187.80" cy="568.85" r="0.66" fill="#34D399" opacity="0.71"/>
+<circle cx="201.28" cy="565.39" r="1.25" fill="#34D399" opacity="0.57"/>
+<circle cx="73.66" cy="564.81" r="1.23" fill="#34D399" opacity="0.48"/>
+<circle cx="78.96" cy="566.64" r="1.24" fill="#34D399" opacity="0.56"/>
+<circle cx="141.79" cy="572.58" r="0.85" fill="#34D399" opacity="0.45"/>
+<circle cx="327.16" cy="568.92" r="1.20" fill="#34D399" opacity="0.80"/>
+<circle cx="296.09" cy="570.65" r="0.81" fill="#34D399" opacity="0.64"/>
+<circle cx="160.02" cy="565.22" r="1.15" fill="#34D399" opacity="0.58"/>
+<circle cx="55.68" cy="565.42" r="1.04" fill="#34D399" opacity="0.49"/>
+<circle cx="353.61" cy="570.17" r="0.83" fill="#34D399" opacity="0.77"/>
+<circle cx="229.00" cy="566.33" r="0.80" fill="#F47067" opacity="0.65"/>
+<circle cx="190.05" cy="574.47" r="1.10" fill="#34D399" opacity="0.45"/>
+<circle cx="91.87" cy="563.87" r="1.07" fill="#34D399" opacity="0.47"/>
+<circle cx="350.16" cy="574.12" r="1.14" fill="#34D399" opacity="0.55"/>
+<circle cx="181.52" cy="564.94" r="0.86" fill="#34D399" opacity="0.55"/>
+<circle cx="249.48" cy="564.36" r="1.18" fill="#34D399" opacity="0.60"/>
+<circle cx="173.71" cy="566.17" r="0.84" fill="#34D399" opacity="0.61"/>
+<circle cx="34.94" cy="566.09" r="0.71" fill="#34D399" opacity="0.52"/>
+<circle cx="308.51" cy="561.90" r="0.73" fill="#34D399" opacity="0.50"/>
+<circle cx="314.86" cy="562.73" r="1.02" fill="#34D399" opacity="0.53"/>
+<circle cx="265.25" cy="568.54" r="0.83" fill="#34D399" opacity="0.71"/>
+<circle cx="347.23" cy="576.02" r="0.72" fill="#34D399" opacity="0.45"/>
+<circle cx="319.82" cy="567.50" r="0.62" fill="#34D399" opacity="0.77"/>
+<circle cx="334.00" cy="572.50" r="0.81" fill="#34D399" opacity="0.63"/>
+<circle cx="333.95" cy="563.66" r="0.70" fill="#34D399" opacity="0.56"/>
+<circle cx="26.59" cy="569.33" r="0.94" fill="#34D399" opacity="0.55"/>
+<circle cx="217.77" cy="567.11" r="1.14" fill="#34D399" opacity="0.67"/>
+<circle cx="65.11" cy="569.19" r="1.19" fill="#34D399" opacity="0.61"/>
+<circle cx="176.00" cy="571.74" r="1.06" fill="#34D399" opacity="0.55"/>
+<circle cx="270.96" cy="576.56" r="1.09" fill="#34D399" opacity="0.32"/>
+<circle cx="176.89" cy="566.45" r="0.85" fill="#34D399" opacity="0.62"/>
+<circle cx="90.15" cy="565.24" r="1.06" fill="#34D399" opacity="0.52"/>
+<circle cx="47.60" cy="577.54" r="1.16" fill="#34D399" opacity="0.27"/>
+<circle cx="275.21" cy="575.83" r="0.76" fill="#34D399" opacity="0.35"/>
+<circle cx="353.73" cy="562.34" r="0.86" fill="#34D399" opacity="0.50"/>
+<circle cx="363.74" cy="569.93" r="0.70" fill="#34D399" opacity="0.78"/>
+<circle cx="281.20" cy="574.11" r="1.03" fill="#34D399" opacity="0.44"/>
+<circle cx="286.56" cy="568.75" r="0.68" fill="#34D399" opacity="0.72"/>
+<circle cx="343.54" cy="568.16" r="0.83" fill="#34D399" opacity="0.80"/>
+<circle cx="230.84" cy="569.55" r="1.02" fill="#F47067" opacity="0.69"/>
+<circle cx="35.38" cy="568.05" r="0.96" fill="#34D399" opacity="0.59"/>
+<circle cx="30.67" cy="560.76" r="1.01" fill="#34D399" opacity="0.31"/>
+<circle cx="209.54" cy="562.90" r="1.20" fill="#34D399" opacity="0.46"/>
+<circle cx="95.45" cy="571.95" r="0.73" fill="#34D399" opacity="0.49"/>
+<circle cx="185.80" cy="569.27" r="0.61" fill="#34D399" opacity="0.68"/>
+<circle cx="276.05" cy="562.84" r="1.23" fill="#34D399" opacity="0.57"/>
+<circle cx="332.12" cy="569.30" r="0.76" fill="#34D399" opacity="0.79"/>
+<circle cx="118.83" cy="566.79" r="1.08" fill="#34D399" opacity="0.64"/>
+<circle cx="68.05" cy="567.05" r="0.70" fill="#34D399" opacity="0.56"/>
+<circle cx="315.08" cy="569.97" r="1.17" fill="#34D399" opacity="0.72"/>
+<circle cx="79.16" cy="570.59" r="0.96" fill="#34D399" opacity="0.55"/>
+<circle cx="151.87" cy="569.86" r="0.95" fill="#34D399" opacity="0.59"/>
+<circle cx="354.61" cy="567.09" r="1.21" fill="#34D399" opacity="0.75"/>
+<circle cx="69.25" cy="574.17" r="0.80" fill="#34D399" opacity="0.41"/>
+<circle cx="282.72" cy="564.62" r="0.68" fill="#34D399" opacity="0.66"/>
+<circle cx="291.78" cy="567.85" r="0.77" fill="#34D399" opacity="0.77"/>
+<circle cx="245.26" cy="561.17" r="0.68" fill="#F47067" opacity="0.44"/>
+<circle cx="272.18" cy="566.30" r="0.75" fill="#34D399" opacity="0.73"/>
+<circle cx="320.29" cy="568.41" r="0.95" fill="#34D399" opacity="0.81"/>
+<circle cx="69.35" cy="573.74" r="0.95" fill="#34D399" opacity="0.43"/>
+<circle cx="216.12" cy="573.35" r="0.70" fill="#34D399" opacity="0.52"/>
+<circle cx="201.65" cy="567.57" r="0.64" fill="#34D399" opacity="0.67"/>
+<circle cx="272.04" cy="565.18" r="0.61" fill="#34D399" opacity="0.68"/>
+<circle cx="96.51" cy="562.28" r="0.85" fill="#34D399" opacity="0.41"/>
+<circle cx="339.24" cy="573.91" r="0.84" fill="#34D399" opacity="0.56"/>
+<circle cx="288.01" cy="567.97" r="0.89" fill="#34D399" opacity="0.76"/>
+<circle cx="357.03" cy="567.42" r="0.85" fill="#34D399" opacity="0.77"/>
+<circle cx="194.90" cy="568.17" r="0.91" fill="#34D399" opacity="0.70"/>
+<circle cx="183.59" cy="571.06" r="0.71" fill="#34D399" opacity="0.60"/>
+<circle cx="184.46" cy="572.85" r="0.67" fill="#34D399" opacity="0.52"/>
+<circle cx="172.40" cy="569.80" r="1.20" fill="#34D399" opacity="0.63"/>
+<circle cx="199.00" cy="570.55" r="1.06" fill="#34D399" opacity="0.64"/>
+<circle cx="330.20" cy="564.30" r="1.21" fill="#34D399" opacity="0.60"/>
+<circle cx="149.56" cy="570.59" r="1.23" fill="#34D399" opacity="0.55"/>
+<circle cx="195.26" cy="571.16" r="1.13" fill="#34D399" opacity="0.61"/>
+<circle cx="174.38" cy="567.16" r="0.91" fill="#34D399" opacity="0.66"/>
+<circle cx="208.38" cy="560.11" r="0.94" fill="#34D399" opacity="0.33"/>
+<circle cx="107.20" cy="563.64" r="1.12" fill="#34D399" opacity="0.49"/>
+<circle cx="317.60" cy="566.17" r="1.15" fill="#34D399" opacity="0.71"/>
+<circle cx="219.62" cy="566.59" r="0.76" fill="#34D399" opacity="0.65"/>
+<circle cx="352.33" cy="568.37" r="0.69" fill="#34D399" opacity="0.82"/>
+<circle cx="118.60" cy="567.11" r="1.11" fill="#34D399" opacity="0.66"/>
+<circle cx="178.76" cy="569.40" r="0.71" fill="#34D399" opacity="0.66"/>
+<circle cx="357.25" cy="564.75" r="1.03" fill="#34D399" opacity="0.63"/>
+<circle cx="309.93" cy="565.86" r="0.80" fill="#34D399" opacity="0.70"/>
+<circle cx="78.98" cy="569.36" r="0.97" fill="#34D399" opacity="0.60"/>
+<circle cx="67.01" cy="565.00" r="0.78" fill="#34D399" opacity="0.48"/>
+<circle cx="63.19" cy="576.38" r="1.15" fill="#34D399" opacity="0.32"/>
+<circle cx="50.28" cy="571.74" r="1.06" fill="#34D399" opacity="0.50"/>
+<circle cx="284.72" cy="570.99" r="0.96" fill="#34D399" opacity="0.60"/>
+<circle cx="260.91" cy="572.09" r="0.68" fill="#34D399" opacity="0.54"/>
+<circle cx="122.80" cy="574.44" r="0.86" fill="#34D399" opacity="0.36"/>
+<circle cx="205.77" cy="571.98" r="1.10" fill="#34D399" opacity="0.58"/>
+<circle cx="290.75" cy="565.98" r="1.02" fill="#34D399" opacity="0.72"/>
+<circle cx="195.54" cy="570.78" r="0.93" fill="#34D399" opacity="0.63"/>
+<circle cx="307.16" cy="566.37" r="0.96" fill="#34D399" opacity="0.73"/>
+<circle cx="81.43" cy="569.94" r="1.09" fill="#34D399" opacity="0.58"/>
+<circle cx="37.01" cy="572.96" r="0.72" fill="#34D399" opacity="0.43"/>
+<circle cx="53.01" cy="565.89" r="1.23" fill="#34D399" opacity="0.50"/>
+<circle cx="339.49" cy="574.49" r="0.81" fill="#34D399" opacity="0.53"/>
+<circle cx="205.34" cy="575.11" r="0.82" fill="#34D399" opacity="0.44"/>
+<circle cx="260.51" cy="569.03" r="1.24" fill="#34D399" opacity="0.69"/>
+<circle cx="313.00" cy="573.30" r="0.75" fill="#34D399" opacity="0.54"/>
+<circle cx="103.94" cy="566.59" r="0.70" fill="#34D399" opacity="0.61"/>
+<circle cx="147.10" cy="572.34" r="1.20" fill="#34D399" opacity="0.47"/>
+<circle cx="191.81" cy="567.12" r="0.74" fill="#34D399" opacity="0.65"/>
+<circle cx="113.40" cy="570.24" r="0.90" fill="#34D399" opacity="0.54"/>
+<circle cx="63.79" cy="570.26" r="1.14" fill="#34D399" opacity="0.57"/>
+<circle cx="31.21" cy="566.20" r="1.05" fill="#34D399" opacity="0.52"/>
+<circle cx="53.13" cy="568.82" r="0.77" fill="#34D399" opacity="0.61"/>
+<circle cx="334.05" cy="567.94" r="0.86" fill="#34D399" opacity="0.79"/>
+<circle cx="150.07" cy="574.03" r="0.75" fill="#34D399" opacity="0.40"/>
+<circle cx="148.68" cy="568.39" r="0.83" fill="#34D399" opacity="0.65"/>
+<circle cx="62.75" cy="566.38" r="1.25" fill="#34D399" opacity="0.53"/>
+<circle cx="42.26" cy="566.03" r="1.13" fill="#34D399" opacity="0.51"/>
+<circle cx="328.29" cy="572.99" r="0.98" fill="#34D399" opacity="0.59"/>
+<circle cx="175.91" cy="567.25" r="0.79" fill="#34D399" opacity="0.66"/>
+<circle cx="210.04" cy="567.56" r="1.24" fill="#34D399" opacity="0.68"/>
+<circle cx="311.76" cy="567.70" r="1.02" fill="#34D399" opacity="0.79"/>
+<circle cx="264.99" cy="571.83" r="0.68" fill="#34D399" opacity="0.55"/>
+<circle cx="327.59" cy="565.15" r="0.82" fill="#34D399" opacity="0.64"/>
+<circle cx="234.98" cy="566.56" r="0.88" fill="#F47067" opacity="0.68"/>
+<circle cx="44.39" cy="565.10" r="1.06" fill="#34D399" opacity="0.47"/>
+<circle cx="163.27" cy="569.42" r="0.78" fill="#34D399" opacity="0.63"/>
+<circle cx="235.53" cy="572.69" r="1.21" fill="#F47067" opacity="0.53"/>
+<circle cx="98.47" cy="567.67" r="0.66" fill="#34D399" opacity="0.64"/>
+<circle cx="109.21" cy="572.21" r="1.13" fill="#34D399" opacity="0.46"/>
+<circle cx="112.41" cy="566.64" r="0.66" fill="#34D399" opacity="0.63"/>
+<circle cx="231.42" cy="566.52" r="0.63" fill="#F47067" opacity="0.67"/>
+<circle cx="318.48" cy="565.96" r="1.18" fill="#34D399" opacity="0.69"/>
+<circle cx="291.27" cy="570.57" r="0.88" fill="#34D399" opacity="0.63"/>
+<circle cx="219.64" cy="575.27" r="1.09" fill="#34D399" opacity="0.43"/>
+<circle cx="118.04" cy="559.45" r="1.13" fill="#34D399" opacity="0.33"/>
+<circle cx="245.57" cy="572.56" r="0.91" fill="#F47067" opacity="0.53"/>
+<circle cx="244.51" cy="568.47" r="0.60" fill="#F47067" opacity="0.73"/>
+<circle cx="248.07" cy="565.62" r="1.20" fill="#F47067" opacity="0.66"/>
+<circle cx="309.63" cy="570.83" r="0.78" fill="#34D399" opacity="0.66"/>
+<circle cx="350.05" cy="567.31" r="0.63" fill="#34D399" opacity="0.76"/>
+<circle cx="122.44" cy="565.41" r="1.11" fill="#34D399" opacity="0.59"/>
+<circle cx="76.89" cy="569.97" r="1.09" fill="#34D399" opacity="0.58"/>
+<circle cx="229.16" cy="565.48" r="0.70" fill="#F47067" opacity="0.61"/>
+<circle cx="31.07" cy="565.60" r="1.04" fill="#34D399" opacity="0.50"/>
+<circle cx="82.52" cy="568.84" r="0.97" fill="#34D399" opacity="0.62"/>
+<circle cx="314.70" cy="563.74" r="1.00" fill="#34D399" opacity="0.58"/>
+<circle cx="40.74" cy="576.79" r="0.65" fill="#34D399" opacity="0.29"/>
+<circle cx="75.54" cy="571.54" r="0.65" fill="#34D399" opacity="0.52"/>
+<circle cx="335.97" cy="564.29" r="1.10" fill="#34D399" opacity="0.59"/>
+<circle cx="118.86" cy="569.55" r="1.04" fill="#34D399" opacity="0.57"/>
+<circle cx="84.84" cy="568.14" r="1.19" fill="#34D399" opacity="0.63"/>
+<circle cx="143.13" cy="567.07" r="0.74" fill="#34D399" opacity="0.67"/>
+<circle cx="345.49" cy="569.78" r="0.62" fill="#34D399" opacity="0.78"/>
+<circle cx="133.30" cy="559.19" r="0.63" fill="#34D399" opacity="0.33"/>
+<circle cx="329.61" cy="564.42" r="0.65" fill="#34D399" opacity="0.60"/>
+<circle cx="50.60" cy="565.76" r="1.19" fill="#34D399" opacity="0.50"/>
+<circle cx="88.28" cy="565.47" r="0.93" fill="#34D399" opacity="0.53"/>
+<circle cx="37.84" cy="569.54" r="1.02" fill="#34D399" opacity="0.56"/>
+<circle cx="304.34" cy="564.42" r="1.17" fill="#34D399" opacity="0.63"/>
+<circle cx="100.33" cy="565.97" r="0.70" fill="#34D399" opacity="0.57"/>
+<circle cx="150.10" cy="571.41" r="1.00" fill="#34D399" opacity="0.52"/>
+<circle cx="196.45" cy="567.31" r="0.72" fill="#34D399" opacity="0.66"/>
+<circle cx="79.47" cy="570.26" r="1.18" fill="#34D399" opacity="0.57"/>
+<circle cx="174.99" cy="570.28" r="0.79" fill="#34D399" opacity="0.62"/>
+<circle cx="38.20" cy="573.55" r="1.17" fill="#34D399" opacity="0.41"/>
+<circle cx="230.41" cy="575.14" r="1.19" fill="#F47067" opacity="0.42"/>
+<circle cx="98.50" cy="567.28" r="0.88" fill="#34D399" opacity="0.62"/>
+<circle cx="104.56" cy="567.89" r="1.09" fill="#34D399" opacity="0.65"/>
+<circle cx="224.87" cy="568.60" r="1.18" fill="#F47067" opacity="0.74"/>
+<circle cx="63.86" cy="567.71" r="1.09" fill="#34D399" opacity="0.58"/>
+<circle cx="227.25" cy="569.37" r="0.85" fill="#F47067" opacity="0.70"/>
+<circle cx="219.82" cy="573.17" r="0.91" fill="#34D399" opacity="0.52"/>
+<circle cx="138.15" cy="565.32" r="0.75" fill="#34D399" opacity="0.60"/>
+<circle cx="118.64" cy="569.85" r="0.97" fill="#34D399" opacity="0.56"/>
+<circle cx="222.37" cy="570.46" r="0.69" fill="#34D399" opacity="0.65"/>
+<circle cx="61.26" cy="569.38" r="1.04" fill="#34D399" opacity="0.60"/>
+<circle cx="244.39" cy="568.78" r="0.67" fill="#F47067" opacity="0.71"/>
+<circle cx="347.22" cy="573.17" r="1.13" fill="#34D399" opacity="0.60"/>
+<circle cx="62.52" cy="569.48" r="0.90" fill="#34D399" opacity="0.60"/>
+<circle cx="229.72" cy="563.60" r="1.20" fill="#F47067" opacity="0.52"/>
+<circle cx="41.10" cy="560.70" r="0.96" fill="#34D399" opacity="0.30"/>
+<circle cx="35.95" cy="570.29" r="0.95" fill="#34D399" opacity="0.53"/>
+<circle cx="89.28" cy="566.43" r="0.93" fill="#34D399" opacity="0.57"/>
+<circle cx="238.20" cy="568.98" r="1.20" fill="#F47067" opacity="0.71"/>
+<circle cx="133.37" cy="568.49" r="0.97" fill="#34D399" opacity="0.62"/>
+<circle cx="98.81" cy="568.83" r="0.75" fill="#34D399" opacity="0.61"/>
+<circle cx="302.15" cy="571.07" r="0.77" fill="#34D399" opacity="0.63"/>
+<circle cx="219.00" cy="574.18" r="1.05" fill="#34D399" opacity="0.48"/>
+<circle cx="359.16" cy="566.91" r="1.14" fill="#34D399" opacity="0.75"/>
+<circle cx="313.74" cy="568.36" r="1.00" fill="#34D399" opacity="0.80"/>
+<circle cx="209.28" cy="565.54" r="0.88" fill="#34D399" opacity="0.58"/>
+<circle cx="163.89" cy="567.63" r="0.94" fill="#34D399" opacity="0.69"/>
+<circle cx="265.22" cy="564.82" r="0.96" fill="#34D399" opacity="0.65"/>
+<circle cx="308.63" cy="567.25" r="0.76" fill="#34D399" opacity="0.77"/>
+<circle cx="245.35" cy="561.91" r="0.75" fill="#F47067" opacity="0.48"/>
+<circle cx="147.94" cy="563.92" r="0.85" fill="#34D399" opacity="0.54"/>
+<circle cx="260.83" cy="565.20" r="0.89" fill="#34D399" opacity="0.67"/>
+<circle cx="171.23" cy="566.77" r="0.93" fill="#34D399" opacity="0.64"/>
+<circle cx="252.24" cy="568.91" r="1.18" fill="#34D399" opacity="0.70"/>
+<circle cx="132.93" cy="568.79" r="0.91" fill="#34D399" opacity="0.61"/>
+<circle cx="57.42" cy="565.32" r="0.91" fill="#34D399" opacity="0.48"/>
+<circle cx="278.86" cy="566.85" r="0.75" fill="#34D399" opacity="0.77"/>
+<circle cx="308.00" cy="569.44" r="0.91" fill="#34D399" opacity="0.73"/>
+<circle cx="60.97" cy="562.92" r="1.09" fill="#34D399" opacity="0.39"/>
+<circle cx="349.46" cy="559.44" r="1.25" fill="#34D399" opacity="0.34"/>
+<circle cx="74.30" cy="565.84" r="0.74" fill="#34D399" opacity="0.52"/>
+<circle cx="258.83" cy="564.15" r="0.72" fill="#34D399" opacity="0.61"/>
+<circle cx="224.16" cy="569.73" r="1.22" fill="#F47067" opacity="0.69"/>
+<circle cx="90.40" cy="570.63" r="1.08" fill="#34D399" opacity="0.54"/>
+<circle cx="143.17" cy="561.65" r="0.78" fill="#34D399" opacity="0.44"/>
+<circle cx="140.45" cy="570.16" r="1.00" fill="#34D399" opacity="0.56"/>
+<circle cx="206.51" cy="572.31" r="0.92" fill="#34D399" opacity="0.57"/>
+<circle cx="86.61" cy="567.20" r="1.17" fill="#34D399" opacity="0.60"/>
+<circle cx="286.46" cy="573.34" r="0.61" fill="#34D399" opacity="0.49"/>
+<circle cx="253.04" cy="569.37" r="0.63" fill="#34D399" opacity="0.68"/>
+<circle cx="94.24" cy="564.70" r="0.77" fill="#34D399" opacity="0.51"/>
+<circle cx="103.31" cy="560.25" r="0.76" fill="#34D399" opacity="0.34"/>
+<circle cx="61.86" cy="564.23" r="0.95" fill="#34D399" opacity="0.44"/>
+<circle cx="259.13" cy="567.93" r="0.78" fill="#34D399" opacity="0.74"/>
+<circle cx="227.05" cy="574.12" r="0.73" fill="#F47067" opacity="0.47"/>
+<circle cx="335.81" cy="565.45" r="0.91" fill="#34D399" opacity="0.66"/>
+<circle cx="296.51" cy="563.49" r="0.64" fill="#34D399" opacity="0.59"/>
+<circle cx="352.66" cy="566.36" r="1.09" fill="#34D399" opacity="0.71"/>
+<circle cx="309.81" cy="570.90" r="0.70" fill="#34D399" opacity="0.66"/>
+<circle cx="182.84" cy="568.55" r="0.92" fill="#34D399" opacity="0.71"/>
+<circle cx="124.38" cy="564.44" r="1.20" fill="#34D399" opacity="0.55"/>
+<circle cx="153.50" cy="564.01" r="0.71" fill="#34D399" opacity="0.54"/>
+<circle cx="165.84" cy="567.85" r="1.10" fill="#34D399" opacity="0.70"/>
+<circle cx="134.15" cy="570.52" r="0.73" fill="#34D399" opacity="0.53"/>
+<circle cx="83.28" cy="573.00" r="0.67" fill="#34D399" opacity="0.45"/>
+<circle cx="335.75" cy="567.59" r="0.84" fill="#34D399" opacity="0.77"/>
+<circle cx="351.64" cy="565.43" r="0.92" fill="#34D399" opacity="0.66"/>
+<circle cx="275.12" cy="572.00" r="1.03" fill="#34D399" opacity="0.54"/>
+<circle cx="202.49" cy="567.04" r="0.88" fill="#34D399" opacity="0.65"/>
+<circle cx="310.85" cy="563.34" r="0.93" fill="#34D399" opacity="0.57"/>
+<circle cx="196.01" cy="569.00" r="0.88" fill="#34D399" opacity="0.71"/>
+<circle cx="46.46" cy="572.17" r="1.21" fill="#34D399" opacity="0.48"/>
+<circle cx="301.94" cy="569.38" r="0.72" fill="#34D399" opacity="0.72"/>
+<circle cx="281.90" cy="570.64" r="0.82" fill="#34D399" opacity="0.62"/>
+<circle cx="126.41" cy="564.92" r="1.03" fill="#34D399" opacity="0.57"/>
+<circle cx="101.65" cy="567.21" r="0.74" fill="#34D399" opacity="0.63"/>
+<circle cx="309.37" cy="571.99" r="1.14" fill="#34D399" opacity="0.60"/>
+<circle cx="230.26" cy="563.09" r="0.65" fill="#F47067" opacity="0.50"/>
+<circle cx="267.80" cy="571.34" r="0.67" fill="#34D399" opacity="0.57"/>
+<circle cx="156.17" cy="566.59" r="0.71" fill="#34D399" opacity="0.65"/>
+<circle cx="192.60" cy="563.12" r="0.83" fill="#34D399" opacity="0.46"/>
+<circle cx="335.49" cy="570.67" r="0.94" fill="#34D399" opacity="0.72"/>
+<circle cx="244.32" cy="564.64" r="1.10" fill="#F47067" opacity="0.61"/>
+<circle cx="320.11" cy="571.32" r="0.66" fill="#34D399" opacity="0.66"/>
+<circle cx="166.23" cy="567.03" r="1.23" fill="#34D399" opacity="0.66"/>
+<circle cx="329.53" cy="569.08" r="0.69" fill="#34D399" opacity="0.80"/>
+<circle cx="137.46" cy="571.04" r="1.21" fill="#34D399" opacity="0.51"/>
+<circle cx="251.05" cy="570.94" r="1.03" fill="#34D399" opacity="0.60"/>
+<circle cx="256.83" cy="568.65" r="0.87" fill="#34D399" opacity="0.71"/>
+<circle cx="127.31" cy="570.90" r="1.04" fill="#34D399" opacity="0.51"/>
+<circle cx="154.30" cy="567.19" r="1.23" fill="#34D399" opacity="0.68"/>
+<circle cx="347.76" cy="574.89" r="0.63" fill="#34D399" opacity="0.51"/>
+<circle cx="74.81" cy="574.56" r="0.80" fill="#34D399" opacity="0.39"/>
+<circle cx="115.28" cy="563.54" r="1.12" fill="#34D399" opacity="0.50"/>
+<circle cx="91.86" cy="573.50" r="1.14" fill="#34D399" opacity="0.42"/>
+<circle cx="100.53" cy="569.50" r="1.17" fill="#34D399" opacity="0.58"/>
+<circle cx="83.32" cy="563.88" r="1.19" fill="#34D399" opacity="0.45"/>
+<circle cx="314.58" cy="567.85" r="0.82" fill="#34D399" opacity="0.80"/>
+<circle cx="210.93" cy="577.01" r="0.95" fill="#34D399" opacity="0.35"/>
+<circle cx="106.62" cy="563.24" r="1.06" fill="#34D399" opacity="0.47"/>
+<circle cx="276.49" cy="567.19" r="1.24" fill="#34D399" opacity="0.78"/>
+<circle cx="190.46" cy="570.71" r="0.95" fill="#34D399" opacity="0.63"/>
+<circle cx="207.60" cy="569.02" r="1.11" fill="#34D399" opacity="0.72"/>
+<circle cx="70.20" cy="571.08" r="1.22" fill="#34D399" opacity="0.53"/>
+<circle cx="80.31" cy="565.55" r="1.04" fill="#34D399" opacity="0.52"/>
+<circle cx="128.95" cy="566.69" r="0.91" fill="#34D399" opacity="0.65"/>
+<circle cx="97.26" cy="572.46" r="1.14" fill="#34D399" opacity="0.46"/>
+<circle cx="280.41" cy="564.65" r="0.88" fill="#34D399" opacity="0.66"/>
+<circle cx="270.54" cy="565.89" r="1.01" fill="#34D399" opacity="0.71"/>
+<circle cx="73.90" cy="564.42" r="1.16" fill="#34D399" opacity="0.46"/>
+<circle cx="48.37" cy="563.66" r="0.70" fill="#34D399" opacity="0.42"/>
+<circle cx="65.82" cy="568.41" r="0.90" fill="#34D399" opacity="0.61"/>
+<circle cx="342.78" cy="564.84" r="0.76" fill="#34D399" opacity="0.62"/>
+<circle cx="252.28" cy="565.44" r="1.12" fill="#34D399" opacity="0.66"/>
+<circle cx="214.45" cy="564.98" r="1.07" fill="#34D399" opacity="0.56"/>
+<circle cx="110.28" cy="574.21" r="1.01" fill="#34D399" opacity="0.38"/>
+<circle cx="239.78" cy="568.78" r="1.06" fill="#F47067" opacity="0.72"/>
+<circle cx="56.25" cy="568.65" r="0.96" fill="#34D399" opacity="0.61"/>
+<circle cx="314.19" cy="572.81" r="0.76" fill="#34D399" opacity="0.57"/>
+<circle cx="185.56" cy="570.93" r="0.67" fill="#34D399" opacity="0.61"/>
+<circle cx="154.16" cy="561.60" r="1.03" fill="#34D399" opacity="0.43"/>
+<circle cx="287.88" cy="565.15" r="0.96" fill="#34D399" opacity="0.68"/>
+<circle cx="280.40" cy="561.57" r="0.68" fill="#34D399" opacity="0.50"/>
+<circle cx="301.17" cy="574.98" r="1.01" fill="#34D399" opacity="0.43"/>
+<circle cx="230.59" cy="561.27" r="0.66" fill="#F47067" opacity="0.41"/>
+<circle cx="274.28" cy="563.99" r="0.93" fill="#34D399" opacity="0.62"/>
+<circle cx="102.43" cy="569.93" r="0.97" fill="#34D399" opacity="0.56"/>
+<circle cx="325.80" cy="568.42" r="0.64" fill="#34D399" opacity="0.82"/>
+<circle cx="324.19" cy="571.35" r="0.82" fill="#34D399" opacity="0.67"/>
+<circle cx="74.11" cy="570.15" r="0.76" fill="#34D399" opacity="0.57"/>
+<circle cx="49.00" cy="566.20" r="1.02" fill="#34D399" opacity="0.52"/>
+<circle cx="116.15" cy="572.49" r="0.80" fill="#34D399" opacity="0.45"/>
+<circle cx="145.87" cy="565.33" r="0.76" fill="#34D399" opacity="0.60"/>
+<circle cx="133.23" cy="567.40" r="0.83" fill="#34D399" opacity="0.67"/>
+<circle cx="156.66" cy="578.59" r="0.98" fill="#34D399" opacity="0.21"/>
+<circle cx="308.54" cy="572.15" r="1.13" fill="#34D399" opacity="0.59"/>
+<circle cx="361.22" cy="567.08" r="1.01" fill="#34D399" opacity="0.76"/>
+<circle cx="219.72" cy="571.19" r="0.79" fill="#34D399" opacity="0.62"/>
+<circle cx="100.36" cy="565.05" r="0.97" fill="#34D399" opacity="0.54"/>
+<circle cx="296.29" cy="570.15" r="0.92" fill="#34D399" opacity="0.66"/>
+<circle cx="349.93" cy="571.55" r="0.66" fill="#34D399" opacity="0.69"/>
+<circle cx="104.27" cy="565.79" r="1.06" fill="#34D399" opacity="0.57"/>
+<circle cx="348.99" cy="571.77" r="0.76" fill="#34D399" opacity="0.68"/>
+<circle cx="176.87" cy="569.37" r="1.05" fill="#34D399" opacity="0.66"/>
+<circle cx="308.28" cy="571.07" r="0.62" fill="#34D399" opacity="0.65"/>
+<circle cx="230.42" cy="566.10" r="0.72" fill="#F47067" opacity="0.64"/>
+<circle cx="108.93" cy="565.38" r="0.61" fill="#34D399" opacity="0.57"/>
+<circle cx="166.34" cy="573.72" r="0.86" fill="#34D399" opacity="0.44"/>
+<circle cx="349.62" cy="572.18" r="0.87" fill="#34D399" opacity="0.66"/>
+<circle cx="155.90" cy="564.33" r="0.61" fill="#34D399" opacity="0.55"/>
+<circle cx="281.60" cy="558.46" r="0.71" fill="#34D399" opacity="0.35"/>
+<circle cx="83.77" cy="568.97" r="0.94" fill="#34D399" opacity="0.62"/>
+<circle cx="184.42" cy="571.01" r="1.25" fill="#34D399" opacity="0.60"/>
+<circle cx="99.90" cy="567.14" r="1.11" fill="#34D399" opacity="0.62"/>
+<circle cx="159.66" cy="571.85" r="1.05" fill="#34D399" opacity="0.51"/>
+<circle cx="355.08" cy="566.15" r="1.15" fill="#34D399" opacity="0.70"/>
+<circle cx="58.65" cy="565.71" r="0.74" fill="#34D399" opacity="0.50"/>
+<circle cx="132.04" cy="568.06" r="1.04" fill="#34D399" opacity="0.64"/>
+<circle cx="209.22" cy="568.32" r="0.61" fill="#34D399" opacity="0.71"/>
+<circle cx="34.95" cy="566.31" r="0.97" fill="#34D399" opacity="0.52"/>
+<circle cx="63.63" cy="566.83" r="0.84" fill="#34D399" opacity="0.55"/>
+<circle cx="122.49" cy="563.80" r="0.72" fill="#34D399" opacity="0.52"/>
+<circle cx="316.55" cy="563.20" r="1.08" fill="#34D399" opacity="0.55"/>
+<circle cx="357.35" cy="562.58" r="0.64" fill="#34D399" opacity="0.51"/>
+<circle cx="275.22" cy="566.96" r="1.10" fill="#34D399" opacity="0.77"/>
+<circle cx="54.48" cy="565.25" r="0.94" fill="#34D399" opacity="0.48"/>
+<circle cx="60.97" cy="570.01" r="1.01" fill="#34D399" opacity="0.57"/>
+<circle cx="206.44" cy="574.69" r="1.01" fill="#34D399" opacity="0.46"/>
+<circle cx="289.07" cy="561.12" r="0.60" fill="#34D399" opacity="0.48"/>
+<circle cx="33.29" cy="564.29" r="0.73" fill="#34D399" opacity="0.45"/>
+<circle cx="310.59" cy="567.84" r="0.75" fill="#34D399" opacity="0.80"/>
+<circle cx="273.42" cy="567.88" r="1.20" fill="#34D399" opacity="0.75"/>
+<circle cx="61.21" cy="568.36" r="0.97" fill="#34D399" opacity="0.61"/>
+<circle cx="337.21" cy="562.81" r="0.93" fill="#34D399" opacity="0.52"/>
+<circle cx="310.75" cy="565.55" r="0.81" fill="#34D399" opacity="0.68"/>
+<circle cx="73.47" cy="571.76" r="0.81" fill="#34D399" opacity="0.51"/>
+<circle cx="102.51" cy="568.00" r="0.61" fill="#34D399" opacity="0.64"/>
+<circle cx="30.09" cy="574.35" r="0.84" fill="#34D399" opacity="0.36"/>
+<circle cx="319.05" cy="562.70" r="1.22" fill="#34D399" opacity="0.52"/>
+<circle cx="194.22" cy="568.11" r="0.71" fill="#34D399" opacity="0.69"/>
+<circle cx="101.10" cy="569.22" r="1.05" fill="#34D399" opacity="0.59"/>
+<circle cx="200.71" cy="570.10" r="1.01" fill="#34D399" opacity="0.67"/>
+<circle cx="267.46" cy="570.62" r="0.87" fill="#34D399" opacity="0.61"/>
+<circle cx="203.23" cy="571.75" r="0.85" fill="#34D399" opacity="0.59"/>
+<circle cx="105.89" cy="564.47" r="0.82" fill="#34D399" opacity="0.52"/>
+<circle cx="181.16" cy="566.48" r="0.67" fill="#34D399" opacity="0.62"/>
+<circle cx="347.92" cy="568.90" r="0.72" fill="#34D399" opacity="0.83"/>
+<circle cx="181.76" cy="575.55" r="0.98" fill="#34D399" opacity="0.39"/>
+<circle cx="232.04" cy="561.72" r="1.05" fill="#F47067" opacity="0.44"/>
+<circle cx="36.48" cy="570.22" r="0.88" fill="#34D399" opacity="0.54"/>
+<circle cx="335.89" cy="573.31" r="1.14" fill="#34D399" opacity="0.59"/>
+<circle cx="87.49" cy="573.64" r="0.82" fill="#34D399" opacity="0.42"/>
+<circle cx="114.79" cy="567.60" r="1.12" fill="#34D399" opacity="0.65"/>
+<circle cx="175.06" cy="568.75" r="0.65" fill="#34D399" opacity="0.69"/>
+<circle cx="351.54" cy="574.43" r="1.08" fill="#34D399" opacity="0.54"/>
+<circle cx="81.55" cy="571.59" r="1.11" fill="#34D399" opacity="0.51"/>
+<circle cx="134.41" cy="567.62" r="1.24" fill="#34D399" opacity="0.66"/>
+<circle cx="264.72" cy="572.64" r="0.78" fill="#34D399" opacity="0.51"/>
+<circle cx="364.84" cy="566.55" r="0.86" fill="#34D399" opacity="0.74"/>
+<circle cx="330.24" cy="572.11" r="1.04" fill="#34D399" opacity="0.64"/>
+<circle cx="240.00" cy="560.90" r="1.05" fill="#F47067" opacity="0.42"/>
+<circle cx="256.21" cy="568.45" r="0.76" fill="#34D399" opacity="0.72"/>
+<circle cx="132.44" cy="566.17" r="1.06" fill="#34D399" opacity="0.63"/>
+<circle cx="248.80" cy="570.02" r="0.83" fill="#34D399" opacity="0.65"/>
+<circle cx="266.43" cy="565.66" r="0.99" fill="#34D399" opacity="0.70"/>
+<circle cx="105.24" cy="571.06" r="0.69" fill="#34D399" opacity="0.51"/>
+<circle cx="251.71" cy="559.40" r="0.60" fill="#34D399" opacity="0.37"/>
+<circle cx="301.42" cy="572.23" r="0.90" fill="#34D399" opacity="0.57"/>
+<circle cx="281.66" cy="564.80" r="0.84" fill="#34D399" opacity="0.67"/>
+<circle cx="218.88" cy="567.76" r="1.05" fill="#34D399" opacity="0.70"/>
+<circle cx="180.28" cy="574.77" r="0.86" fill="#34D399" opacity="0.42"/>
+<circle cx="77.03" cy="571.12" r="1.08" fill="#34D399" opacity="0.53"/>
+<circle cx="154.86" cy="566.02" r="0.93" fill="#34D399" opacity="0.62"/>
+<circle cx="174.56" cy="569.23" r="0.66" fill="#34D399" opacity="0.66"/>
+<circle cx="44.01" cy="563.99" r="0.67" fill="#34D399" opacity="0.43"/>
+<circle cx="340.67" cy="565.04" r="1.00" fill="#34D399" opacity="0.63"/>
+<circle cx="293.86" cy="571.71" r="0.77" fill="#34D399" opacity="0.58"/>
+<circle cx="311.52" cy="575.14" r="0.80" fill="#34D399" opacity="0.44"/>
+<circle cx="101.65" cy="567.78" r="1.05" fill="#34D399" opacity="0.65"/>
+<circle cx="82.21" cy="570.69" r="0.73" fill="#34D399" opacity="0.55"/>
+<circle cx="119.35" cy="562.72" r="0.81" fill="#34D399" opacity="0.47"/>
+<circle cx="348.10" cy="568.60" r="1.03" fill="#34D399" opacity="0.83"/>
+<circle cx="149.44" cy="568.33" r="0.65" fill="#34D399" opacity="0.65"/>
+<circle cx="184.59" cy="571.95" r="1.07" fill="#34D399" opacity="0.56"/>
+<circle cx="272.91" cy="567.95" r="0.76" fill="#34D399" opacity="0.74"/>
+<circle cx="159.08" cy="566.49" r="0.99" fill="#34D399" opacity="0.64"/>
+<circle cx="258.53" cy="572.65" r="1.10" fill="#34D399" opacity="0.51"/>
+<circle cx="78.06" cy="565.62" r="0.65" fill="#34D399" opacity="0.52"/>
+<circle cx="82.78" cy="571.21" r="0.61" fill="#34D399" opacity="0.53"/>
+<circle cx="109.03" cy="570.31" r="0.86" fill="#34D399" opacity="0.54"/>
+<circle cx="68.99" cy="568.93" r="0.73" fill="#34D399" opacity="0.62"/>
+<circle cx="246.81" cy="573.00" r="0.99" fill="#F47067" opacity="0.51"/>
+<circle cx="187.83" cy="563.98" r="1.19" fill="#34D399" opacity="0.50"/>
+<circle cx="96.56" cy="570.34" r="0.62" fill="#34D399" opacity="0.55"/>
+<circle cx="294.24" cy="570.63" r="0.99" fill="#34D399" opacity="0.64"/>
+<circle cx="32.97" cy="565.02" r="0.66" fill="#34D399" opacity="0.48"/>
+<circle cx="232.28" cy="568.06" r="0.99" fill="#F47067" opacity="0.74"/>
+<circle cx="181.11" cy="569.06" r="0.75" fill="#34D399" opacity="0.68"/>
+<circle cx="103.68" cy="569.93" r="0.96" fill="#34D399" opacity="0.56"/>
+<circle cx="193.91" cy="569.79" r="0.61" fill="#34D399" opacity="0.67"/>
+<circle cx="193.51" cy="572.99" r="1.14" fill="#34D399" opacity="0.53"/>
+<circle cx="91.95" cy="567.86" r="0.90" fill="#34D399" opacity="0.63"/>
+<circle cx="205.55" cy="573.41" r="0.68" fill="#34D399" opacity="0.52"/>
+<circle cx="366" cy="568" r="3" fill="#34D399"/>
+<text x="24" y="602" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="start">14:00</text>
+<text x="366" y="602" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="end">14:31</text>
+<line x1="24" y1="625" x2="366" y2="625" stroke="#2F3236" stroke-width="1"/>
+<text x="77" y="660" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="middle">累计专注</text>
+<text x="77" y="694" font-family="'JetBrains Mono', Consolas, monospace" font-size="20" font-weight="500" fill="#EFEFEB" text-anchor="middle">28:36</text>
+<text x="195" y="660" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="middle">累计暂停</text>
+<text x="195" y="694" font-family="'JetBrains Mono', Consolas, monospace" font-size="20" font-weight="500" fill="#EFEFEB" text-anchor="middle">02:10</text>
+<text x="313" y="660" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="middle">总历时</text>
+<text x="313" y="694" font-family="'JetBrains Mono', Consolas, monospace" font-size="20" font-weight="500" fill="#EFEFEB" text-anchor="middle">30:46</text>
+<rect x="0" y="748" width="390" height="96" rx="0" fill="#15181C"/>
+<line x1="0" y1="748" x2="390" y2="748" stroke="#2F3236" stroke-width="1"/>
+<rect x="20.75" y="760" width="56" height="32" rx="16" fill="#0F2E23"/>
+<use href="#i-focus" x="36.75" y="764" width="24" height="24" color="#34D399"/>
+<text x="48.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#34D399" text-anchor="middle">专注</text>
+<use href="#i-tasks" x="134.25" y="764" width="24" height="24" color="#9E9F9C"/>
+<text x="146.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="middle">任务</text>
+<use href="#i-stats" x="231.75" y="764" width="24" height="24" color="#9E9F9C"/>
+<text x="243.75" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="middle">统计</text>
+<use href="#i-settings" x="329.25" y="764" width="24" height="24" color="#9E9F9C"/>
+<text x="341.25" y="814" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#9E9F9C" text-anchor="middle">设置</text>
+<rect x="135" y="833" width="120" height="4" rx="2" fill="#EFEFEB"/>
+</g></g>
+<g id="tablet-tasks-detail" transform="translate(490 1204) scale(0.79)">
+<rect x="0" y="0" width="1040" height="760" rx="24" fill="#F5F5F2" stroke="#DDDCD6" stroke-width="1"/>
+<g clip-path="url(#tablet-clip)">
+<rect x="0" y="0" width="88" height="760" rx="0" fill="#FCFCFA"/>
+<circle cx="44" cy="46" r="19" fill="#007A55"/>
+<use href="#i-focus" x="32" y="34" width="24" height="24" color="#FFFFFF"/>
+<use href="#i-focus" x="32" y="116" width="24" height="24" color="#5F6368"/>
+<text x="44" y="161" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">专注</text>
+<rect x="14" y="191" width="60" height="63" rx="16" fill="#E4F5EE"/>
+<use href="#i-tasks" x="32" y="199" width="24" height="24" color="#007A55"/>
+<text x="44" y="244" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="600" fill="#007A55" text-anchor="middle">任务</text>
+<use href="#i-stats" x="32" y="282" width="24" height="24" color="#5F6368"/>
+<text x="44" y="327" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">统计</text>
+<use href="#i-settings" x="32" y="365" width="24" height="24" color="#5F6368"/>
+<text x="44" y="410" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F6368" text-anchor="middle">设置</text>
+<text x="44" y="698" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="400" fill="#5F6368" text-anchor="middle">专注中</text>
+<text x="44" y="725" font-family="'JetBrains Mono', Consolas, monospace" font-size="17" font-weight="550" fill="#007A55" text-anchor="middle">28:36</text>
+<text x="120" y="71" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="650" fill="#181A1D" text-anchor="start">任务</text>
+<rect x="120" y="103" width="340" height="48" rx="12" fill="#FCFCFA"/>
+<use href="#i-search" x="136" y="116" width="21" height="21" color="#5F6368"/>
+<text x="169" y="134" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#5F6368" text-anchor="start">搜索任务</text>
+<rect x="120" y="175" width="340" height="44" rx="12" fill="#F0F0EC"/>
+<rect x="124" y="179" width="163" height="36" rx="9" fill="#FCFCFA"/>
+<text x="205" y="203" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600" fill="#181A1D" text-anchor="middle">待办</text>
+<text x="374" y="203" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="middle">已完成</text>
+<text x="120" y="265" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="600" fill="#181A1D" text-anchor="start">今天</text>
+<use href="#i-plus" x="430" y="245" width="24" height="24" color="#007A55"/>
+<rect x="120" y="287" width="340" height="72" rx="12" fill="#E4F5EE"/>
+<rect x="136" y="310" width="20" height="20" rx="6" fill="none" stroke="#007A55" stroke-width="1.6"/>
+<text x="172" y="317" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="550" fill="#181A1D" text-anchor="start">读完这一章，写下要点</text>
+<text x="172" y="341" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">阅读与整理 · 今天</text>
+<rect x="136" y="388" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="172" y="395" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">整理今日笔记</text>
+<text x="172" y="419" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">阅读与整理</text>
+<rect x="136" y="466" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="172" y="473" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">英语阅读练习</text>
+<text x="172" y="497" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">英语 · 今天</text>
+<rect x="136" y="544" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="172" y="551" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">准备明天的任务</text>
+<text x="172" y="575" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">收件箱</text>
+<rect x="120" y="641" width="340" height="48" rx="12" fill="none" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-plus" x="136" y="653" width="22" height="22" color="#007A55"/>
+<text x="169" y="672" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="550" fill="#007A55" text-anchor="start">新建任务</text>
+<line x1="492" y1="32" x2="492" y2="728" stroke="#DDDCD6" stroke-width="1"/>
+<text x="528" y="70" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">任务详情</text>
+<text x="528" y="131" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#5F6368" text-anchor="start">阅读与整理 / 今日阅读</text>
+<text x="528" y="195" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="30" font-weight="600" fill="#181A1D" text-anchor="start">读完这一章，</text>
+<text x="528" y="237" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="30" font-weight="600" fill="#181A1D" text-anchor="start">写下要点</text>
+<rect x="528" y="277" width="20" height="20" rx="6" fill="none" stroke="#939992" stroke-width="1.6"/>
+<text x="564" y="294" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="400" fill="#181A1D" text-anchor="start">待办</text>
+<text x="528" y="364" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">日期</text>
+<text x="646" y="364" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">今天</text>
+<text x="528" y="418" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">清单</text>
+<circle cx="651" cy="411" r="4" fill="#007A55"/>
+<text x="668" y="418" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="start">阅读与整理</text>
+<line x1="528" y1="455" x2="1008" y2="455" stroke="#DDDCD6" stroke-width="1"/>
+<text x="528" y="493" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="400" fill="#5F6368" text-anchor="start">先完成眼前这一项。</text>
+<rect x="528" y="546" width="400" height="56" rx="16" fill="#007A55"/>
+<use href="#i-play" x="613" y="562" width="24" height="24" color="#FFFFFF"/>
+<text x="753" y="582" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#FFFFFF" text-anchor="middle">关联并开始专注</text>
+<rect x="528" y="618" width="400" height="48" rx="12" fill="#FCFCFA" stroke="#DDDCD6" stroke-width="1"/>
+<text x="728" y="649" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="middle">标记完成</text>
+</g></g>
+<text x="490" y="1848" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">同一信息架构，按可用空间重排；平板不拉伸手机单列。</text>
+<text x="490" y="1908" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#181A1D" text-anchor="start">组件 / 一套状态，一套尺寸</text>
+<rect x="490" y="1935" width="252" height="56" rx="16" fill="#007A55"/>
+<use href="#i-play" x="548" y="1951" width="24" height="24" color="#FFFFFF"/>
+<text x="632" y="1971" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#FFFFFF" text-anchor="middle">开始专注</text>
+<rect x="762" y="1935" width="160" height="56" rx="16" fill="#FCFCFA" stroke="#DDDCD6" stroke-width="1"/>
+<text x="842" y="1971" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#181A1D" text-anchor="middle">次要操作</text>
+<rect x="942" y="1935" width="94" height="56" rx="16" fill="#FCFCFA" stroke="#DDDCD6" stroke-width="1"/>
+<use href="#i-plus" x="977" y="1951" width="24" height="24" color="#007A55"/>
+<text x="490" y="2028" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">56px 主按钮 · 48px 图标命中 · 16px 输入 · 4px 间距步长</text>
+<rect x="1370" y="1204" width="362" height="844" rx="24" fill="#FCFCFA"/>
+<text x="1394" y="1245" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#181A1D" text-anchor="start">颜色来自现有语义 token</text>
+<rect x="1394" y="1272" width="32" height="32" rx="8" fill="#F5F5F2" stroke="#DDDCD6" stroke-width="1"/>
+<text x="1440" y="1285" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#181A1D" text-anchor="start">画布  #F5F5F2</text>
+<text x="1440" y="1306" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="start">--app-bg</text>
+<rect x="1394" y="1335" width="32" height="32" rx="8" fill="#FCFCFA" stroke="#DDDCD6" stroke-width="1"/>
+<text x="1440" y="1348" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#181A1D" text-anchor="start">内容  #FCFCFA</text>
+<text x="1440" y="1369" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="start">--app-surface</text>
+<rect x="1394" y="1398" width="32" height="32" rx="8" fill="#181A1D"/>
+<text x="1440" y="1411" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#181A1D" text-anchor="start">正文  #181A1D</text>
+<text x="1440" y="1432" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="start">--app-text</text>
+<rect x="1394" y="1461" width="32" height="32" rx="8" fill="#007A55"/>
+<text x="1440" y="1474" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#181A1D" text-anchor="start">强调  #007A55</text>
+<text x="1440" y="1495" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="start">--app-accent</text>
+<rect x="1394" y="1524" width="32" height="32" rx="8" fill="#D24339"/>
+<text x="1440" y="1537" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="550" fill="#181A1D" text-anchor="start">暂停  #D24339</text>
+<text x="1440" y="1558" font-family="'JetBrains Mono', Consolas, monospace" font-size="11" font-weight="400" fill="#5F6368" text-anchor="start">--app-pause</text>
+<line x1="1394" y1="1604" x2="1708" y2="1604" stroke="#DDDCD6" stroke-width="1"/>
+<text x="1394" y="1644" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#181A1D" text-anchor="start">排印与几何</text>
+<text x="1394" y="1683" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">标题 28px / 正文 16px</text>
+<text x="1394" y="1717" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">辅助 13px / 导航 12px</text>
+<text x="1394" y="1751" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">手机边距 24px（窄屏收敛）</text>
+<text x="1394" y="1785" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">按钮圆角 16px / 弹层 24px</text>
+<text x="1394" y="1819" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">普通内容面不加阴影</text>
+<line x1="1394" y1="1855" x2="1708" y2="1855" stroke="#DDDCD6" stroke-width="1"/>
+<text x="1394" y="1894" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="600" fill="#181A1D" text-anchor="start">实施规则</text>
+<text x="1394" y="1932" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">先统一组件，再组装四页</text>
+<text x="1394" y="1960" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">高级诊断进入详情，入口保留</text>
+<text x="1394" y="1988" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">迁移一块，清理一块旧样式</text>
+<text x="1394" y="2016" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">用真实渲染核对设计结果</text>
+<text x="64" y="2094" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="400" fill="#5F6368" text-anchor="start">设计文件：mobile-design-board.svg  /  规范：FRONTEND_SPEC.md 顶部移动重设计章节</text>
+<text x="64" y="2127" font-family="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="400" fill="#5F6368" text-anchor="start">所有数字与任务为合成设计样例；应用界面必须继续读取真实数据，保留字体、强调色与计时仪表偏好。</text>
+</svg>

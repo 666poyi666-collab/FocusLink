@@ -10,6 +10,7 @@
 
 ### 产品与交互
 
+- **移动端 UI 重设计（2026-10-26）**：先读 [FRONTEND_SPEC.md 的移动设计语言](FRONTEND_SPEC.md#移动端重设计设计语言与设计文件2026-10-26待实现)，再打开 [四页 / 深色 / 平板 SVG 设计板](mobile-design-board.svg)。官方 Material 3 与 Android UI kit 链接、组件尺寸、页面布局和交付顺序均在同一规范内；当前为设计提案，未宣称产品已改版。
 - [FRONTEND_SPEC.md](FRONTEND_SPEC.md)：界面信息架构、主题 token、字体、计时仪表、时间之带、账本、小窗和验收标准的单一真相。
 - [USER_REQUIREMENTS.md](USER_REQUIREMENTS.md)：长期维护的用户需求摘要、三端验收标准、状态与关联改动。
 
