@@ -13,7 +13,7 @@ import {
   Search,
   Target,
 } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { SyncedTask, SyncedTaskProject } from '@shared/sync/taskSnapshotProtocol';
 import {
   defaultTaskProjectColor,
@@ -87,6 +87,11 @@ export function TaskBrowser({
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(() => new Set());
+  // The composer is a disclosure, not a permanently reserved band above the list.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const draftInputRef = useRef<HTMLInputElement>(null);
+  const detailSheetRef = useRef<HTMLElement>(null);
   const groupRegionPrefix = useId();
   const taskForest = useMemo(
     () => filterSyncedTaskForest(tasks, query, projectFilter, statusFilter),
@@ -123,6 +128,32 @@ export function TaskBrowser({
         : projectFilter,
     );
   }, [projectFilter]);
+  const filterActive = projectFilter !== ALL_PROJECTS || viewMode !== 'list';
+  // The composer field only mounts when the disclosure opens, so focus it on demand.
+  useEffect(() => {
+    if (quickAddOpen) draftInputRef.current?.focus();
+  }, [quickAddOpen]);
+  // Phone detail is a bottom sheet: Escape closes it and focus returns to the row that opened it.
+  useEffect(() => {
+    if (!detailOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const sheet = detailSheetRef.current;
+    const sideBySide = window.matchMedia('(min-width: 860px) and (min-height: 620px)');
+    sheet?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || sideBySide.matches) return;
+      event.preventDefault();
+      setDetailOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.addEventListener('keydown', closeOnEscape);
+    if (!sideBySide.matches) document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
+  }, [detailOpen]);
   const selectStatusFilter = (next: TaskStatusFilter) => {
     setStatusFilter(next);
     setDetailOpen(false);
@@ -208,6 +239,18 @@ export function TaskBrowser({
       </header>
 
       <div className="task-toolbar">
+        <label className="task-search">
+          <Search aria-hidden="true" />
+          <span className="sr-only">搜索任务</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索任务或标签"
+            autoComplete="off"
+            enterKeyHint="search"
+          />
+        </label>
         <div className="task-status-switch" role="group" aria-label="任务状态">
           <button
             type="button"
@@ -228,8 +271,45 @@ export function TaskBrowser({
             <strong>{totalCompleted}</strong>
           </button>
         </div>
+        <div className="task-toolbar-row">
+          <button
+            className="task-quick-add m-text-action"
+            type="button"
+            aria-expanded={quickAddOpen}
+            aria-controls="task-quick-composer"
+            disabled={!onCreate}
+            onClick={() => setQuickAddOpen((open) => !open)}
+          >
+            <Plus aria-hidden="true" />
+            <span>添加任务</span>
+          </button>
+          <div className="task-toolbar-actions">
+            <button
+              className={`task-filter-disclosure ${filterActive ? 'is-active' : ''}`}
+              type="button"
+              aria-expanded={filterPanelOpen}
+              aria-label="筛选与视图"
+              title="筛选与视图"
+              onClick={() => setFilterPanelOpen((open) => !open)}
+            >
+              <ListFilter aria-hidden="true" />
+            </button>
+            <button
+              className="project-create-disclosure"
+              type="button"
+              aria-expanded={projectComposerOpen}
+              aria-label={projectComposerOpen ? '收起清单管理' : '清单管理'}
+              title={projectComposerOpen ? '收起清单管理' : '清单管理'}
+              onClick={() => setProjectComposerOpen((open) => !open)}
+            >
+              <Folder aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         <form
           className="task-mobile-create"
+          id="task-quick-composer"
+          hidden={!quickAddOpen}
           onSubmit={(event) => {
             event.preventDefault();
             const title = draft.trim();
@@ -245,10 +325,12 @@ export function TaskBrowser({
         >
           <Plus aria-hidden="true" />
           <input
+            ref={draftInputRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="添加任务"
             aria-label="添加任务"
+            enterKeyHint="done"
           />
           <label className="task-add-destination">
             <span className="sr-only">新任务所属清单</span>
@@ -271,63 +353,58 @@ export function TaskBrowser({
           <button type="submit" disabled={!draft.trim() || creating || !onCreate}>
             {creating ? '保存中' : '添加'}
           </button>
+          <button
+            type="button"
+            className="task-quick-cancel"
+            onClick={() => setQuickAddOpen(false)}
+          >
+            取消
+          </button>
         </form>
-        <label className="task-search">
-          <Search aria-hidden="true" />
-          <span className="sr-only">搜索任务</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索任务或标签"
-            autoComplete="off"
-          />
-        </label>
-        <label className="project-filter">
-          <ListFilter aria-hidden="true" />
-          <span className="sr-only">按清单筛选</span>
-          <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
-            <option value={ALL_PROJECTS}>全部清单</option>
-            <option value={NO_PROJECT}>收件箱</option>
-            {projects
-              .filter((project) => !isFocusLinkInboxProject(project.id))
-              .map((project) => (
-                <option key={`${project.source}:${project.id}`} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <div className="task-view-switch" role="group" aria-label="任务视图">
-          <button
-            type="button"
-            className={viewMode === 'list' ? 'is-active' : ''}
-            onClick={() => setViewMode('list')}
-            aria-label="列表视图"
-            title="列表视图"
-          >
-            <ListFilter aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'board' ? 'is-active' : ''}
-            onClick={() => setViewMode('board')}
-            aria-label="看板视图"
-            title="看板视图"
-          >
-            <LayoutGrid aria-hidden="true" />
-          </button>
-        </div>
-        <button
-          className="project-create-disclosure"
-          type="button"
-          aria-expanded={projectComposerOpen}
-          onClick={() => setProjectComposerOpen((open) => !open)}
-        >
-          <Folder aria-hidden="true" />
-          <span>{projectComposerOpen ? '收起清单创建' : '新建清单'}</span>
-          {projectComposerOpen ? <ChevronDown aria-hidden="true" /> : <Plus aria-hidden="true" />}
-        </button>
+        {filterPanelOpen && (
+          <div className="task-filter-panel">
+            <label className="project-filter">
+              <ListFilter aria-hidden="true" />
+              <span className="sr-only">按清单筛选</span>
+              <select
+                value={projectFilter}
+                onChange={(event) => setProjectFilter(event.target.value)}
+              >
+                <option value={ALL_PROJECTS}>全部清单</option>
+                <option value={NO_PROJECT}>收件箱</option>
+                {projects
+                  .filter((project) => !isFocusLinkInboxProject(project.id))
+                  .map((project) => (
+                    <option key={`${project.source}:${project.id}`} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="task-view-switch" role="group" aria-label="任务视图">
+              <button
+                type="button"
+                className={viewMode === 'list' ? 'is-active' : ''}
+                onClick={() => setViewMode('list')}
+                aria-label="列表视图"
+                aria-pressed={viewMode === 'list'}
+                title="列表视图"
+              >
+                <ListFilter aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'board' ? 'is-active' : ''}
+                onClick={() => setViewMode('board')}
+                aria-label="看板视图"
+                aria-pressed={viewMode === 'board'}
+                title="看板视图"
+              >
+                <LayoutGrid aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
         {projectComposerOpen && (
           <div className="mobile-project-manager">
             <form
@@ -407,6 +484,16 @@ export function TaskBrowser({
                 ? '完成后的任务会保留在这里，可随时恢复为待办。'
                 : '调整搜索词或清单筛选。'}
           </p>
+          {tasks.length === 0 && (
+            <button
+              className="task-empty-action m-text-action"
+              type="button"
+              onClick={() => setQuickAddOpen(true)}
+            >
+              <Plus aria-hidden="true" />
+              <span>添加第一个任务</span>
+            </button>
+          )}
         </div>
       ) : viewMode === 'board' ? (
         <TaskBoard
@@ -453,7 +540,6 @@ export function TaskBrowser({
                           ancestorTitles={[]}
                           projects={projects}
                           selectedTaskId={selectedTaskId}
-                          canStart={canStart}
                           collapsedTasks={collapsedTasks}
                           selectedPathKeys={selectedPathKeys}
                           forceOpen={forceGroupsOpen}
@@ -470,88 +556,106 @@ export function TaskBrowser({
             })}
           </div>
           <aside
-            className={`task-selection-detail ${selectedTask ? 'has-selection' : 'is-empty'} ${detailOpen ? 'is-open' : ''}`}
+            ref={detailSheetRef}
+            tabIndex={-1}
+            className={`task-selection-detail ${selectedTask ? 'has-selection' : 'is-empty'} ${detailOpen && selectedTask ? 'is-open' : ''}`}
             aria-label="所选任务详情"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setDetailOpen(false);
+            }}
           >
-            {selectedTask ? (
-              <>
-                <button
-                  type="button"
-                  className="task-selection-close"
-                  onClick={() => setDetailOpen(false)}
-                  aria-label="关闭任务详情"
-                >
-                  ×
-                </button>
-                <div className="task-selection-kicker">SELECTED TASK</div>
-                <strong>{selectedTask.title || '未命名任务'}</strong>
-                <p>
-                  父路径：
-                  {[projectNameForTask(selectedTask, projects), ...selectedParentPath].join(' / ')}
-                </p>
-                {onMoveTask && selectedTask.source === 'local' && (
-                  <label className="task-selection-project">
-                    <span>所属清单</span>
-                    <select
-                      value={selectedTask.projectId ?? FOCUSLINK_INBOX_PROJECT_ID}
-                      disabled={movingTask}
-                      onChange={(event) => {
-                        setMovingTask(true);
-                        setMutationNotice(null);
-                        void onMoveTask(selectedTask, event.target.value)
-                          .catch((error) => mutationError('移动任务', error))
-                          .finally(() => setMovingTask(false));
-                      }}
+            <div className="task-sheet">
+              <span className="task-sheet-grabber" aria-hidden="true" />
+              {selectedTask ? (
+                <>
+                  <div className="task-sheet-head">
+                    <span className="task-selection-kicker">任务详情</span>
+                    <button
+                      type="button"
+                      className="task-selection-close"
+                      onClick={() => setDetailOpen(false)}
+                      aria-label="关闭任务详情"
                     >
-                      <option value={FOCUSLINK_INBOX_PROJECT_ID}>收件箱</option>
-                      {projects
-                        .filter((project) => !isFocusLinkInboxProject(project.id))
-                        .map((project) => (
-                          <option key={project.id} value={project.id}>
-                            {project.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                )}
-                {selectedTask.tags.length > 0 && (
-                  <div className="task-selection-tags">
-                    {selectedTask.tags.slice(0, 4).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
+                      <ChevronDown aria-hidden="true" />
+                    </button>
                   </div>
-                )}
-                <div className="task-selection-actions">
-                  {toggleCompleteWithNotice && (
-                    <button
-                      type="button"
-                      className={`task-selection-complete ${selectedTask.isCompleted ? 'is-restore' : ''}`}
-                      onClick={() => void toggleCompleteWithNotice(selectedTask)}
-                      disabled={movingTask}
-                    >
-                      {selectedTask.isCompleted ? (
-                        <RotateCcw aria-hidden="true" />
-                      ) : (
-                        <Check aria-hidden="true" />
-                      )}
-                      {selectedTask.isCompleted ? '恢复为待办' : '标记完成'}
-                    </button>
+                  <strong className="task-selection-title">
+                    {selectedTask.title || '未命名任务'}
+                  </strong>
+                  <p className="task-selection-path">
+                    父路径：
+                    {[projectNameForTask(selectedTask, projects), ...selectedParentPath].join(
+                      ' / ',
+                    )}
+                  </p>
+                  {onMoveTask && selectedTask.source === 'local' && (
+                    <label className="task-selection-project">
+                      <span>所属清单</span>
+                      <select
+                        value={selectedTask.projectId ?? FOCUSLINK_INBOX_PROJECT_ID}
+                        disabled={movingTask}
+                        onChange={(event) => {
+                          setMovingTask(true);
+                          setMutationNotice(null);
+                          void onMoveTask(selectedTask, event.target.value)
+                            .catch((error) => mutationError('移动任务', error))
+                            .finally(() => setMovingTask(false));
+                        }}
+                      >
+                        <option value={FOCUSLINK_INBOX_PROJECT_ID}>收件箱</option>
+                        {projects
+                          .filter((project) => !isFocusLinkInboxProject(project.id))
+                          .map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
                   )}
-                  {!selectedTask.isCompleted && (
-                    <button
-                      type="button"
-                      onClick={() => onStart(selectedTask)}
-                      disabled={!canStart}
-                    >
-                      <Play aria-hidden="true" />
-                      关联并开始专注
-                    </button>
+                  {selectedTask.tags.length > 0 && (
+                    <div className="task-selection-tags">
+                      {selectedTask.tags.slice(0, 4).map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
                   )}
-                </div>
-              </>
-            ) : (
-              <p>选择一个任务后，这里会显示完整路径和开始操作。</p>
-            )}
+                  <div className="task-selection-actions">
+                    {!selectedTask.isCompleted && (
+                      <button
+                        className="task-selection-start m-button-primary"
+                        type="button"
+                        onClick={() => onStart(selectedTask)}
+                        disabled={!canStart}
+                        title={canStart ? '关联并开始专注' : '仅在待机且实时连接已确认时可开始'}
+                      >
+                        <Play aria-hidden="true" />
+                        关联并开始专注
+                      </button>
+                    )}
+                    {toggleCompleteWithNotice && (
+                      <button
+                        type="button"
+                        className={`task-selection-complete ${selectedTask.isCompleted ? 'is-restore' : ''}`}
+                        onClick={() => void toggleCompleteWithNotice(selectedTask)}
+                        disabled={movingTask}
+                      >
+                        {selectedTask.isCompleted ? (
+                          <RotateCcw aria-hidden="true" />
+                        ) : (
+                          <Check aria-hidden="true" />
+                        )}
+                        {selectedTask.isCompleted ? '恢复为待办' : '标记完成'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="task-selection-hint">
+                  选择一个任务后，这里会显示完整路径和开始操作。
+                </p>
+              )}
+            </div>
           </aside>
         </div>
       )}
@@ -739,7 +843,6 @@ function TaskBranch({
   ancestorTitles,
   projects,
   selectedTaskId,
-  canStart,
   collapsedTasks,
   selectedPathKeys,
   forceOpen,
@@ -753,7 +856,6 @@ function TaskBranch({
   ancestorTitles: readonly string[];
   projects: readonly SyncedTaskProject[];
   selectedTaskId: string;
-  canStart: boolean;
   collapsedTasks: ReadonlySet<string>;
   selectedPathKeys: ReadonlySet<string>;
   forceOpen: boolean;
@@ -790,19 +892,6 @@ function TaskBranch({
         >
           {task.isCompleted ? <RotateCcw aria-hidden="true" /> : <Check aria-hidden="true" />}
         </button>
-        {hasChildren ? (
-          <button
-            className="task-branch-toggle"
-            type="button"
-            aria-label={open ? `收起 ${task.title} 的子任务` : `展开 ${task.title} 的子任务`}
-            aria-expanded={open}
-            onClick={actions.toggle}
-          >
-            {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
-          </button>
-        ) : (
-          <span className="task-status-mark" aria-hidden="true" />
-        )}
         <button
           className="task-row-main"
           type="button"
@@ -828,18 +917,18 @@ function TaskBranch({
           </span>
           {selected && <span className="selected-label">已选择</span>}
         </button>
-        {!task.isCompleted && (
+        {hasChildren ? (
           <button
-            className="task-start-button"
+            className="task-branch-toggle"
             type="button"
-            aria-label={`关联 ${task.title} 并开始专注`}
-            onClick={actions.start}
-            disabled={!canStart}
-            title={canStart ? '关联并开始专注' : '仅在待机且实时连接已确认时可开始'}
+            aria-label={open ? `收起 ${task.title} 的子任务` : `展开 ${task.title} 的子任务`}
+            aria-expanded={open}
+            onClick={actions.toggle}
           >
-            <Play aria-hidden="true" />
-            <span>开始</span>
+            {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
           </button>
+        ) : (
+          <span className="task-status-mark" aria-hidden="true" />
         )}
       </article>
       {hasChildren && open && (
@@ -852,7 +941,6 @@ function TaskBranch({
               ancestorTitles={[...ancestorTitles, ...hiddenAncestorTitles, task.title]}
               projects={projects}
               selectedTaskId={selectedTaskId}
-              canStart={canStart}
               collapsedTasks={collapsedTasks}
               selectedPathKeys={selectedPathKeys}
               forceOpen={forceOpen}

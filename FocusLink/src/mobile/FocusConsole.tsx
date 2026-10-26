@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, ListTree, Maximize2, Minimize2, PictureInPicture2 } from 'lucide-react';
+import {
+  ChevronRight,
+  ListTree,
+  Maximize2,
+  Minimize2,
+  Pause,
+  PictureInPicture2,
+  Play,
+} from 'lucide-react';
 import {
   formatClockDuration,
   idleLiveFocusSnapshot,
@@ -16,7 +24,7 @@ import type { MobileAuthorityMode } from './cache';
 import { MobileConfirmDialog } from './MobileConfirmDialog';
 import { liveFocusSnapshotToTimerSnapshot } from './liveTimerSnapshotAdapter';
 import { focusDeviceLabel, isTabletFocusViewport } from './viewportPolicy';
-import { TimerDial } from '../features/focus/TimerDial';
+import { MobileFocusChronograph } from './MobileFocusChronograph';
 import { TemporalRibbon } from '../features/focus/TemporalRibbon';
 import type { MobileAppearance } from './appearance';
 import { createMobileSecondTicker } from './backgroundPolicy';
@@ -143,6 +151,18 @@ export function FocusConsole({
     snapshot?.observedAt ?? null,
     now,
   );
+  const phaseLabel = focusPhaseLabel(current.state);
+  const readoutHint = localOfflineMode
+    ? '本机计时 · 结束后安全保存'
+    : showingCachedSnapshot
+      ? '上次确认状态 · 当前可另开本机专注'
+      : current.state === 'paused'
+        ? `累计专注 ${formatClockDuration(durations.activeElapsedMs)}`
+        : current.state === 'running'
+          ? '本轮有效专注'
+          : '计时尚未开始';
+  const taskTitle = current.taskTitle?.trim() || '';
+  const sessionTitle = current.title?.trim() || '';
 
   const requestFinish = () => {
     if (!controls.finish) return;
@@ -153,71 +173,34 @@ export function FocusConsole({
     <section
       className={`focus-console phase-${current.state}`}
       aria-labelledby="focus-console-title"
+      data-timer-style={timerStyle}
     >
-      <header className="focus-console-header">
-        <div>
-          <p className="eyebrow">FOCUS INSTRUMENT · LIVE</p>
-          <h2 id="focus-console-title">当前专注</h2>
-        </div>
-        <span className="focus-state-chip" key={current.state}>
-          <i aria-hidden="true" />
-          {localOfflineMode
-            ? `本机 · ${liveStateLabel(current.state)}`
-            : showingCachedSnapshot
-              ? `缓存 · ${liveStateLabel(current.state)}`
-              : liveStateLabel(current.state)}
-        </span>
-      </header>
+      <h2 className="focus-console-title" id="focus-console-title">
+        当前专注
+      </h2>
 
       <div className="focus-console-body">
         <div className="focus-instrument">
-          {active ? (
-            <div className="active-title-block">
-              <span>专注标题</span>
-              <strong>{current.title?.trim() || '未命名专注'}</strong>
-            </div>
-          ) : null}
-
-          <div
-            className="primary-readout"
-            key={current.state}
-            aria-label={`${liveStateLabel(current.state)}计时`}
-          >
-            <span>
-              {current.state === 'paused'
-                ? '本次暂停'
-                : current.state === 'running'
-                  ? '有效专注'
-                  : '准备开始'}
-            </span>
-            <div className="mobile-timer-stage">
-              <TimerDial
-                ms={durations.primaryElapsedMs}
-                state={current.state}
-                style={timerStyle}
-                coreRatio={Math.min(1, durations.activeElapsedMs / (25 * 60_000))}
-              />
-            </div>
-            <small>
-              {localOfflineMode
-                ? '本机计时 · 结束后安全保存'
-                : showingCachedSnapshot
-                  ? '上次确认状态 · 当前可另开本机专注'
-                  : current.state === 'paused'
-                    ? `已专注 ${formatClockDuration(durations.activeElapsedMs)}`
-                    : current.state === 'running'
-                      ? '多端状态已确认'
-                      : '选一个任务，或者直接开始'}
-            </small>
-          </div>
-
-          {!active && (
-            <div className="focus-start-fields">
-              <div className="focus-title-field">
-                <span>本轮任务</span>
-                <div className="focus-task-picker">
+          {/* 2 · 任务选择：当前任务行 + 切换入口；标题输入走 disclosure，不常驻表单。 */}
+          <div className="focus-task-block">
+            <p className="focus-field-label">当前任务</p>
+            {active ? (
+              <div className="focus-task-card is-readonly">
+                <div className="focus-task-row">
+                  <span className="focus-task-glyph" aria-hidden="true">
+                    <ListTree />
+                  </span>
+                  <span className="focus-task-copy">
+                    <strong>{taskTitle || sessionTitle || '自由专注'}</strong>
+                    <small>{taskTitle ? '已关联 FocusLink 任务' : '本轮未关联任务'}</small>
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="focus-task-card">
                   <button
-                    className="focus-task-disclosure"
+                    className="focus-task-row is-picker"
                     type="button"
                     onClick={onOpenTasks}
                     disabled={pendingCommand !== null}
@@ -227,62 +210,143 @@ export function FocusConsole({
                         : '展开任务树选择任务'
                     }
                   >
-                    <ListTree aria-hidden="true" />
-                    <span>
+                    <span className="focus-task-glyph" aria-hidden="true">
+                      <ListTree />
+                    </span>
+                    <span className="focus-task-copy">
                       <strong>{selectedTask?.title ?? '自由专注'}</strong>
                       <small>
                         {selectedTask ? '已关联 FocusLink 任务' : '轻触选择，也可以保持自由专注'}
                       </small>
                     </span>
-                    <ChevronRight aria-hidden="true" />
+                    <ChevronRight className="focus-task-chevron" aria-hidden="true" />
                   </button>
+                  <details className="focus-title-details">
+                    <summary>
+                      <span className="focus-title-summary">
+                        {titleDraft.trim() || '给这次专注起个名字'}
+                      </span>
+                      <span className="focus-title-optional">选填</span>
+                      <ChevronRight className="focus-title-chevron" aria-hidden="true" />
+                    </summary>
+                    <label className="focus-title-input" htmlFor="focus-title">
+                      <span>专注标题</span>
+                      <input
+                        id="focus-title"
+                        value={titleDraft}
+                        onChange={(event) => onTitleChange(event.target.value)}
+                        maxLength={1_000}
+                        placeholder="例如：整理化学错题"
+                        autoComplete="off"
+                        enterKeyHint="done"
+                        disabled={pendingCommand !== null}
+                        aria-describedby="focus-title-help"
+                      />
+                      <small id="focus-title-help">标题可留空；直接开始时会记为“自由专注”。</small>
+                    </label>
+                  </details>
+                  {selectedTask && (
+                    <button
+                      className="focus-task-clear"
+                      type="button"
+                      onClick={() => onTaskChange('')}
+                      disabled={pendingCommand !== null}
+                    >
+                      改为自由专注
+                    </button>
+                  )}
                 </div>
-                {selectedTask && (
-                  <button
-                    className="focus-task-clear"
-                    type="button"
-                    onClick={() => onTaskChange('')}
-                    disabled={pendingCommand !== null}
-                  >
-                    改为自由专注
-                  </button>
-                )}
-                <small>
+                <p className="focus-task-note">
                   {tasks.length > 0
                     ? `${tasks.length} 个本机任务可选`
                     : '先去「任务」创建待办；配对只用于多端同步'}
-                </small>
-              </div>
-              <details className="focus-title-options">
-                <summary>
-                  <span>{titleDraft.trim() || '给这次专注起个名字'}</span>
-                  <span className="focus-title-optional">选填</span>
-                  <ChevronRight aria-hidden="true" />
-                </summary>
-                <label className="focus-title-field" htmlFor="focus-title">
-                  <span>专注标题</span>
-                  <input
-                    id="focus-title"
-                    value={titleDraft}
-                    onChange={(event) => onTitleChange(event.target.value)}
-                    maxLength={1_000}
-                    placeholder="例如：整理化学错题"
-                    autoComplete="off"
-                    enterKeyHint="done"
-                    disabled={pendingCommand !== null}
-                    aria-describedby="focus-title-help"
-                  />
-                  <small id="focus-title-help">标题可留空；直接开始时会记为“自由专注”。</small>
-                </label>
-              </details>
-            </div>
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* 3 · 状态点 + 主读数 */}
+          <div
+            className="focus-readout"
+            key={current.state}
+            aria-label={`${liveStateLabel(current.state)}计时`}
+          >
+            <p className="focus-readout-status">
+              <i aria-hidden="true" />
+              {localOfflineMode
+                ? `本机 · ${phaseLabel}`
+                : showingCachedSnapshot
+                  ? `缓存 · ${phaseLabel}`
+                  : phaseLabel}
+            </p>
+            <MobileFocusChronograph ms={durations.primaryElapsedMs} state={current.state} />
+            <p className="focus-readout-hint">{readoutHint}</p>
+          </div>
+
+          {/* 4 · 主操作：单主按钮；运行或暂停时与「结束」并排。全部在流内，不做粘底覆盖。 */}
+          <div className="focus-actions">
+            {(current.state === 'idle' || cachedRemoteOnly) && (
+              <button
+                className="focus-action primary start-action"
+                type="button"
+                disabled={!controls.start}
+                onClick={() => onCommand('start')}
+              >
+                <Play className="focus-action-icon" aria-hidden="true" />
+                {pendingCommand === 'start'
+                  ? '正在开始…'
+                  : cachedRemoteOnly
+                    ? '开始本机专注'
+                    : '开始专注'}
+              </button>
+            )}
+            {current.state === 'running' && !cachedRemoteOnly && (
+              <button
+                className="focus-action primary pause-action"
+                type="button"
+                disabled={!controls.pause}
+                onClick={() => onCommand('pause')}
+              >
+                <Pause className="focus-action-icon" aria-hidden="true" />
+                {pendingCommand === 'pause' ? '正在暂停…' : '暂停'}
+              </button>
+            )}
+            {current.state === 'paused' && !cachedRemoteOnly && (
+              <button
+                className="focus-action primary resume-action"
+                type="button"
+                disabled={!controls.resume}
+                onClick={() => onCommand('resume')}
+              >
+                <Play className="focus-action-icon" aria-hidden="true" />
+                {pendingCommand === 'resume' ? '正在继续…' : '继续专注'}
+              </button>
+            )}
+            {active && !cachedRemoteOnly && (
+              <button
+                className="focus-action finish-action"
+                type="button"
+                disabled={!controls.finish}
+                onClick={requestFinish}
+              >
+                {pendingCommand === 'finish' ? '正在结束…' : '结束'}
+              </button>
+            )}
+          </div>
+
+          {commandNotice && (
+            <p className="focus-command-notice" role="status" aria-live="polite">
+              {commandNotice}
+            </p>
           )}
 
+          {/* 5 · 时间之带 */}
           <TemporalRibbon snapshot={timerSnapshot} state={timerSnapshot.state} now={now} />
 
+          {/* 6 · 三时间同一行等宽列 */}
           <div className="runtime-metrics" aria-label="本轮三时间">
             <RuntimeMetric
-              label="有效专注"
+              label="累计专注"
               value={formatClockDuration(durations.activeElapsedMs)}
               tone="focus"
             />
@@ -345,137 +409,96 @@ export function FocusConsole({
             </section>
           )}
 
-          <div className="focus-actions">
-            {connection !== 'live' && current.state === 'idle' && (
-              <button
-                className="focus-action connection-action"
-                type="button"
-                onClick={onOpenConnection}
-              >
-                多端同步
-              </button>
-            )}
-            {(current.state === 'idle' || cachedRemoteOnly) && (
-              <button
-                className="focus-action primary"
-                type="button"
-                disabled={!controls.start}
-                onClick={() => onCommand('start')}
-              >
-                {pendingCommand === 'start'
-                  ? '正在开始…'
-                  : cachedRemoteOnly
-                    ? '开始本机专注'
-                    : '开始专注'}
-              </button>
-            )}
-            {current.state === 'running' && !cachedRemoteOnly && (
-              <button
-                className="focus-action pause-action"
-                type="button"
-                disabled={!controls.pause}
-                onClick={() => onCommand('pause')}
-              >
-                {pendingCommand === 'pause' ? '正在暂停…' : '暂停'}
-              </button>
-            )}
-            {current.state === 'paused' && !cachedRemoteOnly && (
-              <button
-                className="focus-action primary"
-                type="button"
-                disabled={!controls.resume}
-                onClick={() => onCommand('resume')}
-              >
-                {pendingCommand === 'resume' ? '正在继续…' : '继续专注'}
-              </button>
-            )}
-            {active && !cachedRemoteOnly && (
-              <button
-                className="focus-action finish-action"
-                type="button"
-                disabled={!controls.finish}
-                onClick={requestFinish}
-              >
-                {pendingCommand === 'finish' ? '正在结束…' : '结束本轮'}
-              </button>
-            )}
-          </div>
+          {/* 7 · 同步状态：正常态只是页脚一行低权重入口，展开才是多端细节。 */}
+          <details className="focus-sync-panel" data-connection={connection}>
+            <summary>
+              <span
+                className={connection === 'live' ? 'focus-sync-dot is-live' : 'focus-sync-dot'}
+                aria-hidden="true"
+              />
+              <span className="focus-sync-label">{connectionCopy.title}</span>
+              <span className="focus-sync-meta">{observation.freshness}</span>
+              <ChevronRight className="focus-sync-chevron" aria-hidden="true" />
+            </summary>
+            <div className="focus-sync-body">
+              <aside className="live-context" aria-label="多端状态">
+                <div className="live-context-heading">
+                  <strong>多端连接</strong>
+                  <span>{observation.source}</span>
+                </div>
+                <div
+                  className={`connection-callout connection-${connection} source-${snapshotSource}`}
+                  data-live-source={snapshotSource}
+                >
+                  <span className="network-dot" aria-hidden="true" />
+                  <div>
+                    <strong>{connectionCopy.title}</strong>
+                    <small>{connectionCopy.detail}</small>
+                    <time dateTime={observation.dateTime ?? undefined}>
+                      {observation.lastConfirmed}
+                    </time>
+                  </div>
+                </div>
+                {authorityMode === 'forked-local' && (
+                  <div className="connection-callout connection-error" role="status">
+                    <span className="network-dot" aria-hidden="true" />
+                    <div>
+                      <strong>本机离线会话正在运行</strong>
+                      <small>其他设备另有云端活动会话；两份会话独立控制、独立入账</small>
+                    </div>
+                  </div>
+                )}
+
+                <dl className="runtime-facts">
+                  <div>
+                    <dt>关联任务</dt>
+                    <dd>{current.taskTitle || '未关联'}</dd>
+                  </div>
+                  <div>
+                    <dt>实时版本</dt>
+                    <dd>rev {current.revision}</dd>
+                  </div>
+                  <div>
+                    <dt>实时新鲜度</dt>
+                    <dd>{observation.freshness}</dd>
+                  </div>
+                  <div>
+                    <dt>最近确认</dt>
+                    <dd>{observation.shortConfirmed}</dd>
+                  </div>
+                  <div>
+                    <dt>最近操作设备</dt>
+                    <dd>{recentDevice}</dd>
+                  </div>
+                  <div>
+                    <dt>状态开始</dt>
+                    <dd>
+                      {current.currentStateStartedAt
+                        ? formatMoment(current.currentStateStartedAt)
+                        : '尚未开始'}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="desktop-delivery-note">
+                  <strong>FocusLink 负责多端同步</strong>
+                  <p>这里显示实时专注链；任务清单与结束账本分别保留自己的最近同步时间。</p>
+                </div>
+
+                <button className="focus-sync-open" type="button" onClick={onOpenConnection}>
+                  多端同步设置
+                </button>
+              </aside>
+            </div>
+          </details>
         </div>
-
-        <aside className="live-context" aria-label="多端状态">
-          <div className="live-context-heading">
-            <strong>多端连接</strong>
-            <span>{observation.source}</span>
-          </div>
-          <div
-            className={`connection-callout connection-${connection} source-${snapshotSource}`}
-            data-live-source={snapshotSource}
-          >
-            <span className="network-dot" aria-hidden="true" />
-            <div>
-              <strong>{connectionCopy.title}</strong>
-              <small>{connectionCopy.detail}</small>
-              <time dateTime={observation.dateTime ?? undefined}>{observation.lastConfirmed}</time>
-            </div>
-          </div>
-          {authorityMode === 'forked-local' && (
-            <div className="connection-callout connection-error" role="status">
-              <span className="network-dot" aria-hidden="true" />
-              <div>
-                <strong>本机离线会话正在运行</strong>
-                <small>其他设备另有云端活动会话；两份会话独立控制、独立入账</small>
-              </div>
-            </div>
-          )}
-
-          <dl className="runtime-facts">
-            <div>
-              <dt>关联任务</dt>
-              <dd>{current.taskTitle || '未关联'}</dd>
-            </div>
-            <div>
-              <dt>实时版本</dt>
-              <dd>rev {current.revision}</dd>
-            </div>
-            <div>
-              <dt>实时新鲜度</dt>
-              <dd>{observation.freshness}</dd>
-            </div>
-            <div>
-              <dt>最近确认</dt>
-              <dd>{observation.shortConfirmed}</dd>
-            </div>
-            <div>
-              <dt>最近操作设备</dt>
-              <dd>{recentDevice}</dd>
-            </div>
-            <div>
-              <dt>状态开始</dt>
-              <dd>
-                {current.currentStateStartedAt
-                  ? formatMoment(current.currentStateStartedAt)
-                  : '尚未开始'}
-              </dd>
-            </div>
-          </dl>
-
-          <div className="desktop-delivery-note">
-            <strong>FocusLink 负责多端同步</strong>
-            <p>这里显示实时专注链；任务清单与结束账本分别保留自己的最近同步时间。</p>
-          </div>
-
-          {commandNotice && (
-            <p className="command-notice" role="status" aria-live="polite">
-              {commandNotice}
-            </p>
-          )}
-        </aside>
       </div>
+
       <MobileConfirmDialog
         open={finishDialogOpen}
         title="结束本轮专注？"
         description="结束后会生成会话账本，此操作不能继续本轮计时。"
-        confirmLabel={pendingCommand === 'finish' ? '正在结束…' : '结束本轮'}
+        confirmLabel={pendingCommand === 'finish' ? '正在结束…' : '结束'}
         danger
         onCancel={() => setFinishDialogOpen(false)}
         onConfirm={() => {
@@ -497,11 +520,18 @@ function RuntimeMetric({
   tone?: 'focus' | 'pause';
 }) {
   return (
-    <div className={tone ? `tone-${tone}` : ''}>
+    <div className={tone ? `runtime-metric tone-${tone}` : 'runtime-metric'}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
   );
+}
+
+/** 状态点文案：正在专注 / 已暂停 / 待开始。 */
+function focusPhaseLabel(state: LiveFocusSnapshotLike['state']): string {
+  if (state === 'running') return '正在专注';
+  if (state === 'paused') return '已暂停';
+  return '待开始';
 }
 
 function formatMoment(timestamp: number): string {

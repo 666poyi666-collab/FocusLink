@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { App as CapacitorApp, type URLOpenListenerEvent } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -90,7 +90,9 @@ import {
   type MobileConnectionPreferences,
 } from './preferences';
 import {
+  formatClockDuration,
   idleLiveFocusSnapshot as makeIdleSnapshot,
+  projectLiveFocusDurations,
   type LiveConnectionState,
   type LiveFocusSnapshotLike,
 } from './runtimeModel';
@@ -2520,8 +2522,28 @@ export function MobileApp() {
         : activeView === 'history'
           ? '统计'
           : '设置';
+
+  // 非专注页的活动专注条：规范要求 64px、位于导航上方、只显示任务简称 + 当前时间 + 暂停/继续，
+  // 没有活动会话时完全移除。计时只在可见时按秒推进，页面不可见时不占帧。
+  const [activityNow, setActivityNow] = useState(() => Date.now());
+  const activityState = liveSnapshot?.state ?? 'idle';
+  const activityVisible =
+    activeView !== 'focus' && (activityState === 'running' || activityState === 'paused');
+  useEffect(() => {
+    if (!activityVisible) return undefined;
+    setActivityNow(Date.now());
+    const timer = window.setInterval(() => setActivityNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [activityVisible]);
+  const liveActivity = useMemo(() => {
+    if (!activityVisible || !liveSnapshot) return null;
+    const durations = projectLiveFocusDurations(liveSnapshot, activityNow);
+    const title = liveSnapshot.title?.trim() || liveSnapshot.taskTitle?.trim() || '自由专注';
+    return { state: activityState, title, elapsedMs: durations.primaryElapsedMs };
+  }, [activityState, activityNow, activityVisible, liveSnapshot]);
+
   return (
-    <div className={`mobile-shell view-${activeView}`}>
+    <div className={`mobile-shell view-${activeView}${liveActivity ? ' has-live-activity' : ''}`}>
       <header className="mobile-topbar">
         <div className="brand-lockup">
           <BrandMark />
@@ -2570,6 +2592,24 @@ export function MobileApp() {
       </header>
 
       <div className="app-frame">
+        {liveActivity && (
+          <div className="live-activity-bar" role="status" aria-live="polite">
+            <span className={`live-activity-dot state-${liveActivity.state}`} aria-hidden="true" />
+            <span className="live-activity-label">{liveActivity.title}</span>
+            <span className="live-activity-time">
+              {formatClockDuration(liveActivity.elapsedMs)}
+            </span>
+            <button
+              type="button"
+              disabled={pendingCommand !== null}
+              onClick={() =>
+                void handleCommand(liveActivity.state === 'paused' ? 'resume' : 'pause')
+              }
+            >
+              {liveActivity.state === 'paused' ? '继续' : '暂停'}
+            </button>
+          </div>
+        )}
         <AppNavigation activeView={activeView} onChange={setActiveView} />
         <main className="mobile-main">
           <AnimatePresence mode="wait" initial={false}>
@@ -2665,6 +2705,7 @@ export function MobileApp() {
                   lastSyncAt={cache.lastSyncAt}
                   cursor={cache.cursor}
                   tasks={taskSnapshot?.snapshot?.tasks ?? null}
+                  onStartFocus={() => setActiveView('focus')}
                 />
               )}
               {activeView === 'settings' && (

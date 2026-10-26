@@ -2,7 +2,7 @@
 
 > 适用版本：v1.x
 >
-> 当前 Windows 版本：v1.6.8（切页不卡：页面过渡 240→约 140ms，设置页首访 481→202ms、统计页 128→72ms、任务页 63→38ms；补齐 verify:budget 的逐页诊断与产物体积/延迟棘轮。不改数据库、IPC 语义与同步协议；2026-10-21 用户点名三页卡顿，仅验收 Windows，Android 仅同步版本元数据。）
+> 当前版本：v1.6.9（手机/平板 renderer 四页视觉重做：新增 `src/mobile/mobile.css` 设计语言总纲，底部导航、按钮、输入、任务行与 sheet 统一到新尺寸体系，并新增 `src/mobile/systemInsets.ts` 的原生安全区注入桥。不改数据库、IPC 语义、同步协议、设备配对与第三方投递逻辑；桌面 Electron 侧代码在本次迭代中零改动。）
 >
 > 文档责任：Electron 主进程、SQLite、IPC、任务 Provider、同步、测试与发布。
 

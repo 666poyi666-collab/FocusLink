@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   DEFAULT_NATIVE_PAUSE_REMINDER_DELAY_MINUTES,
   MAX_NATIVE_PAUSE_REMINDER_DELAY_MINUTES,
@@ -29,6 +29,8 @@ export interface NativeSystemControlsProps {
    */
   foregroundActive?: boolean;
 }
+
+type NativeRowTone = 'ok' | 'warning' | 'danger' | 'neutral';
 
 export function NativeSystemControls({ foregroundActive = true }: NativeSystemControlsProps = {}) {
   const [available, setAvailable] = useState(() => isNativeFocusRuntimeAvailable());
@@ -105,7 +107,24 @@ export function NativeSystemControls({ foregroundActive = true }: NativeSystemCo
     };
   }, [available, foregroundActive]);
 
-  if (!available) return null;
+  if (!available) {
+    // 浏览器里没有 Android 运行时：不渲染空面板，逐条说明这些能力只在应用内可用。
+    return (
+      <section className="native-system-controls" aria-label="Android 系统控制">
+        <p className="settings-hint">
+          通知、悬浮条、华为胶囊、小米系统表面与权限回读由 Android
+          应用提供；当前运行在浏览器中，这些能力不可用。
+        </p>
+        <div className="m-card native-system-card" role="group" aria-label="系统显示能力">
+          <NativeRow label="通知控制" value="仅 Android 应用" />
+          <NativeRow label="悬浮条" value="仅 Android 应用" />
+          <NativeRow label="华为胶囊" value="仅 Android 应用" />
+          <NativeRow label="小米系统表面" value="仅 Android 应用" />
+          <NativeRow label="权限回读" value="仅 Android 应用" />
+        </div>
+      </section>
+    );
+  }
 
   const permission = status?.notificationPermission ?? null;
   const poll = status?.cloudPoll;
@@ -287,33 +306,122 @@ export function NativeSystemControls({ foregroundActive = true }: NativeSystemCo
     }
   };
 
+  const notificationRowTone: NativeRowTone = status?.canPostNotification ? 'ok' : 'warning';
+  const overlayRowTone: NativeRowTone = status?.overlayEnabled
+    ? 'ok'
+    : status?.overlayPermissionGranted
+      ? 'warning'
+      : 'neutral';
+  const huaweiSurface = huaweiCapsuleStatus(status);
+  const xiaomiSurface = xiaomiSurfaceStatus(status);
+  const currentSurface = systemSurfaceStatus(status);
+  const batteryRowTone: NativeRowTone = status?.batteryOptimizationExempt
+    ? 'ok'
+    : status?.backgroundRestricted
+      ? 'danger'
+      : 'warning';
+
   return (
     <section className="native-system-controls" aria-label="Android 系统控制">
-      <div>
-        <strong>Android 系统控制</strong>
-        <small>
-          {permission === 'granted' ? '通知权限已开启' : '由你主动启用，不会在启动时自动弹出权限'}
-        </small>
-      </div>
-      <div className="native-system-health" aria-live="polite">
-        <span className="is-ok">{systemSurfaceLabel(status)}</span>
-        <span className={status?.nativeConnectionConfigured ? 'is-ok' : 'is-warning'}>
-          {status?.nativeConnectionConfigured ? '后台同步凭据已安全保存' : '配对后启用后台同步'}
-        </span>
-        <span className={status?.batteryOptimizationExempt ? 'is-ok' : 'is-warning'}>
-          {status?.batteryOptimizationExempt ? '省电限制已豁免' : '仍受系统省电限制'}
-        </span>
-        <span className={status?.overlayPermissionGranted ? 'is-ok' : 'is-warning'}>
-          {status?.overlayPermissionGranted ? '桌面计时已授权' : '桌面计时未授权'}
-        </span>
-        {status?.backgroundRestricted && <span className="is-warning">系统已限制后台活动</span>}
-        {activeSnapshot && (
-          <span className={pollHealthy ? 'is-ok' : 'is-warning'}>
-            {pollHealthy
-              ? `后台同步正常 · 第 ${poll?.attemptCount ?? 0} 轮`
-              : `后台同步待恢复${poll?.lastError ? ` · ${nativeCloudPollErrorCopy(poll.lastErrorCode ?? poll.lastError)}` : ''}`}
-          </span>
-        )}
+      <p className="settings-hint">
+        {permission === 'granted'
+          ? '通知权限已开启；下面由你主动启用，不会在启动时自动弹出权限。'
+          : '以下能力由你主动启用，不会在启动时自动弹出权限。'}
+      </p>
+
+      <div className="m-card native-system-card" role="group" aria-label="系统能力">
+        <NativeRow
+          label="通知控制"
+          value={status?.canPostNotification ? '已开启' : '未开启'}
+          tone={notificationRowTone}
+        >
+          <button
+            type="button"
+            className="m-text-action"
+            aria-label="启用通知控制"
+            onClick={() => void enableNotifications()}
+            disabled={busy !== null}
+          >
+            {busy === 'notification' ? '请求中…' : '启用'}
+          </button>
+        </NativeRow>
+
+        <NativeRow
+          label="悬浮条"
+          value={
+            status?.overlayEnabled
+              ? '已开启'
+              : status?.overlayPermissionGranted
+                ? '已授权 · 未开启'
+                : '未授权'
+          }
+          tone={overlayRowTone}
+        >
+          <button
+            type="button"
+            className="m-text-action"
+            aria-label="启用可移动悬浮计时"
+            onClick={() => void enableDesktopTimer()}
+            disabled={busy !== null}
+          >
+            {busy === 'overlay' ? '正在处理…' : status?.overlayEnabled ? '重新授权' : '启用'}
+          </button>
+          {status?.overlayEnabled && (
+            <button
+              type="button"
+              className="m-text-action"
+              aria-label="关闭悬浮计时"
+              onClick={() => void disableDesktopTimer()}
+              disabled={busy !== null}
+            >
+              关闭
+            </button>
+          )}
+        </NativeRow>
+
+        <NativeRow label="华为胶囊" value={huaweiSurface.value} tone={huaweiSurface.tone} />
+
+        <NativeRow label="小米系统表面" value={xiaomiSurface.value} tone={xiaomiSurface.tone} />
+
+        <NativeRow
+          label="当前系统展示"
+          value={currentSurface.value}
+          tone={currentSurface.tone}
+          detail={
+            status?.overlayPermissionGranted
+              ? '悬浮层已授权'
+              : status?.overlayPermissionGranted === false
+                ? '悬浮层未授权'
+                : undefined
+          }
+        />
+
+        <NativeRow
+          label="后台同步"
+          value={status?.nativeConnectionConfigured ? '凭据已保存' : '未配对'}
+          tone={status?.nativeConnectionConfigured ? 'ok' : 'neutral'}
+          detail="配对后启用后台同步"
+        />
+
+        <NativeRow
+          label="同步轮询"
+          value={activeSnapshot ? (pollHealthy ? '正常' : '待恢复') : '无进行中的专注'}
+          tone={activeSnapshot ? (pollHealthy ? 'ok' : 'warning') : 'neutral'}
+          detail={
+            activeSnapshot
+              ? `第 ${poll?.attemptCount ?? 0} 轮${
+                  pollHealthy
+                    ? ''
+                    : ` · ${nativeCloudPollErrorCopy(poll?.lastErrorCode ?? poll?.lastError)}`
+                }`
+              : '回到前台时每 15 秒回读一次'
+          }
+        />
+
+        {poll?.lastSuccessAtEpochMs ? (
+          <NativeRow label="最近确认" value={formatStatusTime(poll.lastSuccessAtEpochMs)} />
+        ) : null}
+
         <TerminalLedgerRepairControl
           count={terminalLedgerCount}
           errorCode={poll?.terminalLedgerErrorCode}
@@ -321,10 +429,99 @@ export function NativeSystemControls({ foregroundActive = true }: NativeSystemCo
           requeueing={busy === 'terminal-ledger'}
           onRequeue={() => void requeueTerminalLedger()}
         />
-        {poll?.lastSuccessAtEpochMs ? (
-          <span>最近确认 {formatStatusTime(poll.lastSuccessAtEpochMs)}</span>
-        ) : null}
+
+        <NativeRow
+          label="后台运行"
+          value={
+            status?.backgroundRestricted
+              ? '系统已限制'
+              : status?.batteryOptimizationExempt
+                ? '省电限制已豁免'
+                : '仍受省电限制'
+          }
+          tone={batteryRowTone}
+          detail={status?.backgroundAppOpsAllowed === false ? '后台活动被系统拒绝' : undefined}
+        >
+          <button
+            type="button"
+            className="m-text-action"
+            aria-label="关闭省电限制"
+            onClick={() => void openBackgroundSettings()}
+            disabled={busy !== null}
+          >
+            {busy === 'background' ? '正在打开…' : '关闭省电限制'}
+          </button>
+        </NativeRow>
+
+        <NativeRow
+          label="系统自启动"
+          value="需手动确认"
+          tone="warning"
+          detail="系统不提供自动授权接口"
+        >
+          <button
+            type="button"
+            className="m-text-action"
+            aria-label="允许系统自启动"
+            onClick={() => void openAutoStartSettings()}
+            disabled={busy !== null}
+          >
+            {busy === 'autostart' ? '正在打开…' : '允许系统自启动'}
+          </button>
+        </NativeRow>
+
+        <NativeRow label="快捷设置" value="按需添加" detail="下拉快捷设置里放一个专注按钮">
+          <button
+            type="button"
+            className="m-text-action"
+            aria-label="添加到快捷设置"
+            onClick={() => void addQuickSettingsTile()}
+            disabled={busy !== null}
+          >
+            {busy === 'tile' ? '请求中…' : '添加到快捷设置'}
+          </button>
+        </NativeRow>
+
+        <NativeRow
+          label="暂停超时提醒"
+          value={pauseReminder.enabled ? `${pauseReminder.delayMinutes} 分钟` : '已关闭'}
+          detail="暂停超时后提醒继续专注"
+        >
+          <span className="native-reminder-controls">
+            <label className="native-reminder-switch">
+              <input
+                type="checkbox"
+                checked={pauseReminder.enabled}
+                disabled={busy !== null}
+                onChange={(event) =>
+                  void savePauseReminder({ ...pauseReminder, enabled: event.target.checked })
+                }
+              />
+              <span>{pauseReminder.enabled ? '开启' : '关闭'}</span>
+            </label>
+            <label className="native-reminder-field">
+              <span>上限</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN_NATIVE_PAUSE_REMINDER_DELAY_MINUTES}
+                max={MAX_NATIVE_PAUSE_REMINDER_DELAY_MINUTES}
+                value={pauseReminder.delayMinutes}
+                disabled={!pauseReminder.enabled || busy !== null}
+                onChange={(event) =>
+                  setPauseReminder((current) => ({
+                    ...current,
+                    delayMinutes: Number(event.target.value),
+                  }))
+                }
+                onBlur={() => void savePauseReminder(pauseReminder)}
+              />
+              <span>分钟</span>
+            </label>
+          </span>
+        </NativeRow>
       </div>
+
       <PermissionBatchPanel
         status={status}
         batch={permissionBatch}
@@ -332,74 +529,40 @@ export function NativeSystemControls({ foregroundActive = true }: NativeSystemCo
         running={busy === 'all-permissions'}
         onGrant={() => void grantAllPermissions()}
       />
-      <div className="native-pause-reminder">
-        <label>
-          <input
-            type="checkbox"
-            checked={pauseReminder.enabled}
-            disabled={busy !== null}
-            onChange={(event) =>
-              void savePauseReminder({ ...pauseReminder, enabled: event.target.checked })
-            }
-          />
-          <span>暂停超时提醒</span>
-        </label>
-        <label>
-          <span>上限</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={MIN_NATIVE_PAUSE_REMINDER_DELAY_MINUTES}
-            max={MAX_NATIVE_PAUSE_REMINDER_DELAY_MINUTES}
-            value={pauseReminder.delayMinutes}
-            disabled={!pauseReminder.enabled || busy !== null}
-            onChange={(event) =>
-              setPauseReminder((current) => ({
-                ...current,
-                delayMinutes: Number(event.target.value),
-              }))
-            }
-            onBlur={() => void savePauseReminder(pauseReminder)}
-          />
-          <span>分钟</span>
-        </label>
-      </div>
-      <div className="native-system-actions">
-        <button type="button" onClick={() => void enableDesktopTimer()} disabled={busy !== null}>
-          {busy === 'overlay'
-            ? '正在处理…'
-            : status?.overlayEnabled
-              ? '重新授权悬浮计时'
-              : '启用可移动悬浮计时'}
-        </button>
-        {status?.overlayEnabled && (
-          <button type="button" onClick={() => void disableDesktopTimer()} disabled={busy !== null}>
-            关闭悬浮计时
-          </button>
-        )}
-        <button type="button" onClick={() => void enableNotifications()} disabled={busy !== null}>
-          {busy === 'notification' ? '请求中…' : '启用通知控制'}
-        </button>
-        <button type="button" onClick={() => void addQuickSettingsTile()} disabled={busy !== null}>
-          {busy === 'tile' ? '请求中…' : '添加到快捷设置'}
-        </button>
-        <button
-          type="button"
-          onClick={() => void openBackgroundSettings()}
-          disabled={busy !== null}
-        >
-          {busy === 'background' ? '正在打开…' : '关闭省电限制'}
-        </button>
-        <button type="button" onClick={() => void openAutoStartSettings()} disabled={busy !== null}>
-          {busy === 'autostart' ? '正在打开…' : '允许系统自启动'}
-        </button>
-      </div>
+
       {notice && (
-        <p role="status" aria-live="polite">
+        <p className="native-system-notice" role="status" aria-live="polite">
           {notice}
         </p>
       )}
     </section>
+  );
+}
+
+function NativeRow({
+  label,
+  value,
+  tone = 'neutral',
+  detail,
+  children,
+}: {
+  label: string;
+  value: string;
+  tone?: NativeRowTone;
+  detail?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`native-system-row tone-${tone}`}>
+      <div className="native-system-row-line">
+        <span className="native-system-copy">
+          <strong>{label}</strong>
+          {detail ? <small>{detail}</small> : null}
+        </span>
+        <span className="native-system-value">{value}</span>
+      </div>
+      {children ? <div className="native-system-row-actions">{children}</div> : null}
+    </div>
   );
 }
 
@@ -425,9 +588,9 @@ function PermissionBatchPanel({
     autostart: '系统自启动',
   };
   return (
-    <div className="native-permission-panel" aria-label="权限状态">
+    <div className="m-card native-permission-panel" aria-label="权限回读">
       <div className="native-permission-heading">
-        <strong>权限状态</strong>
+        <strong>权限回读</strong>
         <small>
           {batch?.rootAvailable
             ? 'root 已确认；可自动项已执行并回读，自启动需手动'
@@ -437,12 +600,17 @@ function PermissionBatchPanel({
       <ul className="native-permission-list">
         {items.map((item) => (
           <li key={item.id} className={`native-permission-item state-${item.state}`}>
-            <strong>{labels[item.id]}</strong>
-            <small>{permissionStateLabel(item.state)}</small>
+            <span className="native-permission-label">{labels[item.id]}</span>
+            <span className="native-permission-state">{permissionStateLabel(item.state)}</span>
           </li>
         ))}
       </ul>
-      <button type="button" className="native-permission-action" onClick={onGrant} disabled={busy}>
+      <button
+        type="button"
+        className="m-button-secondary native-permission-action"
+        onClick={onGrant}
+        disabled={busy}
+      >
         {running ? '正在逐项获取并验证…' : '一键获取全部权限'}
       </button>
     </div>
@@ -551,18 +719,67 @@ export function terminalLedgerRequeueFailureCopy(error: unknown): string {
   return '暂时无法重新检查已结束专注，请稍后再试。';
 }
 
-function systemSurfaceLabel(status: NativeFocusStatus | null): string {
-  const surface = status?.systemSurface;
-  if (surface?.selected === 'xiaomi-island') {
-    if (surface.xiaomiEvidenceLevel === 'visually-verified')
-      return '系统展示：小米超级岛 · 真机已验收';
-    if (surface.xiaomiEvidenceLevel === 'systemui-accepted')
-      return '系统展示：小米超级岛 · SystemUI 已接收';
-    return '系统展示：小米超级岛协议已选择 · 待真机确认';
+/** Android 侧会返回华为胶囊，但共享类型尚未列出这个取值，所以按字符串比较。 */
+function selectedSurface(status: NativeFocusStatus | null): string | undefined {
+  return status?.systemSurface?.selected as string | undefined;
+}
+
+function huaweiCapsuleStatus(status: NativeFocusStatus | null): {
+  value: string;
+  tone: NativeRowTone;
+} {
+  if (selectedSurface(status) === 'huawei-live-capsule') {
+    return { value: '使用中 · 计时胶囊', tone: 'ok' };
   }
-  if (surface?.selected === 'android-live-update') return '系统展示：Android 实时更新';
-  if (surface?.selected === 'ongoing-notification') return '系统展示：常驻通知';
-  return '系统展示：等待能力检测';
+  const manufacturer = (status?.manufacturer ?? '').toLowerCase();
+  if (manufacturer.includes('huawei') || manufacturer.includes('honor')) {
+    return { value: '可用 · 未启用', tone: 'warning' };
+  }
+  return { value: '本机非华为', tone: 'neutral' };
+}
+
+function xiaomiSurfaceStatus(status: NativeFocusStatus | null): {
+  value: string;
+  tone: NativeRowTone;
+} {
+  const surface = status?.systemSurface;
+  if (selectedSurface(status) === 'xiaomi-island') {
+    if (surface?.xiaomiEvidenceLevel === 'visually-verified') {
+      return { value: '使用中 · 真机已验收', tone: 'ok' };
+    }
+    if (surface?.xiaomiEvidenceLevel === 'systemui-accepted') {
+      return { value: '使用中 · SystemUI 已接收', tone: 'ok' };
+    }
+    return { value: '使用中 · 待真机确认', tone: 'warning' };
+  }
+  const protocol = surface?.xiaomiFocusProtocol ?? 0;
+  if (protocol >= 3 && surface?.xiaomiFocusPermission) {
+    return { value: '协议就绪 · 未启用', tone: 'warning' };
+  }
+  const manufacturer = (status?.manufacturer ?? '').toLowerCase();
+  if (
+    manufacturer.includes('xiaomi') ||
+    manufacturer.includes('redmi') ||
+    manufacturer.includes('poco')
+  ) {
+    return {
+      value: protocol >= 3 ? '权限未授予' : `协议 v${protocol} · 不支持岛`,
+      tone: 'warning',
+    };
+  }
+  return { value: '本机非小米', tone: 'neutral' };
+}
+
+function systemSurfaceStatus(status: NativeFocusStatus | null): {
+  value: string;
+  tone: NativeRowTone;
+} {
+  const selected = selectedSurface(status);
+  if (selected === 'xiaomi-island') return { value: '小米超级岛', tone: 'ok' };
+  if (selected === 'huawei-live-capsule') return { value: '华为实时胶囊', tone: 'ok' };
+  if (selected === 'android-live-update') return { value: 'Android 实时更新', tone: 'ok' };
+  if (selected === 'ongoing-notification') return { value: '常驻通知', tone: 'neutral' };
+  return { value: '等待能力检测', tone: 'neutral' };
 }
 
 function formatStatusTime(epochMs: number): string {

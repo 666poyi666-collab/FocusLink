@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { DeviceSyncSessionBundle } from '@shared/sync/deviceProtocol';
 import type { CachedBundle } from './cache';
-import { formatClockDuration } from './runtimeModel';
 
 export interface SessionLedgerProps {
   records: readonly CachedBundle[];
@@ -11,6 +10,31 @@ export interface SessionLedgerProps {
   cursor: string | null;
   showSummary?: boolean;
   scopeLabel?: string;
+}
+
+/**
+ * 统计页统一的中文时长写法：小时/分（会话内精确到秒），
+ * 取代旧的 `00:00:00` 冒号串。只影响呈现，不改变任何统计口径。
+ */
+export function formatDurationText(ms: number, options?: { seconds?: boolean }): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (options?.seconds) {
+    // 整分时不要拖一个「00秒」尾巴：2小时48分 / 28分36秒。
+    if (hours > 0) {
+      const base = `${hours}小时${String(minutes).padStart(2, '0')}分`;
+      return seconds > 0 ? `${base}${String(seconds).padStart(2, '0')}秒` : base;
+    }
+    if (minutes > 0) {
+      return seconds > 0 ? `${minutes}分${String(seconds).padStart(2, '0')}秒` : `${minutes}分钟`;
+    }
+    return `${seconds}秒`;
+  }
+  if (hours > 0) return minutes > 0 ? `${hours}小时${minutes}分` : `${hours}小时`;
+  if (minutes > 0) return `${minutes}分钟`;
+  return ms > 0 ? `${Math.max(1, totalSeconds)}秒` : '0 分钟';
 }
 
 export function SessionLedger({
@@ -38,12 +62,9 @@ export function SessionLedger({
   return (
     <section className="ledger-section" aria-labelledby="session-ledger-title">
       <header className="section-heading">
-        <div>
-          <p className="eyebrow">COMPLETED LEDGER</p>
-          <h2 id="session-ledger-title">已结束账本</h2>
-        </div>
+        <h2 id="session-ledger-title">已结束账本</h2>
         <span>
-          {records.length} 场{scopeLabel ? ` · ${scopeLabel}` : '本机副本'}
+          {records.length} 场 · {scopeLabel ?? '本机副本'}
         </span>
       </header>
 
@@ -51,14 +72,10 @@ export function SessionLedger({
         <div className="summary-band" aria-label="已结束会话汇总">
           <SummaryMetric
             label="有效专注"
-            value={formatClockDuration(totals.activeMs)}
+            value={formatDurationText(totals.activeMs)}
             tone="focus"
           />
-          <SummaryMetric
-            label="累计暂停"
-            value={formatClockDuration(totals.pauseMs)}
-            tone="pause"
-          />
+          <SummaryMetric label="累计暂停" value={formatDurationText(totals.pauseMs)} tone="pause" />
           <SummaryMetric label="会话" value={`${totals.sessions} 场`} />
           <SummaryMetric label="专注率" value={formatPercent(totals.focusRate)} />
         </div>
@@ -75,14 +92,13 @@ export function SessionLedger({
               <header className="ledger-day-heading">
                 <h3>{formatLedgerDay(group.date)}</h3>
                 <span>
-                  {group.records.length} 场 · {formatClockDuration(group.activeMs)}
+                  {group.records.length} 场 · {formatDurationText(group.activeMs)}
                 </span>
               </header>
-              {group.records.map(({ record, ordinal, staggerIndex }) => (
+              {group.records.map(({ record, staggerIndex }) => (
                 <SessionLedgerRow
                   key={record.entityId}
                   record={record}
-                  ordinal={ordinal}
                   staggerIndex={staggerIndex}
                   expanded={expanded.has(record.entityId)}
                   onToggle={() => toggleExpanded(record.entityId)}
@@ -94,14 +110,10 @@ export function SessionLedger({
       )}
 
       <footer className="ledger-footer">
-        <div>
-          <span>上次账本确认</span>
-          <strong>{lastSyncAt ? formatDateTime(lastSyncAt) : '尚未确认'}</strong>
-        </div>
-        <div>
-          <span>本机游标</span>
-          <strong className="cursor-value">{cursor ? compactId(cursor) : '初始'}</strong>
-        </div>
+        <span>上次账本确认</span>
+        <strong>{lastSyncAt ? formatDateTime(lastSyncAt) : '尚未确认'}</strong>
+        <span>本机游标</span>
+        <strong className="cursor-value">{cursor ? compactId(cursor) : '初始'}</strong>
       </footer>
     </section>
   );
@@ -109,13 +121,11 @@ export function SessionLedger({
 
 function SessionLedgerRow({
   record,
-  ordinal,
   staggerIndex,
   expanded,
   onToggle,
 }: {
   record: CachedBundle;
-  ordinal: number;
   staggerIndex: number;
   expanded: boolean;
   onToggle: () => void;
@@ -150,18 +160,13 @@ function SessionLedgerRow({
       style={{ animationDelay: `${Math.min(staggerIndex, 8) * 36}ms` }}
     >
       <button className="session-summary" type="button" onClick={onToggle} aria-expanded={expanded}>
-        <span className="session-index">{String(ordinal).padStart(2, '0')}</span>
-        <span className="session-date">
-          <strong>{formatDay(session.startedAt)}</strong>
-          <small>{formatTime(session.startedAt)}</small>
-        </span>
         <span className="session-main">
           <strong>{taskContext.title}</strong>
-          <small>{taskContext.associationLabel}</small>
+          <small>{sessionSpan(session.startedAt, session.endedAt)}</small>
         </span>
         <span className="session-duration">
-          <strong>{formatClockDuration(session.activeElapsedMs)}</strong>
-          <small>有效专注</small>
+          <strong>{formatDurationText(session.activeElapsedMs, { seconds: true })}</strong>
+          <small>{taskContext.associationLabel}</small>
         </span>
         <ChevronIcon expanded={expanded} />
       </button>
@@ -171,15 +176,18 @@ function SessionLedgerRow({
           <div className="detail-metrics">
             <DetailMetric
               label="专注"
-              value={formatClockDuration(session.activeElapsedMs)}
+              value={formatDurationText(session.activeElapsedMs, { seconds: true })}
               tone="focus"
             />
             <DetailMetric
               label="暂停"
-              value={formatClockDuration(session.pauseElapsedMs)}
+              value={formatDurationText(session.pauseElapsedMs, { seconds: true })}
               tone="pause"
             />
-            <DetailMetric label="总历时" value={formatClockDuration(session.wallElapsedMs)} />
+            <DetailMetric
+              label="总历时"
+              value={formatDurationText(session.wallElapsedMs, { seconds: true })}
+            />
             <DetailMetric label="专注率" value={formatPercent(focusRate)} />
           </div>
           <div className="detail-meta">
@@ -212,7 +220,9 @@ function SessionLedgerRow({
                   <span className="timeline-link">
                     {item.type === 'pause' ? '暂停段' : item.associated ? '已关联' : '未关联'}
                   </span>
-                  <span className="timeline-duration">{formatClockDuration(item.durationMs)}</span>
+                  <span className="timeline-duration">
+                    {formatDurationText(item.durationMs, { seconds: true })}
+                  </span>
                 </div>
               ))
             )}
@@ -260,7 +270,6 @@ function DetailMetric({
 function EmptyLedger({ configured, scopeLabel }: { configured: boolean; scopeLabel?: string }) {
   return (
     <div className="empty-ledger">
-      <span className="empty-mark">00</span>
       <strong>
         {scopeLabel
           ? `${scopeLabel}没有已结束会话`
@@ -357,7 +366,7 @@ function formatPercent(value: number): string {
 }
 
 function formatDay(timestamp: number): string {
-  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(timestamp);
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(timestamp);
 }
 
 function formatTime(timestamp: number): string {
@@ -366,6 +375,14 @@ function formatTime(timestamp: number): string {
     minute: '2-digit',
     hour12: false,
   }).format(timestamp);
+}
+
+function sessionSpan(startedAt: number, endedAt: number | null): string {
+  if (endedAt === null) return `${formatTime(startedAt)} – 进行中`;
+  const sameDay = localDayKey(startedAt) === localDayKey(endedAt);
+  return sameDay
+    ? `${formatTime(startedAt)} – ${formatTime(endedAt)}`
+    : `${formatTime(startedAt)} – ${formatDay(endedAt)} ${formatTime(endedAt)}`;
 }
 
 function formatDateTime(timestamp: number): string {

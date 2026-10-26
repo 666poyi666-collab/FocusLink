@@ -76,6 +76,45 @@ function expectRuleAt(
   ).toBeDefined();
 }
 
+// 1.6.9：新设计语言层的每条选择器都带 html[data-runtime='mobile-focus'] 前缀，
+// 按后缀匹配才能同时锁住新层（新设计）与旧层（mobile-parity-base.css 兜底）的同一侧栏组件。
+function findScopedRule(
+  root: postcss.Root,
+  selector: string,
+  expected: Record<string, string>,
+  mediaParams?: string,
+): Rule | undefined {
+  let match: Rule | undefined;
+  root.walkRules((rule) => {
+    if (match) return;
+    if (!rule.selectors.some((entry) => entry === selector || entry.endsWith(` ${selector}`))) {
+      return;
+    }
+    const media = mediaOf(rule);
+    if (mediaParams !== undefined && !media.includes(mediaParams)) return;
+    const values = declarations(rule);
+    if (Object.entries(expected).every(([property, value]) => values[property] === value)) {
+      match = rule;
+    }
+  });
+  return match;
+}
+
+function expectScopedRule(
+  root: postcss.Root,
+  selector: string,
+  expected: Record<string, string>,
+  mediaParams?: string,
+): Rule {
+  const context = mediaParams === undefined ? '无媒体查询' : mediaParams;
+  const rule = findScopedRule(root, selector, expected, mediaParams);
+  expect(
+    rule,
+    selector + ' 应声明 ' + JSON.stringify(expected) + '（' + context + '）',
+  ).toBeDefined();
+  return rule!;
+}
+
 describe('v0.12.86 IME contract: the soft keyboard never covers the sticky action area', () => {
   it('declares interactive-widget=resizes-content on the mobile viewport', () => {
     const html = readProjectFile('mobile', 'index.html');
@@ -103,55 +142,109 @@ describe('v0.12.86 IME contract: the soft keyboard never covers the sticky actio
 describe('v0.12.86 mobile continuous work surface contracts', () => {
   const css = stripComments(readProjectFile('src', 'mobile', 'mobile.css'));
   const root = postcss.parse(css);
+  const legacyCss = stripComments(readProjectFile('src', 'mobile', 'mobile-parity-base.css'));
+  const legacyRoot = postcss.parse(legacyCss);
 
   it('compresses the phone band so readout and primary action stay in the first viewport', () => {
+    // 新层：顶栏不再靠大 min-height 撑高，改成 sticky top:0 + 8px 上内边距 + 安全区，
+    // 高度由内容决定，主读数与主操作因此留在第一屏。
+    const topbar = expectScopedRule(root, '.mobile-topbar', {
+      position: 'sticky',
+      top: '0',
+      padding: 'calc(var(--fl-edge-top) + var(--m-2)) var(--m-pad) var(--m-2)',
+    });
+    expect(
+      declarations(topbar)['min-height'],
+      '新层不得再给顶栏设 min-height，否则首屏压缩带会被重新撑高',
+    ).toBeUndefined();
+    // 旧层仍保留 52px 紧凑下限（新层没有覆盖 min-height，所以它是最终生效值）。
     expectRuleAt(
-      root,
+      legacyRoot,
       '.mobile-topbar',
-      {
-        'min-height': 'calc(52px + env(safe-area-inset-top))',
-      },
+      { 'min-height': 'calc(52px + env(safe-area-inset-top))' },
       '(max-width: 619px)',
     );
-    expectRuleAt(
-      root,
-      '.sync-strip',
-      {
-        'min-height': '46px',
-        'padding-block': '6px',
-      },
-      '(max-width: 619px)',
-    );
+    // 手机同步状态改成单行 pill（旧 .sync-strip 已从 DOM 退场）：一行放不下就省略号，绝不换行。
+    const syncPill = expectScopedRule(root, '.mobile-sync-pill', {
+      'white-space': 'nowrap',
+      overflow: 'hidden',
+      'text-overflow': 'ellipsis',
+      'max-width': '40vw',
+    });
+    const pillHeight = Number.parseFloat(declarations(syncPill)['min-height'] ?? 'NaN');
+    // 规范触控下限 44px；本轮实测 40px（见报告 P1），上下界都锁住，防止再被撑回 56px 以上。
+    expect(pillHeight).toBeGreaterThanOrEqual(40);
+    expect(pillHeight).toBeLessThanOrEqual(44);
   });
 
   it('flattens side facts into hairline rows instead of rounded cards', () => {
-    for (const selector of ['.connection-callout', '.runtime-facts']) {
-      expectRuleAt(root, selector, {
-        'border-radius': '0',
-        background: 'transparent',
-        'box-shadow': 'none',
-      });
+    // 侧栏只剩 live-context 一张表面卡，其它事实行退化成发丝线。
+    expectScopedRule(root, '.live-context', {
+      border: '1px solid var(--m-border)',
+      'border-radius': 'var(--m-r-lg)',
+      background: 'var(--m-surface)',
+      'box-shadow': 'none',
+    });
+    expectScopedRule(root, '.runtime-facts', {
+      'border-top': '1px solid var(--m-border)',
+      'grid-template-columns': 'repeat(2, minmax(0, 1fr))',
+      margin: '0',
+    });
+    expectScopedRule(root, '.desktop-delivery-note', {
+      'border-top': '1px solid var(--m-border)',
+    });
+    // connection-callout 在新层里不声明任何 surface（不是卡片，只是行内提示）。
+    const callout = expectScopedRule(root, '.connection-callout', {});
+    for (const property of ['border-radius', 'background', 'box-shadow', 'border']) {
+      expect(
+        declarations(callout)[property],
+        `新层 .connection-callout 不得声明 ${property}`,
+      ).toBeUndefined();
     }
-    expectRuleAt(root, '.connection-callout', {
-      'border-bottom': '1px solid var(--mobile-hairline)',
-    });
-    expectRuleAt(root, '.runtime-facts', {
+    // 旧层兜底：仍未迁走的原生系统控制块保持上下发丝线；四类事实行统一去圆角去投影。
+    expectRuleAt(legacyRoot, '.native-system-controls', {
       'border-top': '1px solid var(--mobile-hairline)',
       'border-bottom': '1px solid var(--mobile-hairline)',
     });
-    expectRuleAt(root, '.desktop-delivery-note', {
-      'border-top': '1px solid var(--mobile-hairline)',
-    });
-    expectRuleAt(root, '.native-system-controls', {
-      'border-top': '1px solid var(--mobile-hairline)',
-      'border-bottom': '1px solid var(--mobile-hairline)',
+    expectRuleAt(legacyRoot, '.connection-callout', {
+      'border-radius': '0',
+      'box-shadow': 'none',
+      background: 'transparent',
     });
   });
 
   it('compacts the empty stats placeholder instead of a tall blank first viewport', () => {
-    expectRuleAt(root, '.analytics-empty', { 'min-height': '64px', margin: '0' });
-    expectRuleAt(root, '.mobile-gap-ledger > p', { 'min-height': '56px' });
-    expectRuleAt(root, '.dashboard-primary', { 'min-height': '150px' });
+    // 新层：空态不再占 64px 高，改成一条 13/20 的说明行（margin 0、上内边距 12）。
+    const empty = expectScopedRule(root, '.analytics-empty', {
+      margin: '0',
+      padding: 'var(--m-3) 0 0',
+    });
+    expect(declarations(empty)['min-height'], '空态不得再占固定高度').toBeUndefined();
+    // 空档台账的说明段同样不占高；行本身取 48px 命中高。
+    const gapNote = expectScopedRule(root, '.mobile-gap-ledger > p', {
+      margin: '0',
+      padding: 'var(--m-2) 0 0',
+    });
+    expect(declarations(gapNote)['min-height']).toBeUndefined();
+    expectScopedRule(root, '.mobile-gap-ledger > ol > li', {
+      'min-height': 'var(--m-hit)',
+      'border-bottom': '1px solid var(--m-border)',
+    });
+    // 主读数不再是 150px 的空盒子（旧 .dashboard-primary 已从 DOM 退场）：hero 扁平、数值 clamp 收敛。
+    expectScopedRule(root, '.dashboard-hero', {
+      border: '0',
+      background: 'none',
+      'box-shadow': 'none',
+    });
+    expectScopedRule(root, '.dashboard-primary-value', {
+      'font-size': 'clamp(34px, 9.4vw, 54px)',
+    });
+    // 通用空态组件：虚线框 + 32/16 内边距，没有 min-height。
+    const mEmpty = expectScopedRule(root, '.m-empty', {
+      padding: 'var(--m-6) var(--m-4)',
+      border: '1px dashed var(--m-border)',
+    });
+    expect(declarations(mEmpty)['min-height']).toBeUndefined();
   });
 });
 
@@ -159,36 +252,25 @@ describe('v0.12.86 640 portrait sticky action cascade (legacy 620 overlay cleanu
   const css = stripComments(readProjectFile('src', 'mobile', 'mobile.css'));
   const root = postcss.parse(css);
 
-  it('orders the 640-portrait sticky CTA after any generic >=620 bottom:0 overlay', () => {
-    const generic: number[] = [];
-    root.walkAtRules('media', (atRule) => {
-      if (!/min-width:\s*620px/.test(atRule.params) || /max-width/.test(atRule.params)) return;
-      atRule.walkRules((rule) => {
-        if (!rule.selectors.includes('.focus-actions')) return;
-        const values = declarations(rule);
-        if (values['position'] === 'sticky' && values['bottom'] === '0') {
-          generic.push(rule.source?.start?.line ?? 0);
-        }
-      });
+  it('keeps every bottom-anchored overlay off the 640 portrait CTA', () => {
+    // 新设计语言彻底取消了「粘在视口底边」的覆盖层：枚举全表 sticky 规则，
+    // bottom 只能缺席或 auto，否则 640 竖屏的主操作会重新被压在导航后面。
+    const bottomStuck: string[] = [];
+    root.walkRules((rule) => {
+      const values = declarations(rule);
+      if (values.position !== 'sticky') return;
+      if (values.bottom !== undefined && values.bottom !== 'auto') bottomStuck.push(rule.selector);
     });
-    expect(generic, '需要存在旧的通用 ≥620 粘底覆盖层作为对比基线').not.toHaveLength(0);
+    expect(bottomStuck, '新层不得出现 sticky 且 bottom 非 auto 的覆盖层').toEqual([]);
 
-    const portrait = findRule(
-      root,
-      '.focus-actions',
-      {
-        position: 'sticky',
-        bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
-        'z-index': '32',
-      },
-      '(min-width: 620px) and (max-width: 759px) and (orientation: portrait)',
-    );
-    expect(portrait, '620–759 竖屏必须存在粘性主操作（位于底部导航之上）').toBeDefined();
-    const portraitLine = portrait!.source?.start?.line ?? 0;
-    expect(
-      portraitLine,
-      'v0.12.86 的 640 竖屏规则必须排在旧 620 覆盖层之后，否则级联序会让粘性操作落回底边',
-    ).toBeGreaterThan(Math.max(...generic));
+    // 主操作条回到文档流；底部导航的真实高度由主区下内边距预留（不是靠粘性覆盖）。
+    expectScopedRule(root, '.focus-instrument > .focus-actions', {
+      position: 'static',
+      bottom: 'auto',
+    });
+    expectScopedRule(root, '.mobile-main', {
+      padding: '0 0 calc(var(--m-nav-space) + var(--m-4))',
+    });
   });
 });
 

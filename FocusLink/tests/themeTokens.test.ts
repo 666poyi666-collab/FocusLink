@@ -61,10 +61,19 @@ describe('专注/暂停颜色语义 token 契约', () => {
     const desktopRoot = /:root\s*\{([\s\S]*?)\n\}/.exec(desktopOverlay)?.[1] ?? '';
     expect(desktopRoot).not.toMatch(/--app-(?:accent|success)(?:-[\w-]+)?\s*:/);
     expect(desktopOverlay).toContain('--app-accent: 83 185 202;');
+    // 旧移动叠加层不得自己重定义专注色（旧 --focus* 别名只由旧总表兜底）。
     expect(mobileOverlay).not.toMatch(/--focus(?:-strong|-soft)?\s*:/);
-    expect(mobileFoundation).toContain('--focus: rgb(var(--app-accent));');
-    expect(mobileFoundation).toContain('--focus-strong: rgb(var(--app-accent-active));');
-    expect(mobileFoundation).toContain('--focus-soft: rgb(var(--app-accent-soft));');
+    // 1.6.9 新设计语言层：强调色只能消费语义 token，全部别名指向 rgb(var(--app-*))。
+    expect(mobileFoundation).toContain('--m-accent: rgb(var(--app-accent));');
+    expect(mobileFoundation).toContain('--m-accent-fg: rgb(var(--app-accent-fg));');
+    expect(mobileFoundation).toContain('--m-accent-soft: rgb(var(--app-accent-soft));');
+    expect(mobileFoundation).toContain('--m-pause: rgb(var(--app-pause));');
+    expect(mobileFoundation).toContain('--m-pause-soft: rgb(var(--app-pause-soft));');
+    expect(mobileFoundation).toContain('--m-danger: rgb(var(--app-danger));');
+    // 新层内不得出现任何写死的十六进制颜色，否则五种强调色主题会被其中一种覆盖。
+    expect(mobileFoundation).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    // 也不得残留旧 --focus* 别名，否则强调色会被重新钉在旧青绿色上。
+    expect(mobileFoundation).not.toMatch(/--focus(?:-strong|-soft)?\s*:/);
   });
 });
 

@@ -333,10 +333,19 @@ describe('mobile task browser model', () => {
       'utf8',
     );
 
-    expect(consoleSource).toContain('本轮任务');
-    expect(consoleSource).toContain('className="focus-task-disclosure"');
+    // 唯一入口：任务卡里的「当前任务」行（button.is-picker）点开任务 sheet，
+    // 标题输入收进 focus-title-details，不再常驻一套 select + 浏览行。
+    expect(consoleSource).toContain('当前任务');
+    expect(consoleSource).toContain('className="focus-task-block"');
+    expect(consoleSource).toContain('className="focus-task-row is-picker"');
+    expect(consoleSource).toContain('onClick={onOpenTasks}');
     expect(consoleSource).toContain('轻触选择，也可以保持自由专注');
-    expect(consoleSource).not.toContain('<select\n                    id="focus-task"');
+    expect(consoleSource).toContain('className="focus-title-details"');
+    expect(consoleSource.match(/focus-task-row is-picker/g), '只能有一个任务选择入口').toHaveLength(
+      1,
+    );
+    expect(consoleSource).not.toContain('focus-task-disclosure');
+    expect(consoleSource).not.toContain('<select');
     expect(consoleSource).not.toContain('从电脑任务清单选择');
   });
 
