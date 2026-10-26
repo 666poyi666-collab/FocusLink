@@ -2,7 +2,7 @@
 
 > 适用版本：v1.x
 >
-> 当前版本：v1.6.9（手机/平板 renderer 四页视觉重做：新增 `src/mobile/mobile.css` 设计语言总纲，底部导航、按钮、输入、任务行与 sheet 统一到新尺寸体系，并新增 `src/mobile/systemInsets.ts` 的原生安全区注入桥。不改数据库、IPC 语义、同步协议、设备配对与第三方投递逻辑；桌面 Electron 侧代码在本次迭代中零改动。）
+> 当前版本：v1.7.0（手机/平板 renderer 继续做 UI 迭代：专注页三选一开始、任务/统计去卡片化、同步子页改写为离线优先说明；不改数据库、IPC 语义、同步协议、设备配对与第三方投递逻辑，桌面 Electron 侧仍零改动。）
 >
 > 文档责任：Electron 主进程、SQLite、IPC、任务 Provider、同步、测试与发布。
 

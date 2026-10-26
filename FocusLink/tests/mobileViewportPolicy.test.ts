@@ -44,9 +44,12 @@ describe('mobile FocusLink viewport policy', () => {
     const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
     try {
       const markup = renderActiveConsole(640, 1_024);
-      expect(markup).toContain('实时新鲜度');
-      expect(markup).toContain('最近确认');
-      expect(markup).toContain('data-live-source="server"');
+      // 1.7.0 把多端事实收进读屏摘要：实时新鲜度与最近确认仍是两个独立字段，
+      // 来源写明「云端实时」，且两者各自成段，不会被合成一句。
+      expect(markup).toMatch(/<span>数据来源 云端实时[^<]*<\/span>/);
+      expect(markup).toMatch(/<span>最近确认 [^<]+<\/span>/);
+      expect(markup).toContain('多端连接');
+      expect(markup).toContain('实时版本 rev');
     } finally {
       if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
       else delete (globalThis as { window?: Window }).window;

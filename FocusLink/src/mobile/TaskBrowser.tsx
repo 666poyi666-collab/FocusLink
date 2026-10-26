@@ -2,16 +2,11 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
-  Folder,
-  Inbox,
-  LayoutGrid,
-  ListFilter,
-  Play,
   Palette,
+  Play,
   Plus,
   RotateCcw,
   Search,
-  Target,
 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { SyncedTask, SyncedTaskProject } from '@shared/sync/taskSnapshotProtocol';
@@ -27,7 +22,6 @@ import {
   countSyncedTaskTree,
   findSyncedTaskPath,
   filterSyncedTaskForest,
-  filterSyncedTasks,
   groupSyncedTaskForest,
   NO_PROJECT,
   projectNameForTask,
@@ -77,7 +71,6 @@ export function TaskBrowser({
   const [projectFilter, setProjectFilter] = useState<TaskProjectFilter>(ALL_PROJECTS);
   const [quickAddProjectId, setQuickAddProjectId] = useState<string>(FOCUSLINK_INBOX_PROJECT_ID);
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>('open');
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
   const [draft, setDraft] = useState('');
   const [creating, setCreating] = useState(false);
   const [projectDraft, setProjectDraft] = useState('');
@@ -87,9 +80,8 @@ export function TaskBrowser({
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(() => new Set());
-  // The composer is a disclosure, not a permanently reserved band above the list.
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  // 新建任务收在底部 sheet 里，列表上方不再常驻表单。
+  const [createOpen, setCreateOpen] = useState(false);
   const draftInputRef = useRef<HTMLInputElement>(null);
   const detailSheetRef = useRef<HTMLElement>(null);
   const groupRegionPrefix = useId();
@@ -99,10 +91,6 @@ export function TaskBrowser({
   );
   const totalOpen = useMemo(() => tasks.filter((task) => !task.isCompleted).length, [tasks]);
   const totalCompleted = useMemo(() => tasks.filter((task) => task.isCompleted).length, [tasks]);
-  const boardTasks = useMemo(
-    () => filterSyncedTasks(tasks, query, projectFilter, statusFilter),
-    [projectFilter, query, statusFilter, tasks],
-  );
   const groups = useMemo(() => groupSyncedTaskForest(taskForest, projects), [projects, taskForest]);
   const forceGroupsOpen = query.trim().length > 0 || projectFilter !== ALL_PROJECTS;
   const allTaskForest = useMemo(() => buildSyncedTaskForest(tasks), [tasks]);
@@ -128,11 +116,25 @@ export function TaskBrowser({
         : projectFilter,
     );
   }, [projectFilter]);
-  const filterActive = projectFilter !== ALL_PROJECTS || viewMode !== 'list';
-  // The composer field only mounts when the disclosure opens, so focus it on demand.
+  // 新建 sheet 打开时聚焦标题输入；Escape 关闭并把焦点还给触发按钮。
   useEffect(() => {
-    if (quickAddOpen) draftInputRef.current?.focus();
-  }, [quickAddOpen]);
+    if (!createOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    draftInputRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setCreateOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.addEventListener('keydown', closeOnEscape);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
+  }, [createOpen]);
   // Phone detail is a bottom sheet: Escape closes it and focus returns to the row that opened it.
   useEffect(() => {
     if (!detailOpen) return;
@@ -227,18 +229,10 @@ export function TaskBrowser({
 
   return (
     <section className="task-browser view-surface" aria-labelledby="task-browser-title">
-      <header className="view-heading">
-        <div>
-          <p className="eyebrow">FOCUSLINK · 自有任务</p>
-          <h2 id="task-browser-title">我的任务</h2>
-        </div>
-        <div className="view-heading-meta">
-          <strong>{totalOpen}</strong>
-          <span>项待办</span>
-        </div>
-      </header>
-
-      <div className="task-toolbar">
+      <h2 className="sr-only" id="task-browser-title">
+        任务
+      </h2>
+      <div className="task-row-head">
         <label className="task-search">
           <Search aria-hidden="true" />
           <span className="sr-only">搜索任务</span>
@@ -246,221 +240,42 @@ export function TaskBrowser({
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索任务或标签"
+            placeholder="搜索任务"
             autoComplete="off"
             enterKeyHint="search"
           />
         </label>
-        <div className="task-status-switch" role="group" aria-label="任务状态">
-          <button
-            type="button"
-            className={statusFilter === 'open' ? 'is-active' : ''}
-            aria-pressed={statusFilter === 'open'}
-            onClick={() => selectStatusFilter('open')}
-          >
-            <span>待办</span>
-            <strong>{totalOpen}</strong>
-          </button>
-          <button
-            type="button"
-            className={statusFilter === 'completed' ? 'is-active' : ''}
-            aria-pressed={statusFilter === 'completed'}
-            onClick={() => selectStatusFilter('completed')}
-          >
-            <span>已完成</span>
-            <strong>{totalCompleted}</strong>
-          </button>
-        </div>
-        <div className="task-toolbar-row">
-          <button
-            className="task-quick-add m-text-action"
-            type="button"
-            aria-expanded={quickAddOpen}
-            aria-controls="task-quick-composer"
-            disabled={!onCreate}
-            onClick={() => setQuickAddOpen((open) => !open)}
-          >
-            <Plus aria-hidden="true" />
-            <span>添加任务</span>
-          </button>
-          <div className="task-toolbar-actions">
-            <button
-              className={`task-filter-disclosure ${filterActive ? 'is-active' : ''}`}
-              type="button"
-              aria-expanded={filterPanelOpen}
-              aria-label="筛选与视图"
-              title="筛选与视图"
-              onClick={() => setFilterPanelOpen((open) => !open)}
-            >
-              <ListFilter aria-hidden="true" />
-            </button>
-            <button
-              className="project-create-disclosure"
-              type="button"
-              aria-expanded={projectComposerOpen}
-              aria-label={projectComposerOpen ? '收起清单管理' : '清单管理'}
-              title={projectComposerOpen ? '收起清单管理' : '清单管理'}
-              onClick={() => setProjectComposerOpen((open) => !open)}
-            >
-              <Folder aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-        <form
-          className="task-mobile-create"
-          id="task-quick-composer"
-          hidden={!quickAddOpen}
-          onSubmit={(event) => {
-            event.preventDefault();
-            const title = draft.trim();
-            if (!title || creating || !onCreate) return;
-            setCreating(true);
-            void onCreate(title, quickAddProjectId || FOCUSLINK_INBOX_PROJECT_ID)
-              .then(() => setDraft(''))
-              .then(() => setStatusFilter('open'))
-              .then(() => setMutationNotice(null))
-              .catch((error) => mutationError('创建任务', error))
-              .finally(() => setCreating(false));
-          }}
+        <button
+          className="task-new-action"
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          disabled={!onCreate}
         >
-          <Plus aria-hidden="true" />
-          <input
-            ref={draftInputRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="添加任务"
-            aria-label="添加任务"
-            enterKeyHint="done"
-          />
-          <label className="task-add-destination">
-            <span className="sr-only">新任务所属清单</span>
-            <select
-              value={quickAddProjectId}
-              onChange={(event) => setQuickAddProjectId(event.target.value)}
-              aria-label="新任务所属清单"
-              disabled={creating || !onCreate}
-            >
-              <option value={FOCUSLINK_INBOX_PROJECT_ID}>收件箱</option>
-              {projects
-                .filter((project) => !isFocusLinkInboxProject(project.id))
-                .map((project) => (
-                  <option key={`${project.source}:${project.id}`} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <button type="submit" disabled={!draft.trim() || creating || !onCreate}>
-            {creating ? '保存中' : '添加'}
-          </button>
-          <button
-            type="button"
-            className="task-quick-cancel"
-            onClick={() => setQuickAddOpen(false)}
-          >
-            取消
-          </button>
-        </form>
-        {filterPanelOpen && (
-          <div className="task-filter-panel">
-            <label className="project-filter">
-              <ListFilter aria-hidden="true" />
-              <span className="sr-only">按清单筛选</span>
-              <select
-                value={projectFilter}
-                onChange={(event) => setProjectFilter(event.target.value)}
-              >
-                <option value={ALL_PROJECTS}>全部清单</option>
-                <option value={NO_PROJECT}>收件箱</option>
-                {projects
-                  .filter((project) => !isFocusLinkInboxProject(project.id))
-                  .map((project) => (
-                    <option key={`${project.source}:${project.id}`} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <div className="task-view-switch" role="group" aria-label="任务视图">
-              <button
-                type="button"
-                className={viewMode === 'list' ? 'is-active' : ''}
-                onClick={() => setViewMode('list')}
-                aria-label="列表视图"
-                aria-pressed={viewMode === 'list'}
-                title="列表视图"
-              >
-                <ListFilter aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className={viewMode === 'board' ? 'is-active' : ''}
-                onClick={() => setViewMode('board')}
-                aria-label="看板视图"
-                aria-pressed={viewMode === 'board'}
-                title="看板视图"
-              >
-                <LayoutGrid aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        )}
-        {projectComposerOpen && (
-          <div className="mobile-project-manager">
-            <form
-              className="project-mobile-create"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const name = projectDraft.trim();
-                if (!name || !onCreateProject || creating) return;
-                setCreating(true);
-                void onCreateProject(name)
-                  .then((createdProjectId) => {
-                    setProjectDraft('');
-                    if (createdProjectId) {
-                      setProjectFilter(createdProjectId);
-                      setQuickAddProjectId(createdProjectId);
-                      setStatusFilter('open');
-                      setProjectComposerOpen(false);
-                    }
-                  })
-                  .then(() => setMutationNotice(null))
-                  .catch((error) => mutationError('创建清单', error))
-                  .finally(() => setCreating(false));
-              }}
-            >
-              <input
-                value={projectDraft}
-                onChange={(event) => setProjectDraft(event.target.value)}
-                placeholder="清单名称"
-                aria-label="清单名称"
-                autoFocus
-              />
-              <button type="submit" disabled={!projectDraft.trim() || !onCreateProject || creating}>
-                创建
-              </button>
-            </form>
-            <div className="mobile-project-editor-list" aria-label="清单颜色设置">
-              {projects
-                .filter((project) => !isFocusLinkInboxProject(project.id))
-                .map((project, index) => (
-                  <MobileProjectEditor
-                    key={project.id}
-                    project={project}
-                    fallbackColor={defaultTaskProjectColor(index + 1)}
-                    onSave={updateProjectWithNotice}
-                    onDelete={deleteProjectWithNotice}
-                  />
-                ))}
-            </div>
-          </div>
-        )}
+          新建
+        </button>
       </div>
 
-      <div className="task-snapshot-meta">
-        <span>本地任务 · rev {revision}</span>
-        <span>{publishedAt ? `最近同步 ${formatSnapshotTime(publishedAt)}` : '仅保存在本机'}</span>
+      <div className="task-status-switch" role="group" aria-label="任务状态">
+        <button
+          type="button"
+          className={statusFilter === 'open' ? 'is-active' : ''}
+          aria-pressed={statusFilter === 'open'}
+          onClick={() => selectStatusFilter('open')}
+        >
+          <span>待办</span>
+          <strong>{totalOpen}</strong>
+        </button>
+        <button
+          type="button"
+          className={statusFilter === 'completed' ? 'is-active' : ''}
+          aria-pressed={statusFilter === 'completed'}
+          onClick={() => selectStatusFilter('completed')}
+        >
+          <span>已完成</span>
+          <strong>{totalCompleted}</strong>
+        </button>
       </div>
+
       {mutationNotice && (
         <p className="task-mutation-notice" role="status" aria-live="polite">
           {mutationNotice}
@@ -469,43 +284,30 @@ export function TaskBrowser({
 
       {taskForest.length === 0 ? (
         <div className="task-empty">
-          <Target aria-hidden="true" />
-          <strong>
+          <p className="task-empty-line">
             {tasks.length === 0
-              ? '还没有 FocusLink 任务'
+              ? '还没有任务'
               : statusFilter === 'completed'
                 ? '没有符合条件的已完成任务'
                 : '没有符合条件的待办'}
-          </strong>
-          <p>
-            {tasks.length === 0
-              ? '先在这里创建任务；设备配对后会自动同步到电脑、手机和平板。'
-              : statusFilter === 'completed'
-                ? '完成后的任务会保留在这里，可随时恢复为待办。'
-                : '调整搜索词或清单筛选。'}
           </p>
-          {tasks.length === 0 && (
+          {tasks.length === 0 ? (
             <button
-              className="task-empty-action m-text-action"
+              className="task-empty-action"
               type="button"
-              onClick={() => setQuickAddOpen(true)}
+              onClick={() => setCreateOpen(true)}
+              disabled={!onCreate}
             >
               <Plus aria-hidden="true" />
-              <span>添加第一个任务</span>
+              新建第一个任务
             </button>
+          ) : (
+            <p className="task-empty-hint">换个关键词，或切换上面的分段。</p>
           )}
         </div>
-      ) : viewMode === 'board' ? (
-        <TaskBoard
-          tasks={boardTasks}
-          projects={projects}
-          canStart={canStart}
-          onStart={onStart}
-          onToggleComplete={toggleCompleteWithNotice}
-        />
       ) : (
         <div className="task-browser-workspace">
-          <div className="task-project-list" aria-label="云端待办任务">
+          <div className="task-project-list" aria-label="任务清单">
             {groups.map((group, groupIndex) => {
               const selectedInside = treeContainsTask(group.tasks, selectedTaskId);
               const open = forceGroupsOpen || expandedGroups.has(group.key) || selectedInside;
@@ -519,15 +321,13 @@ export function TaskBrowser({
                     aria-expanded={open}
                     aria-controls={regionId}
                   >
-                    <span className="task-project-icon" style={{ color: group.color ?? undefined }}>
-                      {group.projectId && !isFocusLinkInboxProject(group.projectId) ? (
-                        <Folder aria-hidden="true" />
-                      ) : (
-                        <Inbox aria-hidden="true" />
-                      )}
-                    </span>
+                    <span
+                      className="task-project-icon"
+                      style={{ color: group.color ?? undefined }}
+                      aria-hidden="true"
+                    />
                     <strong>{group.name}</strong>
-                    <span>{countSyncedTaskTree(group.tasks)}</span>
+                    <span className="task-project-count">{countSyncedTaskTree(group.tasks)}</span>
                     <ChevronRight className="task-project-chevron" aria-hidden="true" />
                   </button>
                   {open && (
@@ -659,6 +459,153 @@ export function TaskBrowser({
           </aside>
         </div>
       )}
+
+      <div className="task-snapshot-meta">
+        <span>本机 · rev {revision}</span>
+        {publishedAt && <span>最近同步 {formatSnapshotTime(publishedAt)}</span>}
+      </div>
+
+      <aside
+        tabIndex={-1}
+        className={`task-create-detail ${createOpen ? 'is-open' : ''}`}
+        aria-label="新建任务"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setCreateOpen(false);
+        }}
+      >
+        <div className="task-sheet task-create-sheet">
+          <span className="task-sheet-grabber" aria-hidden="true" />
+          <div className="task-sheet-head">
+            <span className="task-selection-kicker">新建任务</span>
+            <button
+              type="button"
+              className="task-selection-close"
+              onClick={() => setCreateOpen(false)}
+              aria-label="关闭新建任务"
+            >
+              <ChevronDown aria-hidden="true" />
+            </button>
+          </div>
+          <form
+            className="task-mobile-create"
+            id="task-quick-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const title = draft.trim();
+              if (!title || creating || !onCreate) return;
+              setCreating(true);
+              void onCreate(title, quickAddProjectId || FOCUSLINK_INBOX_PROJECT_ID)
+                .then(() => setDraft(''))
+                .then(() => setStatusFilter('open'))
+                .then(() => setMutationNotice(null))
+                .then(() => setCreateOpen(false))
+                .catch((error) => mutationError('创建任务', error))
+                .finally(() => setCreating(false));
+            }}
+          >
+            <input
+              ref={draftInputRef}
+              className="task-title-input"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="任务标题"
+              aria-label="添加任务"
+              enterKeyHint="done"
+            />
+            <label className="task-add-destination">
+              <span className="task-field-label">清单</span>
+              <select
+                value={quickAddProjectId}
+                onChange={(event) => setQuickAddProjectId(event.target.value)}
+                aria-label="新任务所属清单"
+                disabled={creating || !onCreate}
+              >
+                <option value={FOCUSLINK_INBOX_PROJECT_ID}>收件箱</option>
+                {projects
+                  .filter((project) => !isFocusLinkInboxProject(project.id))
+                  .map((project) => (
+                    <option key={`${project.source}:${project.id}`} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <p className="task-create-note">
+              日期与优先级在电脑端设置；创建后会自动同步到已配对设备。
+            </p>
+            <div className="task-create-actions">
+              <button
+                className="project-create-disclosure"
+                type="button"
+                aria-expanded={projectComposerOpen}
+                onClick={() => setProjectComposerOpen((open) => !open)}
+              >
+                {projectComposerOpen ? '收起清单管理' : '管理清单'}
+              </button>
+              <button
+                className="task-create-submit"
+                type="submit"
+                disabled={!draft.trim() || creating || !onCreate}
+              >
+                {creating ? '创建中' : '创建'}
+              </button>
+            </div>
+          </form>
+          {projectComposerOpen && (
+            <div className="mobile-project-manager">
+              <form
+                className="project-mobile-create"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const name = projectDraft.trim();
+                  if (!name || !onCreateProject || creating) return;
+                  setCreating(true);
+                  void onCreateProject(name)
+                    .then((createdProjectId) => {
+                      setProjectDraft('');
+                      if (createdProjectId) {
+                        setProjectFilter(createdProjectId);
+                        setQuickAddProjectId(createdProjectId);
+                        setStatusFilter('open');
+                        setProjectComposerOpen(false);
+                      }
+                    })
+                    .then(() => setMutationNotice(null))
+                    .catch((error) => mutationError('创建清单', error))
+                    .finally(() => setCreating(false));
+                }}
+              >
+                <input
+                  value={projectDraft}
+                  onChange={(event) => setProjectDraft(event.target.value)}
+                  placeholder="清单名称"
+                  aria-label="清单名称"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={!projectDraft.trim() || !onCreateProject || creating}
+                >
+                  创建
+                </button>
+              </form>
+              <div className="mobile-project-editor-list" aria-label="清单颜色设置">
+                {projects
+                  .filter((project) => !isFocusLinkInboxProject(project.id))
+                  .map((project, index) => (
+                    <MobileProjectEditor
+                      key={project.id}
+                      project={project}
+                      fallbackColor={defaultTaskProjectColor(index + 1)}
+                      onSave={updateProjectWithNotice}
+                      onDelete={deleteProjectWithNotice}
+                    />
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
     </section>
   );
 }
@@ -755,88 +702,6 @@ function MobileProjectEditor({
   );
 }
 
-function TaskBoard({
-  tasks,
-  projects,
-  canStart,
-  onStart,
-  onToggleComplete,
-}: {
-  tasks: readonly SyncedTask[];
-  projects: readonly SyncedTaskProject[];
-  canStart: boolean;
-  onStart: (task: SyncedTask) => void;
-  onToggleComplete?: (task: SyncedTask) => Promise<void>;
-}) {
-  const columns = [
-    {
-      key: 'inbox',
-      label: '收件箱',
-      tasks: tasks.filter((task) => !task.projectId || isFocusLinkInboxProject(task.projectId)),
-    },
-    ...projects
-      .filter((project) => !isFocusLinkInboxProject(project.id))
-      .map((project) => ({
-        key: project.id,
-        label: project.name,
-        tasks: tasks.filter((task) => task.projectId === project.id),
-      })),
-  ].filter((column) => column.tasks.length > 0);
-  return (
-    <div className="task-board" aria-label="任务看板">
-      {columns.map((column) => (
-        <section className="task-board-column" key={column.key}>
-          <header>
-            <strong>{column.label}</strong>
-            <span>{column.tasks.length}</span>
-          </header>
-          <div className="task-board-cards">
-            {column.tasks.map((task) => (
-              <article
-                className={`task-board-card ${task.isCompleted ? 'is-completed' : ''}`}
-                key={`${task.source}:${task.id}`}
-              >
-                <div className="task-board-card-top">
-                  <button
-                    className={`task-board-check ${task.isCompleted ? 'is-restore' : ''}`}
-                    type="button"
-                    onClick={() => void onToggleComplete?.(task)}
-                    aria-label={`${task.isCompleted ? '恢复' : '完成'} ${task.title}`}
-                  >
-                    {task.isCompleted ? <RotateCcw /> : <Check />}
-                  </button>
-                  <strong>{task.title}</strong>
-                </div>
-                <div className="task-board-card-meta">
-                  {task.dueDate
-                    ? new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(
-                        task.dueDate,
-                      )
-                    : '未设截止'}
-                  {task.tags.slice(0, 2).map((tag) => (
-                    <span key={tag}>#{tag}</span>
-                  ))}
-                </div>
-                {!task.isCompleted && (
-                  <button
-                    type="button"
-                    className="task-board-focus"
-                    onClick={() => onStart(task)}
-                    disabled={!canStart}
-                  >
-                    <Play aria-hidden="true" />
-                    开始专注
-                  </button>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 function TaskBranch({
   task,
   depth,
@@ -915,7 +780,6 @@ function TaskBranch({
               {task.tags.length > 0 ? ` · ${task.tags.slice(0, 2).join(' · ')}` : ''}
             </small>
           </span>
-          {selected && <span className="selected-label">已选择</span>}
         </button>
         {hasChildren ? (
           <button

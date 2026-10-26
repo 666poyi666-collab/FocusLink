@@ -333,17 +333,20 @@ describe('mobile task browser model', () => {
       'utf8',
     );
 
-    // 唯一入口：任务卡里的「当前任务」行（button.is-picker）点开任务 sheet，
-    // 标题输入收进 focus-title-details，不再常驻一套 select + 浏览行。
-    expect(consoleSource).toContain('当前任务');
-    expect(consoleSource).toContain('className="focus-task-block"');
-    expect(consoleSource).toContain('className="focus-task-row is-picker"');
-    expect(consoleSource).toContain('onClick={onOpenTasks}');
-    expect(consoleSource).toContain('轻触选择，也可以保持自由专注');
-    expect(consoleSource).toContain('className="focus-title-details"');
-    expect(consoleSource.match(/focus-task-row is-picker/g), '只能有一个任务选择入口').toHaveLength(
-      1,
-    );
+    // 1.7.0 起专注页只有一行任务入口：点开底部 sheet 后三选一——
+    // 选最近任务 / 输入这次专注的名字 / 直接开始不写名字；不再常驻 select + 浏览行。
+    expect(consoleSource).toContain('className="focus-task-entry"');
+    expect(consoleSource).toContain('aria-haspopup="dialog"');
+    expect(consoleSource).toContain('onClick={openSheet}');
+    expect(consoleSource).toContain('className="m-sheet focus-sheet"');
+    expect(consoleSource).toContain('最近任务');
+    expect(consoleSource).toContain('输入这次专注的名字');
+    expect(consoleSource).toContain('直接开始，不写名字');
+    expect(consoleSource).toContain('自由专注');
+    expect(
+      consoleSource.match(/className="focus-task-entry"/g),
+      '首屏只能有一个任务选择入口',
+    ).toHaveLength(1);
     expect(consoleSource).not.toContain('focus-task-disclosure');
     expect(consoleSource).not.toContain('<select');
     expect(consoleSource).not.toContain('从电脑任务清单选择');

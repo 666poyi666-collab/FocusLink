@@ -11,6 +11,8 @@ function readProjectFile(...segments: string[]): string {
 }
 
 const dashboardSource = readProjectFile('src', 'mobile', 'DashboardView.tsx');
+// JSX 会被 prettier 按行宽折行，语义断言统一在折叠空白后的源码上做，避免格式变动误报。
+const dashboardSourceFlat = dashboardSource.replace(/\s+/g, ' ');
 const mobileAppSource = readProjectFile('src', 'mobile', 'MobileApp.tsx');
 const mobile13Root = postcss.parse(readProjectFile('src', 'mobile', 'mobile-1-3.css'));
 
@@ -55,10 +57,10 @@ function expectRule(
 describe('mobile dashboard interaction contract', () => {
   it('defaults to seven days and keeps selected-day state connected to its summary', () => {
     expect(dashboardSource).toContain("useState<DashboardRangeChoice>('7d')");
-    expect(dashboardSource).toContain(
-      'onSelect={(date) => setSelectedDate((current) => (current === date ? null : date))}',
+    expect(dashboardSourceFlat).toContain(
+      'onSelect={(date) => setSelectedDate((current) => (current === date ? null : date))',
     );
-    expect(dashboardSource).toContain(
+    expect(dashboardSourceFlat).toContain(
       '<SelectedDaySummary ledger={selectedLedger} onClear={() => setSelectedDate(null)} />',
     );
   });

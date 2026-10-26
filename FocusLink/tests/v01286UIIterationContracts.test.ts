@@ -177,39 +177,35 @@ describe('v0.12.86 mobile continuous work surface contracts', () => {
     expect(pillHeight).toBeLessThanOrEqual(44);
   });
 
-  it('flattens side facts into hairline rows instead of rounded cards', () => {
-    // 侧栏只剩 live-context 一张表面卡，其它事实行退化成发丝线。
+  it('keeps side facts out of the visual surface and in a screen-reader summary', () => {
+    // 1.7.0：侧栏事实不再是一张卡（也不再占一行行发丝线），而是 1px 裁切的读屏摘要，
+    // 不参与视觉、不撑高页面；这里锁住 sr-only 语义与「不声明任何卡片表面」。
     expectScopedRule(root, '.live-context', {
-      border: '1px solid var(--m-border)',
-      'border-radius': 'var(--m-r-lg)',
-      background: 'var(--m-surface)',
-      'box-shadow': 'none',
+      position: 'absolute',
+      width: '1px',
+      height: '1px',
+      overflow: 'hidden',
+      'clip-path': 'inset(50%)',
+      'white-space': 'nowrap',
+      border: '0',
+      background: 'none',
     });
-    expectScopedRule(root, '.runtime-facts', {
-      'border-top': '1px solid var(--m-border)',
-      'grid-template-columns': 'repeat(2, minmax(0, 1fr))',
-      margin: '0',
-    });
-    expectScopedRule(root, '.desktop-delivery-note', {
-      'border-top': '1px solid var(--m-border)',
-    });
-    // connection-callout 在新层里不声明任何 surface（不是卡片，只是行内提示）。
-    const callout = expectScopedRule(root, '.connection-callout', {});
-    for (const property of ['border-radius', 'background', 'box-shadow', 'border']) {
+    const liveContext = expectScopedRule(root, '.live-context', { position: 'absolute' });
+    for (const property of ['border-radius', 'box-shadow']) {
       expect(
-        declarations(callout)[property],
-        `新层 .connection-callout 不得声明 ${property}`,
+        declarations(liveContext)[property],
+        `读屏摘要 .live-context 不得声明 ${property}`,
       ).toBeUndefined();
     }
-    // 旧层兜底：仍未迁走的原生系统控制块保持上下发丝线；四类事实行统一去圆角去投影。
+    // 指令提示同样只留给读屏，不再抢占视觉。
+    expectScopedRule(root, '.focus-command-notice', {
+      position: 'absolute',
+      'clip-path': 'inset(50%)',
+    });
+    // 旧层兜底：仍未迁走的原生系统控制块继续用上下发丝线，不套卡。
     expectRuleAt(legacyRoot, '.native-system-controls', {
       'border-top': '1px solid var(--mobile-hairline)',
       'border-bottom': '1px solid var(--mobile-hairline)',
-    });
-    expectRuleAt(legacyRoot, '.connection-callout', {
-      'border-radius': '0',
-      'box-shadow': 'none',
-      background: 'transparent',
     });
   });
 
@@ -230,14 +226,15 @@ describe('v0.12.86 mobile continuous work surface contracts', () => {
       'min-height': 'var(--m-hit)',
       'border-bottom': '1px solid var(--m-border)',
     });
-    // 主读数不再是 150px 的空盒子（旧 .dashboard-primary 已从 DOM 退场）：hero 扁平、数值 clamp 收敛。
+    // 主读数不再是 150px 的空盒子：hero 扁平、主数字 1.7.0 定为 44/48（≥1040 才 48/52）。
     expectScopedRule(root, '.dashboard-hero', {
       border: '0',
       background: 'none',
       'box-shadow': 'none',
     });
     expectScopedRule(root, '.dashboard-primary-value', {
-      'font-size': 'clamp(34px, 9.4vw, 54px)',
+      'font-size': '44px',
+      'line-height': '48px',
     });
     // 通用空态组件：虚线框 + 32/16 内边距，没有 min-height。
     const mEmpty = expectScopedRule(root, '.m-empty', {
@@ -263,10 +260,10 @@ describe('v0.12.86 640 portrait sticky action cascade (legacy 620 overlay cleanu
     });
     expect(bottomStuck, '新层不得出现 sticky 且 bottom 非 auto 的覆盖层').toEqual([]);
 
-    // 主操作条回到文档流；底部导航的真实高度由主区下内边距预留（不是靠粘性覆盖）。
+    // 主操作条回到文档流（1.7.0 用 inset: auto 归零四边）；底部导航高度由主区下内边距预留。
     expectScopedRule(root, '.focus-instrument > .focus-actions', {
       position: 'static',
-      bottom: 'auto',
+      inset: 'auto',
     });
     expectScopedRule(root, '.mobile-main', {
       padding: '0 0 calc(var(--m-nav-space) + var(--m-4))',

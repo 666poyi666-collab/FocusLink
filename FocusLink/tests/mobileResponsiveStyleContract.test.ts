@@ -40,28 +40,20 @@ describe('phone, tablet and watch responsive style contract', () => {
     expect(css).toMatch(/\.watch-actions button\s*\{[^}]*min-width:\s*0/);
   });
 
-  it('keeps phone sync failures and tablet runtime facts inside their rows', () => {
+  it('keeps phone sync status, task title and assistive facts inside their rows', () => {
     const css = compactCss('mobile.css');
-    const legacy = compactCss('mobile-parity-base.css');
 
     // 手机顶栏同步状态是单行 pill：超长一律省略号，绝不把顶栏撑成两行。
     expect(css).toMatch(
       /\.mobile-sync-pill\s*\{[^}]*max-width:\s*40vw[^}]*white-space:\s*nowrap[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/,
     );
-    // 专注页同步入口沿用单行；真正的失败详情允许断词换行，不被裁掉。
-    expect(css).toMatch(/\.focus-sync-label\s*\{[^}]*text-overflow:\s*ellipsis/);
-    expect(css).toMatch(/\.focus-sync-meta\s*\{[^}]*text-overflow:\s*ellipsis/);
-    expect(css).toMatch(/\.connection-callout > div > small\s*\{[^}]*overflow-wrap:\s*anywhere/);
-    // 平板事实格是两列网格，地址类长值换行而不是省略。
+    // 专注页唯一一行任务标题同样单行省略，长标题不撑破行。
     expect(css).toMatch(
-      /\.runtime-facts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
+      /\.focus-task-entry-title\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/,
     );
-    expect(css).toMatch(/\.runtime-facts dd\s*\{[^}]*overflow-wrap:\s*anywhere/);
-
-    // 旧层仍兜底：≥620 事实值换行不省略（旧 .sync-copy 已不在 DOM，随旧同步条一起退场）。
-    expect(legacy).toMatch(
-      /@media \(min-width: 620px\)[\s\S]*?\.runtime-facts dd\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*text-overflow:\s*clip[^}]*white-space:\s*normal/,
-    );
+    // 1.7.0：同步/新鲜度等事实细节不再占视觉，收成 1px 裁切的读屏摘要，不参与布局也就撑不破任何行。
+    expect(css).toMatch(/\.live-context[^{}]*\{[^}]*clip-path:\s*inset\(50%\)/);
+    expect(css).not.toMatch(/\.live-context[^{}]*\{[^}]*text-overflow:\s*ellipsis/);
   });
 
   it('uses a real single-column 640 layout and keeps cloud pairing reachable from the focus page', () => {
@@ -79,17 +71,18 @@ describe('phone, tablet and watch responsive style contract', () => {
     expect(css).toMatch(
       /@media \(min-width: 1040px\)[\s\S]*?\.app-frame\s*\{[^}]*grid-template-columns:\s*240px minmax\(0, 1fr\)/,
     );
-    // 平板专注台收窄居中；操作条留在文档流内（不做负边距出血，也不粘底）。
+    // 1.7.0 平板档：≥720 只把专注台收窄到 560 居中，不再有 760 双列。
     expect(css).toMatch(
-      /@media \(min-width: 760px\)[\s\S]*?\.focus-instrument\s*\{[^}]*max-width:\s*640px/,
+      /@media \(min-width: 720px\)[\s\S]*?\.focus-instrument\s*\{[^}]*max-width:\s*560px/,
     );
     expect(css).toMatch(/\.focus-instrument > \.focus-actions\s*\{[^}]*position:\s*static/);
     expect(css).not.toMatch(
       /\.focus-instrument > \.focus-actions\s*\{[^}]*margin-(?:right|left):\s*calc\(-1/,
     );
-    // 云端配对入口从旧「粘性操作行里的次要按钮」迁到专注页底部的同步面板，仍在专注页可达。
-    expect(consoleSource).toContain('className="focus-sync-panel"');
+    // 云端配对入口仍在专注页：读屏摘要里有「多端同步设置」按钮，视觉入口是顶栏同步 pill。
+    expect(consoleSource).toContain('className="live-context sr-only"');
     expect(consoleSource).toContain('className="focus-sync-open"');
+    expect(consoleSource).toContain('多端同步设置');
     expect(consoleSource).not.toContain('inline-connection-action');
     expect(viewportScreenshotSource).toContain(
       "document.querySelector('.focus-instrument > .temporal-ribbon')",
@@ -147,7 +140,7 @@ describe('phone, tablet and watch responsive style contract', () => {
 
     // 新设计没有粘底操作条：主操作留在文档流，靠预留导航真实高度保证不被压住。
     expect(css).toMatch(
-      /\.focus-instrument > \.focus-actions\s*\{[^}]*position:\s*static[^}]*bottom:\s*auto/,
+      /\.focus-instrument > \.focus-actions\s*\{[^}]*position:\s*static[^}]*inset:\s*auto/,
     );
     expect(css).toMatch(
       /\.mobile-main\s*\{[^}]*padding:\s*0 0 calc\(var\(--m-nav-space\) \+ var\(--m-4\)\)/,

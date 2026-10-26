@@ -1,5 +1,5 @@
-import { useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
-import { CalendarDays, Play, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
+import { CalendarDays, ChevronRight, Play, X } from 'lucide-react';
 import type { DayLedgerAnalytics, DayLedgerInterval } from '@shared/dayLedgerAnalytics';
 import type { SyncedTask } from '@shared/sync/taskSnapshotProtocol';
 import {
@@ -66,6 +66,7 @@ export function DashboardView({
   const [customStart, setCustomStart] = useState(() => dayKey(defaultBounds.start));
   const [customEnd, setCustomEnd] = useState(() => dayKey(defaultBounds.end - 1));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const customBounds = useMemo(
     () => mobileCustomStatsRange(customStart, customEnd),
     [customEnd, customStart],
@@ -78,6 +79,11 @@ export function DashboardView({
   const rangeAnalytics = useMemo(
     () => buildMobileDashboardInRange(records, bounds, referenceNow),
     [bounds, records, referenceNow],
+  );
+  // 趋势固定看最近 7 天：无论当前范围是「今天」还是「近 30 天」，这条都是同一张周视图。
+  const weeklyAnalytics = useMemo(
+    () => buildMobileDashboardInRange(records, mobileStatsRange('7d', referenceNow), referenceNow),
+    [records, referenceNow],
   );
   const selectedLedger = useMemo(
     () => selectMobileDashboardLedger(rangeAnalytics.dayLedgers, selectedDate),
@@ -111,10 +117,34 @@ export function DashboardView({
       ? { start: selectedLedger.dayStartedAt, end: selectedLedger.dayEndedAt }
       : bounds;
   const visibleRecords = records.filter((record) => sessionOverlaps(record, visibleBounds));
+  const finishedRecords = useMemo(
+    () =>
+      visibleRecords
+        .filter((record) => record.bundle.session.status === 'finished')
+        .sort(
+          (left, right) =>
+            sessionSortKey(right.bundle.session) - sessionSortKey(left.bundle.session),
+        ),
+    [visibleRecords],
+  );
+  const sessionCount = finishedRecords.length;
+  const averageFocus = sessionCount > 0 ? Math.round(dashboardFocus / sessionCount) : 0;
+  const longestFocus = finishedRecords.reduce(
+    (longest, record) => Math.max(longest, Math.max(0, record.bundle.session.activeElapsedMs)),
+    0,
+  );
+  const recentSessions = finishedRecords.slice(0, 6).map((record) => ({
+    key: record.entityId,
+    startedAt: record.bundle.session.startedAt,
+    title: sessionTitle(record),
+    durationMs: Math.max(0, record.bundle.session.activeElapsedMs),
+  }));
   const scopeLabel =
     selectedDate && selectedLedger
       ? formatFullDate(selectedLedger.date)
       : formatRangeLabel(bounds.start, bounds.end, range);
+  const scopeNoun =
+    selectedDate && selectedLedger ? formatMonthDay(selectedLedger.date) : rangeNoun(range);
 
   const selectRange = (nextRange: DashboardRangeChoice) => {
     setRange(nextRange);
@@ -133,6 +163,20 @@ export function DashboardView({
     setSelectedDate(null);
   };
 
+  useEffect(() => {
+    if (!detailsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDetailsOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [detailsOpen]);
+
   return (
     <section className="dashboard-view view-surface" aria-labelledby="mobile-dashboard-title">
       {/* 顶栏已经给出「统计」页面标题，这里只保留无障碍名称，避免同一标题重复两次。 */}
@@ -140,8 +184,14 @@ export function DashboardView({
         时间账本
       </h2>
 
-      <div className="dashboard-range-shell">
-        <div className="dashboard-range" role="group" aria-label="统计范围">
+      {/* 一句话范围说明：只在标题下方出现一次，不再随各区块重复。 */}
+      <p className="dashboard-scope-caption">
+        {scopeNoun} · {formatRangeCaption(bounds, selectedDate)}
+      </p>
+
+      <div id="dashboard-range-shell" className="dashboard-range-shell">
+        {/* 文字分段：无胶囊、无边框，当前项靠字重与 2px 下划线标识。 */}
+        <div className="dashboard-tabs" role="group" aria-label="统计范围">
           {RANGE_OPTIONS.map((option) => (
             <button
               type="button"
@@ -191,7 +241,6 @@ export function DashboardView({
           </div>
         )}
       </div>
-      <p className="dashboard-scope-caption">{formatRangeCaption(bounds, selectedDate)}</p>
 
       {!ready ? (
         <DashboardSkeleton />
@@ -200,42 +249,74 @@ export function DashboardView({
           {hasFocusData ? (
             <>
               <section className="dashboard-hero" aria-label="有效专注">
-                <p className="dashboard-primary-label">
-                  {dashboardScopeTitle(range, selectedDate)}
-                </p>
+                <p className="dashboard-primary-label">有效专注</p>
                 <strong className="dashboard-primary-value">
                   {formatDurationText(dashboardFocus)}
                 </strong>
                 <p className="dashboard-primary-note">
-                  {dashboardConclusion(
-                    selectedLedger,
-                    dashboardFocus,
-                    analytics.totals.gapMs,
-                    false,
-                  )}
+                  {scopeNoun} • {sessionCount} 场专注
                 </p>
-                {analytics.estimated && <small className="dashboard-estimated">含估算旧记录</small>}
               </section>
 
-              <dl className="dashboard-summary" aria-label="专注与暂停摘要">
-                <div className="dashboard-summary-item is-pause">
-                  <dt>暂停损耗</dt>
-                  <dd>{formatDurationText(dashboardPause)}</dd>
+              <dl className="dashboard-summary" aria-label="专注摘要">
+                <div className="dashboard-summary-item">
+                  <dt>专注次数</dt>
+                  <dd>{sessionCount} 次</dd>
                 </div>
                 <div className="dashboard-summary-item">
-                  <dt>观察空档</dt>
-                  <dd>{formatDurationText(analytics.totals.gapMs)}</dd>
+                  <dt>平均每次</dt>
+                  <dd>{formatDurationText(averageFocus)}</dd>
+                </div>
+                <div className="dashboard-summary-item">
+                  <dt>最长单次</dt>
+                  <dd>{formatDurationText(longestFocus)}</dd>
                 </div>
               </dl>
+
+              <section
+                className="dashboard-band dashboard-trend"
+                aria-labelledby="ledger-days-title"
+              >
+                <h3 id="ledger-days-title" className="dashboard-group-label">
+                  每日专注
+                </h3>
+                <DailyLedgerTrend
+                  ledgers={weeklyAnalytics.dayLedgers}
+                  selectedDate={selectedDate}
+                  onSelect={(date) =>
+                    setSelectedDate((current) => (current === date ? null : date))
+                  }
+                />
+              </section>
+
+              <section
+                className="dashboard-band dashboard-recent"
+                aria-labelledby="dashboard-recent-title"
+              >
+                <h3 id="dashboard-recent-title" className="dashboard-group-label">
+                  最近记录
+                </h3>
+                <RecentSessions sessions={recentSessions} />
+              </section>
+
+              <div className="dashboard-details-entry">
+                <button
+                  type="button"
+                  className="m-text-action dashboard-details-action"
+                  aria-expanded={detailsOpen}
+                  aria-controls="dashboard-details"
+                  onClick={() => setDetailsOpen(true)}
+                >
+                  <span>查看时间轴与账本</span>
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </div>
             </>
           ) : (
             <div className="dashboard-empty" role="status">
-              <strong>
-                {records.length === 0 ? '还没有已结束的专注' : '这个范围没有可统计的专注'}
-              </strong>
-              <p>{dashboardConclusion(selectedLedger, dashboardFocus, analytics.totals.gapMs)}</p>
+              <p>{records.length === 0 ? '还没有已结束的专注' : '这个范围没有可统计的专注'}</p>
               {onStartFocus && (
-                <button type="button" className="dashboard-empty-action" onClick={onStartFocus}>
+                <button type="button" className="m-button-primary" onClick={onStartFocus}>
                   <Play aria-hidden="true" />
                   <span>开始专注</span>
                 </button>
@@ -243,30 +324,38 @@ export function DashboardView({
             </div>
           )}
 
-          {hasFocusData && rangeAnalytics.dayLedgers.length > 1 && (
-            <section
-              className="dashboard-band ledger-days-band"
-              aria-labelledby="ledger-days-title"
+          {/* 详细分析不删功能：全部收进底部 sheet，默认隐藏但保留在文档里。 */}
+          <div id="dashboard-details" className="dashboard-details" hidden={!detailsOpen}>
+            <button
+              type="button"
+              className="m-sheet-scrim"
+              aria-label="关闭时间轴与账本"
+              onClick={() => setDetailsOpen(false)}
+            />
+            <div
+              className="m-sheet dashboard-details-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="时间轴与账本"
             >
-              <AnalyticsHeading
-                id="ledger-days-title"
-                title="每日专注"
-                detail={`${analytics.activeDays} 个活跃日`}
-              />
-              <DailyLedgerTrend
-                ledgers={rangeAnalytics.dayLedgers}
-                selectedDate={selectedDate}
-                onSelect={(date) => setSelectedDate((current) => (current === date ? null : date))}
-              />
-              {selectedDate && selectedLedger && (
-                <SelectedDaySummary ledger={selectedLedger} onClear={() => setSelectedDate(null)} />
-              )}
-            </section>
-          )}
-
-          {hasFocusData && (
-            <>
-              <div className="dashboard-analysis-grid ledger-analysis-grid">
+              <header className="dashboard-details-head">
+                <h2>时间轴与账本</h2>
+                <button
+                  type="button"
+                  className="dashboard-details-close"
+                  aria-label="关闭时间轴与账本"
+                  onClick={() => setDetailsOpen(false)}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </header>
+              <div className="dashboard-details-body">
+                {selectedDate && selectedLedger && (
+                  <SelectedDaySummary
+                    ledger={selectedLedger}
+                    onClear={() => setSelectedDate(null)}
+                  />
+                )}
                 <DayLedgerTimeline
                   key={selectedLedger?.date ?? 'no-ledger'}
                   ledger={selectedLedger}
@@ -284,28 +373,25 @@ export function DashboardView({
                   />
                   <MobileTaskAllocation allocation={taskAllocation} />
                 </section>
+                <GapLedger ledger={selectedLedger} />
+                <MobileTimeBudget
+                  focusRate={focusRate}
+                  pauseRate={pauseRate}
+                  gapRate={gapRate}
+                  estimated={analytics.estimated}
+                />
+                <SessionLedger
+                  records={visibleRecords}
+                  ready={ready}
+                  configured={configured}
+                  lastSyncAt={lastSyncAt}
+                  cursor={cursor}
+                  showSummary={false}
+                  scopeLabel={scopeLabel}
+                />
               </div>
-
-              <GapLedger ledger={selectedLedger} />
-
-              <MobileTimeBudget
-                focusRate={focusRate}
-                pauseRate={pauseRate}
-                gapRate={gapRate}
-                estimated={analytics.estimated}
-              />
-            </>
-          )}
-
-          <SessionLedger
-            records={visibleRecords}
-            ready={ready}
-            configured={configured}
-            lastSyncAt={lastSyncAt}
-            cursor={cursor}
-            showSummary={false}
-            scopeLabel={scopeLabel}
-          />
+            </div>
+          </div>
         </>
       )}
     </section>
@@ -334,34 +420,72 @@ function DailyLedgerTrend({
     1,
     ...ledgers.map((ledger) => ledger.totals.focusMs + ledger.totals.estimatedFocusMs),
   );
-  const labelStep = Math.max(1, Math.ceil(ledgers.length / 7));
   return (
     <div className="daily-ledger-trend" role="group" aria-label="每日专注时长">
-      {ledgers.map((ledger, index) => {
+      {ledgers.map((ledger) => {
         const focus = ledger.totals.focusMs + ledger.totals.estimatedFocusMs;
         const pause = ledger.totals.pauseMs + ledger.totals.estimatedPauseMs;
-        const scale = focus > 0 ? Math.max(6, Math.round((focus / max) * 100)) : 1.5;
+        const scale = focus > 0 ? Math.max(8, Math.round((focus / max) * 100)) : 0;
         const selected = selectedDate === ledger.date;
         return (
           <button
             type="button"
             key={ledger.date}
-            className={selected ? 'is-selected' : ''}
+            className={`${focus > 0 ? 'has-focus' : 'is-empty'}${selected ? ' is-selected' : ''}`}
             aria-pressed={selected}
             aria-label={`${formatFullDate(ledger.date)}，专注 ${formatDurationText(focus)}，暂停 ${formatDurationText(pause)}，空档 ${formatDurationText(ledger.totals.gapMs)}${ledger.estimated ? '，含估算' : ''}`}
             onClick={() => onSelect(ledger.date)}
           >
             <span className="daily-ledger-bar" aria-hidden="true">
-              <i className="focus" style={{ height: `${scale}%` }} />
+              <i className="focus" style={focus > 0 ? { height: `${scale}%` } : undefined} />
             </span>
-            <small>
-              {index % labelStep === 0 || index === ledgers.length - 1
-                ? formatShortDate(ledger.date)
-                : ''}
-            </small>
+            <small>{formatWeekday(ledger.date)}</small>
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function RecentSessions({
+  sessions,
+}: {
+  sessions: ReadonlyArray<{ key: string; startedAt: number; title: string; durationMs: number }>;
+}) {
+  if (sessions.length === 0) {
+    return <p className="analytics-empty">这个范围还没有已结束的专注。</p>;
+  }
+  const groups: Array<{ label: string; rows: typeof sessions }> = [];
+  for (const session of sessions) {
+    const label = sessionDayLabel(session.startedAt);
+    const current = groups.at(-1);
+    if (current && current.label === label) {
+      current.rows = [...current.rows, session];
+    } else {
+      groups.push({ label, rows: [session] });
+    }
+  }
+  return (
+    <div className="dashboard-recent-list">
+      {groups.map((group) => (
+        <div className="dashboard-recent-day" key={group.label}>
+          <p className="dashboard-group-label">{group.label}</p>
+          {group.rows.map((session) => (
+            <div className="dashboard-recent-row" key={session.key}>
+              <time
+                className="dashboard-recent-time"
+                dateTime={new Date(session.startedAt).toISOString()}
+              >
+                {formatClock(session.startedAt)}
+              </time>
+              <strong className="dashboard-recent-title">{session.title}</strong>
+              <span className="dashboard-recent-duration">
+                {formatDurationText(session.durationMs, { seconds: true })}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -793,28 +917,6 @@ function DashboardSkeleton() {
   );
 }
 
-function dashboardConclusion(
-  ledger: DayLedgerAnalytics | undefined,
-  focusMs: number,
-  gapMs: number,
-  /**
-   * 主数字已经把合计讲清楚了，副行不再重复同一个时长（规范：主数字只出现一次）。
-   * 只有在没有主数字的空态里才带上「已记录 … 专注」。
-   */
-  includeFocus = true,
-): string {
-  if (ledger?.status === 'estimated-only') {
-    return '旧记录缺少精确边界，只保留估算时长，不伪造空档。';
-  }
-  if (!ledger || ledger.status === 'not-started') {
-    return ledger?.isToday ? '今日尚未启动，不把全天计算为空档。' : '所选日期没有真实专注起点。';
-  }
-  if (gapMs <= 0) return '观察区间连续，当前没有可列出的空档。';
-  return includeFocus
-    ? `已记录 ${formatDurationText(focusMs)} 专注；空档按共享日账本精确列出。`
-    : '空档按共享日账本精确列出，不计入上面的专注时长。';
-}
-
 function gapEmptyMessage(ledger: DayLedgerAnalytics | undefined): string {
   if (!ledger) return '尚无共享日账本数据。';
   if (ledger.status === 'estimated-only') return '旧记录缺少精确边界，只显示估算时长。';
@@ -835,17 +937,51 @@ function sessionOverlaps(record: CachedBundle, bounds: { start: number; end: num
   return session.startedAt < bounds.end && end > bounds.start;
 }
 
-function dashboardScopeTitle(range: DashboardRangeChoice, selectedDate: string | null): string {
-  if (selectedDate) return `${formatFullDate(selectedDate)}有效专注`;
+function sessionSortKey(session: CachedBundle['bundle']['session']): number {
+  return session.endedAt ?? session.startedAt + Math.max(1, session.wallElapsedMs);
+}
+
+function sessionTitle(record: CachedBundle): string {
+  const { session, segments } = record.bundle;
+  const title =
+    session.defaultTaskTitle ??
+    segments.find((segment) => segment.title)?.title ??
+    segments[0]?.title ??
+    null;
+  return title && title.trim().length > 0 ? title.trim() : '未命名专注';
+}
+
+function sessionDayLabel(timestamp: number): string {
+  const today = new Date();
+  const target = new Date(timestamp);
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const startOfTarget = new Date(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate(),
+  ).getTime();
+  const diffDays = Math.round((startOfToday - startOfTarget) / 86_400_000);
+  if (diffDays === 0) return '今天';
+  if (diffDays === 1) return '昨天';
+  return formatMonthDay(dayKey(timestamp));
+}
+
+function rangeNoun(range: DashboardRangeChoice): string {
   switch (range) {
     case 'today':
-      return '今日有效专注';
+      return '今日';
     case 'yesterday':
-      return '昨日有效专注';
+      return '昨日';
+    case '7d':
+      return '近 7 天';
+    case 'previous-7d':
+      return '上个 7 天';
+    case '30d':
+      return '近 30 天';
+    case 'previous-30d':
+      return '上个 30 天';
     case 'custom':
-      return '自定义范围有效专注';
-    default:
-      return '范围内有效专注';
+      return '自定义范围';
   }
 }
 
@@ -867,6 +1003,13 @@ function formatRangeCaption(
 
 function formatMonthDay(date: string): string {
   return `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
+}
+
+function formatWeekday(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(
+    new Date(year, month - 1, day),
+  );
 }
 
 function dayKey(timestamp: number): string {
@@ -895,8 +1038,4 @@ function formatFullDate(date: string): string {
     day: 'numeric',
     weekday: 'short',
   }).format(new Date(year, month - 1, day));
-}
-
-function formatShortDate(date: string): string {
-  return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 }

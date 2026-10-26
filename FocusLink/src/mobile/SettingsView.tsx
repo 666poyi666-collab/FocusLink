@@ -68,6 +68,18 @@ const PANEL_TITLES: Record<Exclude<SettingsPanel, 'root'>, string> = {
   about: '关于',
 };
 
+/**
+ * 「同步与设备」内部再分一层：先回答三个问题，原来的连接、队列与配对入口
+ * 分别收进对应问题的展开页，功能一个不少。
+ */
+type SyncSection = 'root' | 'status' | 'what' | 'pairing';
+
+const SYNC_SECTION_TITLES: Record<Exclude<SyncSection, 'root'>, string> = {
+  status: '现在同步吗',
+  what: '同步的是什么',
+  pairing: '怎么配对设备',
+};
+
 /** 首屏右侧只放当前值的短标签，完整名称留在子面板里。 */
 const SHORT_THEME_LABELS: Record<MobileAppearance['theme'], string> = {
   light: '浅色',
@@ -137,22 +149,28 @@ export function SettingsView({
   foregroundActive,
 }: SettingsViewProps) {
   const [panel, setPanel] = useState<SettingsPanel>('root');
+  const [syncSection, setSyncSection] = useState<SyncSection>('root');
   const panelTitleRef = useRef<HTMLHeadingElement>(null);
 
   // 打开子面板后把焦点交给面板标题：屏幕阅读器会先读到新页面，Tab 也从这里继续。
   useEffect(() => {
     if (panel === 'root') return;
     panelTitleRef.current?.focus();
-  }, [panel]);
+  }, [panel, syncSection]);
 
   useEffect(() => {
     if (panel === 'root') return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPanel('root');
+      if (event.key !== 'Escape') return;
+      if (panel === 'sync' && syncSection !== 'root') {
+        setSyncSection('root');
+        return;
+      }
+      setPanel('root');
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [panel]);
+  }, [panel, syncSection]);
 
   const connectionFact = presentMobileSettingsConnection({
     authenticated,
@@ -180,7 +198,33 @@ export function SettingsView({
   const deliveryFact = presentMobileThirdPartyDelivery();
   const ledgerNoticeView = presentMobileLedgerNotice({ notice: ledgerNotice, pullState });
 
-  const closePanel = () => setPanel('root');
+  const openPanel = (next: Exclude<SettingsPanel, 'root'>) => {
+    setSyncSection('root');
+    setPanel(next);
+  };
+
+  const closePanel = () => {
+    setSyncSection('root');
+    setPanel('root');
+  };
+
+  const syncSectionOpen = panel === 'sync' && syncSection !== 'root';
+
+  /** 返回键一次退一层：问题的展开页 → 「同步与设备」 → 设置首屏。 */
+  const goBack = () => {
+    if (syncSectionOpen) {
+      setSyncSection('root');
+      return;
+    }
+    closePanel();
+  };
+
+  const panelTitle =
+    panel === 'sync' && syncSection !== 'root'
+      ? SYNC_SECTION_TITLES[syncSection]
+      : panel === 'root'
+        ? ''
+        : PANEL_TITLES[panel];
 
   const appearanceSummary = [
     SHORT_THEME_LABELS[appearance.theme],
@@ -189,14 +233,24 @@ export function SettingsView({
     SHORT_TIMER_LABELS[appearance.timerStyle],
   ].join(' · ');
 
-  const pendingTotal = ledgerPendingCount + conflicts.length + ledgerRejectedCount;
-  const syncSummary = !authenticated
-    ? '本机 · 未配对'
-    : connection === 'live'
-      ? pendingTotal > 0
-        ? `已连接 · ${pendingTotal} 条待处理`
-        : '已连接'
-      : connectionFact.value;
+  // 第一行「现在同步吗」的右值：配对前不同步；配对后只看队列真实状态。
+  const queuedCount = ledgerPendingCount + conflicts.length;
+  const syncStateValue = !authenticated
+    ? '未配对 · 不同步'
+    : ledgerRejectedCount > 0
+      ? '同步失败'
+      : queuedCount > 0
+        ? `待同步 ${queuedCount} 条`
+        : connection === 'live'
+          ? '已同步'
+          : '未同步';
+  const syncStateTone: 'ok' | 'danger' | undefined = !authenticated
+    ? undefined
+    : ledgerRejectedCount > 0
+      ? 'danger'
+      : connection === 'live' && queuedCount === 0
+        ? 'ok'
+        : undefined;
 
   return (
     <section className="settings-view view-surface" aria-label="设置">
@@ -207,22 +261,23 @@ export function SettingsView({
             <SettingsGroupRow
               label="外观"
               value={appearanceSummary}
-              onOpen={() => setPanel('appearance')}
+              onOpen={() => openPanel('appearance')}
             />
             <SettingsGroupRow
               label="同步与设备"
-              value={syncSummary}
-              onOpen={() => setPanel('sync')}
+              value={syncStateValue}
+              tone={syncStateTone}
+              onOpen={() => openPanel('sync')}
             />
             <SettingsGroupRow
               label="系统显示"
               value="通知 · 悬浮条 · 权限"
-              onOpen={() => setPanel('system')}
+              onOpen={() => openPanel('system')}
             />
             <SettingsGroupRow
               label="关于"
               value={`v${APP_DISPLAY_VERSION}`}
-              onOpen={() => setPanel('about')}
+              onOpen={() => openPanel('about')}
             />
           </div>
         </div>
@@ -231,13 +286,13 @@ export function SettingsView({
       {panel !== 'root' && (
         <div className="settings-panel">
           <div className="settings-panel-bar">
-            <button className="m-text-action settings-back" type="button" onClick={closePanel}>
+            <button className="m-text-action settings-back" type="button" onClick={goBack}>
               <ChevronLeft aria-hidden="true" />
-              <span>设置</span>
+              <span>{syncSectionOpen ? '同步与设备' : '设置'}</span>
             </button>
           </div>
           <h2 className="m-section-title settings-panel-title" tabIndex={-1} ref={panelTitleRef}>
-            {PANEL_TITLES[panel]}
+            {panelTitle}
           </h2>
 
           {panel === 'appearance' && (
@@ -331,21 +386,45 @@ export function SettingsView({
             </>
           )}
 
-          {panel === 'sync' && (
+          {panel === 'sync' && syncSection === 'root' && (
             <>
-              <section className="m-card settings-block" aria-label="设备与账号">
-                <button
-                  type="button"
-                  className="m-row settings-account-row"
-                  onClick={onOpenAccount}
-                >
-                  <span className="settings-group-label">设备与账号</span>
-                  <span className="settings-row-value">
-                    {authenticated ? (accountLabel ?? '已配对') : '未配对'}
-                  </span>
-                  <ChevronRight className="settings-row-chevron" aria-hidden="true" />
-                </button>
+              <section
+                className="settings-offline-strip"
+                aria-label="离线可用：FocusLink 不联网也能用"
+              >
+                <span className="settings-offline-copy">
+                  <strong className="settings-offline-title">离线可用</strong>
+                  <span className="settings-offline-hint">任务和专注记录都存在这台设备上</span>
+                </span>
+                <span className="settings-offline-badge">本机</span>
               </section>
+
+              <div className="m-card settings-groups" role="group" aria-label="同步与设备">
+                <SettingsGroupRow
+                  label="现在同步吗"
+                  value={syncStateValue}
+                  tone={syncStateTone}
+                  onOpen={() => setSyncSection('status')}
+                />
+                <SettingsGroupRow
+                  label="同步的是什么"
+                  value="任务与专注记录"
+                  onOpen={() => setSyncSection('what')}
+                />
+                <SettingsGroupRow
+                  label="怎么配对设备"
+                  value={authenticated ? '已配对' : '未配对'}
+                  onOpen={() => setSyncSection('pairing')}
+                />
+              </div>
+            </>
+          )}
+
+          {panel === 'sync' && syncSection === 'status' && (
+            <>
+              <p className="settings-hint">
+                下面这些数字只描述云端副本；本机记录始终保留，断网时也照常写入。
+              </p>
 
               <SettingsBlock title="实时" titleId="settings-domain-live" domain>
                 <SettingsFactRow
@@ -477,6 +556,88 @@ export function SettingsView({
             </>
           )}
 
+          {panel === 'sync' && syncSection === 'what' && (
+            <>
+              <section className="m-card settings-block" aria-label="会同步的内容">
+                <div className="settings-block-head">
+                  <h3 className="settings-block-title is-domain">会同步</h3>
+                </div>
+                <SettingsFactRow
+                  label="任务"
+                  value="会同步"
+                  detail="任务的关联与完成状态、清单颜色"
+                />
+                <SettingsFactRow
+                  label="专注记录"
+                  value="会同步"
+                  detail="已结束的专注会话、时长与冲突处理结果"
+                />
+                <p className="settings-hint">配对之后，只有这两类内容会在设备之间流转。</p>
+              </section>
+
+              <section className="m-card settings-block" aria-label="只在本机的内容">
+                <div className="settings-block-head">
+                  <h3 className="settings-block-title is-domain">只在本机</h3>
+                </div>
+                <SettingsFactRow
+                  label="外观偏好"
+                  value="仅本机"
+                  detail="计时仪表、主题、字体、强调色"
+                />
+                <SettingsFactRow
+                  label="界面状态"
+                  value="仅本机"
+                  detail="当前页面、筛选条件与滚动位置"
+                />
+                <p className="settings-hint">这些偏好不会上传，也不会因为换设备而改变。</p>
+              </section>
+
+              <p className="settings-hint">
+                同步要先配对；没有配对时，任务与专注记录仍然完整保存在本机。
+              </p>
+              <button
+                className="m-text-action settings-sync-more"
+                type="button"
+                onClick={() => setSyncSection('status')}
+              >
+                查看同步明细
+              </button>
+            </>
+          )}
+
+          {panel === 'sync' && syncSection === 'pairing' && (
+            <>
+              <section className="m-card settings-block" aria-label="设备与账号">
+                <button
+                  type="button"
+                  className="m-row settings-account-row"
+                  onClick={onOpenAccount}
+                >
+                  <span className="settings-group-label">设备与账号</span>
+                  <span className="settings-row-value">
+                    {authenticated ? (accountLabel ?? '已配对') : '未配对'}
+                  </span>
+                  <ChevronRight className="settings-row-chevron" aria-hidden="true" />
+                </button>
+                <p className="settings-hint">点这一行打开配对面板：输入电脑上显示的 8 位码即可。</p>
+              </section>
+
+              <section className="m-card settings-block" aria-label="三步配对">
+                <div className="settings-block-head">
+                  <h3 className="settings-block-title is-domain">三步配对</h3>
+                </div>
+                <ol className="settings-sync-steps">
+                  <li>在电脑端打开设置，生成 8 位配对码。</li>
+                  <li>在手机上输入这 8 位码。</li>
+                  <li>配对完成后会自动同步，之后不用再操作。</li>
+                </ol>
+                <p className="settings-hint">
+                  不配对也完全可用：任务与专注记录照常保存在本机，想连的时候再配对。
+                </p>
+              </section>
+            </>
+          )}
+
           {panel === 'system' && <NativeSystemControls foregroundActive={foregroundActive} />}
 
           {panel === 'about' && (
@@ -506,16 +667,18 @@ export function SettingsView({
 function SettingsGroupRow({
   label,
   value,
+  tone,
   onOpen,
 }: {
   label: string;
   value: string;
+  tone?: 'ok' | 'danger';
   onOpen: () => void;
 }) {
   return (
     <button type="button" className="m-row settings-group-row" onClick={onOpen}>
       <span className="settings-group-label">{label}</span>
-      <span className="settings-row-value">{value}</span>
+      <span className={`settings-row-value${tone ? ` is-${tone}` : ''}`}>{value}</span>
       <ChevronRight className="settings-row-chevron" aria-hidden="true" />
     </button>
   );

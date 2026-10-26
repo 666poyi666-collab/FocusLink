@@ -2578,16 +2578,7 @@ export function MobileApp() {
               {configured ? (syncActivity.label ?? connectionTitle(liveConnection)) : '本机'}
             </span>
           </button>
-          {activeView !== 'settings' && (
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setActiveView('settings')}
-              aria-label="打开设置"
-            >
-              <SettingsIcon />
-            </button>
-          )}
+          {/* 顶栏只保留同步状态。设置已有底部导航第四个入口，再放一个齿轮会重复且抢走焦点。 */}
         </div>
       </header>
 
@@ -2932,15 +2923,6 @@ function BrandMark() {
       <path className="brand-mark-f" d="M5 20V4h12M5 11h9" />
       <path className="brand-mark-l" d="M15 9v11h5" />
       <path className="brand-mark-cross" d="M12 11h3" />
-    </svg>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19 13.5v-3l-2-.6a6 6 0 0 0-.7-1.7l1-1.9-2.1-2.1-1.9 1a6 6 0 0 0-1.7-.7L11 2H8l-.6 2.5a6 6 0 0 0-1.7.7l-1.9-1-2.1 2.1 1 1.9A6 6 0 0 0 2 9.9l-2 .6v3l2 .6a6 6 0 0 0 .7 1.7l-1 1.9 2.1 2.1 1.9-1a6 6 0 0 0 1.7.7L8 22h3l.6-2.5a6 6 0 0 0 1.7-.7l1.9 1 2.1-2.1-1-1.9a6 6 0 0 0 .7-1.7z" />
     </svg>
   );
 }
