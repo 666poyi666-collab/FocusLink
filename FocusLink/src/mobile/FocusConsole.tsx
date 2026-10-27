@@ -17,7 +17,7 @@ import { MobileConfirmDialog } from './MobileConfirmDialog';
 import { liveFocusSnapshotToTimerSnapshot } from './liveTimerSnapshotAdapter';
 import { focusDeviceLabel, isTabletFocusViewport } from './viewportPolicy';
 import { MobileTimerInstrument } from './MobileTimerInstrument';
-import { TemporalRibbon } from '../features/focus/TemporalRibbon';
+import { MobileRibbon } from './MobileRibbon';
 import type { MobileAppearance } from './appearance';
 import { createMobileSecondTicker } from './backgroundPolicy';
 
@@ -316,8 +316,13 @@ export function FocusConsole({
             )}
           </div>
 
-          {/* 4 · 时间之带 */}
-          <TemporalRibbon snapshot={timerSnapshot} state={timerSnapshot.state} now={now} />
+          {/* 4 · 时间之带（移动端三模式：流线 / 光栅 / 时段） */}
+          <MobileRibbon
+            snapshot={timerSnapshot}
+            wallMs={durations.wallElapsedMs}
+            activeMs={durations.activeElapsedMs}
+            state={timerSnapshot.state}
+          />
 
           {/* 5 · 三时间一行等宽列 */}
           <div className="runtime-metrics" aria-label="本轮三时间">

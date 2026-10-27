@@ -73,7 +73,7 @@ export function TaskBrowser({
   const [query, setQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState<TaskProjectFilter>(ALL_PROJECTS);
   const [quickAddProjectId, setQuickAddProjectId] = useState<string>(FOCUSLINK_INBOX_PROJECT_ID);
-  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>('open');
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter | 'all'>('open');
   const [draft, setDraft] = useState('');
   const [creating, setCreating] = useState(false);
   const [projectDraft, setProjectDraft] = useState('');
@@ -88,13 +88,37 @@ export function TaskBrowser({
   const draftInputRef = useRef<HTMLInputElement>(null);
   const detailSheetRef = useRef<HTMLElement>(null);
   const groupRegionPrefix = useId();
-  const taskForest = useMemo(
-    () => filterSyncedTaskForest(tasks, query, projectFilter, statusFilter),
-    [projectFilter, query, statusFilter, tasks],
-  );
+  const taskForest = useMemo(() => {
+    if (statusFilter === 'all') {
+      return [
+        ...filterSyncedTaskForest(tasks, query, projectFilter, 'open'),
+        ...filterSyncedTaskForest(tasks, query, projectFilter, 'completed'),
+      ];
+    }
+    return filterSyncedTaskForest(tasks, query, projectFilter, statusFilter);
+  }, [projectFilter, query, statusFilter, tasks]);
   const totalOpen = useMemo(() => tasks.filter((task) => !task.isCompleted).length, [tasks]);
   const totalCompleted = useMemo(() => tasks.filter((task) => task.isCompleted).length, [tasks]);
+  // 协议没有单独的 completedAt：今天已完成按「已完成且最后更新落在今天」统计真实数据。
+  const completedToday = useMemo(() => {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const from = dayStart.getTime();
+    return tasks.filter(
+      (task) => task.isCompleted && typeof task.updatedAt === 'number' && task.updatedAt >= from,
+    ).length;
+  }, [tasks]);
   const groups = useMemo(() => groupSyncedTaskForest(taskForest, projects), [projects, taskForest]);
+  const listCount = useMemo(() => {
+    const allGroups = groupSyncedTaskForest(buildSyncedTaskForest(tasks), projects);
+    return Math.max(projects.length, allGroups.length);
+  }, [projects, tasks]);
+  const projectFilterLabel =
+    projectFilter === ALL_PROJECTS
+      ? '全部清单'
+      : projectFilter === NO_PROJECT
+        ? '收件箱'
+        : (projects.find((project) => project.id === projectFilter)?.name ?? '全部清单');
   const forceGroupsOpen = query.trim().length > 0 || projectFilter !== ALL_PROJECTS;
   const allTaskForest = useMemo(() => buildSyncedTaskForest(tasks), [tasks]);
   const selectedTaskPath = useMemo(
@@ -159,7 +183,7 @@ export function TaskBrowser({
       opener?.focus();
     };
   }, [detailOpen]);
-  const selectStatusFilter = (next: TaskStatusFilter) => {
+  const selectStatusFilter = (next: TaskStatusFilter | 'all') => {
     setStatusFilter(next);
     setDetailOpen(false);
   };
@@ -235,6 +259,20 @@ export function TaskBrowser({
       <h2 className="sr-only" id="task-browser-title">
         任务
       </h2>
+      <div className="task-summary" role="group" aria-label="任务概览">
+        <div className="task-summary-item">
+          <strong className="task-summary-number">{totalOpen}</strong>
+          <small>待办任务</small>
+        </div>
+        <div className="task-summary-item">
+          <strong className="task-summary-number">{completedToday}</strong>
+          <small>今天已完成</small>
+        </div>
+        <div className="task-summary-item">
+          <strong className="task-summary-number">{listCount}</strong>
+          <small>任务清单</small>
+        </div>
+      </div>
       <div className="task-row-head">
         <label className="task-search">
           <Search aria-hidden="true" />
@@ -277,6 +315,15 @@ export function TaskBrowser({
           <span>已完成</span>
           <strong>{totalCompleted}</strong>
         </button>
+        <button
+          type="button"
+          className={statusFilter === 'all' ? 'is-active' : ''}
+          aria-pressed={statusFilter === 'all'}
+          onClick={() => selectStatusFilter('all')}
+        >
+          <span>全部</span>
+          <strong>{totalOpen + totalCompleted}</strong>
+        </button>
       </div>
 
       {mutationNotice && (
@@ -285,6 +332,11 @@ export function TaskBrowser({
         </p>
       )}
 
+      <div className="task-group-title">
+        <span>按清单组织</span>
+        <span>{projectFilterLabel}</span>
+      </div>
+
       {taskForest.length === 0 ? (
         <div className="task-empty">
           <p className="task-empty-line">
@@ -292,7 +344,9 @@ export function TaskBrowser({
               ? '还没有任务'
               : statusFilter === 'completed'
                 ? '没有符合条件的已完成任务'
-                : '没有符合条件的待办'}
+                : statusFilter === 'all'
+                  ? '没有符合条件的任务'
+                  : '没有符合条件的待办'}
           </p>
           {tasks.length === 0 ? (
             <button
@@ -343,6 +397,8 @@ export function TaskBrowser({
                           ancestorTitles={[]}
                           projects={projects}
                           selectedTaskId={selectedTaskId}
+                          canStart={canStart}
+                          pendingLocalCount={pendingLocalCount}
                           collapsedTasks={collapsedTasks}
                           selectedPathKeys={selectedPathKeys}
                           forceOpen={forceGroupsOpen}
@@ -723,6 +779,8 @@ function TaskBranch({
   ancestorTitles,
   projects,
   selectedTaskId,
+  canStart,
+  pendingLocalCount,
   collapsedTasks,
   selectedPathKeys,
   forceOpen,
@@ -736,6 +794,8 @@ function TaskBranch({
   ancestorTitles: readonly string[];
   projects: readonly SyncedTaskProject[];
   selectedTaskId: string;
+  canStart: boolean;
+  pendingLocalCount: number;
   collapsedTasks: ReadonlySet<string>;
   selectedPathKeys: ReadonlySet<string>;
   forceOpen: boolean;
@@ -792,9 +852,20 @@ function TaskBranch({
                         : `${totalCount} 项子任务`;
                     })()
                   : projectNameForTask(task, projects)}
-              {task.tags.length > 0 ? ` · ${task.tags.slice(0, 2).join(' · ')}` : ''}
+              {pendingLocalCount > 0 ? ' · 待同步' : ' · 本机已保存'}
             </small>
           </span>
+        </button>
+        <button
+          className="task-focus-action"
+          type="button"
+          aria-label={`关联 ${task.title} 并开始专注`}
+          onClick={actions.start}
+          disabled={!canStart}
+          title={canStart ? '关联并开始专注' : '仅在待机且实时连接已确认时可开始'}
+        >
+          <span>专注</span>
+          <span aria-hidden="true">→</span>
         </button>
         {hasChildren ? (
           <button
@@ -820,6 +891,8 @@ function TaskBranch({
               ancestorTitles={[...ancestorTitles, ...hiddenAncestorTitles, task.title]}
               projects={projects}
               selectedTaskId={selectedTaskId}
+              canStart={canStart}
+              pendingLocalCount={pendingLocalCount}
               collapsedTasks={collapsedTasks}
               selectedPathKeys={selectedPathKeys}
               forceOpen={forceOpen}

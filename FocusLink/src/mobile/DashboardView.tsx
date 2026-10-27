@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
-import { CalendarDays, ChevronRight, Play, X } from 'lucide-react';
+import { useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
+import { CalendarDays, Play, X } from 'lucide-react';
 import type { DayLedgerAnalytics, DayLedgerInterval } from '@shared/dayLedgerAnalytics';
 import type { SyncedTask } from '@shared/sync/taskSnapshotProtocol';
 import {
@@ -39,6 +39,18 @@ const DAY_PERIODS = [
   { label: '深夜', startHour: 22, endHour: 24 },
 ] as const;
 
+/** 今天时段轨道：每 6 小时一条竖线 + 五个整点标签。 */
+const HOUR_RULES = [0, 6, 12, 18, 24] as const;
+const HOUR_LABELS = ['00:00', '06:00', '12:00', '18:00', '24:00'] as const;
+
+interface HourSlot {
+  key: string;
+  kind: 'focus' | 'pause';
+  left: number;
+  width: number;
+  label: string;
+}
+
 interface DashboardViewProps {
   records: readonly CachedBundle[];
   ready: boolean;
@@ -66,7 +78,6 @@ export function DashboardView({
   const [customStart, setCustomStart] = useState(() => dayKey(defaultBounds.start));
   const [customEnd, setCustomEnd] = useState(() => dayKey(defaultBounds.end - 1));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const customBounds = useMemo(
     () => mobileCustomStatsRange(customStart, customEnd),
     [customEnd, customStart],
@@ -143,8 +154,6 @@ export function DashboardView({
     selectedDate && selectedLedger
       ? formatFullDate(selectedLedger.date)
       : formatRangeLabel(bounds.start, bounds.end, range);
-  const scopeNoun =
-    selectedDate && selectedLedger ? formatMonthDay(selectedLedger.date) : rangeNoun(range);
 
   const selectRange = (nextRange: DashboardRangeChoice) => {
     setRange(nextRange);
@@ -163,19 +172,16 @@ export function DashboardView({
     setSelectedDate(null);
   };
 
-  useEffect(() => {
-    if (!detailsOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDetailsOpen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [detailsOpen]);
+  // 今天的时段：只画当天的专注 / 暂停区间；今天没有记录时整块不渲染。
+  const todayAnalytics = useMemo(
+    () =>
+      buildMobileDashboardInRange(records, mobileStatsRange('today', referenceNow), referenceNow),
+    [records, referenceNow],
+  );
+  const todayHourSlots = useMemo(
+    () => hourSlotsOf(todayAnalytics.dayLedgers.at(-1)),
+    [todayAnalytics],
+  );
 
   return (
     <section className="dashboard-view view-surface" aria-labelledby="mobile-dashboard-title">
@@ -184,63 +190,62 @@ export function DashboardView({
         时间账本
       </h2>
 
-      {/* 一句话范围说明：只在标题下方出现一次，不再随各区块重复。 */}
-      <p className="dashboard-scope-caption">
-        {scopeNoun} · {formatRangeCaption(bounds, selectedDate)}
-      </p>
-
-      <div id="dashboard-range-shell" className="dashboard-range-shell">
-        {/* 文字分段：无胶囊、无边框，当前项靠字重与 2px 下划线标识。 */}
-        <div className="dashboard-tabs" role="group" aria-label="统计范围">
-          {RANGE_OPTIONS.map((option) => (
+      {/* 日期范围在左、时间分段在右：范围文案整页只出现这一次。 */}
+      <div className="dashboard-topbar">
+        <p className="dashboard-scope-caption">{formatRangeCaption(bounds, selectedDate)}</p>
+        <div className="dashboard-range-shell">
+          {/* 文字分段：无胶囊、无边框，当前项靠字重与 2px 底线标识。 */}
+          <div className="dashboard-tabs" role="group" aria-label="统计范围">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                type="button"
+                key={option.value}
+                className={range === option.value ? 'is-active' : ''}
+                aria-pressed={range === option.value}
+                onClick={() => selectRange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
             <button
               type="button"
-              key={option.value}
-              className={range === option.value ? 'is-active' : ''}
-              aria-pressed={range === option.value}
-              onClick={() => selectRange(option.value)}
+              className={`dashboard-custom-range-trigger ${range === 'custom' ? 'is-active' : ''}`}
+              aria-pressed={range === 'custom'}
+              onClick={() => selectRange('custom')}
             >
-              {option.label}
+              <CalendarDays aria-hidden="true" />
+              <span>自定义</span>
             </button>
-          ))}
-          <button
-            type="button"
-            className={`dashboard-custom-range-trigger ${range === 'custom' ? 'is-active' : ''}`}
-            aria-pressed={range === 'custom'}
-            onClick={() => selectRange('custom')}
-          >
-            <CalendarDays aria-hidden="true" />
-            <span>自定义</span>
-          </button>
-        </div>
-        {range === 'custom' && (
-          <div className="dashboard-custom-range" role="group" aria-label="自定义统计日期">
-            <label>
-              <span>开始日期</span>
-              <input
-                type="date"
-                value={customStart}
-                max={dayKey(referenceNow)}
-                aria-invalid={customBounds === null}
-                onChange={(event) => updateCustomStart(event.target.value)}
-              />
-            </label>
-            <i aria-hidden="true">至</i>
-            <label>
-              <span>结束日期</span>
-              <input
-                type="date"
-                value={customEnd}
-                min={customStart || undefined}
-                max={dayKey(referenceNow)}
-                aria-invalid={customBounds === null}
-                onChange={(event) => updateCustomEnd(event.target.value)}
-              />
-            </label>
-            {customBounds === null && <p role="alert">请选择有效的开始和结束日期。</p>}
           </div>
-        )}
+        </div>
       </div>
+      {range === 'custom' && (
+        <div className="dashboard-custom-range" role="group" aria-label="自定义统计日期">
+          <label>
+            <span>开始日期</span>
+            <input
+              type="date"
+              value={customStart}
+              max={dayKey(referenceNow)}
+              aria-invalid={customBounds === null}
+              onChange={(event) => updateCustomStart(event.target.value)}
+            />
+          </label>
+          <i aria-hidden="true">至</i>
+          <label>
+            <span>结束日期</span>
+            <input
+              type="date"
+              value={customEnd}
+              min={customStart || undefined}
+              max={dayKey(referenceNow)}
+              aria-invalid={customBounds === null}
+              onChange={(event) => updateCustomEnd(event.target.value)}
+            />
+          </label>
+          {customBounds === null && <p role="alert">请选择有效的开始和结束日期。</p>}
+        </div>
+      )}
 
       {!ready ? (
         <DashboardSkeleton />
@@ -253,25 +258,22 @@ export function DashboardView({
                 <strong className="dashboard-primary-value">
                   {formatDurationText(dashboardFocus)}
                 </strong>
-                <p className="dashboard-primary-note">
-                  {scopeNoun} • {sessionCount} 场专注
-                </p>
               </section>
 
-              <dl className="dashboard-summary" aria-label="专注摘要">
+              <div className="dashboard-summary" aria-label="专注摘要">
                 <div className="dashboard-summary-item">
-                  <dt>专注次数</dt>
-                  <dd>{sessionCount} 次</dd>
+                  <strong>{sessionCount}</strong>
+                  <span>专注次数</span>
                 </div>
                 <div className="dashboard-summary-item">
-                  <dt>平均每次</dt>
-                  <dd>{formatDurationText(averageFocus)}</dd>
+                  <strong>{formatDurationText(averageFocus)}</strong>
+                  <span>平均时长</span>
                 </div>
                 <div className="dashboard-summary-item">
-                  <dt>最长单次</dt>
-                  <dd>{formatDurationText(longestFocus)}</dd>
+                  <strong>{formatDurationText(longestFocus)}</strong>
+                  <span>最长连续</span>
                 </div>
-              </dl>
+              </div>
 
               <section
                 className="dashboard-band dashboard-trend"
@@ -289,28 +291,55 @@ export function DashboardView({
                 />
               </section>
 
-              <section
-                className="dashboard-band dashboard-recent"
-                aria-labelledby="dashboard-recent-title"
-              >
-                <h3 id="dashboard-recent-title" className="dashboard-group-label">
-                  最近记录
-                </h3>
-                <RecentSessions sessions={recentSessions} />
-              </section>
-
-              <div className="dashboard-details-entry">
-                <button
-                  type="button"
-                  className="m-text-action dashboard-details-action"
-                  aria-expanded={detailsOpen}
-                  aria-controls="dashboard-details"
-                  onClick={() => setDetailsOpen(true)}
+              {todayHourSlots.length > 0 && (
+                <section
+                  className="dashboard-band dashboard-hours"
+                  aria-labelledby="dashboard-hours-title"
                 >
-                  <span>查看时间轴与账本</span>
-                  <ChevronRight aria-hidden="true" />
-                </button>
-              </div>
+                  <div className="dashboard-section-head">
+                    <h3 id="dashboard-hours-title" className="dashboard-group-label">
+                      今天的时段
+                    </h3>
+                    <p className="dashboard-hours-legend">
+                      <span>
+                        <i className="is-focus" aria-hidden="true" />
+                        专注
+                      </span>
+                      <span>
+                        <i className="is-pause" aria-hidden="true" />
+                        暂停
+                      </span>
+                    </p>
+                  </div>
+                  <div
+                    className="dashboard-hour-map"
+                    role="img"
+                    aria-label={`今天的 24 小时时段：${todayHourSlots.map((slot) => `${slot.kind === 'pause' ? '暂停' : '专注'} ${slot.label}`).join('；')}`}
+                  >
+                    {HOUR_RULES.map((hour) => (
+                      <i
+                        key={hour}
+                        className="dashboard-hour-rule"
+                        style={{ left: `${(hour / 24) * 100}%` }}
+                        aria-hidden="true"
+                      />
+                    ))}
+                    {todayHourSlots.map((slot) => (
+                      <i
+                        key={slot.key}
+                        className={`dashboard-hour-slot ${slot.kind === 'pause' ? 'is-pause' : 'is-focus'}`}
+                        style={{ left: `${slot.left}%`, width: `${slot.width}%` }}
+                        aria-hidden="true"
+                      />
+                    ))}
+                  </div>
+                  <div className="dashboard-hour-labels" aria-hidden="true">
+                    {HOUR_LABELS.map((label) => (
+                      <span key={label}>{label}</span>
+                    ))}
+                  </div>
+                </section>
+              )}
             </>
           ) : (
             <div className="dashboard-empty" role="status">
@@ -324,38 +353,29 @@ export function DashboardView({
             </div>
           )}
 
-          {/* 详细分析不删功能：全部收进底部 sheet，默认隐藏但保留在文档里。 */}
-          <div id="dashboard-details" className="dashboard-details" hidden={!detailsOpen}>
-            <button
-              type="button"
-              className="m-sheet-scrim"
-              aria-label="关闭时间轴与账本"
-              onClick={() => setDetailsOpen(false)}
-            />
-            <div
-              className="m-sheet dashboard-details-sheet"
-              role="dialog"
-              aria-modal="true"
-              aria-label="时间轴与账本"
-            >
-              <header className="dashboard-details-head">
-                <h2>时间轴与账本</h2>
-                <button
-                  type="button"
-                  className="dashboard-details-close"
-                  aria-label="关闭时间轴与账本"
-                  onClick={() => setDetailsOpen(false)}
-                >
-                  <X aria-hidden="true" />
-                </button>
-              </header>
-              <div className="dashboard-details-body">
+          {/* 详细分析不删功能：折叠到页尾次级区，不占首屏。 */}
+          {hasFocusData && (
+            <details id="dashboard-details" className="dashboard-more">
+              <summary className="dashboard-more-summary">
+                <span>更多明细</span>
+                <span className="dashboard-more-hint">时间轴 / 空档 / 任务投入 / 账本</span>
+              </summary>
+              <div className="dashboard-more-body">
                 {selectedDate && selectedLedger && (
                   <SelectedDaySummary
                     ledger={selectedLedger}
                     onClear={() => setSelectedDate(null)}
                   />
                 )}
+                <section
+                  className="dashboard-band dashboard-recent"
+                  aria-labelledby="dashboard-recent-title"
+                >
+                  <h3 id="dashboard-recent-title" className="dashboard-group-label">
+                    最近记录
+                  </h3>
+                  <RecentSessions sessions={recentSessions} />
+                </section>
                 <DayLedgerTimeline
                   key={selectedLedger?.date ?? 'no-ledger'}
                   ledger={selectedLedger}
@@ -390,8 +410,8 @@ export function DashboardView({
                   scopeLabel={scopeLabel}
                 />
               </div>
-            </div>
-          </div>
+            </details>
+          )}
         </>
       )}
     </section>
@@ -427,11 +447,18 @@ function DailyLedgerTrend({
         const pause = ledger.totals.pauseMs + ledger.totals.estimatedPauseMs;
         const scale = focus > 0 ? Math.max(8, Math.round((focus / max) * 100)) : 0;
         const selected = selectedDate === ledger.date;
+        const tone = [
+          focus > 0 ? 'has-focus' : 'is-empty',
+          focus > 0 && focus === max ? 'is-max' : '',
+          selected ? 'is-selected' : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
         return (
           <button
             type="button"
             key={ledger.date}
-            className={`${focus > 0 ? 'has-focus' : 'is-empty'}${selected ? ' is-selected' : ''}`}
+            className={tone}
             aria-pressed={selected}
             aria-label={`${formatFullDate(ledger.date)}，专注 ${formatDurationText(focus)}，暂停 ${formatDurationText(pause)}，空档 ${formatDurationText(ledger.totals.gapMs)}${ledger.estimated ? '，含估算' : ''}`}
             onClick={() => onSelect(ledger.date)}
@@ -445,6 +472,23 @@ function DailyLedgerTrend({
       })}
     </div>
   );
+}
+
+function hourSlotsOf(ledger: DayLedgerAnalytics | undefined): HourSlot[] {
+  if (!ledger) return [];
+  const span = Math.max(1, ledger.dayEndedAt - ledger.dayStartedAt);
+  const slots: HourSlot[] = [];
+  for (const interval of ledger.intervals) {
+    if (interval.kind === 'gap') continue;
+    slots.push({
+      key: `${interval.kind}-${interval.startedAt}-${interval.endedAt}`,
+      kind: interval.kind,
+      left: ((interval.startedAt - ledger.dayStartedAt) / span) * 100,
+      width: Math.max(0.3, (interval.durationMs / span) * 100),
+      label: `${formatClock(interval.startedAt)}–${formatClock(interval.endedAt)}`,
+    });
+  }
+  return slots;
 }
 
 function RecentSessions({
@@ -964,25 +1008,6 @@ function sessionDayLabel(timestamp: number): string {
   if (diffDays === 0) return '今天';
   if (diffDays === 1) return '昨天';
   return formatMonthDay(dayKey(timestamp));
-}
-
-function rangeNoun(range: DashboardRangeChoice): string {
-  switch (range) {
-    case 'today':
-      return '今日';
-    case 'yesterday':
-      return '昨日';
-    case '7d':
-      return '近 7 天';
-    case 'previous-7d':
-      return '上个 7 天';
-    case '30d':
-      return '近 30 天';
-    case 'previous-30d':
-      return '上个 30 天';
-    case 'custom':
-      return '自定义范围';
-  }
 }
 
 function formatRangeLabel(start: number, end: number, range: DashboardRangeChoice): string {

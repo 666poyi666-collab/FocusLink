@@ -229,6 +229,22 @@ html[data-runtime='mobile-focus'] .mobile-sync-pill:hover {
   background: rgb(var(--app-surface-3));
 }
 
+/* 顶栏状态点里的已专注时长：等宽数字，暂停态用暂停色，宽度收敛不挤标题。 */
+html[data-runtime='mobile-focus'] .mobile-sync-pill-time {
+  font-family: var(--font-number);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+html[data-runtime='mobile-focus'] .mobile-sync-pill-state {
+  color: var(--m-muted);
+}
+
+html[data-runtime='mobile-focus'] .mobile-sync-pill[class*='state-paused'] .mobile-sync-pill-time,
+html[data-runtime='mobile-focus'] .mobile-sync-pill[class*='state-paused'] .mobile-sync-pill-state {
+  color: var(--m-pause);
+}
+
 html[data-runtime='mobile-focus'] .network-dot {
   flex: 0 0 auto;
   width: 6px;
@@ -1121,6 +1137,61 @@ html[data-runtime='mobile-focus'] .focus-console.phase-paused .mobile-chronograp
   background: var(--m-pause);
 }
 
+/* 八种 TimerDial 与「标准读数」按 timerStyle 切换：手机宽度下统一收一层尺寸，
+   保证不溢出、不截断；TimerDial 组件本身不动。 */
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage {
+  display: grid;
+  width: 100%;
+  min-height: 116px;
+  place-items: center;
+  container-type: inline-size;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .timer-dial {
+  max-width: 100%;
+  color: var(--m-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  user-select: none;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .timer-dial.state-running {
+  color: var(--m-accent);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .timer-dial.state-paused {
+  color: var(--m-pause);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-standard,
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-thin,
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-segment,
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-flip,
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-pixel,
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-draft {
+  font-size: clamp(44px, 19cqi, 76px);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-standard {
+  width: min(100%, 460px);
+  min-width: 0;
+  grid-template-columns: minmax(36px, 0.28fr) minmax(0, 1fr) minmax(36px, 0.28fr);
+  gap: var(--m-2);
+  padding: var(--m-3) var(--m-3) var(--m-2);
+  border: 1px solid var(--m-border);
+  border-radius: var(--m-r-md);
+  background: var(--m-surface-2);
+  color: var(--m-text);
+  box-shadow: none;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .instrument-chrome-label,
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .instrument-chrome-state {
+  color: var(--m-muted);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
 /* ---------- 3 · 主操作 ---------- */
 
 html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .focus-actions {
@@ -1181,9 +1252,9 @@ html[data-runtime='mobile-focus'] .focus-console .focus-actions > .finish-action
   transform: scale(0.99);
 }
 
-/* ---------- 4 · 时间之带（含近景/远景切换、实时时钟） ---------- */
+/* ---------- 4 · 时间之带：流线 / 光栅 / 时段 + 视野滑杆 + 拖动平移 ---------- */
 
-html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .temporal-ribbon {
+html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .ribbon-area {
   position: static;
   display: block;
   width: 100%;
@@ -1194,21 +1265,18 @@ html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .temporal-r
   border-top: 1px solid var(--m-border);
   border-radius: 0;
   background: transparent;
-  overflow: hidden;
+  overflow: visible;
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-caption {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+html[data-runtime='mobile-focus'] .focus-console .ribbon-head {
+  display: flex;
   align-items: baseline;
-  gap: var(--m-1) var(--m-3);
-  margin: 0;
-  padding: 0 0 var(--m-2);
+  justify-content: space-between;
+  gap: var(--m-3);
+  margin: 0 0 var(--m-1);
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-title {
-  grid-column: 1;
-  grid-row: 1;
+html[data-runtime='mobile-focus'] .focus-console .ribbon-heading {
   margin: 0;
   color: var(--m-text);
   font-family: var(--font-ui);
@@ -1217,41 +1285,14 @@ html[data-runtime='mobile-focus'] .focus-console .ribbon-title {
   font-weight: 600;
 }
 
-/* 实时时钟与刻度说明都是解释性文字：首屏要让位给读数、按钮与三时间，这里直接不显示。 */
-html[data-runtime='mobile-focus'] .focus-console .ribbon-live-clock {
-  display: none;
-}
-
-html[data-runtime='mobile-focus'] .focus-console .ribbon-scale-tag {
-  display: none;
-}
-
-/* 图例属于解释性文字，首屏不留。 */
-html[data-runtime='mobile-focus'] .focus-console .ribbon-legend {
-  display: none;
-}
-
-/* 近景 / 远景不再做成填色胶囊：文字 + 字重 + 底线三重区分，和任务页分段一致。 */
-html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch {
-  grid-column: 1;
-  grid-row: 2;
-  justify-self: start;
+/* 三种模式与任务页分段同一套语言：accent 文字 + 600 + 底部 2px 线。 */
+html[data-runtime='mobile-focus'] .focus-console .ribbon-modes {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--m-5);
-  height: auto;
-  margin: var(--m-1) 0 0;
-  padding: 0;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: none;
+  gap: var(--m-4);
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch button {
+html[data-runtime='mobile-focus'] .focus-console .ribbon-mode {
   position: relative;
-  flex: 0 0 auto;
-  min-width: 0;
   min-height: var(--m-hit);
   margin: 0;
   padding: 0;
@@ -1260,64 +1301,150 @@ html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch button {
   background: none;
   color: var(--m-muted);
   font-family: var(--font-ui);
-  font-size: var(--m-body-size);
+  font-size: var(--m-aux-size);
+  line-height: 20px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 100ms ease;
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch button.active {
-  background: none;
-  color: var(--m-text);
+html[data-runtime='mobile-focus'] .focus-console .ribbon-mode.is-active {
+  color: var(--m-accent);
   font-weight: 600;
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch button.active::after {
+html[data-runtime='mobile-focus'] .focus-console .ribbon-mode.is-active::after {
   content: '';
   position: absolute;
   right: 0;
-  bottom: 6px;
+  bottom: 12px;
   left: 0;
   height: 2px;
   background: var(--m-accent);
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-html[data-runtime='mobile-focus'] .focus-console .ribbon-view-switch button:focus-visible {
+html[data-runtime='mobile-focus'] .focus-console .ribbon-mode:focus-visible {
   outline: 2px solid var(--m-accent);
-  outline-offset: -2px;
+  outline-offset: -4px;
 }
 
-html[data-runtime='mobile-focus'] .focus-console .ribbon-scale-tag {
-  grid-column: 2;
-  grid-row: 2;
-  justify-self: end;
-  align-self: center;
+html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 120px;
   margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--m-muted);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 20px;
-  white-space: nowrap;
 }
 
 html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas {
   display: block;
   width: 100%;
-  height: 96px;
+  height: 100%;
   margin: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+  /* 横向拖动自己处理平移，纵向仍交给页面滚动。 */
+  touch-action: pan-y;
+  cursor: grab;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas:active {
+  cursor: grabbing;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .ribbon-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--m-3);
+  margin: 0;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .ribbon-hint {
+  color: var(--m-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .ribbon-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m-2);
+  color: var(--m-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 视野滑杆：1px 轨道 + 20px accent 圆点，不靠阴影或渐变。 */
+html[data-runtime='mobile-focus'] .focus-console .ribbon-zoom input[type='range'] {
+  width: 104px;
+  height: var(--m-hit);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus']
+  .focus-console
+  .ribbon-zoom
+  input[type='range']::-webkit-slider-runnable-track {
+  height: 1px;
+  border: 0;
+  border-radius: 0;
+  background: var(--m-border);
+}
+
+html[data-runtime='mobile-focus']
+  .focus-console
+  .ribbon-zoom
+  input[type='range']::-webkit-slider-thumb {
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--m-accent);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+html[data-runtime='mobile-focus']
+  .focus-console
+  .ribbon-zoom
+  input[type='range']::-moz-range-track {
+  height: 1px;
+  border: 0;
+  background: var(--m-border);
+}
+
+html[data-runtime='mobile-focus']
+  .focus-console
+  .ribbon-zoom
+  input[type='range']::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--m-accent);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .ribbon-zoom input[type='range']:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+  border-radius: var(--m-r-sm);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .ribbon-phases {
+  margin: 0;
+  padding: 0;
+  list-style: decimal;
 }
 
 /* ---------- 5 · 三时间一行 ---------- */
@@ -1446,22 +1573,26 @@ html[data-runtime='mobile-focus'] .focus-console .live-context {
   color: inherit;
 }
 
+/* 命令回执必须可见（v1.7.0 修过「回执被视觉隐藏」），但不能把首屏顶出 915：
+   单行、紧凑、超长省略；完整内容仍由 role=status 播报。 */
 html[data-runtime='mobile-focus'] .focus-console .focus-command-notice {
   position: static;
   width: auto;
   height: auto;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  overflow: visible;
+  max-height: 20px;
+  margin: var(--m-2) 0 0;
+  padding: 0 var(--m-3);
+  overflow: hidden;
   clip: auto;
   clip-path: none;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
   color: var(--m-text);
   background: var(--m-surface-2);
-  border-radius: var(--m-r-md);
+  border-radius: var(--m-r-sm);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 20px;
 }
 
 html[data-runtime='mobile-focus'] .focus-command-notice button {
@@ -1750,8 +1881,8 @@ html[data-runtime='mobile-focus'] .focus-console .focus-task-clear {
     gap: var(--m-5);
   }
 
-  html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas {
-    height: 88px;
+  html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas-wrap {
+    height: 108px;
   }
 }
 
@@ -1790,7 +1921,7 @@ html[data-runtime='mobile-focus'] .focus-console .focus-task-clear {
     grid-row: 3;
   }
 
-  html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .temporal-ribbon {
+  html[data-runtime='mobile-focus'] .focus-console .focus-instrument > .ribbon-area {
     grid-column: 2;
     grid-row: 1 / span 3;
     align-self: start;
@@ -1817,8 +1948,8 @@ html[data-runtime='mobile-focus'] .focus-console .focus-task-clear {
     font-size: 44px;
   }
 
-  html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas {
-    height: 80px;
+  html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas-wrap {
+    height: 96px;
   }
 }
 /* ===== END SECTION: FOCUS ===== */
@@ -1846,6 +1977,54 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-head {
   gap: var(--m-3);
   margin: 0 0 var(--m-4);
   padding: 0;
+}
+
+/* ---------- 1b. 页首三数字：待办任务 / 今天已完成 / 任务清单 ---------- */
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--m-3);
+  box-sizing: border-box;
+  min-height: 64px;
+  margin: 0 0 var(--m-4);
+  padding: 0 0 var(--m-3);
+  border: 0;
+  border-bottom: 1px solid rgb(var(--app-border) / 0.5);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-summary-number {
+  display: block;
+  margin: 0;
+  color: var(--m-text);
+  font-family: var(--font-number);
+  font-size: 32px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 36px;
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-summary-item > small {
+  display: block;
+  margin: 0;
+  color: var(--m-muted);
+  font-size: var(--m-aux-size);
+  font-weight: 400;
+  line-height: var(--m-aux-line);
 }
 
 /* 页标题已经在顶栏，页面里不再重复一遍大标题：搜索框与「新建」并到同一行。 */
@@ -1975,15 +2154,14 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-search:f
 html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-status-switch {
   display: flex;
   align-items: stretch;
-  gap: 0;
+  gap: var(--m-5);
   box-sizing: border-box;
   width: 100%;
   height: var(--m-seg);
   min-height: var(--m-seg);
-  margin: 0 0 var(--m-5);
+  margin: 0 0 var(--m-3);
   padding: 0;
   border: 0;
-  border-bottom: 1px solid rgb(var(--app-border) / 0.5);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -1992,12 +2170,12 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-status-s
 html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-status-switch > button {
   position: relative;
   display: inline-flex;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  gap: var(--m-2);
+  gap: var(--m-1);
   box-sizing: border-box;
-  min-width: 0;
+  min-width: var(--m-hit);
   min-height: var(--m-seg);
   margin: 0;
   padding: 0;
@@ -2006,7 +2184,7 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-status-s
   background: transparent;
   color: var(--m-muted);
   font-family: inherit;
-  font-size: var(--m-body-size);
+  font-size: var(--m-aux-size);
   font-weight: 500;
   line-height: var(--m-aux-line);
   box-shadow: none;
@@ -2053,7 +2231,7 @@ html[data-runtime='mobile-focus']
   content: '';
   position: absolute;
   right: 0;
-  bottom: -1px;
+  bottom: 0;
   left: 0;
   height: 2px;
   border-radius: 1px;
@@ -2130,6 +2308,29 @@ html[data-runtime='mobile-focus']
   height: 18px;
   margin: 0;
   stroke-width: 2;
+}
+
+/* ---------- 5b. 清单区标题：小号 muted 标签 + 右侧当前视图提示 ---------- */
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-group-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--m-3);
+  margin: 0 0 var(--m-2);
+  padding: 0;
+  color: var(--m-muted);
+  font-size: var(--m-aux-size);
+  font-weight: 400;
+  line-height: var(--m-aux-line);
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-group-title > span {
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- 6. 清单分组标签：12px/600/字距，无背景无边框 ---------- */
@@ -2286,11 +2487,12 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-tree-bra
 
 html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-row {
   display: grid;
-  grid-template-columns: var(--m-hit) minmax(0, 1fr) auto;
+  grid-template-columns: var(--m-hit) minmax(0, 1fr) auto auto;
   align-items: center;
   column-gap: 0;
   box-sizing: border-box;
   min-height: 64px;
+  height: 64px;
   margin: 0;
   padding: 4px 0 4px calc(var(--task-depth, 0) * var(--m-5));
   border: 0;
@@ -2368,6 +2570,8 @@ html[data-runtime='mobile-focus']
   > strong {
   color: var(--m-muted);
   font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-row-main {
@@ -2377,7 +2581,7 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-row-main
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: 56px;
+  min-height: var(--m-hit);
   margin: 0;
   padding: 0 var(--m-2) 0 0;
   border: 0;
@@ -2391,6 +2595,37 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-row-main
 
 html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-row-main:active {
   opacity: 0.6;
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-focus-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  min-width: 64px;
+  min-height: var(--m-hit);
+  margin: 0;
+  padding: 0 var(--m-2);
+  border: 0;
+  border-radius: var(--m-r-sm);
+  background: transparent;
+  color: var(--m-accent);
+  font-family: inherit;
+  font-size: var(--m-aux-size);
+  font-weight: 600;
+  line-height: var(--m-aux-line);
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-focus-action:active {
+  opacity: 0.6;
+}
+
+html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-focus-action:disabled {
+  color: var(--m-muted);
+  opacity: 0.55;
 }
 
 /* ---------- 8. 勾选圈：48 命中、20 圆点、完成填实 ---------- */
@@ -2418,10 +2653,10 @@ html[data-runtime='mobile-focus'] .mobile-workspace .task-browser .task-mobile-c
   content: '';
   display: block;
   box-sizing: border-box;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border: 1.5px solid rgb(var(--app-muted) / 0.55);
-  border-radius: 50%;
+  border-radius: 7px;
   background: transparent;
   transition:
     border-color 120ms ease,
@@ -5262,6 +5497,379 @@ html[data-runtime='mobile-focus'] .dashboard-view .mobile-day-map-axis > span {
   font-family: var(--font-number);
   font-size: 11px;
   line-height: 16px;
+}
+
+/* ---------- 1.7.1 看板首屏：日期+分段一行 / 三列摘要 / 周趋势 / 今天的时段 ---------- */
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--m-3);
+  min-height: var(--m-seg);
+  margin: 0;
+  padding: 0 0 2px;
+  border: 0;
+  background: none;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-scope-caption {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: var(--m-muted);
+  font-size: var(--m-aux-size);
+  line-height: var(--m-aux-line);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-range-shell {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-tabs {
+  gap: var(--m-4);
+  padding: 0 0 2px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-tabs > button {
+  min-height: var(--m-seg);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-tabs > button.is-active,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-tabs > button[aria-pressed='true'] {
+  font-weight: 600;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hero .dashboard-primary-label {
+  margin: 0 0 var(--m-1);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hero .dashboard-primary-value {
+  font-size: 44px;
+  line-height: 48px;
+  font-weight: 650;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: var(--m-3);
+  min-height: 64px;
+  margin: 0;
+  padding: 0 0 var(--m-2);
+  border: 0;
+  border-bottom: 1px solid rgb(var(--app-border) / 0.5);
+  background: none;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-summary-item > strong {
+  color: var(--m-text);
+  font-family: var(--font-number);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-summary-item > span {
+  color: var(--m-muted);
+  font-size: var(--m-aux-size);
+  line-height: var(--m-aux-line);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend {
+  height: 140px;
+  gap: var(--m-2);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--app-border) / 0.5);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button {
+  gap: var(--m-2);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-bar > i.focus {
+  width: 20px;
+  height: 2px;
+  border-radius: 6px 6px 0 0;
+  background: var(--m-border);
+}
+
+html[data-runtime='mobile-focus']
+  .dashboard-view
+  .daily-ledger-trend
+  > button.has-focus
+  .daily-ledger-bar
+  > i.focus {
+  background: var(--m-accent);
+  opacity: 0.5;
+}
+
+html[data-runtime='mobile-focus']
+  .dashboard-view
+  .daily-ledger-trend
+  > button.is-max
+  .daily-ledger-bar
+  > i.focus {
+  opacity: 1;
+}
+
+html[data-runtime='mobile-focus']
+  .dashboard-view
+  .daily-ledger-trend
+  > button.is-empty
+  .daily-ledger-bar
+  > i.focus {
+  background: var(--m-border);
+  opacity: 1;
+}
+
+html[data-runtime='mobile-focus']
+  .dashboard-view
+  .daily-ledger-trend
+  > button.is-selected
+  .daily-ledger-bar
+  > i.focus {
+  outline: 2px solid var(--m-text);
+  outline-offset: 2px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button > small {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--m-3);
+  margin: 0 0 var(--m-3);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-section-head .dashboard-group-label {
+  margin: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hours-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--m-3);
+  margin: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hours-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m-1);
+  color: var(--m-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hours-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hours-legend i.is-focus {
+  background: var(--m-accent);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hours-legend i.is-pause {
+  background: var(--m-pause);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hour-map {
+  position: relative;
+  height: 72px;
+  margin: 0 0 var(--m-2);
+  border-bottom: 1px solid rgb(var(--app-border) / 0.5);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hour-rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgb(var(--app-border) / 0.5);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hour-slot {
+  position: absolute;
+  height: 13px;
+  border-radius: 5px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hour-slot.is-focus {
+  top: 18px;
+  background: var(--m-accent);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hour-slot.is-pause {
+  top: 40px;
+  background: var(--m-pause);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hour-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--m-muted);
+  font-family: var(--font-number);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more {
+  margin: var(--m-5) 0 0;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid rgb(var(--app-border) / 0.5);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--m-3);
+  min-height: var(--m-hit);
+  margin: 0;
+  padding: 0;
+  color: var(--m-muted);
+  font-family: var(--font-ui);
+  font-size: var(--m-aux-size);
+  line-height: var(--m-aux-line);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more-summary::-webkit-details-marker {
+  display: none;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more-summary::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+html[data-runtime='mobile-focus']
+  .dashboard-view
+  .dashboard-more[open]
+  .dashboard-more-summary::after {
+  transform: rotate(-135deg);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more-hint {
+  margin-left: auto;
+  color: var(--m-muted);
+  font-weight: 400;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-5);
+  padding: var(--m-4) 0 var(--m-5);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more-body > * {
+  flex: 0 0 auto;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-scope-caption {
+  flex: 0 1 auto;
+  max-width: 56%;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-range-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-tabs {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+html[data-runtime='mobile-focus']
+  .dashboard-view
+  .dashboard-summary-item
+  + .dashboard-summary-item {
+  padding-left: 0;
+  border: 0;
+}
+
+/* 412 宽下 7 个范围放不进一行：日期说明独占一行，分段换到第二行（合计仍 ≤96） */
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: var(--m-1);
+  min-height: 0;
+  padding: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-scope-caption {
+  flex: 1 1 100%;
+  max-width: 100%;
+  white-space: normal;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-topbar .dashboard-range-shell {
+  flex: 1 1 100%;
+  max-width: 100%;
+}
+
+/* 摘要已有下边线，趋势/时段分区不再重复画顶线；首屏整体收紧 12px 节奏 */
+html[data-runtime='mobile-focus'] .dashboard-view {
+  gap: var(--m-3);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-trend,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-hours {
+  border-top: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band.dashboard-trend,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band.dashboard-hours {
+  border-top: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more:not([open]) > *:not(summary) {
+  display: none;
 }
 
 /* ===== END SECTION: INSIGHTS ===== */

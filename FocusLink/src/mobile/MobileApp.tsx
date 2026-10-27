@@ -2666,20 +2666,31 @@ export function MobileApp() {
   // 没有活动会话时完全移除。计时只在可见时按秒推进，页面不可见时不占帧。
   const [activityNow, setActivityNow] = useState(() => Date.now());
   const activityState = displaySnapshot?.state ?? 'idle';
-  const activityVisible =
-    activeView !== 'focus' && (activityState === 'running' || activityState === 'paused');
+  const activityActive = activityState === 'running' || activityState === 'paused';
+  const activityVisible = activeView !== 'focus' && activityActive;
   useEffect(() => {
-    if (!activityVisible) return undefined;
+    // 顶栏状态点在任何页面都要显示已专注时长，所以只要会话在跑就按秒推进；没有会话时完全不启时器。
+    if (!activityActive) return undefined;
     setActivityNow(Date.now());
     const timer = window.setInterval(() => setActivityNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [activityVisible]);
+  }, [activityActive]);
   const liveActivity = useMemo(() => {
     if (!activityVisible || !displaySnapshot) return null;
     const durations = projectLiveFocusDurations(displaySnapshot, activityNow);
     const title = displaySnapshot.title?.trim() || displaySnapshot.taskTitle?.trim() || '自由专注';
     return { state: activityState, title, elapsedMs: durations.primaryElapsedMs };
   }, [activityState, activityNow, activityVisible, displaySnapshot]);
+  // 顶栏只保留一个状态点：运行/暂停时显示已专注时长 + 状态词，空闲时显示同步状态。
+  const sessionChip = useMemo(() => {
+    if (!activityActive || !displaySnapshot) return null;
+    const durations = projectLiveFocusDurations(displaySnapshot, activityNow);
+    return {
+      state: activityState,
+      elapsed: formatClockDuration(durations.primaryElapsedMs),
+      label: activityState === 'paused' ? '已暂停' : '专注中',
+    };
+  }, [activityActive, activityNow, activityState, displaySnapshot]);
 
   return (
     <div className={`mobile-shell view-${activeView}${liveActivity ? ' has-live-activity' : ''}`}>
@@ -2707,15 +2718,27 @@ export function MobileApp() {
                 : '本机模式；点击打开多端同步'
             }
             aria-label={
-              configured
-                ? `多端同步：${syncActivity.detail ?? connectionTitle(liveConnection)}，点击刷新`
-                : '当前为本机模式，点击打开多端同步'
+              sessionChip
+                ? `本次专注 ${sessionChip.elapsed}，${sessionChip.label}；点击打开本机与同步状态`
+                : configured
+                  ? `多端同步：${syncActivity.detail ?? connectionTitle(liveConnection)}，点击刷新`
+                  : '当前为本机模式，点击打开多端同步'
             }
           >
-            <span className={`network-dot ${online ? 'online' : 'offline'}`} aria-hidden="true" />
-            <span>
-              {configured ? (syncActivity.label ?? connectionTitle(liveConnection)) : '本机'}
-            </span>
+            <span
+              className={`network-dot ${sessionChip || online ? 'online' : 'offline'}`}
+              aria-hidden="true"
+            />
+            {sessionChip ? (
+              <>
+                <span className="mobile-sync-pill-time">{sessionChip.elapsed}</span>
+                <span className="mobile-sync-pill-state">{sessionChip.label}</span>
+              </>
+            ) : (
+              <span>
+                {configured ? (syncActivity.label ?? connectionTitle(liveConnection)) : '本机'}
+              </span>
+            )}
           </button>
           {/* 顶栏只保留同步状态。设置已有底部导航第四个入口，再放一个齿轮会重复且抢走焦点。 */}
         </div>
