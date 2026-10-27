@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.8.0 - 2026-10-28（详情面板按滴答清单详情布局重排）
+
+- **详情布局直译**：读 `detail_list_date_info.xml`、`detail_list_item_title.xml`、`detail_subtask_list_item.xml` 后重排任务详情——日期行 32dp 勾选框（可见圈 24dp、内边距 4dp）、日期 16sp、副标题 11sp；标题加粗、左边距 10dp、上下 7dp；标签 12sp；子任务行复用列表行规格（24dp 勾选框、16sp 标题、13sp 日期、右端 10dp）。
+- **内边距按资源**：`task_detail_padding_left 14dp`、`task_detail_padding_right 24dp`。
+- **本机保存状态**移到日期行副标题，底部只留「开始专注」。
+- 其余沿用 v1.7.9 的布局直译与资源真值。
+
 ## v1.7.9 - 2026-10-28（直接翻译滴答清单布局 XML）
 
 - **布局源码直译**：apktool 解码后读 `res/layout/standard_task_list_item.xml`、`detail_task_list_item.xml`、`task_item_indicators_layout.xml` 与 `res/values/styles.xml` 的 `taskItemCheckbox` / `task_list_indicator_style`，按 XML 里的 dp/sp 重排行结构——勾选区 15dp/8dp/10dp、勾选框 24dp、标题 16sp + 上下 10dp、日期 13sp、指示图标 14dp、展开箭头改向右 18dp（展开旋转 90°）、右侧预留 14dp。

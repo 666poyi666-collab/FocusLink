@@ -721,21 +721,39 @@ export function TickTickTaskPage({
                 完成
               </button>
             </header>
-            <div className="tt-detail-row">
+            <div className="tt-detail-date">
               <button
                 type="button"
-                className="tt-check"
+                className="tt-check tt-check-lg"
                 data-tone={priorityTone(detailTask.priority)}
                 data-checked={detailTask.isCompleted}
                 aria-label={detailTask.isCompleted ? '取消完成' : '完成任务'}
                 onClick={() => handleComplete(detailTask)}
-              />
-              <span
-                className="tt-detail-due"
-                data-overdue={dueLabel(detailTask, now)?.overdue ?? false}
               >
-                {dueLabel(detailTask, now)?.text ?? '无日期'}
-                {dueLabel(detailTask, now)?.overdue ? '，已延期' : ''}
+                {detailTask.isCompleted ? (
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path
+                      d="M4.5 10.5 8 14l7.5-8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : null}
+              </button>
+              <span className="tt-detail-date-copy">
+                <span
+                  className="tt-detail-date-main"
+                  data-overdue={dueLabel(detailTask, now)?.overdue ?? false}
+                >
+                  {dueLabel(detailTask, now)?.text ?? '无日期'}
+                  {dueLabel(detailTask, now)?.overdue ? '，已延期' : ''}
+                </span>
+                <span className="tt-detail-date-sub">
+                  {pendingLocalCount > 0 ? '本机已保存 · 待同步' : '本机已保存'}
+                </span>
               </span>
             </div>
             <h2 className="tt-detail-title">{detailTask.title}</h2>
@@ -783,9 +801,6 @@ export function TickTickTaskPage({
               >
                 开始专注
               </button>
-              <span className="tt-detail-meta">
-                {pendingLocalCount > 0 ? '本机已保存 · 待同步' : '本机已保存'}
-              </span>
             </footer>
           </article>
         </div>
