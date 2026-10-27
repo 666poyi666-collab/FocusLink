@@ -200,27 +200,34 @@ export function MobileRibbon({ snapshot, wallMs, activeMs, state }: MobileRibbon
     const left = Math.max(0, wall - span * 0.82 - offsetSeconds);
     const right = left + span;
     const map = (seconds: number) => pad + ((seconds - left) / span) * usable;
-    const mid = height * 0.46;
+
+    // 纵向分区（画布高度会被 CSS 压在 96px 左右）：
+    //   顶部 labelBand 留给「现在 / 暂停」游标标签，基线 23 → 11px 字号的字顶在 14px，
+    //   不会被画布上边缘切掉；底部 labelBand 留给刻度文字；中间才是波形通道。
+    const cursorLabelBaseline = 23;
+    const axisY = height - 24;
+    const channelTop = cursorLabelBaseline + 2;
+    const mid = (channelTop + axisY) / 2;
 
     // 基线 + 刻度
     ctx.strokeStyle = line;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(pad, height - 26);
-    ctx.lineTo(width - pad, height - 26);
+    ctx.moveTo(pad, axisY);
+    ctx.lineTo(width - pad, axisY);
     ctx.stroke();
     const tick = span <= 900 ? 120 : 600;
-    ctx.font = `10px ${numberFont}`;
+    ctx.font = `11px ${numberFont}`;
     ctx.fillStyle = muted;
     for (let second = Math.ceil(left / tick) * tick; second < right; second += tick) {
       const x = map(second);
       if (x < 24 || x > width - 24) continue;
       ctx.beginPath();
-      ctx.moveTo(x, height - 28);
-      ctx.lineTo(x, height - 22);
+      ctx.moveTo(x, axisY - 3);
+      ctx.lineTo(x, axisY + 3);
       ctx.stroke();
       ctx.textAlign = 'center';
-      ctx.fillText(formatSeconds(second).replace(/:00$/, ''), x, height - 8);
+      ctx.fillText(formatSeconds(second).replace(/:00$/, ''), x, height - 6);
     }
 
     const animate = state === 'running';
@@ -295,8 +302,8 @@ export function MobileRibbon({ snapshot, wallMs, activeMs, state }: MobileRibbon
       ctx.lineWidth = 1;
       ctx.globalAlpha = 0.6;
       ctx.beginPath();
-      ctx.moveTo(nowX, mid - 34);
-      ctx.lineTo(nowX, mid + 34);
+      ctx.moveTo(nowX, channelTop);
+      ctx.lineTo(nowX, axisY);
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = state === 'paused' ? pause : accent;
@@ -307,7 +314,7 @@ export function MobileRibbon({ snapshot, wallMs, activeMs, state }: MobileRibbon
       ctx.fillText(
         state === 'paused' ? '暂停' : '现在',
         nowX + (nowX > width - 60 ? -6 : 6),
-        mid - 40,
+        cursorLabelBaseline,
       );
     }
   }, [mode, offsetSeconds, state, wallSeconds, zoomMinutes, model.phases]);

@@ -1335,7 +1335,7 @@ html[data-runtime='mobile-focus'] .focus-console .ribbon-mode:focus-visible {
 html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas-wrap {
   position: relative;
   width: 100%;
-  height: 88px;
+  height: 96px;
   margin: 0;
 }
 
@@ -1385,7 +1385,7 @@ html[data-runtime='mobile-focus'] .focus-console .ribbon-zoom {
 /* 视野滑杆：1px 轨道 + 20px accent 圆点，不靠阴影或渐变。 */
 html[data-runtime='mobile-focus'] .focus-console .ribbon-zoom input[type='range'] {
   width: 104px;
-  height: var(--m-hit);
+  height: 36px;
   margin: 0;
   padding: 0;
   border: 0;
