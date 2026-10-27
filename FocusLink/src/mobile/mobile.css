@@ -7013,7 +7013,7 @@ html[data-runtime='mobile-focus'] .tt-appbar-title {
 html[data-runtime='mobile-focus'] .tt-sheet {
   flex: 1 1 auto;
   margin: 0 0 0;
-  padding: 4px 0 calc(var(--m-nav-space) + 24px);
+  padding: 4px 0 calc(72px + var(--fl-edge-bottom) + 20px);
   border-radius: 18px 18px 0 0;
   background: var(--tt-sheet);
 }
@@ -7176,7 +7176,7 @@ html[data-runtime='mobile-focus'] .tt-disclosure svg {
 html[data-runtime='mobile-focus'] .tt-fab {
   position: fixed;
   right: 18px;
-  bottom: calc(var(--m-nav-space) + 20px);
+  bottom: calc(72px + var(--fl-edge-bottom) + 16px);
   z-index: 30;
   display: grid;
   place-items: center;
@@ -7595,16 +7595,16 @@ html[data-runtime='mobile-focus'] .tt-selected {
 
 /* 底部导航：滴答清单样式——白底、激活项蓝底圆角图标 + 蓝字，其余仅图标。 */
 html[data-runtime='mobile-focus'] .app-navigation {
-  height: 64px;
+  height: calc(68px + var(--fl-edge-bottom));
   padding-bottom: var(--fl-edge-bottom);
   background: var(--tt-sheet);
   border-top: 0;
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button {
-  gap: 3px;
-  height: 56px;
-  margin-top: 8px;
+  gap: 2px;
+  height: 60px;
+  margin-top: 6px;
   padding: 0;
   border-radius: 12px;
   color: rgb(154 160 166);
@@ -7621,8 +7621,13 @@ html[data-runtime='mobile-focus'] .app-navigation button svg {
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button span {
+  visibility: hidden;
   opacity: 0;
-  transition: opacity 120ms ease;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button.is-active span {
+  visibility: visible;
+  opacity: 1;
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active {
