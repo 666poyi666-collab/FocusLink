@@ -169,7 +169,8 @@ interface FocusRuntimePlugin {
   updateSnapshot(options: {
     snapshot: NativeFocusDisplaySnapshot;
     deviceId: string;
-    connectionLease: string;
+    /** 云端连接租约；本机会话（localAuthority）允许为 null，原生侧走本机快照路径。 */
+    connectionLease: string | null;
   }): Promise<void>;
   drainPendingCommands(options: {
     deviceId: string;
@@ -826,9 +827,18 @@ export async function updateNativeFocusSnapshot(
   localAuthority = false,
 ): Promise<void> {
   if (!isNativeFocusRuntimeAvailable()) return;
+  // 本机会话（离线草稿）没有云端连接租约：这类快照仍然要投影到原生前台服务，
+  // 否则通知、锁屏控制与小米超级岛在本机模式下完全不出现。云端会话仍要求有效租约。
+  const lease =
+    typeof connectionLease === 'string' && /^(0|[1-9][0-9]{0,18})$/.test(connectionLease)
+      ? connectionLease
+      : null;
+  if (lease === null && !localAuthority) {
+    throw new DOMException('Android 账号连接已变化', 'AbortError');
+  }
   await FocusRuntime.updateSnapshot({
     deviceId,
-    connectionLease: requireNativeConnectionLease(connectionLease),
+    connectionLease: lease,
     snapshot: makeNativeDisplaySnapshot(snapshot, controlsEnabled, now, localAuthority),
   });
 }

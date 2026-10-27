@@ -75,14 +75,24 @@ public final class FocusNotificationService extends Service {
         Context applicationContext = context.getApplicationContext();
         ensureNotificationChannel(applicationContext);
         FocusRuntimeSnapshot snapshot = FocusRuntimeStore.getSnapshot(applicationContext);
-        if (
-            snapshot.isFresh(
-                applicationContext,
-                System.currentTimeMillis(),
-                android.os.SystemClock.elapsedRealtime()
-            ) &&
-            FocusNotificationPermission.canPost(applicationContext)
-        ) {
+        boolean fresh = snapshot.isFresh(
+            applicationContext,
+            System.currentTimeMillis(),
+            android.os.SystemClock.elapsedRealtime()
+        );
+        boolean canPost = FocusNotificationPermission.canPost(applicationContext);
+        Log.i(
+            TAG,
+            "synchronize: state=" +
+            snapshot.state +
+            ", fresh=" +
+            fresh +
+            ", canPost=" +
+            canPost +
+            ", localAuthority=" +
+            snapshot.localAuthority
+        );
+        if (fresh && canPost) {
             try {
                 ContextCompat.startForegroundService(
                     applicationContext,

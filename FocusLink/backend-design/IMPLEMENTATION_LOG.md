@@ -1,5 +1,29 @@
 # FocusLink 实施日志
 
+## 2026-10-27 · `FL-UI-20261027-LOCAL-NATIVE-SURFACE`：本机专注未进入原生层导致通知/超级岛缺失（v1.7.4 已修）
+
+**结论**
+
+本机（未配对 / 离线）专注会话此前只存在于 WebView：原生前台服务从未启动，因此通知、锁屏控制与小米超级岛都不出现。v1.7.4 修复后本机快照可进入原生层，通知携带完整 MIUI 焦点通知载荷；超级岛的“岛上可见”仍未在 HyperOS 3 复现，需继续核对 MIUI 白名单/字段规范。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `updateNativeFocusSnapshot` 在无连接租约时抛 `AbortError` 且调用方 `.catch(() => {})` 静默吞掉 | `src/mobile/nativeFocusRuntime.ts`、`src/mobile/MobileApp.tsx:2155` | 实测 |
+| ② | 原生 `updateSnapshot` 对无连接请求返回 `stale_connection` | `FocusRuntimePlugin.java` updateSnapshot | 实测 |
+| ③ | 同 revision 的云端 idle 快照会顶掉本机 running 快照（`putSnapshot` 的同 revision 判定） | `FocusRuntimeStore.java:putSnapshot` | 实测 |
+| ④ | 修复后本机快照投递成功：`Local-authority snapshot stored: ok=true, state=running` 且 `synchronize: state=running, fresh=true, canPost=true` | logcat 2026-10-27 23:02 | 实测 |
+| ⑤ | 通知 extras 含 `focuslink.systemSurface=xiaomi-island` 与完整 `miui.focus.param`（protocol 3 / bigIslandArea / smallIslandArea） | `dumpsys notification --noredact` | 实测 |
+| ⑥ | 应用内「系统显示」回读 `小米系统表面 → 使用中 · SystemUI 已接收`（`systemui-accepted`） | 真机设置页 | 实测 |
+| ⑦ | 主屏截图仍未见超级岛；`secure updatable_focus_notifs` 默认 `[]`，手动加入本应用后仍未渲染（已恢复原值） | 真机截图 + `settings get secure` | 实测 |
+
+**处置**
+
+- TS：允许 `localAuthority` 快照在无租约时投递（租约传 null），云端会话仍要求有效租约。
+- Android：`updateSnapshot` 增加本机权威分支；`FocusRuntimeStore.putLocalAuthoritySnapshot` 允许本机快照覆盖同 revision 的非本机快照；云端快照改走 `putCloudSnapshotIfNoLocalAuthority`。
+- 观察：SystemUI `FocusPlugin` 对本报文 `inflateFinishCallback=true`，`FocusNotificationController` 已接管该通知；剩余差异在 MIUI 是否将该应用纳入超级岛渲染。
+
 ## 2026-10-27 · `FL-UI-20261027-RIBBON-RENDER`：移动端时间之带渲染线程被拖死与运行态溢出（v1.7.2 已修）
 
 **结论**

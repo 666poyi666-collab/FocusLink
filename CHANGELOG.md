@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.4 - 2026-10-27（本机专注进入系统层：前台服务、通知与小米焦点通知载荷）
+
+- **修掉一个真缺陷：本机会话从未到达原生层**。此前 `updateNativeFocusSnapshot` 在没有云端连接租约时直接抛 `AbortError` 并被静默吞掉，原生 `updateSnapshot` 也以 `stale_connection` 拒绝；结果是本机（未配对 / 离线）专注只有 WebView 里的计时，通知、锁屏控制、小米超级岛全部不出现。
+- **三步修复**：① 本机权威快照允许无租约投递（`localAuthority` 路径）；② 原生侧为同 revision 的本机快照新增覆盖路径（云端 idle rev=3 与本机 running rev=3 曾互相顶掉）；③ 云端快照改走 `putCloudSnapshotIfNoLocalAuthority`，本机权威存在时只作诊断、不再覆盖本机运行态。
+- **实测链路**：本机会话 → `Local-authority snapshot stored: ok=true, state=running` → `synchronize: state=running, fresh=true, canPost=true` → 前台服务驻留 → 通知携带 `focuslink.systemSurface=xiaomi-island` 与完整 `miui.focus.param`（protocol 3、businessId、bigIslandArea / smallIslandArea）→ 应用内「系统显示」回读 **使用中 · SystemUI 已接收**；SystemUI `FocusPlugin` 对本报文 `inflateFinishCallback=true`。
+- **未完成（如实记录）**：小米超级岛的“岛上可见”尚未在 HyperOS 3 真机上复现。已确认 SystemUI 接收载荷（`secure updatable_focus_notifs` 默认为空，加入本应用后仍未渲染），判断剩余限制在 MIUI 侧的应用白名单/字段规范，需继续按 MIUI 焦点通知规范核对，不能宣称超级岛已可用。
+- 桌面 Windows、Electron 主进程、IPC 与同步协议零改动；本轮改动集中在 `src/mobile/nativeFocusRuntime.ts` 与 Android 原生 `FocusRuntimePlugin` / `FocusRuntimeStore`。
+
 ## v1.7.3 - 2026-10-27（时间之带「现在」标签不再被裁，画布与滑杆高度配平）
 
 - **修「现在」标签被裁**：时间之带画布顶部为标签留出空间，`现在` 文字完整可见；三种模式（流线 / 光栅 / 时段）在同一高度下都不裁切、刻度不丢。

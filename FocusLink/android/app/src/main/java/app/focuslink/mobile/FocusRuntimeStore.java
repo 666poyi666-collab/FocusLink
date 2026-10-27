@@ -56,6 +56,24 @@ final class FocusRuntimeStore {
         }
     }
 
+    /**
+     * 本机权威快照写入：云端与本地会共用同一个 stateRevision（例如云端 idle rev=3 与本机
+     * running rev=3），普通 putSnapshot 会以「同 revision 字段不同」为由拒绝，导致本机运行态
+     * 永远进不了原生前台服务。这里允许本机权威覆盖同 revision 的非本机快照。
+     */
+    static boolean putLocalAuthoritySnapshot(Context context, FocusRuntimeSnapshot snapshot) {
+        synchronized (LOCK) {
+            FocusRuntimeSnapshot current = getSnapshot(context);
+            boolean currentIsLocal = current != null && current.localAuthority;
+            if (snapshot.stateRevision < current.stateRevision && currentIsLocal) return false;
+            preferences(context)
+                .edit()
+                .putString(KEY_SNAPSHOT, snapshot.toStoredJson().toString())
+                .commit();
+            return true;
+        }
+    }
+
     static boolean putCloudSnapshotIfNoLocalAuthority(
         Context context,
         FocusRuntimeSnapshot snapshot

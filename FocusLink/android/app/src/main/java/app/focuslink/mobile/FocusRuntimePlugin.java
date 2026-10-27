@@ -12,6 +12,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.os.PowerManager;
 import android.provider.Settings;
 import java.io.ByteArrayOutputStream;
@@ -44,6 +45,7 @@ import java.util.concurrent.Executors;
     }
 )
 public final class FocusRuntimePlugin extends Plugin {
+    private static final String TAG = "FocusLinkRuntime";
     private static final long ROOT_COMMAND_TIMEOUT_MS = 5_000L;
     private static final int ROOT_OUTPUT_LIMIT = 4_096;
     private static final String APP_OP_RUN_IN_BACKGROUND = "android:run_in_background";
@@ -101,23 +103,53 @@ public final class FocusRuntimePlugin extends Plugin {
                 call.getString("deviceId"),
                 call.getString("connectionLease")
             );
-            if (connection == null) {
-                call.reject("account connection changed", "stale_connection");
-                return;
-            }
             FocusRuntimeSnapshot snapshot = FocusRuntimeSnapshot.fromPlugin(
                 getContext(),
                 call.getObject("snapshot")
             );
+            if (connection == null) {
+                // 本机会话（离线草稿）没有云端连接租约。这类快照必须照样投影到原生前台服务，
+                // 否则通知、锁屏控制和小米超级岛在本机模式下完全不出现。
+                if (!snapshot.localAuthority) {
+                    Log.w(
+                        TAG,
+                        "Snapshot rejected: no account connection and not a local-authority session"
+                    );
+                    call.reject("account connection changed", "stale_connection");
+                    return;
+                }
+                boolean localStored = FocusRuntimeStore.putLocalAuthoritySnapshot(getContext(), snapshot);
+                Log.i(
+                    TAG,
+                    "Local-authority snapshot stored: ok=" + localStored + ", state=" +
+                    snapshot.state +
+                    ", rev=" +
+                    snapshot.stateRevision
+                );
+                FocusNotificationService.synchronize(getContext());
+                FocusRuntimeTileService.requestRefresh(getContext());
+                call.resolve(nativeStatus(FocusRuntimeStore.getSnapshot(getContext())));
+                return;
+            }
             Boolean stored = FocusRuntimeConnectionStore.runIfCurrent(
                 getContext(),
                 connection,
-                () -> FocusRuntimeStore.putSnapshot(getContext(), snapshot)
+                // 本机会话（localAuthority）存在时，云端快照只作诊断，不能覆盖本机权威。
+                () -> FocusRuntimeStore.putCloudSnapshotIfNoLocalAuthority(getContext(), snapshot)
             );
             if (stored == null) {
                 call.reject("account connection changed", "stale_connection");
                 return;
             }
+            Log.i(
+                TAG,
+                "Cloud snapshot " +
+                (stored ? "stored" : "skipped (local authority active)") +
+                ": state=" +
+                snapshot.state +
+                ", rev=" +
+                snapshot.stateRevision
+            );
             FocusNotificationService.synchronize(getContext());
             FocusRuntimeTileService.requestRefresh(getContext());
             call.resolve(nativeStatus(FocusRuntimeStore.getSnapshot(getContext())));
