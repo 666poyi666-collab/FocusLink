@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { ChevronDown, ChevronLeft, MoreVertical, Plus } from 'lucide-react';
 import type { SyncedTask, SyncedTaskProject } from '@shared/sync/taskSnapshotProtocol';
 import {
@@ -85,65 +92,154 @@ interface RowProps {
   onToggleCollapse: (id: string) => void;
   onOpen: (task: SyncedTask) => void;
   onComplete: (task: SyncedTask) => void;
+  onMoveRequest: (task: SyncedTask) => void;
   now: number;
 }
 
-function TaskRow({ node, depth, collapsed, onToggleCollapse, onOpen, onComplete, now }: RowProps) {
+/** 滴答清单式滑动：右滑完成、左滑移到清单；纵向滑动仍然交还给页面滚动。 */
+function TaskRow({
+  node,
+  depth,
+  collapsed,
+  onToggleCollapse,
+  onOpen,
+  onComplete,
+  onMoveRequest,
+  now,
+}: RowProps) {
   const hasChildren = node.children.length > 0;
   const due = dueLabel(node, now);
   const tone = priorityTone(node.priority);
+  const [offset, setOffset] = useState(0);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    active: boolean;
+    horizontal: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      active: true,
+      horizontal: false,
+    };
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag?.active) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.horizontal) {
+      if (Math.abs(deltaX) < 8) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        drag.active = false;
+        return;
+      }
+      drag.horizontal = true;
+    }
+    setOffset(Math.max(-112, Math.min(112, deltaX)));
+  };
+
+  const finishGesture = () => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    const value = offset;
+    setOffset(0);
+    if (!drag?.horizontal) return;
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 260);
+    if (value >= 72) onComplete(node);
+    else if (value <= -72) onMoveRequest(node);
+  };
+
   return (
-    <li className="tt-row" data-depth={depth > 2 ? 2 : depth} data-completed={node.isCompleted}>
-      <button
-        type="button"
-        className="tt-check"
-        data-tone={tone}
-        data-checked={node.isCompleted}
-        aria-label={node.isCompleted ? `取消完成 ${node.title}` : `完成 ${node.title}`}
-        onClick={() => onComplete(node)}
-      >
-        {node.isCompleted ? (
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path
-              d="M4.5 10.5 8 14l7.5-8"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </button>
-      <button type="button" className="tt-row-main" onClick={() => onOpen(node)}>
-        <span className="tt-row-title">{node.title}</span>
-        {node.tags.length > 0 ? (
-          <span className="tt-row-tags">
-            {node.tags.slice(0, 2).map((tag) => (
-              <span key={tag}>#{tag}</span>
-            ))}
-          </span>
-        ) : null}
-      </button>
-      {due ? (
-        <span className="tt-row-due" data-overdue={due.overdue}>
-          {due.text}
+    <li className="tt-row-shell" data-depth={depth > 2 ? 2 : depth}>
+      <div className="tt-swipe-actions" aria-hidden="true">
+        <span className="tt-swipe-done" data-visible={offset > 6}>
+          完成
         </span>
-      ) : null}
-      {hasChildren ? (
+        <span className="tt-swipe-move" data-visible={offset < -6}>
+          移到清单
+        </span>
+      </div>
+      <div
+        className="tt-row"
+        data-depth={depth > 2 ? 2 : depth}
+        data-completed={node.isCompleted}
+        style={offset === 0 ? undefined : { transform: `translateX(${offset}px)` }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishGesture}
+        onPointerCancel={finishGesture}
+      >
         <button
           type="button"
-          className="tt-disclosure"
-          data-collapsed={collapsed}
-          aria-label={collapsed ? `展开 ${node.title} 的子任务` : `收起 ${node.title} 的子任务`}
-          aria-expanded={!collapsed}
-          onClick={() => onToggleCollapse(node.id)}
+          className="tt-check"
+          data-tone={tone}
+          data-checked={node.isCompleted}
+          aria-label={node.isCompleted ? `取消完成 ${node.title}` : `完成 ${node.title}`}
+          onClick={() => onComplete(node)}
         >
-          <ChevronDown aria-hidden="true" />
+          {node.isCompleted ? (
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path
+                d="M4.5 10.5 8 14l7.5-8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : null}
         </button>
-      ) : (
-        <span className="tt-disclosure-space" aria-hidden="true" />
-      )}
+        <button
+          type="button"
+          className="tt-row-main"
+          onClick={() => {
+            if (suppressClickRef.current) return;
+            onOpen(node);
+          }}
+        >
+          <span className="tt-row-title">{node.title}</span>
+          {node.tags.length > 0 ? (
+            <span className="tt-row-tags">
+              {node.tags.slice(0, 2).map((tag) => (
+                <span key={tag}>#{tag}</span>
+              ))}
+            </span>
+          ) : null}
+        </button>
+        {due ? (
+          <span className="tt-row-due" data-overdue={due.overdue}>
+            {due.text}
+          </span>
+        ) : null}
+        {hasChildren ? (
+          <button
+            type="button"
+            className="tt-disclosure"
+            data-collapsed={collapsed}
+            aria-label={collapsed ? `展开 ${node.title} 的子任务` : `收起 ${node.title} 的子任务`}
+            aria-expanded={!collapsed}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleCollapse(node.id);
+            }}
+          >
+            <ChevronDown aria-hidden="true" />
+          </button>
+        ) : (
+          <span className="tt-disclosure-space" aria-hidden="true" />
+        )}
+      </div>
     </li>
   );
 }
@@ -176,6 +272,7 @@ export function TickTickTaskPage({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [projectFilter, setProjectFilter] = useState<string>(ALL_PROJECTS);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [moveTaskId, setMoveTaskId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
 
   useEffect(() => {
@@ -281,6 +378,7 @@ export function TickTickTaskPage({
               onSelect(task);
             }}
             onComplete={handleComplete}
+            onMoveRequest={(task) => setMoveTaskId(task.id)}
             now={now}
           />
         </ul>
@@ -530,6 +628,37 @@ export function TickTickTaskPage({
                 </div>
               </>
             )}
+          </div>
+        </div>
+      ) : null}
+
+      {moveTaskId ? (
+        <div
+          className="tt-overlay"
+          data-kind="sheet"
+          role="presentation"
+          onClick={() => setMoveTaskId(null)}
+        >
+          <div
+            className="tt-menu"
+            role="dialog"
+            aria-label="移动到清单"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="tt-menu-meta">移动到清单</p>
+            {projects.map((project) => (
+              <button
+                type="button"
+                key={project.id}
+                onClick={() => {
+                  const target = tasks.find((task) => task.id === moveTaskId);
+                  if (target && onMoveTask) void onMoveTask(target, project.id);
+                  setMoveTaskId(null);
+                }}
+              >
+                {project.name}
+              </button>
+            ))}
           </div>
         </div>
       ) : null}

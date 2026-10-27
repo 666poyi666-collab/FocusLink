@@ -6921,22 +6921,33 @@ html[data-runtime='mobile-focus'] .native-system-notice {
    视觉要点：页面底浅灰、白色圆角面板、圆形优先级复选框、44px 行高、
    右侧红色延期天数、蓝色新建按钮、底部四项导航（激活项蓝底白图标 + 蓝字）。 */
 
+/* 取自滴答清单 APK 资源（apktool 解码 res/values/colors.xml 与 dimens.xml）：
+   primary_red E13E39、mid_priority_color F2B04B、low_priority_color 617FDE、
+   no_priority_color A3A3A3、black_no_alpha_85 262626、black_no_alpha_54 757575、
+   background_color_gray F5F5F5、card_background_dark 1C1C1C、checklist_item_height 42dp、
+   checklist_item_text_size 16sp、checklist_item_left_width 36dp、checklist_item_right_width 48dp、
+   bottom_navigation_height 58dp、design_bottom_navigation_icon_size 24dp、
+   design_bottom_navigation_active_text_size 14sp。 */
 html[data-runtime='mobile-focus'] {
-  --tt-bg: rgb(244 245 247);
+  --tt-bg: rgb(245 245 245);
   --tt-sheet: rgb(255 255 255);
-  --tt-text: rgb(23 24 26);
-  --tt-muted: rgb(138 143 152);
-  --tt-blue: rgb(61 110 232);
-  --tt-red: rgb(229 72 77);
-  --tt-orange: rgb(240 160 32);
-  --tt-hairline: rgba(23, 24, 26, 0.07);
+  --tt-text: rgb(38 38 38);
+  --tt-secondary: rgb(117 117 117);
+  --tt-muted: rgb(163 163 163);
+  --tt-blue: rgb(97 127 222);
+  --tt-red: rgb(225 62 57);
+  --tt-orange: rgb(242 176 75);
+  --tt-hairline: rgba(0, 0, 0, 0.06);
+  --tt-row: 42px;
+  --tt-check: 20px;
 }
 
 html[data-runtime='mobile-focus'].dark {
-  --tt-bg: rgb(15 16 19);
-  --tt-sheet: rgb(26 27 31);
-  --tt-text: rgb(242 243 245);
-  --tt-muted: rgb(139 144 154);
+  --tt-bg: rgb(18 18 18);
+  --tt-sheet: rgb(28 28 28);
+  --tt-text: rgb(237 237 237);
+  --tt-secondary: rgb(160 160 160);
+  --tt-muted: rgb(128 128 128);
   --tt-hairline: rgba(255, 255, 255, 0.08);
 }
 
@@ -6957,6 +6968,9 @@ html[data-runtime='mobile-focus'] .tt-page {
   flex-direction: column;
   min-height: 100%;
   padding-top: var(--fl-edge-top);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   background: var(--tt-bg);
   color: var(--tt-text);
   font-family:
@@ -7013,7 +7027,7 @@ html[data-runtime='mobile-focus'] .tt-appbar-title {
 html[data-runtime='mobile-focus'] .tt-sheet {
   flex: 1 1 auto;
   margin: 0 0 0;
-  padding: 4px 0 calc(72px + var(--fl-edge-bottom) + 20px);
+  padding: 4px 0 calc(62px + var(--fl-edge-bottom) + 18px);
   border-radius: 18px 18px 0 0;
   background: var(--tt-sheet);
 }
@@ -7027,10 +7041,10 @@ html[data-runtime='mobile-focus'] .tt-group-title {
   align-items: center;
   gap: 6px;
   margin: 0;
-  padding: 14px 20px 6px;
+  padding: 14px 16px 6px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--tt-muted);
+  color: var(--tt-secondary);
 }
 
 html[data-runtime='mobile-focus'] .tt-group-count {
@@ -7047,9 +7061,11 @@ html[data-runtime='mobile-focus'] .tt-rows {
 html[data-runtime='mobile-focus'] .tt-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  padding: 0 12px 0 20px;
+  gap: 16px;
+  min-height: var(--tt-row);
+  padding: 0 16px;
+  background: var(--tt-sheet);
+  touch-action: pan-y;
 }
 
 html[data-runtime='mobile-focus'] .tt-row[data-depth='1'] {
@@ -7064,10 +7080,10 @@ html[data-runtime='mobile-focus'] .tt-check {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: var(--tt-check);
+  height: var(--tt-check);
   padding: 0;
-  border: 1.7px solid var(--tt-muted);
+  border: 1.6px solid var(--tt-muted);
   border-radius: 50%;
   background: none;
   color: transparent;
@@ -7088,7 +7104,7 @@ html[data-runtime='mobile-focus'] .tt-check[data-tone='low'] {
 
 html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] {
   border-color: transparent;
-  background: rgb(201 204 210);
+  background: var(--tt-muted);
   color: rgb(255 255 255);
 }
 
@@ -7114,7 +7130,7 @@ html[data-runtime='mobile-focus'] .tt-row-main {
 
 html[data-runtime='mobile-focus'] .tt-row-title {
   overflow: hidden;
-  font-size: 17px;
+  font-size: 16px;
   line-height: 22px;
   color: var(--tt-text);
   text-overflow: ellipsis;
@@ -7135,9 +7151,9 @@ html[data-runtime='mobile-focus'] .tt-row-tags {
 
 html[data-runtime='mobile-focus'] .tt-row-due {
   flex: 0 0 auto;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 20px;
-  color: var(--tt-muted);
+  color: var(--tt-secondary);
 }
 
 html[data-runtime='mobile-focus'] .tt-row-due[data-overdue='true'] {
@@ -7176,7 +7192,7 @@ html[data-runtime='mobile-focus'] .tt-disclosure svg {
 html[data-runtime='mobile-focus'] .tt-fab {
   position: fixed;
   right: 18px;
-  bottom: calc(72px + var(--fl-edge-bottom) + 16px);
+  bottom: calc(62px + var(--fl-edge-bottom) + 14px);
   z-index: 30;
   display: grid;
   place-items: center;
@@ -7595,7 +7611,7 @@ html[data-runtime='mobile-focus'] .tt-selected {
 
 /* 底部导航：滴答清单样式——白底、激活项蓝底圆角图标 + 蓝字，其余仅图标。 */
 html[data-runtime='mobile-focus'] .app-navigation {
-  height: calc(68px + var(--fl-edge-bottom));
+  height: calc(58px + var(--fl-edge-bottom));
   padding-bottom: var(--fl-edge-bottom);
   background: var(--tt-sheet);
   border-top: 0;
@@ -7603,11 +7619,11 @@ html[data-runtime='mobile-focus'] .app-navigation {
 
 html[data-runtime='mobile-focus'] .app-navigation button {
   gap: 2px;
-  height: 60px;
-  margin-top: 6px;
+  height: 52px;
+  margin-top: 3px;
   padding: 0;
   border-radius: 12px;
-  color: rgb(154 160 166);
+  color: var(--tt-secondary);
   font-size: 11px;
   font-weight: 500;
 }
@@ -7628,6 +7644,7 @@ html[data-runtime='mobile-focus'] .app-navigation button span {
 html[data-runtime='mobile-focus'] .app-navigation button.is-active span {
   visibility: visible;
   opacity: 1;
+  font-size: 14px;
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active {
@@ -7642,6 +7659,55 @@ html[data-runtime='mobile-focus'] .app-navigation button.is-active svg {
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active span {
   opacity: 1;
+}
+
+/* 滑动操作：右滑完成（accent）、左滑移到清单（swipe_task_wont_do 4C52E4）。 */
+html[data-runtime='mobile-focus'] .tt-row-shell {
+  position: relative;
+  overflow: hidden;
+  background: var(--tt-sheet);
+}
+
+html[data-runtime='mobile-focus'] .tt-swipe-actions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(255 255 255);
+  pointer-events: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-swipe-done,
+html[data-runtime='mobile-focus'] .tt-swipe-move {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 100%;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+html[data-runtime='mobile-focus'] .tt-swipe-done {
+  background: var(--tt-blue);
+}
+
+html[data-runtime='mobile-focus'] .tt-swipe-move {
+  background: rgb(76 82 228);
+}
+
+html[data-runtime='mobile-focus'] .tt-swipe-done[data-visible='true'],
+html[data-runtime='mobile-focus'] .tt-swipe-move[data-visible='true'] {
+  opacity: 1;
+}
+
+html[data-runtime='mobile-focus'] .tt-row {
+  transition: transform 140ms ease;
 }
 
 /* ===== END SECTION: TASKS-TICKTICK ===== */
