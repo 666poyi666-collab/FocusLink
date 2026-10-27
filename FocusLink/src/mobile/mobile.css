@@ -6938,8 +6938,8 @@ html[data-runtime='mobile-focus'] {
   --tt-red: rgb(225 62 57);
   --tt-orange: rgb(242 176 75);
   --tt-hairline: rgba(0, 0, 0, 0.06);
-  --tt-row: 42px;
-  --tt-check: 20px;
+  --tt-row: 44px;
+  --tt-check: 22px;
 }
 
 html[data-runtime='mobile-focus'].dark {
@@ -7061,9 +7061,9 @@ html[data-runtime='mobile-focus'] .tt-rows {
 html[data-runtime='mobile-focus'] .tt-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   min-height: var(--tt-row);
-  padding: 0 16px;
+  padding: 0 16px 0 15px;
   background: var(--tt-sheet);
   touch-action: pan-y;
 }
@@ -7149,6 +7149,14 @@ html[data-runtime='mobile-focus'] .tt-row-tags {
   white-space: nowrap;
 }
 
+html[data-runtime='mobile-focus'] .tt-subtasks-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  stroke: var(--tt-muted);
+  fill: none;
+}
+
 html[data-runtime='mobile-focus'] .tt-row-due {
   flex: 0 0 auto;
   font-size: 13px;
@@ -7165,8 +7173,9 @@ html[data-runtime='mobile-focus'] .tt-disclosure-space {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  margin: 0 10px 0 2px;
   padding: 0;
   border: 0;
   background: none;
@@ -7178,13 +7187,17 @@ html[data-runtime='mobile-focus'] .tt-disclosure {
   transition: transform 140ms ease;
 }
 
+html[data-runtime='mobile-focus'] .tt-disclosure {
+  transform: rotate(90deg);
+}
+
 html[data-runtime='mobile-focus'] .tt-disclosure[data-collapsed='true'] {
-  transform: rotate(-90deg);
+  transform: rotate(0deg);
 }
 
 html[data-runtime='mobile-focus'] .tt-disclosure svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   stroke: currentColor;
   fill: none;
 }

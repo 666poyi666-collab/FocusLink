@@ -6,7 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { ChevronDown, ChevronLeft, MoreVertical, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ListTree, MoreVertical, Plus } from 'lucide-react';
 import type { SyncedTask, SyncedTaskProject } from '@shared/sync/taskSnapshotProtocol';
 import {
   ALL_PROJECTS,
@@ -217,6 +217,7 @@ function TaskRow({
             </span>
           ) : null}
         </button>
+        {hasChildren ? <ListTree className="tt-subtasks-icon" aria-hidden="true" /> : null}
         {due ? (
           <span className="tt-row-due" data-overdue={due.overdue}>
             {due.text}
@@ -234,7 +235,7 @@ function TaskRow({
               onToggleCollapse(node.id);
             }}
           >
-            <ChevronDown aria-hidden="true" />
+            <ChevronRight aria-hidden="true" />
           </button>
         ) : (
           <span className="tt-disclosure-space" aria-hidden="true" />

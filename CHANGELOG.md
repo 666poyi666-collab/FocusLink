@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.9 - 2026-10-28（直接翻译滴答清单布局 XML）
+
+- **布局源码直译**：apktool 解码后读 `res/layout/standard_task_list_item.xml`、`detail_task_list_item.xml`、`task_item_indicators_layout.xml` 与 `res/values/styles.xml` 的 `taskItemCheckbox` / `task_list_indicator_style`，按 XML 里的 dp/sp 重排行结构——勾选区 15dp/8dp/10dp、勾选框 24dp、标题 16sp + 上下 10dp、日期 13sp、指示图标 14dp、展开箭头改向右 18dp（展开旋转 90°）、右侧预留 14dp。
+- **行高**：按真实结构改为 44dp（勾选框 24 + 上下 10），上一版误用的 checklist 42dp 只适用于详情清单。
+- **子任务指示器**：父任务且无子任务折叠状态之外，显示 14dp 指示图标；展开箭头方向与滴答一致。
+- 其余沿用 v1.7.8：APK 资源真值配色、滑动完成/移清单、清单抽屉、新建与详情面板、root 顶部胶囊。
+
 ## v1.7.8 - 2026-10-28（设计值改为从滴答清单 APK 资源里取；滑动操作）
 
 - **真值提取**：用 apktool 解码 `cn.ticktick.task` 的 `res/values/colors.xml` 与 `dimens.xml`，替换上一版按截图估算的值——强调蓝 `617FDE`、高优先级红 `E13E39`、中优先级橙 `F2B04B`、无优先级灰 `A3A3A3`、正文 `262626`、次要文字 `757575`、页面底 `F5F5F5`、暗色卡片 `1C1C1C`；行高 42dp、标题 16sp、勾选圈 20dp、底部导航 58dp / 激活标签 14sp / 图标 24dp。
