@@ -75,8 +75,8 @@ final class FocusRuntimeSystemSettings {
 
     static synchronized OverlayPosition getOverlayPosition(Context context) {
         SharedPreferences values = preferences(context);
-        float x = clampFraction(values.getFloat(KEY_OVERLAY_X_FRACTION, 0.02f));
-        float y = clampFraction(values.getFloat(KEY_OVERLAY_Y_FRACTION, 0.02f));
+        float x = clampFraction(values.getFloat(KEY_OVERLAY_X_FRACTION, 0.5f));
+        float y = clampFraction(values.getFloat(KEY_OVERLAY_Y_FRACTION, 0.0f));
         return new OverlayPosition(x, y);
     }
 

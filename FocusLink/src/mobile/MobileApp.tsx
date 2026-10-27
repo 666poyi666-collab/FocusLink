@@ -153,7 +153,7 @@ import {
   runMobileAccountCommit,
   runMobileAccountLogout,
 } from './accountLifecycle';
-import { TaskBrowser } from './TaskBrowser';
+import { TickTickTaskPage } from './TickTickTaskPage';
 import { MobileConfirmDialog } from './MobileConfirmDialog';
 import {
   commandAckNotice,
@@ -2824,7 +2824,7 @@ export function MobileApp() {
                 />
               )}
               {activeView === 'tasks' && (
-                <TaskBrowser
+                <TickTickTaskPage
                   tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
                   projects={visibleTaskSnapshot.snapshot?.projects ?? []}
                   pendingLocalCount={localTaskCreates.length}

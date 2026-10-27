@@ -6915,3 +6915,728 @@ html[data-runtime='mobile-focus'] .native-system-notice {
 }
 
 /* ===== END SECTION: SETTINGS ===== */
+
+/* ===== SECTION: TASKS-TICKTICK（滴答清单移动端任务页复刻） =====
+   参考：真机 1080×2460 @440dpi 截图（任务列表 / 新建任务面板 / 任务详情）。
+   视觉要点：页面底浅灰、白色圆角面板、圆形优先级复选框、44px 行高、
+   右侧红色延期天数、蓝色新建按钮、底部四项导航（激活项蓝底白图标 + 蓝字）。 */
+
+html[data-runtime='mobile-focus'] {
+  --tt-bg: rgb(244 245 247);
+  --tt-sheet: rgb(255 255 255);
+  --tt-text: rgb(23 24 26);
+  --tt-muted: rgb(138 143 152);
+  --tt-blue: rgb(61 110 232);
+  --tt-red: rgb(229 72 77);
+  --tt-orange: rgb(240 160 32);
+  --tt-hairline: rgba(23, 24, 26, 0.07);
+}
+
+html[data-runtime='mobile-focus'].dark {
+  --tt-bg: rgb(15 16 19);
+  --tt-sheet: rgb(26 27 31);
+  --tt-text: rgb(242 243 245);
+  --tt-muted: rgb(139 144 154);
+  --tt-hairline: rgba(255, 255, 255, 0.08);
+}
+
+/* 任务页使用滴答清单的顶栏，隐藏应用品牌栏与旧看板区。 */
+html[data-runtime='mobile-focus'] .mobile-shell.view-tasks .mobile-topbar,
+html[data-runtime='mobile-focus'] .mobile-shell.view-tasks .live-activity-bar {
+  display: none;
+}
+
+html[data-runtime='mobile-focus'] .mobile-shell.view-tasks .mobile-main,
+html[data-runtime='mobile-focus'] .mobile-shell.view-tasks .mobile-workspace {
+  padding: 0;
+}
+
+html[data-runtime='mobile-focus'] .tt-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding-top: var(--fl-edge-top);
+  background: var(--tt-bg);
+  color: var(--tt-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+html[data-runtime='mobile-focus'] .tt-appbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 6px;
+}
+
+html[data-runtime='mobile-focus'] .tt-appbar-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--tt-text);
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-appbar-button svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-hamburger path {
+  stroke-width: 2;
+}
+
+html[data-runtime='mobile-focus'] .tt-appbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 0 0 6px;
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.2px;
+  color: var(--tt-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-sheet {
+  flex: 1 1 auto;
+  margin: 0 0 0;
+  padding: 4px 0 calc(var(--m-nav-space) + 24px);
+  border-radius: 18px 18px 0 0;
+  background: var(--tt-sheet);
+}
+
+html[data-runtime='mobile-focus'] .tt-group + .tt-group {
+  margin-top: 4px;
+}
+
+html[data-runtime='mobile-focus'] .tt-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 14px 20px 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-group-count {
+  font-size: 12px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px 0 20px;
+}
+
+html[data-runtime='mobile-focus'] .tt-row[data-depth='1'] {
+  padding-left: 52px;
+}
+
+html[data-runtime='mobile-focus'] .tt-row[data-depth='2'] {
+  padding-left: 84px;
+}
+
+html[data-runtime='mobile-focus'] .tt-check {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1.7px solid var(--tt-muted);
+  border-radius: 50%;
+  background: none;
+  color: transparent;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-tone='high'] {
+  border-color: var(--tt-red);
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-tone='medium'] {
+  border-color: var(--tt-orange);
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-tone='low'] {
+  border-color: var(--tt-blue);
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] {
+  border-color: transparent;
+  background: rgb(201 204 210);
+  color: rgb(255 255 255);
+}
+
+html[data-runtime='mobile-focus'] .tt-check svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+}
+
+html[data-runtime='mobile-focus'] .tt-row-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-row-title {
+  overflow: hidden;
+  font-size: 17px;
+  line-height: 22px;
+  color: var(--tt-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-row[data-completed='true'] .tt-row-title {
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-row-tags {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--tt-muted);
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-row-due {
+  flex: 0 0 auto;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-row-due[data-overdue='true'] {
+  color: var(--tt-red);
+}
+
+html[data-runtime='mobile-focus'] .tt-disclosure,
+html[data-runtime='mobile-focus'] .tt-disclosure-space {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgb(180 184 191);
+}
+
+html[data-runtime='mobile-focus'] .tt-disclosure {
+  cursor: pointer;
+  transition: transform 140ms ease;
+}
+
+html[data-runtime='mobile-focus'] .tt-disclosure[data-collapsed='true'] {
+  transform: rotate(-90deg);
+}
+
+html[data-runtime='mobile-focus'] .tt-disclosure svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(var(--m-nav-space) + 20px);
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tt-blue);
+  color: rgb(255 255 255);
+  box-shadow: 0 8px 18px rgba(61, 110, 232, 0.35);
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-fab svg {
+  width: 26px;
+  height: 26px;
+  stroke: currentColor;
+  fill: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-empty {
+  padding: 88px 24px;
+  color: var(--tt-muted);
+  text-align: center;
+}
+
+html[data-runtime='mobile-focus'] .tt-empty p {
+  margin: 0;
+  font-size: 16px;
+}
+
+html[data-runtime='mobile-focus'] .tt-empty-hint {
+  margin-top: 8px !important;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+html[data-runtime='mobile-focus'] .tt-pending,
+html[data-runtime='mobile-focus'] .tt-error {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--m-nav-space) + 80px);
+  left: 16px;
+  z-index: 35;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(23, 24, 26, 0.86);
+  color: rgb(255 255 255);
+  font-size: 13px;
+}
+
+html[data-runtime='mobile-focus'] .tt-error {
+  background: var(--tt-red);
+}
+
+html[data-runtime='mobile-focus'] .tt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(17, 18, 20, 0.32);
+}
+
+html[data-runtime='mobile-focus'] .tt-overlay[data-kind='drawer'] {
+  align-items: stretch;
+}
+
+html[data-runtime='mobile-focus'] .tt-overlay[data-kind='drawer'] .tt-drawer {
+  padding-top: calc(18px + var(--fl-edge-top));
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(300px, 78vw);
+  height: 100%;
+  padding: 18px 12px;
+  border-radius: 0 18px 18px 0;
+  background: var(--tt-sheet);
+  box-shadow: 12px 0 32px rgba(0, 0, 0, 0.14);
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-title {
+  margin: 8px 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--tt-text);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-item[data-active='true'] {
+  background: rgba(61, 110, 232, 0.1);
+  color: var(--tt-blue);
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-item span:nth-child(2) {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-count {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  margin-top: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--tt-blue);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-drawer-add svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-menu {
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - 24px);
+  margin: 0 12px calc(var(--m-nav-space) + 12px);
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--tt-sheet);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.16);
+}
+
+html[data-runtime='mobile-focus'] .tt-menu button {
+  height: 46px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--tt-text);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-menu-meta {
+  margin: 8px 12px 6px;
+  font-size: 12px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer {
+  width: 100%;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-radius: 20px 20px 0 0;
+  background: var(--tt-sheet);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-input {
+  width: 100%;
+  padding: 6px 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--tt-hairline);
+  background: none;
+  color: var(--tt-text);
+  font-family: inherit;
+  font-size: var(--m-body-size);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-input:focus,
+html[data-runtime='mobile-focus'] .tt-composer-input:focus-visible {
+  outline: none;
+  border-radius: 0;
+  box-shadow: none;
+  border-bottom: 1px solid var(--tt-hairline);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-input::placeholder {
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-select {
+  display: flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-select select {
+  max-width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 8px;
+  background: none;
+  color: var(--tt-text);
+  font-family: inherit;
+  font-size: var(--m-body-size);
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-submit {
+  height: 40px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--tt-blue);
+  color: rgb(255 255 255);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-submit:disabled {
+  opacity: 0.4;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 0 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-radius: 20px 20px 0 0;
+  background: var(--tt-sheet);
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-back {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--tt-muted);
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-list {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  font-size: 15px;
+  color: var(--tt-text);
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-move {
+  width: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tt-muted);
+  font-size: 16px;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-done {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 17px;
+  background: rgba(61, 110, 232, 0.12);
+  color: var(--tt-blue);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0 14px;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-due {
+  font-size: 15px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-due[data-overdue='true'] {
+  color: var(--tt-red);
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-title {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--tt-text);
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-tags {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-subtasks {
+  margin: 4px 0 16px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(23, 24, 26, 0.04);
+  list-style: none;
+}
+
+html[data-runtime='mobile-focus'].dark .tt-detail-subtasks {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-subtasks li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-subtask-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 16px;
+  color: var(--tt-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-start {
+  height: 46px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 23px;
+  background: var(--tt-blue);
+  color: rgb(255 255 255);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-start:disabled {
+  opacity: 0.4;
+}
+
+html[data-runtime='mobile-focus'] .tt-detail-meta {
+  font-size: 12px;
+  color: var(--tt-muted);
+}
+
+html[data-runtime='mobile-focus'] .tt-selected {
+  display: none;
+}
+
+/* 底部导航：滴答清单样式——白底、激活项蓝底圆角图标 + 蓝字，其余仅图标。 */
+html[data-runtime='mobile-focus'] .app-navigation {
+  height: 64px;
+  padding-bottom: var(--fl-edge-bottom);
+  background: var(--tt-sheet);
+  border-top: 0;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button {
+  gap: 3px;
+  height: 56px;
+  margin-top: 8px;
+  padding: 0;
+  border-radius: 12px;
+  color: rgb(154 160 166);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button svg {
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border-radius: 9px;
+  box-sizing: content-box;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button span {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button.is-active {
+  background: none;
+  color: var(--tt-blue);
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button.is-active svg {
+  background: var(--tt-blue);
+  color: rgb(255 255 255);
+}
+
+html[data-runtime='mobile-focus'] .app-navigation button.is-active span {
+  opacity: 1;
+}
+
+/* ===== END SECTION: TASKS-TICKTICK ===== */

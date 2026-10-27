@@ -395,8 +395,44 @@ public final class FocusRuntimePlugin extends Plugin {
         call.resolve(new JSObject().put("opened", opened).put("target", "autostart"));
     }
 
+    /** 有 root 时直接 appops 授权悬浮窗，省掉系统弹层；没有 root 才走设置页。 */
+    private boolean grantOverlayViaRoot() {
+        if (FocusDesktopOverlayController.canDraw(getContext())) return true;
+        try {
+            Process process = Runtime.getRuntime().exec(
+                new String[] {
+                    "su",
+                    "-c",
+                    "appops set " + getContext().getPackageName() + " SYSTEM_ALERT_WINDOW allow",
+                }
+            );
+            process.waitFor(8, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            Log.w(TAG, "Root overlay grant unavailable", exception);
+        }
+        return FocusDesktopOverlayController.canDraw(getContext());
+    }
+
     @PluginMethod
     public void openOverlayPermissionSettings(PluginCall call) {
+        boolean rootGranted = grantOverlayViaRoot();
+        boolean enabled = false;
+        if (rootGranted) {
+            try {
+                enabled = FocusRuntimeSystemSettings.setOverlayEnabled(getContext(), true);
+                FocusNotificationService.synchronize(getContext());
+            } catch (IllegalStateException exception) {
+                Log.w(TAG, "Unable to enable overlay after root grant", exception);
+            }
+            call.resolve(
+                new JSObject()
+                    .put("opened", false)
+                    .put("granted", true)
+                    .put("rootGranted", true)
+                    .put("enabled", enabled)
+            );
+            return;
+        }
         boolean opened;
         try {
             Intent intent = new Intent(
@@ -412,6 +448,7 @@ public final class FocusRuntimePlugin extends Plugin {
             new JSObject()
                 .put("opened", opened)
                 .put("granted", FocusDesktopOverlayController.canDraw(getContext()))
+                .put("rootGranted", false)
         );
     }
 

@@ -105,33 +105,23 @@ final class FocusDesktopOverlayController {
         FrameLayout root = new FrameLayout(context);
         TextView timer = new TextView(context);
         timer.setTextColor(Color.WHITE);
-        timer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        timer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
         timer.setGravity(Gravity.CENTER);
-        int horizontal = dp(12);
-        int vertical = dp(7);
+        int horizontal = dp(14);
+        int vertical = dp(8);
         timer.setPadding(horizontal, vertical, horizontal, vertical);
-        timer.setContentDescription("FocusLink 桌面专注计时；点按显示关闭按钮");
-        timer.setOnClickListener(ignored -> revealCloseControl());
+        timer.setContentDescription("FocusLink 顶部专注胶囊；点按打开应用");
+        timer.setOnClickListener(ignored -> openApp());
         timer.setOnTouchListener(this::handleTouch);
+        timer.setBackground(roundedBackground("#0B0C0B", 20));
+        timer.setMinWidth(dp(96));
+        timer.setMinHeight(dp(40));
         root.addView(timer, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.START | Gravity.CENTER_VERTICAL
         ));
-
-        TextView close = new TextView(context);
-        close.setText("×");
-        close.setTextColor(Color.WHITE);
-        close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
-        close.setGravity(Gravity.CENTER);
-        close.setContentDescription("关闭悬浮计时");
-        close.setBackground(roundedBackground("#9F2F2A", 8));
-        close.setVisibility(View.GONE);
-        close.setOnClickListener(ignored -> closeOverlayFromSurface());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(34), dp(34));
-        closeParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        root.addView(close, closeParams);
-        root.setElevation(dp(6));
+        root.setElevation(dp(10));
 
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -152,7 +142,6 @@ final class FocusDesktopOverlayController {
             windowManager.addView(root, params);
             overlayView = root;
             timerView = timer;
-            closeView = close;
             layoutParams = params;
             root.post(this::restorePosition);
         } catch (RuntimeException exception) {
@@ -176,13 +165,29 @@ final class FocusDesktopOverlayController {
             elapsedMs += Math.max(0L, SystemClock.elapsedRealtime() - snapshot.receivedAtElapsedMs);
         }
         boolean paused = FocusRuntimeContract.STATE_PAUSED.equals(snapshot.state);
-        timerView.setText((paused ? "暂停 " : "专注 ") + formatDuration(elapsedMs));
-        String nextState = paused ? FocusRuntimeContract.STATE_PAUSED : FocusRuntimeContract.STATE_RUNNING;
-        if (!nextState.equals(renderedState)) {
-            if (runningBackground == null) runningBackground = roundedBackground("#087F63", 8);
-            if (pausedBackground == null) pausedBackground = roundedBackground("#C63F38", 8);
-            timerView.setBackground(paused ? pausedBackground : runningBackground);
-            renderedState = nextState;
+        android.text.SpannableString text = new android.text.SpannableString(
+            "\u25CF " + formatDuration(elapsedMs)
+        );
+        text.setSpan(
+            new android.text.style.ForegroundColorSpan(Color.parseColor(paused ? "#FF8A80" : "#35C08A")),
+            0,
+            1,
+            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        timerView.setText(text);
+        renderedState = paused ? FocusRuntimeContract.STATE_PAUSED : FocusRuntimeContract.STATE_RUNNING;
+    }
+
+    private void openApp() {
+        try {
+            android.content.Intent launch = context
+                .getPackageManager()
+                .getLaunchIntentForPackage(context.getPackageName());
+            if (launch == null) return;
+            launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(launch);
+        } catch (RuntimeException ignored) {
+            // 前台不可用时保持胶囊可见即可。
         }
     }
 
