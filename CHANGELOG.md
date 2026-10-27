@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.2 - 2026-10-27（运行态高度收口、九种仪表实测与时间之带渲染缺陷修复）
+
+- **运行/暂停态页面高度回到 915**：专注操作回执从「64px 双行块」收成单行 20px（省略号截断，全文仍由 role=status 播报），回执外边距 8→4、时间之带画布 120→104，共 −20px；412×915 实测 idle / running / paused 的 `scrollHeight` 均为 915，`overflowX=0`。
+- **九种计时仪表实测通过**：在真实 renderer 里逐一切换 `timerStyle`（standard / flip / pixel / thin / segment / counter / analog / vernier / draft），九种均未裁切、几何各不相同；`analog` 表盘从 154 收到 132 后不再让页面超出 1px。适配规则全部写在 FOCUS 段的 `.mobile-timer-stage` 下，未改 `TimerDial`。
+- **修掉时间之带渲染缺陷**：`MobileRibbon` 初版每帧调用 5 次 `getComputedStyle` 读 CSS 变量且不限帧，专注运行约 8 秒后渲染线程被拖死（CDP `Runtime.evaluate` 超时、watchdog 心跳归零）。改为按 `<html>` 类名缓存调色板（只有主题/强调色/字体切换才重算）+ 绘制循环限 25fps + 减少动效时只画静态一帧；修复后同一场景 14 秒内 30 次心跳，三种模式 canvas 像素 3932 / 3600 / 4208 且切换无空画布。
+- 桌面 Windows、Electron 主进程、IPC 与同步协议零改动。
+
 ## v1.7.1 - 2026-10-27（把交互预览落进真实 renderer：三种时间之带、九种仪表、两块看板）
 
 - **时间之带**：新增移动端专用绘制，支持**流线 / 光栅 / 时段**三种表现、视野缩放滑杆与拖动查看时段；三种模式都用文字分段切换（当前项 accent + 底线），默认流线。桌面 TemporalRibbon 一行未改。

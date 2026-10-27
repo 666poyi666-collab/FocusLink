@@ -198,11 +198,14 @@ describe('v0.12.86 mobile continuous work surface contracts', () => {
       ).toBeUndefined();
     }
     // 操作结果必须可见，隐藏常驻诊断不能同时隐藏失败与待确认原因。
-    expectScopedRule(root, '.focus-command-notice', {
+    // 回执必须可见：不能是 sr-only 盒子；单行省略会截断失败原因，所以允许两行、由行钳控制高度。
+    const notice = expectScopedRule(root, '.focus-command-notice', {
       position: 'static',
       'clip-path': 'none',
-      overflow: 'visible',
+      'max-height': '40px',
+      '-webkit-line-clamp': '2',
     });
+    expect(declarations(notice).width, '回执不得退回 1px 视觉隐藏盒').not.toBe('1px');
     // 旧层兜底：仍未迁走的原生系统控制块继续用上下发丝线，不套卡。
     expectRuleAt(legacyRoot, '.native-system-controls', {
       'border-top': '1px solid var(--mobile-hairline)',

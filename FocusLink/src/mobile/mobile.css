@@ -1185,6 +1185,10 @@ html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .dial-stand
   box-shadow: none;
 }
 
+/* 指针表盘在 412 宽下会高出一屏 1px：单独收小表盘，其余仪表不动。 */
+html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .analog-face {
+  width: 132px;
+}
 html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .instrument-chrome-label,
 html[data-runtime='mobile-focus'] .focus-console .mobile-timer-stage .instrument-chrome-state {
   color: var(--m-muted);
@@ -1331,7 +1335,7 @@ html[data-runtime='mobile-focus'] .focus-console .ribbon-mode:focus-visible {
 html[data-runtime='mobile-focus'] .focus-console .ribbon-canvas-wrap {
   position: relative;
   width: 100%;
-  height: 120px;
+  height: 88px;
   margin: 0;
 }
 
@@ -1579,15 +1583,17 @@ html[data-runtime='mobile-focus'] .focus-console .focus-command-notice {
   position: static;
   width: auto;
   height: auto;
-  max-height: 20px;
-  margin: var(--m-2) 0 0;
+  max-height: 40px;
+  margin: 2px 0 0;
   padding: 0 var(--m-3);
   overflow: hidden;
   clip: auto;
   clip-path: none;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow-wrap: normal;
+  display: -webkit-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   color: var(--m-text);
   background: var(--m-surface-2);
   border-radius: var(--m-r-sm);

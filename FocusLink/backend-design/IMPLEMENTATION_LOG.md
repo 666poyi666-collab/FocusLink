@@ -1,5 +1,27 @@
 # FocusLink 实施日志
 
+## 2026-10-27 · `FL-UI-20261027-RIBBON-RENDER`：移动端时间之带渲染线程被拖死与运行态溢出（v1.7.2 已修）
+
+**结论**
+
+v1.7.1 的移动端时间之带初版在会话运行约 8 秒后把渲染线程拖死（CDP `Runtime.evaluate` 超时、watchdog 心跳归零），同时专注运行/暂停态页面比视口高 18px。两处都已在 v1.7.2 修复并实测。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `MobileRibbon` 初版每帧调用 5 次 `getComputedStyle` 读 CSS 变量且不限帧 | `src/mobile/MobileRibbon.tsx`（v1.7.1 版本，现已改） | 实测 |
+| ② | 运行约 8 秒后渲染线程不可响应：CDP evaluate 超时、watchdog 心跳归零 | 修复前 CDP 会话记录 | 实测 |
+| ③ | 修复后 14 秒内 30 次心跳正常，三种模式 canvas 像素 3932 / 3600 / 4208，切换无空画布 | `MobileRibbon.tsx` 调色板缓存 + 25fps 限帧 | 实测 |
+| ④ | 运行/暂停态 `scrollHeight` 从 933 收到 915（回执 64→20px 单行、外边距 8→4、canvas 120→104） | `mobile.css` FOCUS 段 | 实测 |
+| ⑤ | 九种 `timerStyle` 逐一实测：9/9 未裁切、几何各不相同；`analog` 表盘 154→132 后页面不再超出 1px | `mobile.css` FOCUS 段 `.mobile-timer-stage` | 实测 |
+
+**处置**
+
+- `MobileRibbon`：调色板按 `<html>` 类名缓存（只有主题 / 强调色 / 字体切换才重算），绘制循环限 25fps，减少动效时只绘制静态一帧。
+- 专注页：操作回执收成单行 20px（省略号截断，全文仍由 `role=status` 播报），回执外边距与时间之带画布高度同步压缩，运行态回到 915。
+- 仪表：全部适配规则写在 FOCUS 段 `.mobile-timer-stage` 下（`.dial-*` 字号 `clamp(44px, 19cqi, 76px)`、`.dial-standard` 460px 上限、`.analog-face` 132px），未改共享 `TimerDial`。
+
 ## 2026-10-27 · `FL-SYNC-20261027-LOCAL-USABILITY`：本机活动态、任务耐久创建与下一版 HTML（开发中，未实装）
 
 **结论**
