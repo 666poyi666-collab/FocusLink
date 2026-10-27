@@ -79,10 +79,11 @@ describe('phone, tablet and watch responsive style contract', () => {
     expect(css).not.toMatch(
       /\.focus-instrument > \.focus-actions\s*\{[^}]*margin-(?:right|left):\s*calc\(-1/,
     );
-    // 云端配对入口仍在专注页：读屏摘要里有「多端同步设置」按钮，视觉入口是顶栏同步 pill。
+    // 顶栏负责配对入口；失败回执可见，隐藏摘要不能再包含不可见的交互按钮。
     expect(consoleSource).toContain('className="live-context sr-only"');
-    expect(consoleSource).toContain('className="focus-sync-open"');
-    expect(consoleSource).toContain('多端同步设置');
+    expect(consoleSource).not.toContain('className="focus-sync-open"');
+    expect(consoleSource).toContain('className="focus-command-notice"');
+    expect(consoleSource).toContain('同步详情');
     expect(consoleSource).not.toContain('inline-connection-action');
     expect(viewportScreenshotSource).toContain(
       "document.querySelector('.focus-instrument > .temporal-ribbon')",

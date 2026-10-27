@@ -1,5 +1,42 @@
 # FocusLink 实施日志
 
+## 2026-10-27 · `FL-SYNC-20261027-LOCAL-USABILITY`：本机活动态、任务耐久创建与下一版 HTML（开发中，未实装）
+
+**结论**
+
+已复现小米 v1.7.0 的显示与控制脱节，并完成本机活动态保护、耐久任务创建、仪表接线和旧网关兼容的源码修复；HTML 供视觉选择。状态：进行中，安装门禁未过，未生成或安装新版本。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 当日首次 ADB/WebView 只读检查：小米安装版本为 v1.7.0 / code 1346；当前专注 props 为 connecting、localOfflineMode=true、allowOfflineStart=false、snapshot=null，开始按钮禁用 | `.tmp/mobile-current.js:1`、`src/mobile/MobileApp.tsx:476` | 实测 |
+| ② | 原生恢复/账号缓存重置会清空 live 显示，本机 runtime 却仍存在；主页此前硬编码 Chronograph，新建任务此前等待云端读取和整份发布 | `src/mobile/localFocusPresentation.ts:4`、`src/mobile/MobileTimerInstrument.tsx:6`、`src/mobile/MobileApp.tsx:1264` | 证据记录 |
+| ③ | 独立 OAuth authority 只读返回 idle、revision 636；Windows 对两个官方入口 health 均得到 HTTP 200、匿名 status 均为 HTTP 401，不能证明手机设备认证通过 | `backend-design/SYNC_TROUBLESHOOTING.md:747` | 实测 |
+| ④ | 两个入口的任务 OPTIONS 均为 HTTP 204，allow-headers 不含 if-none-match，expose 头为空；源代码中的 gateway/Worker 条件读修复尚未被本轮线上响应证明生效 | `backend-design/SYNC_TROUBLESHOOTING.md:747`、`src/mobile/syncClient.ts:697` | 实测 |
+| ⑤ | 小米原生只读返回 XiaomiFocusProtocol=3、厂商权限=true、selected=xiaomi-island、evidence=protocol-selected，但 canPostNotification=false；未拍到真实系统岛 | `android/app/src/main/java/app/focuslink/mobile/FocusRuntimePlugin.java:691`、`android/app/src/main/java/app/focuslink/mobile/XiaomiIslandAdapter.java:13` | 实测 |
+| ⑥ | 最新真实 Web 构建在隔离 origin、无账号下完成：新建任务立即出现且重开保留，从待确认任务开始并恢复后暂停/继续/结束，回执可见；选择像素仪表后主页出现点阵，未写真实云端 | `src/mobile/MobileApp.tsx:1134`、`src/mobile/FocusConsole.tsx:401`、`src/mobile/MobileTimerInstrument.tsx:6` | 实测 |
+| ⑦ | HTML 在 412×915 CSS px 视口完成流线/光栅/时段切换、暂停与任务创建；任务和统计页面各有独立合成看板，系统岛明确为示意 | `frontend-design/mobile-next-preview.html:1` | 实测 |
+| ⑧ | Node 22.22.2 下 format:check、typecheck、lint、build:web、build 均 exit 0；最后全量为 165 个文件、1420 项用例，其中 164 个文件/1419 项通过，清理工具 1 项失败；相关 7 个文件/54 项及任务浏览 24 项定向回归通过 | `tests/tempDataCleanup.test.ts:53`、`tests/mobileLocalTaskQueue.test.ts:1`、`package.json:49` | 实测 |
+| ⑨ | 首次小米可达后，后续无线 ADB 重连报 Windows 10060，mDNS 与设备列表为空；本轮用户明确仅验收 Windows＋小米、华为暂不装，新 Windows/小米安装均未执行 | `backend-design/SYNC_TROUBLESHOOTING.md:770` | 实测 |
+
+**问题**
+
+P0 无数据丢失证据；未清除真实离线草稿、凭据或结束用户真实会话。
+P1 已安装版本仍待升级与认证复核 — 客户端修复、线上条件读部署和两端安装尚未形成交付闭环 — 证据①③④⑨。
+P1 全量门禁失败 — Windows junction 被 Node lstat 当成普通目录，清理安全拒绝测试未通过，不能打包 — 证据⑧。
+P2 系统表面未验收 — 厂商协议选择与通知权限/实际显示是不同事实，不能宣称超级岛可用 — 证据⑤。
+
+**改动**
+
+- `src/mobile/localFocusPresentation.ts`、`MobileApp.tsx`：恢复期间保护本机活动态，加载完成前禁止重复开始，界面与控制消费一致投影。
+- `src/mobile/localTaskQueue.ts`、`cache.ts`、`TaskBrowser.tsx`：现有 IndexedDB 内耐久 intent；本机立即显示，前台补传、账号隔离、CAS 身份固化和匹配 ACK 清除。
+- `src/mobile/syncClient.ts`：不再猜 ETag，旧 validator transport/CORS 失败只降级一次普通只读 GET；权威 HTTP 失败保留分类与 Retry-After。
+- `src/mobile/MobileTimerInstrument.tsx`、`FocusConsole.tsx`、`mobile.css`：真实仪表切换、可见操作回执，移除视觉隐藏容器内重复按钮。
+- `tests/`：本机恢复、仪表 SSR、持久队列、手动重试与旧 ACK、条件读兼容等回归；沿用已有清理防护测试，未跳过或弱化失败项。
+- `frontend-design/mobile-next-preview.html`、两份设计规范与 AI 清单：交互样例、实施边界和验收顺序；现有版本号保持 v1.7.0，下一候选需另升版本。
+- 验证边界：真实小米只做读取；Web 交互为本机隔离 origin；未执行 dist、覆盖安装、云端部署、公开 tag 或 GitHub Release。
+
 ## 2026-10-27 · `FL-UI-20261027-MOBILE-NOTICE-VISIBILITY`：v1.7.0 专注操作回执被视觉隐藏（待修）
 
 **结论**

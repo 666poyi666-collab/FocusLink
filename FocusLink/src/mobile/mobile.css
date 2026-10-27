@@ -1430,8 +1430,7 @@ html[data-runtime='mobile-focus'] .focus-console .focus-system-tool-actions > bu
 
 /* ---------- 7 · 只给读屏的信息：不占视觉，也不会被旧层重新画出来 ---------- */
 
-html[data-runtime='mobile-focus'] .focus-console .live-context,
-html[data-runtime='mobile-focus'] .focus-console .focus-command-notice {
+html[data-runtime='mobile-focus'] .focus-console .live-context {
   position: absolute;
   display: block;
   width: 1px;
@@ -1445,6 +1444,31 @@ html[data-runtime='mobile-focus'] .focus-console .focus-command-notice {
   border: 0;
   background: none;
   color: inherit;
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-command-notice {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--m-text);
+  background: var(--m-surface-2);
+  border-radius: var(--m-r-md);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+html[data-runtime='mobile-focus'] .focus-command-notice button {
+  min-height: 44px;
+  margin-left: 8px;
+  color: var(--m-accent);
+  text-decoration: underline;
 }
 
 /* ---------- 8 · 底部 sheet：选任务 / 起名字 / 直接开始 ---------- */

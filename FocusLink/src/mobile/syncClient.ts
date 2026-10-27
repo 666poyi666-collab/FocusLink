@@ -39,7 +39,6 @@ import {
   TASK_SNAPSHOT_CAPABILITY_HEADER,
   TASK_SNAPSHOT_IF_NONE_MATCH_HEADER,
   TASK_SNAPSHOT_SCHEDULING_CAPABILITY,
-  formatTaskSnapshotEtag,
   parseTaskSnapshotMutationResponse,
   parseTaskSnapshotResponse,
   type TaskSnapshotPayload,
@@ -627,6 +626,7 @@ export class MobileLiveRequestError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly status: number | null = null,
+    readonly retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = 'MobileLiveRequestError';
@@ -698,24 +698,28 @@ export async function fetchTaskSnapshotConditional(
   input: TaskSnapshotConditionalFetchInput,
 ): Promise<TaskSnapshotConditionalResult> {
   const ifNoneMatch = input.ifNoneMatch?.trim();
-  const response = await liveFocusFetch(
-    input,
-    TASK_SNAPSHOT_PATH,
-    ifNoneMatch ? { headers: { [TASK_SNAPSHOT_IF_NONE_MATCH_HEADER]: ifNoneMatch } } : {},
-  );
-  // A gateway that forgets Access-Control-Expose-Headers hides the validator from the WebView.
-  // The tag is derivable from the confirmed revision, so derive it instead of polling forever.
+  let response: Response;
+  try {
+    response = await liveFocusFetch(
+      input,
+      TASK_SNAPSHOT_PATH,
+      ifNoneMatch ? { headers: { [TASK_SNAPSHOT_IF_NONE_MATCH_HEADER]: ifNoneMatch } } : {},
+    );
+  } catch (error) {
+    if (input.signal?.aborted || (error instanceof DOMException && error.name === 'AbortError'))
+      throw error;
+    const failure = classifyMobileLiveRequestError(error);
+    // A stale deployment may reject the validator in its CORS preflight. One plain,
+    // read-only GET keeps it usable; never retry an authoritative HTTP rejection.
+    if (!ifNoneMatch || failure.status !== null || !failure.retryable) throw error;
+    response = await liveFocusFetch(input, TASK_SNAPSHOT_PATH);
+  }
   const headerEtag = response.headers.get('etag')?.trim();
   const value = parseTaskSnapshotResponse(await readDeviceSyncJsonResponse(response));
   if (!value) throw new Error('任务快照响应无效');
-  const etag =
-    headerEtag && headerEtag.length > 0
-      ? headerEtag
-      : formatTaskSnapshotEtag({
-          revision: value.revision,
-          sourceDeviceId: value.sourceDeviceId,
-          includeScheduling: true,
-        });
+  // A full response with no readable validator is not proof that its gateway allows
+  // If-None-Match. Inventing a validator makes the next WebView request fail CORS.
+  const etag = headerEtag || (value.unchanged === true ? ifNoneMatch || null : null);
   return { notModified: value.unchanged === true, etag, response: value };
 }
 
@@ -897,6 +901,7 @@ async function liveFocusFetch(
             '实时同步服务暂时不可用',
             true,
             response.status,
+            parseMobileRetryAfter(response.headers.get('retry-after')),
           );
         }
         throw new MobileLiveRequestError(
@@ -930,6 +935,13 @@ async function liveFocusFetch(
     navigator.onLine ? '暂时无法连接实时同步服务' : '当前离线',
     true,
   );
+}
+
+function parseMobileRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  const delay = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(value) - Date.now();
+  return Number.isFinite(delay) && delay > 0 ? Math.min(15 * 60_000, Math.ceil(delay)) : null;
 }
 
 class RequestTimeoutError extends Error {}

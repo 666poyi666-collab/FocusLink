@@ -31,6 +31,8 @@ import {
 } from './taskBrowserModel';
 
 interface TaskBrowserProps {
+  pendingLocalCount?: number;
+  pendingLocalIssue?: string | null;
   tasks: readonly SyncedTask[];
   projects: readonly SyncedTaskProject[];
   publishedAt: number | null;
@@ -52,10 +54,11 @@ interface TaskBrowserProps {
 }
 
 export function TaskBrowser({
+  pendingLocalCount = 0,
+  pendingLocalIssue = null,
   tasks,
   projects,
   publishedAt,
-  revision,
   selectedTaskId,
   canStart,
   onSelect,
@@ -427,7 +430,7 @@ export function TaskBrowser({
                         type="button"
                         onClick={() => onStart(selectedTask)}
                         disabled={!canStart}
-                        title={canStart ? '关联并开始专注' : '仅在待机且实时连接已确认时可开始'}
+                        title={canStart ? '关联并开始专注' : '当前已有专注或操作正在确认'}
                       >
                         <Play aria-hidden="true" />
                         关联并开始专注
@@ -461,7 +464,13 @@ export function TaskBrowser({
       )}
 
       <div className="task-snapshot-meta">
-        <span>本机 · rev {revision}</span>
+        {pendingLocalCount > 0 ? (
+          <span role="status">
+            {pendingLocalIssue ?? `${pendingLocalCount} 项任务已保存在本机，等待云端确认`}
+          </span>
+        ) : (
+          <span>本机任务</span>
+        )}
         {publishedAt && <span>最近同步 {formatSnapshotTime(publishedAt)}</span>}
       </div>
 
@@ -498,7 +507,13 @@ export function TaskBrowser({
                 .then(() => setDraft(''))
                 .then(() => setStatusFilter('open'))
                 .then(() => setMutationNotice(null))
-                .then(() => setCreateOpen(false))
+                .then(() => {
+                  const destination = quickAddProjectId || FOCUSLINK_INBOX_PROJECT_ID;
+                  setQuery('');
+                  setProjectFilter(destination);
+                  setExpandedGroups((groups) => new Set(groups).add(`local:${destination}`));
+                  setCreateOpen(false);
+                })
                 .catch((error) => mutationError('创建任务', error))
                 .finally(() => setCreating(false));
             }}
@@ -531,7 +546,7 @@ export function TaskBrowser({
               </select>
             </label>
             <p className="task-create-note">
-              日期与优先级在电脑端设置；创建后会自动同步到已配对设备。
+              先保存在本机；联网且打开应用时自动同步，云端确认前会保留待同步提示。
             </p>
             <div className="task-create-actions">
               <button

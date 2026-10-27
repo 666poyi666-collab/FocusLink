@@ -1,0 +1,2090 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>FocusLink · 下一版交互预览</title>
+    <style>
+      :root {
+        --bg: #f4f5f1;
+        --paper: #fcfdf9;
+        --soft: #e9ede5;
+        --ink: #16271f;
+        --muted: #5b6d62;
+        --line: #d8e0d4;
+        --accent: #087953;
+        --accent-soft: #dfefe4;
+        --pause: #b74942;
+        --pause-soft: #f5e8e3;
+        --font: system-ui, "Microsoft YaHei UI", sans-serif;
+        --number: "Cascadia Code", Consolas, monospace;
+        --radius: 18px;
+        color-scheme: light;
+      }
+      html[data-theme="dark"] {
+        --bg: #101915;
+        --paper: #17231c;
+        --soft: #213128;
+        --ink: #e9f2e6;
+        --muted: #a2b3a5;
+        --line: #34453a;
+        --accent: #80ddb0;
+        --accent-soft: #223f30;
+        --pause: #ff9a89;
+        --pause-soft: #3c2924;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.6 var(--font);
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        color: inherit;
+        border: 0;
+        background: transparent;
+        min-height: 44px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: wait;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 4px;
+      }
+      a {
+        color: var(--accent);
+      }
+      button svg {
+        width: 22px;
+        height: 22px;
+      }
+      input {
+        min-width: 0;
+        color: var(--ink);
+        background: var(--paper);
+        border: 1px solid var(--line);
+        padding: 12px 14px;
+        border-radius: 12px;
+        font-size: 16px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 30px;
+        font-weight: 650;
+        letter-spacing: -1px;
+      }
+      h2 {
+        font-size: 19px;
+        font-weight: 620;
+      }
+      h3 {
+        font-size: 16px;
+      }
+      small,
+      .muted {
+        color: var(--muted);
+      }
+      .number {
+        font-family: var(--number);
+        font-variant-numeric: tabular-nums;
+      }
+      .lab-bar {
+        min-height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 28px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .lab-tools {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .lab-tools select {
+        background: var(--paper);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 6px;
+      }
+      .lab-tools button {
+        min-width: 44px;
+      }
+      .app {
+        max-width: 1440px;
+        margin: auto;
+        display: grid;
+        grid-template-columns: 100px minmax(0, 1fr);
+        min-height: calc(100dvh - 52px);
+      }
+      .rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        padding: 30px 10px;
+        border-right: 1px solid var(--line);
+      }
+      .brand {
+        font-size: 26px;
+        font-weight: 850;
+        letter-spacing: -4px;
+        margin-bottom: 28px;
+        padding-right: 4px;
+        color: var(--accent);
+      }
+      .nav-btn {
+        width: 76px;
+        display: grid;
+        place-items: center;
+        gap: 5px;
+        padding: 10px 0;
+        border-radius: 16px;
+        font-size: 12px;
+      }
+      .nav-btn svg {
+        width: 23px;
+        height: 23px;
+      }
+      .nav-btn.active {
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .rail-note {
+        margin-top: auto;
+        font-size: 11px;
+        color: var(--muted);
+        writing-mode: vertical-rl;
+        letter-spacing: 3px;
+      }
+      .workspace {
+        padding: 34px 44px 30px;
+        min-width: 0;
+      }
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+      .island {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        background: var(--ink);
+        color: var(--bg);
+        padding: 7px 16px;
+        border-radius: 28px;
+        min-height: 44px;
+      }
+      .island .dot {
+        background: var(--accent);
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent);
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .island-note {
+        text-align: right;
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 3px;
+      }
+      .view {
+        display: none;
+      }
+      .view.active {
+        display: block;
+      }
+      .focus-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(260px, 0.75fr);
+        gap: 44px;
+      }
+      .stage {
+        min-width: 0;
+      }
+      .task-entry {
+        display: flex;
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+      }
+      .task-entry strong {
+        font-size: 17px;
+        font-weight: 550;
+      }
+      .task-entry small {
+        display: block;
+        font-size: 12px;
+      }
+      .focus-status {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        color: var(--accent);
+        font-size: 13px;
+        margin-top: 40px;
+      }
+      .timer {
+        min-height: 137px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font: 550 clamp(52px, 6.4vw, 94px)/1.2 var(--number);
+        letter-spacing: -5px;
+        margin: 10px 0;
+      }
+      .timer.flip .digit {
+        background: var(--ink);
+        color: var(--paper);
+        padding: 5px 4px;
+        border-radius: 8px;
+        margin: 0 2px;
+        box-shadow: inset 0 -3px 0 var(--muted);
+        letter-spacing: -3px;
+      }
+      .timer.segment {
+        font-weight: 300;
+        font-style: italic;
+        color: var(--accent);
+        letter-spacing: -3px;
+      }
+      .timer.thin {
+        font-family: Georgia, "Times New Roman", serif;
+        font-weight: 400;
+        letter-spacing: -2px;
+      }
+      .timer.analog {
+        font-size: 42px;
+        height: 180px;
+        width: 180px;
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        margin: 24px auto;
+        letter-spacing: -2px;
+        position: relative;
+      }
+      .timer.analog:before {
+        content: "";
+        position: absolute;
+        height: 61px;
+        width: 2px;
+        background: var(--accent);
+        left: calc(50% - 1px);
+        top: 13px;
+        transform-origin: 50% 77px;
+        transform: rotate(var(--hand, 0deg));
+      }
+      .timer.analog > span {
+        background: var(--bg);
+        padding: 6px;
+        z-index: 1;
+      }
+      .timer-caption {
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 28px;
+      }
+      .actions {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+      }
+      .primary {
+        background: var(--accent);
+        color: var(--paper);
+        min-height: 56px;
+        padding: 12px 28px;
+        border-radius: 16px;
+        font-weight: 600;
+        display: inline-flex;
+        gap: 9px;
+        align-items: center;
+        justify-content: center;
+      }
+      html[data-theme="dark"] .primary {
+        color: #11271b;
+      }
+      .secondary {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 10px 24px;
+        min-height: 56px;
+      }
+      .actions .primary {
+        min-width: 210px;
+      }
+      .live-note {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        margin-top: 16px;
+        min-height: 20px;
+      }
+      .ribbon-area {
+        margin-top: 34px;
+      }
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      .text-tabs {
+        display: flex;
+        gap: 18px;
+      }
+      .text-tabs button {
+        color: var(--muted);
+        font-size: 12px;
+        padding: 6px 0;
+        border-bottom: 2px solid transparent;
+      }
+      .text-tabs button.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      .canvas-wrap {
+        position: relative;
+        margin: 8px -4px 0;
+        height: 176px;
+      }
+      .canvas-wrap canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: pan-y;
+      }
+      .ribbon-tooltip {
+        position: absolute;
+        top: 4px;
+        left: 8px;
+        padding: 5px 9px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 11px;
+        pointer-events: none;
+        display: none;
+      }
+      .ribbon-scale {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      .ribbon-scale input {
+        padding: 0;
+        border: 0;
+        accent-color: var(--accent);
+        width: 130px;
+        height: 20px;
+        background: none;
+      }
+      .three-times {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-top: 1px solid var(--line);
+        padding-top: 20px;
+        margin-top: 16px;
+        text-align: center;
+      }
+      .three-times small {
+        display: block;
+        font-size: 11px;
+      }
+      .three-times strong {
+        display: block;
+        font: 500 22px/1.6 var(--number);
+        margin-top: 5px;
+      }
+      .context {
+        padding-left: 28px;
+        border-left: 1px solid var(--line);
+      }
+      .today-total {
+        font: 500 35px/1.3 var(--number);
+        letter-spacing: -1px;
+        margin: 13px 0 3px;
+      }
+      .summary-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .session-list {
+        margin-top: 22px;
+      }
+      .session-row {
+        position: relative;
+        padding: 12px 0 12px 15px;
+        font-size: 13px;
+      }
+      .session-row:before {
+        content: "";
+        width: 4px;
+        position: absolute;
+        left: 0;
+        top: 18px;
+        bottom: 18px;
+        border-radius: 3px;
+        background: var(--accent);
+      }
+      .session-row.pause:before {
+        background: var(--pause);
+      }
+      .session-row small {
+        display: block;
+        font: 11px/1.8 var(--number);
+      }
+      .session-row .duration {
+        float: right;
+        font-family: var(--number);
+        color: var(--muted);
+      }
+      .tip {
+        border-top: 1px solid var(--line);
+        padding-top: 18px;
+        margin-top: 24px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+        gap: 36px;
+      }
+      .task-summary {
+        display: flex;
+        gap: 32px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 20px;
+      }
+      .task-summary strong {
+        display: block;
+        font: 500 34px/1.3 var(--number);
+      }
+      .task-summary small {
+        font-size: 12px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin: 18px 0;
+      }
+      .toolbar input {
+        flex: 1;
+      }
+      .add-btn {
+        min-width: 76px;
+        color: var(--accent);
+        font-weight: 550;
+      }
+      .task-group-title {
+        display: flex;
+        justify-content: space-between;
+        margin: 24px 0 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .task-row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        min-height: 76px;
+        border-bottom: 1px solid var(--line);
+      }
+      .task-check {
+        width: 44px;
+        min-width: 44px;
+        display: grid;
+        place-items: center;
+      }
+      .check-shape {
+        width: 21px;
+        height: 21px;
+        border: 1.5px solid var(--muted);
+        border-radius: 7px;
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+      }
+      .done .check-shape {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--paper);
+      }
+      .task-row.done .task-title {
+        text-decoration: line-through;
+        color: var(--muted);
+      }
+      .task-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .task-title {
+        font-size: 15px;
+      }
+      .task-meta {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .task-go {
+        color: var(--accent);
+        font-size: 12px;
+        min-width: 64px;
+      }
+      .panel {
+        padding: 24px;
+        background: var(--paper);
+        border-radius: 20px;
+      }
+      .panel h2 {
+        margin-bottom: 16px;
+      }
+      .allocation {
+        margin: 18px 0;
+      }
+      .allocation-head {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .track {
+        height: 5px;
+        border-radius: 4px;
+        background: var(--soft);
+        overflow: hidden;
+      }
+      .fill {
+        height: 100%;
+        border-radius: 4px;
+        background: var(--accent);
+      }
+      .week-chart {
+        height: 180px;
+        display: flex;
+        align-items: end;
+        gap: 14px;
+        padding: 20px 0 30px;
+        margin-top: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .day-bar {
+        position: relative;
+        flex: 1;
+        max-width: 64px;
+        margin: 0 auto;
+        min-height: 5px;
+        background: var(--accent-soft);
+        border-radius: 7px 7px 0 0;
+      }
+      .day-bar.selected {
+        background: var(--accent);
+      }
+      .day-bar span {
+        position: absolute;
+        bottom: -28px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .day-bar:hover {
+        background: var(--accent);
+      }
+      .stats-primary {
+        font-size: 42px;
+        font-weight: 600;
+        letter-spacing: -2px;
+        margin: 8px 0 20px;
+      }
+      .stats-sub {
+        display: flex;
+        gap: 28px;
+        padding-bottom: 25px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 24px;
+      }
+      .stats-sub strong {
+        display: block;
+        font: 500 21px var(--number);
+      }
+      .stats-sub small {
+        font-size: 11px;
+      }
+      .hour-map {
+        position: relative;
+        height: 86px;
+        margin: 24px 0 14px;
+        background: repeating-linear-gradient(
+          90deg,
+          var(--line) 0,
+          var(--line) 1px,
+          transparent 1px,
+          transparent 25%
+        );
+      }
+      .hour-map .slot {
+        position: absolute;
+        height: 13px;
+        border-radius: 5px;
+        background: var(--accent);
+        top: 28px;
+      }
+      .hour-map .slot.pause {
+        background: var(--pause);
+        top: 48px;
+      }
+      .hour-labels {
+        display: flex;
+        justify-content: space-between;
+        font: 11px var(--number);
+        color: var(--muted);
+      }
+      .settings-layout {
+        max-width: 820px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+      }
+      .setting {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 18px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .setting select {
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--paper);
+        color: var(--ink);
+        max-width: 160px;
+      }
+      .setting small {
+        display: block;
+        font-size: 11px;
+      }
+      .sync-diagram {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        text-align: center;
+        padding: 24px 0;
+        font-size: 13px;
+      }
+      .sync-diagram div {
+        flex: 1;
+        background: var(--soft);
+        padding: 14px 5px;
+        border-radius: 12px;
+      }
+      .sync-diagram span {
+        color: var(--muted);
+      }
+      .sync-explanation {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.9;
+      }
+      .demo-badge {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 16px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--ink);
+        color: var(--bg);
+        padding: 12px 20px;
+        border-radius: 14px;
+        font-size: 13px;
+        z-index: 8;
+        max-width: 90%;
+        display: none;
+      }
+      .dialog {
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--paper);
+        color: var(--ink);
+        width: min(440px, calc(100% - 32px));
+      }
+      .dialog::backdrop {
+        background: #0b211b66;
+      }
+      .dialog form {
+        display: grid;
+        gap: 18px;
+      }
+      .dialog-actions {
+        display: flex;
+        justify-content: end;
+        gap: 8px;
+      }
+      .dialog-actions button {
+        min-height: 48px;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 26px 0;
+      }
+      .compact-title {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      @media (min-width: 1500px) {
+        .workspace {
+          padding-left: 64px;
+          padding-right: 64px;
+        }
+      }
+      @media (max-width: 1050px) {
+        .workspace {
+          padding: 28px;
+        }
+        .focus-layout {
+          grid-template-columns: minmax(0, 1fr) 260px;
+          gap: 24px;
+        }
+        .context {
+          padding-left: 20px;
+        }
+        .dashboard-grid {
+          gap: 24px;
+        }
+        .timer {
+          font-size: 76px;
+        }
+        .lab-bar {
+          padding-inline: 20px;
+        }
+      }
+      @media (max-width: 780px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .rail {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 6;
+          flex-direction: row;
+          justify-content: space-around;
+          gap: 0;
+          padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+          border: 0;
+          border-top: 1px solid var(--line);
+          background: var(--paper);
+        }
+        .brand,
+        .rail-note {
+          display: none;
+        }
+        .nav-btn {
+          width: 70px;
+          padding: 8px 0;
+          font-size: 11px;
+          gap: 4px;
+        }
+        .nav-btn svg {
+          width: 22px;
+          height: 22px;
+        }
+        .workspace {
+          padding: 26px 22px 110px;
+        }
+        .page-head {
+          margin-bottom: 24px;
+        }
+        .page-head h1 {
+          font-size: 28px;
+        }
+        .island {
+          font-size: 12px;
+          padding: 6px 12px;
+        }
+        .island-note {
+          font-size: 9px;
+        }
+        .focus-layout,
+        .dashboard-grid,
+        .settings-layout {
+          grid-template-columns: 1fr;
+        }
+        .context {
+          padding-left: 0;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+          padding-top: 24px;
+          margin-top: 8px;
+        }
+        .focus-layout {
+          gap: 28px;
+        }
+        .timer {
+          font-size: 76px;
+          min-height: 119px;
+          margin: 14px 0 3px;
+        }
+        .focus-status {
+          margin-top: 30px;
+        }
+        .actions .primary {
+          min-width: 0;
+          flex: 1;
+        }
+        .actions .secondary {
+          min-width: 88px;
+          padding-inline: 16px;
+        }
+        .ribbon-area {
+          margin-top: 26px;
+        }
+        .canvas-wrap {
+          height: 166px;
+        }
+        .three-times strong {
+          font-size: 20px;
+        }
+        .context .today-total {
+          font-size: 30px;
+        }
+        .context .tip {
+          display: none;
+        }
+        .lab-bar {
+          padding: 7px 14px;
+          align-items: start;
+          font-size: 10px;
+        }
+        .lab-tools {
+          gap: 4px;
+        }
+        .lab-tools select {
+          font-size: 11px;
+          max-width: 85px;
+        }
+        .lab-tools button {
+          font-size: 16px;
+          min-height: 34px;
+        }
+        .task-summary {
+          gap: 28px;
+        }
+        .task-summary strong {
+          font-size: 30px;
+        }
+        .stats-primary {
+          font-size: 36px;
+        }
+        .stats-sub {
+          gap: 22px;
+        }
+        .week-chart {
+          gap: 16px;
+        }
+        .toast {
+          bottom: 100px;
+        }
+        .eyebrow {
+          font-size: 10px;
+        }
+        .text-tabs {
+          gap: 14px;
+        }
+        .text-tabs button {
+          font-size: 11px;
+        }
+        .settings-layout {
+          gap: 26px;
+        }
+        .panel {
+          padding: 21px;
+        }
+      }
+      @media (max-width: 780px) {
+        .workspace {
+          padding-top: 22px;
+        }
+        .page-head {
+          margin-bottom: 18px;
+        }
+        .task-entry {
+          padding-block: 12px;
+        }
+        .focus-status {
+          margin-top: 22px;
+        }
+        .timer {
+          font-size: 72px;
+          min-height: 100px;
+          margin: 8px 0 0;
+        }
+        .timer-caption {
+          margin-bottom: 18px;
+        }
+        .live-note {
+          margin-top: 10px;
+          min-height: 18px;
+        }
+        .ribbon-area {
+          margin-top: 22px;
+        }
+        .ribbon-area .section-head {
+          margin-bottom: 2px;
+        }
+        .ribbon-area .text-tabs button {
+          min-height: 36px;
+        }
+        .canvas-wrap {
+          height: 126px;
+        }
+        .three-times {
+          padding-top: 14px;
+          margin-top: 12px;
+        }
+        .three-times strong {
+          line-height: 1.5;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg
+      aria-hidden="true"
+      style="position: absolute; width: 0; height: 0; overflow: hidden"
+    >
+      <defs>
+        <symbol id="i-timer" viewBox="0 0 24 24">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="13" r="8" />
+            <path d="M9 2h6M12 6v7l3-2" />
+          </g>
+        </symbol>
+        <symbol id="i-task" viewBox="0 0 24 24">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <path d="m3 6 2 2 4-4M12 6h9M3 13h5M12 13h9M3 20h5M12 20h9" />
+          </g>
+        </symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24">
+          <path
+            d="M4 20V12M12 20V4M20 20V8"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <path d="M4 6h16M4 12h16M4 18h16" />
+            <circle cx="9" cy="6" r="2" />
+            <circle cx="16" cy="12" r="2" />
+            <circle cx="8" cy="18" r="2" />
+          </g>
+        </symbol>
+      </defs>
+    </svg>
+    <header class="lab-bar">
+      <div>
+        FocusLink 下一版 · 交互设计演示<br /><span
+          >样例数据，不连接真实账号</span
+        >
+      </div>
+      <div class="lab-tools">
+        <label for="speed">演示速度</label
+        ><select id="speed">
+          <option value="1" selected>1×</option>
+          <option value="20">20×</option>
+          <option value="60">60×</option></select
+        ><button id="theme" aria-label="切换明暗主题">◐</button>
+      </div>
+    </header>
+    <div class="app">
+      <nav class="rail" aria-label="主要功能">
+        <div class="brand" aria-label="FocusLink">FL</div>
+        <button class="nav-btn active" data-view="focus" aria-current="page">
+          <svg><use href="#i-timer" /></svg>专注</button
+        ><button class="nav-btn" data-view="tasks">
+          <svg><use href="#i-task" /></svg>任务</button
+        ><button class="nav-btn" data-view="stats">
+          <svg><use href="#i-chart" /></svg>统计</button
+        ><button class="nav-btn" data-view="settings">
+          <svg><use href="#i-settings" /></svg>设置
+        </button>
+        <div class="rail-note">把时间留给眼前的事</div>
+      </nav>
+      <main class="workspace">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow" id="page-kicker">此刻，做一件事</p>
+            <h1 id="page-title">专注</h1>
+          </div>
+          <div>
+            <button
+              class="island"
+              id="island"
+              title="这是页面内的系统岛示意，不是小米系统超级岛"
+            >
+              <i class="dot"></i
+              ><span id="island-time" class="number">26:40</span
+              ><span id="island-state">专注中</span>
+            </button>
+            <p class="island-note">系统岛示意 · 非系统集成</p>
+          </div>
+        </header>
+        <section class="view active" id="focus-view" aria-label="专注">
+          <div class="focus-layout">
+            <div class="stage">
+              <button class="task-entry" id="choose-task">
+                <span
+                  ><small>当前任务 · 阅读与整理</small
+                  ><strong id="focus-task"
+                    >读完这一章，写下自己的要点</strong
+                  ></span
+                ><span aria-hidden="true">⌄</span>
+              </button>
+              <p class="focus-status">
+                <i class="dot" id="state-dot"></i
+                ><span id="focus-state">正在专注</span>
+              </p>
+              <div
+                class="timer"
+                id="timer"
+                role="timer"
+                aria-label="当前专注时间"
+              >
+                <span>26:40</span>
+              </div>
+              <p class="timer-caption" id="timer-caption">本轮有效专注</p>
+              <div class="actions">
+                <button class="primary" id="toggle">Ⅱ　暂停</button
+                ><button class="secondary" id="finish">结束</button>
+              </div>
+              <p
+                class="live-note"
+                id="focus-note"
+                role="status"
+                aria-live="polite"
+              >
+                本机计时 · 结束后再同步记录
+              </p>
+              <div class="ribbon-area">
+                <div class="section-head">
+                  <h2>时间之带</h2>
+                  <div class="text-tabs" id="ribbon-styles">
+                    <button
+                      class="active"
+                      data-style="flow"
+                      aria-pressed="true"
+                    >
+                      流线</button
+                    ><button data-style="light" aria-pressed="false">
+                      光栅</button
+                    ><button data-style="blocks" aria-pressed="false">
+                      时段
+                    </button>
+                  </div>
+                </div>
+                <div class="canvas-wrap">
+                  <canvas
+                    id="ribbon"
+                    role="img"
+                    aria-label="本轮专注与暂停时间线；下方有等价时段明细"
+                  ></canvas
+                  ><output class="ribbon-tooltip" id="ribbon-tooltip"></output>
+                </div>
+                <div class="ribbon-scale">
+                  <span>拖动查看时段 · 滚轮可缩放</span
+                  ><label
+                    >视野
+                    <input
+                      id="zoom"
+                      type="range"
+                      min="5"
+                      max="60"
+                      value="40"
+                      aria-label="时间之带显示分钟数"
+                  /></label>
+                </div>
+              </div>
+              <div class="three-times">
+                <div>
+                  <small>累计专注</small
+                  ><strong id="active-total">26:40</strong>
+                </div>
+                <div>
+                  <small>累计暂停</small><strong id="pause-total">02:00</strong>
+                </div>
+                <div>
+                  <small>总历时</small><strong id="wall-total">28:40</strong>
+                </div>
+              </div>
+            </div>
+            <aside class="context">
+              <p class="compact-title">今天的节奏</p>
+              <p class="today-total">02:48:00</p>
+              <p class="muted" style="font-size: 12px">有效专注 · 演示统计</p>
+              <div class="summary-line">
+                <span>已完成专注</span><strong>4 次</strong>
+              </div>
+              <div class="summary-line">
+                <span>最长连续专注</span><strong class="number">48:00</strong>
+              </div>
+              <div class="session-list">
+                <h2>本轮时段</h2>
+                <div id="sessions"></div>
+              </div>
+              <p class="tip">
+                绿色标识专注，红色标识暂停。此刻的游标保持稳定，历史缓缓向左流动。暂停不会清掉已完成的专注。
+              </p>
+            </aside>
+          </div>
+        </section>
+        <section class="view" id="tasks-view" aria-label="任务看板">
+          <div class="dashboard-grid">
+            <div>
+              <div class="task-summary">
+                <div>
+                  <strong id="remaining-count">4</strong><small>待办任务</small>
+                </div>
+                <div>
+                  <strong id="done-count">2</strong><small>今天已完成</small>
+                </div>
+                <div><strong>3</strong><small>任务清单</small></div>
+              </div>
+              <div class="toolbar">
+                <input
+                  type="search"
+                  id="task-search"
+                  placeholder="搜索任务"
+                  aria-label="搜索任务"
+                /><button class="add-btn" id="add-task">＋ 新建</button>
+              </div>
+              <div class="text-tabs" id="task-filter">
+                <button class="active" data-filter="open" aria-pressed="true">
+                  待办</button
+                ><button data-filter="done" aria-pressed="false">已完成</button
+                ><button data-filter="all" aria-pressed="false">全部</button>
+              </div>
+              <div class="task-group-title">
+                <span>今天 · 按清单组织</span><span>演示任务</span>
+              </div>
+              <div id="task-list"></div>
+              <p class="demo-badge">
+                演示中新增与完成立即生效，不会写入你的真实清单。
+              </p>
+            </div>
+            <aside>
+              <div class="panel">
+                <h2>今天把时间用在哪里</h2>
+                <div class="allocation">
+                  <div class="allocation-head">
+                    <span>阅读与整理</span><span>1小时24分</span>
+                  </div>
+                  <div class="track">
+                    <div class="fill" style="width: 50%"></div>
+                  </div>
+                </div>
+                <div class="allocation">
+                  <div class="allocation-head">
+                    <span>数学</span><span>54分</span>
+                  </div>
+                  <div class="track">
+                    <div class="fill" style="width: 32%"></div>
+                  </div>
+                </div>
+                <div class="allocation">
+                  <div class="allocation-head">
+                    <span>英语</span><span>30分</span>
+                  </div>
+                  <div class="track">
+                    <div class="fill" style="width: 18%"></div>
+                  </div>
+                </div>
+                <p class="muted" style="font-size: 12px; margin-top: 24px">
+                  任务页有自己的看板与列表，点击「专注」才进入计时页面。
+                </p>
+              </div>
+            </aside>
+          </div>
+        </section>
+        <section class="view" id="stats-view" aria-label="统计看板">
+          <div class="dashboard-grid">
+            <div>
+              <div class="section-head">
+                <p class="muted" id="stats-range">10月21日 — 10月27日</p>
+                <div class="text-tabs" id="stats-filter">
+                  <button class="active" data-range="week" aria-pressed="true">
+                    近7天</button
+                  ><button data-range="today" aria-pressed="false">今天</button>
+                </div>
+              </div>
+              <p class="muted" style="font-size: 13px; margin-top: 20px">
+                有效专注
+              </p>
+              <p class="stats-primary" id="stats-total">14小时36分</p>
+              <div class="stats-sub">
+                <div>
+                  <strong id="stat-sessions">24</strong><small>专注次数</small>
+                </div>
+                <div>
+                  <strong id="stat-average">36分</strong><small>平均时长</small>
+                </div>
+                <div><strong>48分</strong><small>最长连续</small></div>
+              </div>
+              <h2>每日专注</h2>
+              <div class="week-chart" id="week-chart"></div>
+              <div class="section-head" style="margin-top: 30px">
+                <h2>今天的时段</h2>
+                <small>专注 / 暂停</small>
+              </div>
+              <div class="hour-map">
+                <i class="slot" style="left: 37.5%; width: 3.3%"></i
+                ><i class="slot" style="left: 41%; width: 2%"></i
+                ><i class="slot pause" style="left: 40.8%; width: 0.2%"></i
+                ><i class="slot" style="left: 58.3%; width: 4.7%"></i
+                ><i class="slot pause" style="left: 61.8%; width: 0.3%"></i>
+              </div>
+              <div class="hour-labels">
+                <span>00:00</span><span>06:00</span><span>12:00</span
+                ><span>18:00</span><span>24:00</span>
+              </div>
+              <p class="demo-badge">
+                看板使用独立样例数据；不会用它替换真实统计。
+              </p>
+            </div>
+            <aside class="panel">
+              <h2>最近记录</h2>
+              <div class="session-row">
+                <span class="duration">48分</span>阅读与整理<small
+                  >今天 09:00 — 09:48</small
+                >
+              </div>
+              <div class="session-row">
+                <span class="duration">54分</span>数学错题回顾<small
+                  >今天 10:00 — 10:58</small
+                >
+              </div>
+              <div class="session-row">
+                <span class="duration">30分</span>英语阅读<small
+                  >今天 14:00 — 14:32</small
+                >
+              </div>
+              <div class="session-row">
+                <span class="duration">36分</span>整理笔记<small
+                  >今天 15:10 — 15:48</small
+                >
+              </div>
+            </aside>
+          </div>
+        </section>
+        <section class="view" id="settings-view" aria-label="设置">
+          <div class="settings-layout">
+            <div>
+              <h2>外观立即预览</h2>
+              <div class="setting">
+                <span>计时仪表<small>切换后回到专注页即可看到</small></span
+                ><select id="instrument">
+                  <option value="standard">数字读数</option>
+                  <option value="flip">翻页</option>
+                  <option value="segment">数码</option>
+                  <option value="analog">指针</option>
+                  <option value="thin">衬线</option>
+                </select>
+              </div>
+              <div class="setting">
+                <span>强调色</span
+                ><select id="accent">
+                  <option value="green">翡翠</option>
+                  <option value="blue">钴蓝</option>
+                  <option value="amber">琥珀</option>
+                </select>
+              </div>
+              <div class="setting">
+                <span>时间之带<small>只改变视觉表现，不改变时长</small></span
+                ><select id="style-select">
+                  <option value="flow">流线</option>
+                  <option value="light">光栅</option>
+                  <option value="blocks">时段</option>
+                </select>
+              </div>
+              <div class="setting">
+                <span>演示数据</span
+                ><button id="reset-demo" style="color: var(--accent)">
+                  重新开始
+                </button>
+              </div>
+            </div>
+            <div>
+              <h2>同步应该怎样工作</h2>
+              <div class="sync-diagram">
+                <div>手机本机<br /><small>先保存</small></div>
+                <span>→</span>
+                <div>FocusLink 云<br /><small>确认与增量</small></div>
+                <span>→</span>
+                <div>其他设备<br /><small>联网拉取</small></div>
+              </div>
+              <p class="sync-explanation">
+                开始专注与新增任务先在本机完成。断网时保留记录和待同步队列；恢复连接后补传。只有云端确认过的记录才标记已同步。<br /><br />跨端实时控制是单独的能力，需要在线确认。电脑关机不应阻止手机本机专注。滴答和番茄
+                To-do 的投递属于另一条链路。
+              </p>
+              <p class="demo-badge">
+                本页解释目标行为；这份 HTML 没有真实同步接口。
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <dialog class="dialog" id="task-dialog">
+      <form id="task-form">
+        <h2>新建演示任务</h2>
+        <input
+          id="new-task-title"
+          placeholder="这次想完成什么？"
+          maxlength="100"
+          required
+          aria-label="任务名称"
+        />
+        <p class="muted" style="font-size: 12px">
+          保存后立即出现在演示任务列表。
+        </p>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-task">取消</button
+          ><button class="primary" type="submit">保存到演示</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="dialog" id="pick-dialog">
+      <h2>选择当前任务</h2>
+      <div id="pick-list" style="margin: 18px 0"></div>
+      <button class="secondary" id="free-focus">自由专注</button
+      ><button id="cancel-pick" style="margin-left: 14px">关闭</button>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script>
+      (() => {
+        "use strict";
+        const $ = (id) => document.getElementById(id);
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+        let mode = "running",
+          elapsed = 1600,
+          paused = 120,
+          speed = 1,
+          last = performance.now(),
+          style = "flow",
+          instrument = "standard",
+          filter = "open",
+          selected = "读完这一章，写下自己的要点",
+          zoom = 40,
+          offset = 0,
+          pointer = null,
+          lastDraw = 0,
+          view = "focus";
+        let phases = [
+          { type: "focus", start: 0, end: 1020 },
+          { type: "pause", start: 1020, end: 1140 },
+          { type: "focus", start: 1140, end: null },
+        ];
+        let tasks = [
+          { id: 1, title: selected, group: "阅读与整理", done: false },
+          { id: 2, title: "整理今日笔记", group: "阅读与整理", done: false },
+          { id: 3, title: "复盘一道数学错题", group: "数学", done: false },
+          { id: 4, title: "完成一篇英语阅读", group: "英语", done: false },
+          { id: 5, title: "复习昨天的单词", group: "英语", done: true },
+          { id: 6, title: "整理学习桌面", group: "收件箱", done: true },
+        ];
+        const fmt = (s) => {
+          s = Math.max(0, Math.floor(s));
+          return (
+            (s >= 3600 ? Math.floor(s / 3600) + ":" : "") +
+            String(Math.floor(s / 60) % 60).padStart(2, "0") +
+            ":" +
+            String(s % 60).padStart(2, "0")
+          );
+        };
+        const esc = (s) =>
+          String(s).replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+        function notify(t) {
+          $("toast").textContent = t;
+          $("toast").style.display = "block";
+          clearTimeout(notify.t);
+          notify.t = setTimeout(
+            () => ($("toast").style.display = "none"),
+            2600,
+          );
+        }
+        function changeView(v) {
+          view = v;
+          document
+            .querySelectorAll(".view")
+            .forEach((x) => x.classList.toggle("active", x.id === v + "-view"));
+          document.querySelectorAll(".nav-btn").forEach((x) => {
+            x.classList.toggle("active", x.dataset.view === v);
+            x.setAttribute(
+              "aria-current",
+              x.dataset.view === v ? "page" : "false",
+            );
+          });
+          const names = {
+            focus: ["专注", "此刻，做一件事"],
+            tasks: ["任务", "让下一步清楚一点"],
+            stats: ["统计", "看清时间的去向"],
+            settings: ["设置", "按你的方式专注"],
+          };
+          $("page-title").textContent = names[v][0];
+          $("page-kicker").textContent = names[v][1];
+          renderTasks();
+          draw(true);
+          window.scrollTo(0, 0);
+        }
+        document
+          .querySelectorAll("[data-view]")
+          .forEach((b) => (b.onclick = () => changeView(b.dataset.view)));
+        function renderTimer() {
+          const value = fmt(elapsed);
+          $("timer").className = "timer " + instrument;
+          $("timer").style.setProperty("--hand", (elapsed % 60) * 6 + "deg");
+          if (instrument === "flip")
+            $("timer").innerHTML = [...value]
+              .map((c) =>
+                c === ":"
+                  ? "<span>:</span>"
+                  : '<span class="digit">' + c + "</span>",
+              )
+              .join("");
+          else $("timer").innerHTML = "<span>" + value + "</span>";
+          $("active-total").textContent = value;
+          $("pause-total").textContent = fmt(paused);
+          $("wall-total").textContent = fmt(elapsed + paused);
+          $("island-time").textContent = mode === "idle" ? "待开始" : value;
+          $("island-state").textContent =
+            mode === "paused"
+              ? "已暂停"
+              : mode === "running"
+                ? "专注中"
+                : "本机";
+          $("focus-state").textContent =
+            mode === "running"
+              ? "正在专注"
+              : mode === "paused"
+                ? "已暂停"
+                : "待开始";
+          $("state-dot").style.background =
+            mode === "paused" ? "var(--pause)" : "var(--accent)";
+          $("focus-status")?.setAttribute("data-state", mode);
+          $("focus-task").textContent = selected;
+          $("toggle").textContent =
+            mode === "running"
+              ? "Ⅱ　暂停"
+              : mode === "paused"
+                ? "▶　继续"
+                : "▶　开始专注";
+          $("finish").disabled = mode === "idle";
+          $("focus-note").textContent =
+            mode === "idle"
+              ? "演示记录已保留，点击开始新一轮"
+              : "本机计时 · 结束后再同步记录";
+          renderSessions();
+        }
+        function renderSessions() {
+          const wall = elapsed + paused;
+          $("sessions").innerHTML = phases
+            .slice(-5)
+            .map(
+              (p) =>
+                '<div class="session-row ' +
+                (p.type === "pause" ? "pause" : "") +
+                '"><span class="duration">' +
+                fmt((p.end ?? wall) - p.start) +
+                "</span>" +
+                (p.type === "pause" ? "暂停" : "专注") +
+                "<small>" +
+                fmt(p.start) +
+                " — " +
+                (p.end == null ? "现在" : fmt(p.end)) +
+                "</small></div>",
+            )
+            .join("");
+        }
+        function switchMode() {
+          const wall = elapsed + paused;
+          if (mode === "idle") {
+            mode = "running";
+            elapsed = 0;
+            paused = 0;
+            phases = [{ type: "focus", start: 0, end: null }];
+          } else {
+            if (phases.length) phases[phases.length - 1].end = wall;
+            mode = mode === "running" ? "paused" : "running";
+            phases.push({
+              type: mode === "paused" ? "pause" : "focus",
+              start: wall,
+              end: null,
+            });
+          }
+          last = performance.now();
+          renderTimer();
+          draw(true);
+        }
+        $("toggle").onclick = switchMode;
+        $("finish").onclick = () => {
+          if (phases.length) phases[phases.length - 1].end = elapsed + paused;
+          mode = "idle";
+          renderTimer();
+          draw(true);
+          notify("本轮演示专注已结束，记录仍保留在预览中");
+        };
+        $("speed").onchange = (e) => {
+          speed = Number(e.target.value);
+          last = performance.now();
+        };
+        $("theme").onclick = () => {
+          document.documentElement.dataset.theme =
+            document.documentElement.dataset.theme === "dark"
+              ? "light"
+              : "dark";
+          applyAccent();
+          draw(true);
+        };
+        $("island").onclick = () =>
+          notify("这是页面内的系统岛示意；小米真实显示需要单独验收");
+        function applyAccent() {
+          const dark = document.documentElement.dataset.theme === "dark";
+          const color = $("accent").value;
+          const colors = {
+            green: dark ? ["#80ddb0", "#223f30"] : ["#087953", "#dfefe4"],
+            blue: dark ? ["#93c4ff", "#22384d"] : ["#2468a1", "#e0ecf4"],
+            amber: dark ? ["#ebc57f", "#423722"] : ["#875b15", "#f1e9d8"],
+          };
+          document.documentElement.style.setProperty(
+            "--accent",
+            colors[color][0],
+          );
+          document.documentElement.style.setProperty(
+            "--accent-soft",
+            colors[color][1],
+          );
+        }
+        $("accent").onchange = () => {
+          applyAccent();
+          draw(true);
+        };
+        $("instrument").onchange = (e) => {
+          instrument = e.target.value;
+          renderTimer();
+          notify("仪表已切换，回到专注页可查看");
+        };
+        function setStyle(s) {
+          style = s;
+          $("style-select").value = s;
+          document.querySelectorAll("#ribbon-styles button").forEach((b) => {
+            b.classList.toggle("active", b.dataset.style === s);
+            b.setAttribute("aria-pressed", String(b.dataset.style === s));
+          });
+          draw(true);
+        }
+        document
+          .querySelectorAll("[data-style]")
+          .forEach((b) => (b.onclick = () => setStyle(b.dataset.style)));
+        $("style-select").onchange = (e) => setStyle(e.target.value);
+        $("zoom").oninput = (e) => {
+          zoom = Number(e.target.value);
+          draw(true);
+        };
+        const canvas = $("ribbon"),
+          ctx = canvas.getContext("2d");
+        function draw(force = false, t = performance.now()) {
+          if (view !== "focus") return;
+          const wrap = canvas.parentElement;
+          const w = wrap.clientWidth,
+            h = wrap.clientHeight,
+            dpr = Math.min(devicePixelRatio || 1, 2);
+          if (!w) return;
+          if (
+            canvas.width !== Math.round(w * dpr) ||
+            canvas.height !== Math.round(h * dpr)
+          ) {
+            canvas.width = Math.round(w * dpr);
+            canvas.height = Math.round(h * dpr);
+          }
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.clearRect(0, 0, w, h);
+          const c = getComputedStyle(document.documentElement),
+            accent = c.getPropertyValue("--accent").trim(),
+            pause = c.getPropertyValue("--pause").trim(),
+            muted = c.getPropertyValue("--muted").trim(),
+            line = c.getPropertyValue("--line").trim();
+          const wall = elapsed + paused,
+            span = zoom * 60,
+            left = Math.max(0, wall - span * 0.82 - offset),
+            right = left + span,
+            pad = 8,
+            usable = w - 16,
+            map = (s) => pad + ((s - left) / span) * usable,
+            mid = h * 0.47;
+          ctx.strokeStyle = line;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(pad, h - 34);
+          ctx.lineTo(w - pad, h - 34);
+          ctx.stroke();
+          const tick = span <= 900 ? 120 : 600;
+          ctx.font =
+            "10px " +
+            getComputedStyle(document.documentElement).getPropertyValue(
+              "--number",
+            );
+          ctx.fillStyle = muted;
+          for (let s = Math.ceil(left / tick) * tick; s < right; s += tick) {
+            const x = map(s);
+            if (x < 24 || x > w - 24) continue;
+            ctx.beginPath();
+            ctx.moveTo(x, h - 36);
+            ctx.lineTo(x, h - 30);
+            ctx.stroke();
+            ctx.textAlign = "center";
+            ctx.fillText(fmt(s).replace(/:00$/, ""), x, h - 13);
+          }
+          const at = reduced.matches || mode === "idle" ? 0 : t / 1000;
+          for (const [index, p] of phases.entries()) {
+            const a = Math.max(left, p.start),
+              b = Math.min(right, p.end ?? wall);
+            if (b <= a) continue;
+            const xa = map(a),
+              xb = map(b),
+              width = xb - xa,
+              color = p.type === "pause" ? pause : accent;
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            if (style === "blocks") {
+              ctx.globalAlpha = p.type === "pause" ? 0.65 : 0.85;
+              ctx.beginPath();
+              ctx.roundRect(
+                xa,
+                mid - (p.type === "pause" ? 8 : 17),
+                Math.max(1, width - 2),
+                p.type === "pause" ? 16 : 34,
+                5,
+              );
+              ctx.fill();
+            } else if (style === "light") {
+              for (let x = xa; x < xb; x += 3) {
+                const u = (x - xa) / Math.max(1, width),
+                  height =
+                    (p.type === "pause" ? 7 : 17) *
+                    (0.4 + 0.6 * Math.sin(Math.PI * u));
+                ctx.globalAlpha = 0.25 + 0.65 * Math.sin(Math.PI * u);
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(x, mid - height);
+                ctx.lineTo(x, mid + height);
+                ctx.stroke();
+              }
+            } else {
+              const layers = p.type === "pause" ? 7 : 15;
+              for (let j = 0; j < layers; j++) {
+                const k = j - (layers - 1) / 2;
+                ctx.globalAlpha =
+                  (p.type === "pause" ? 0.2 : 0.09) +
+                  0.34 * (1 - Math.abs(k) / Math.max(1, layers));
+                ctx.lineWidth = p.type === "pause" ? 0.8 : 1;
+                ctx.beginPath();
+                for (let x = xa; x <= xb; x += 2) {
+                  const u = (x - xa) / Math.max(1, width),
+                    fade = Math.pow(
+                      Math.sin(Math.PI * Math.min(0.999, Math.max(0.001, u))),
+                      0.45,
+                    ),
+                    a1 = p.type === "pause" ? 2.5 : 5.5,
+                    wave =
+                      Math.sin(x * 0.027 - at * 0.32 + index + j * 0.16) * a1 +
+                      Math.sin(x * 0.009 + at * 0.21 + j * 0.14) * a1 * 0.65,
+                    y = mid + (k * 2.5 + wave) * fade;
+                  if (x === xa) ctx.moveTo(x, y);
+                  else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+              }
+            }
+            ctx.globalAlpha = 1;
+          }
+          const nowX = map(wall);
+          if (nowX >= pad && nowX <= w - pad) {
+            ctx.strokeStyle = mode === "paused" ? pause : accent;
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(nowX, mid - 39);
+            ctx.lineTo(nowX, mid + 39);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = mode === "paused" ? pause : accent;
+            ctx.beginPath();
+            ctx.arc(nowX, mid, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.textAlign = nowX > w - 60 ? "right" : "left";
+            ctx.fillText(
+              mode === "paused" ? "暂停" : "现在",
+              nowX + (nowX > w - 60 ? -6 : 6),
+              mid - 44,
+            );
+          }
+          if (pointer !== null) {
+            const sec =
+              left + Math.max(0, Math.min(1, (pointer - pad) / usable)) * span;
+            const phase = phases.find(
+              (p) => sec >= p.start && sec <= (p.end ?? wall),
+            );
+            ctx.strokeStyle = muted;
+            ctx.globalAlpha = 0.35;
+            ctx.beginPath();
+            ctx.moveTo(pointer, 12);
+            ctx.lineTo(pointer, h - 34);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            $("ribbon-tooltip").textContent =
+              fmt(sec) +
+              " · " +
+              (phase ? (phase.type === "pause" ? "暂停" : "专注") : "尚无记录");
+            $("ribbon-tooltip").style.display = "block";
+          } else $("ribbon-tooltip").style.display = "none";
+        }
+        canvas.onpointermove = (e) => {
+          pointer = e.clientX - canvas.getBoundingClientRect().left;
+          draw(true);
+        };
+        canvas.onpointerleave = () => {
+          pointer = null;
+          draw(true);
+        };
+        canvas.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            zoom = Math.max(5, Math.min(60, zoom + (e.deltaY > 0 ? 5 : -5)));
+            $("zoom").value = zoom;
+            draw(true);
+          },
+          { passive: false },
+        );
+        new ResizeObserver(() => draw(true)).observe(canvas.parentElement);
+        function renderTasks() {
+          const q = $("task-search").value.toLowerCase();
+          const items = tasks.filter(
+            (x) =>
+              (filter === "all" || x.done === (filter === "done")) &&
+              x.title.toLowerCase().includes(q),
+          );
+          $("remaining-count").textContent = tasks.filter(
+            (x) => !x.done,
+          ).length;
+          $("done-count").textContent = tasks.filter((x) => x.done).length;
+          $("task-list").innerHTML =
+            items
+              .map(
+                (x) =>
+                  '<div class="task-row ' +
+                  (x.done ? "done" : "") +
+                  '"><button class="task-check" data-check="' +
+                  x.id +
+                  '" aria-label="' +
+                  (x.done ? "恢复任务" : "完成任务") +
+                  '"><span class="check-shape">' +
+                  (x.done ? "✓" : "") +
+                  '</span></button><div class="task-info"><p class="task-title">' +
+                  esc(x.title) +
+                  '</p><p class="task-meta">' +
+                  esc(x.group) +
+                  " · " +
+                  (x.done ? "已完成" : "本机已保存") +
+                  "</p></div>" +
+                  (!x.done
+                    ? '<button class="task-go" data-go="' +
+                      x.id +
+                      '">专注 →</button>'
+                    : "") +
+                  "</div>",
+              )
+              .join("") || '<p class="empty">没有符合条件的任务</p>';
+          document.querySelectorAll("[data-check]").forEach(
+            (b) =>
+              (b.onclick = () => {
+                const x = tasks.find((x) => x.id === Number(b.dataset.check));
+                x.done = !x.done;
+                renderTasks();
+              }),
+          );
+          document.querySelectorAll("[data-go]").forEach(
+            (b) =>
+              (b.onclick = () => {
+                selected = tasks.find(
+                  (x) => x.id === Number(b.dataset.go),
+                ).title;
+                changeView("focus");
+                renderTimer();
+                notify("已选择任务，本轮演示继续计时");
+              }),
+          );
+        }
+        $("task-search").oninput = renderTasks;
+        document.querySelectorAll("[data-filter]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              filter = b.dataset.filter;
+              document.querySelectorAll("[data-filter]").forEach((x) => {
+                x.classList.toggle("active", x === b);
+                x.setAttribute("aria-pressed", String(x === b));
+              });
+              renderTasks();
+            }),
+        );
+        $("add-task").onclick = () => $("task-dialog").showModal();
+        $("cancel-task").onclick = () => $("task-dialog").close();
+        $("task-form").onsubmit = (e) => {
+          e.preventDefault();
+          const title = $("new-task-title").value.trim();
+          if (!title) return;
+          tasks.unshift({
+            id: Date.now(),
+            title,
+            group: "收件箱",
+            done: false,
+          });
+          $("new-task-title").value = "";
+          $("task-dialog").close();
+          filter = "open";
+          document.querySelectorAll("[data-filter]").forEach((x) => {
+            x.classList.toggle("active", x.dataset.filter === "open");
+            x.setAttribute("aria-pressed", String(x.dataset.filter === "open"));
+          });
+          renderTasks();
+          notify("演示任务已立即保存");
+        };
+        $("choose-task").onclick = () => {
+          $("pick-list").innerHTML = tasks
+            .filter((x) => !x.done)
+            .map(
+              (x) =>
+                '<button style="display:block;width:100%;text-align:left;border-bottom:1px solid var(--line);padding:12px 0" data-pick="' +
+                x.id +
+                '">' +
+                esc(x.title) +
+                "</button>",
+            )
+            .join("");
+          document.querySelectorAll("[data-pick]").forEach(
+            (b) =>
+              (b.onclick = () => {
+                selected = tasks.find(
+                  (x) => x.id === Number(b.dataset.pick),
+                ).title;
+                $("pick-dialog").close();
+                renderTimer();
+              }),
+          );
+          $("pick-dialog").showModal();
+        };
+        $("cancel-pick").onclick = () => $("pick-dialog").close();
+        $("free-focus").onclick = () => {
+          selected = "自由专注";
+          $("pick-dialog").close();
+          renderTimer();
+        };
+        $("reset-demo").onclick = () => {
+          elapsed = 0;
+          paused = 0;
+          phases = [];
+          mode = "idle";
+          offset = 0;
+          last = performance.now();
+          renderTimer();
+          draw(true);
+          notify("演示已重置，真实记录没有变化");
+        };
+        const week = [84, 132, 96, 156, 102, 138, 168];
+        function renderWeek(today = false) {
+          const values = today ? [168] : week,
+            max = Math.max(...values) * 1.15;
+          $("week-chart").innerHTML = values
+            .map(
+              (v, i) =>
+                '<button class="day-bar ' +
+                (i === values.length - 1 ? "selected" : "") +
+                '" style="height:' +
+                Math.round((v / max) * 100) +
+                '%" title="' +
+                (today ? "今天" : 21 + i + "日") +
+                "：" +
+                Math.floor(v / 60) +
+                "小时" +
+                (v % 60) +
+                '分" aria-label="' +
+                (today ? "今天" : 21 + i + "日") +
+                "专注" +
+                v +
+                '分钟"><span>' +
+                (today ? "今天" : 21 + i) +
+                "</span></button>",
+            )
+            .join("");
+          $("stats-total").textContent = today ? "2小时48分" : "14小时36分";
+          $("stat-sessions").textContent = today ? "4" : "24";
+          $("stat-average").textContent = today ? "42分" : "36分";
+          $("stats-range").textContent = today
+            ? "10月27日 · 今天"
+            : "10月21日 — 10月27日";
+        }
+        document.querySelectorAll("[data-range]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              document.querySelectorAll("[data-range]").forEach((x) => {
+                x.classList.toggle("active", x === b);
+                x.setAttribute("aria-pressed", String(x === b));
+              });
+              renderWeek(b.dataset.range === "today");
+            }),
+        );
+        let lastSecond = -1;
+        function frame(t) {
+          const dt = Math.min(0.2, (t - last) / 1000);
+          last = t;
+          if (!document.hidden && mode !== "idle") {
+            if (mode === "running") elapsed += dt * speed;
+            else paused += dt * speed;
+          }
+          const sec = Math.floor(elapsed + paused);
+          if (sec !== lastSecond) {
+            renderTimer();
+            lastSecond = sec;
+          }
+          if (
+            !document.hidden &&
+            view === "focus" &&
+            t - lastDraw > (reduced.matches || mode === "idle" ? 1000 : 33)
+          ) {
+            draw(false, t);
+            lastDraw = t;
+          }
+          requestAnimationFrame(frame);
+        }
+        document.addEventListener("visibilitychange", () => {
+          last = performance.now();
+        });
+        renderTasks();
+        renderWeek();
+        renderTimer();
+        draw(true);
+        requestAnimationFrame(frame);
+        window.FocusLinkPreview = {
+          changeView,
+          getState: () => ({
+            mode,
+            elapsed,
+            paused,
+            style,
+            instrument,
+            view,
+            taskCount: tasks.length,
+          }),
+          setStyle,
+        };
+      })();
+    </script>
+  </body>
+</html>

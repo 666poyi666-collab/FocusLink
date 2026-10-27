@@ -197,10 +197,11 @@ describe('v0.12.86 mobile continuous work surface contracts', () => {
         `读屏摘要 .live-context 不得声明 ${property}`,
       ).toBeUndefined();
     }
-    // 指令提示同样只留给读屏，不再抢占视觉。
+    // 操作结果必须可见，隐藏常驻诊断不能同时隐藏失败与待确认原因。
     expectScopedRule(root, '.focus-command-notice', {
-      position: 'absolute',
-      'clip-path': 'inset(50%)',
+      position: 'static',
+      'clip-path': 'none',
+      overflow: 'visible',
     });
     // 旧层兜底：仍未迁走的原生系统控制块继续用上下发丝线，不套卡。
     expectRuleAt(legacyRoot, '.native-system-controls', {

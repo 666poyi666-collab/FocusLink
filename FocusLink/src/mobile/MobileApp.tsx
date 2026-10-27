@@ -6,6 +6,16 @@ import { APP_VERSION } from '@shared/version';
 
 import { AppNavigation, type MobileView } from './AppNavigation';
 import { isMobileForegroundActive } from './backgroundPolicy';
+import { resolveMobileDisplaySnapshot } from './localFocusPresentation';
+import {
+  newLocalTaskCreate,
+  prepareLocalTaskCreate,
+  retryLocalTaskCreate,
+  overlayLocalTaskCreates,
+  localTaskFromCreate,
+  localTaskCreateIssue,
+  type LocalTaskCreate,
+} from './localTaskQueue';
 import { normalizeDeviceSyncEndpoint } from '@shared/sync/deviceProtocol';
 import { parseDeviceToken } from '@shared/sync/v2Protocol';
 import {
@@ -41,6 +51,9 @@ import {
   writeOfflineFocusRuntime,
   writeCachedLiveFocusSnapshot,
   writeCachedTaskSnapshot,
+  readLocalTaskCreates,
+  writeLocalTaskCreate,
+  retryLocalTaskCreates,
   type MobileCacheSnapshot,
   type LocalSessionSyncMeta,
   type MobileAuthorityMode,
@@ -106,6 +119,7 @@ import {
 } from './appearance';
 import {
   claimDeviceSyncPairingRequest,
+  MobileLiveRequestError,
   classifyMobileLiveRequestError,
   createDeviceSyncPairingRequest,
   exchangeDeviceSyncPairingCode,
@@ -260,6 +274,17 @@ export function MobileApp() {
   );
   const [titleDraft, setTitleDraft] = useState('');
   const [taskSnapshot, setTaskSnapshot] = useState<TaskSnapshotResponse | null>(null);
+  const [localTaskRecords, setLocalTaskCreates] = useState<LocalTaskCreate[]>([]);
+  const [localTaskQueueEpoch, setLocalTaskQueueEpoch] = useState(0);
+  const localTaskScope = mobileAccountId(preferences) ?? 'unpaired';
+  const localTaskCreates = useMemo(
+    () => localTaskRecords.filter((r) => r.scope === localTaskScope || r.scope === 'unpaired'),
+    [localTaskRecords, localTaskScope],
+  );
+  const visibleTaskSnapshot = useMemo(
+    () => overlayLocalTaskCreates(taskSnapshot, localTaskCreates),
+    [taskSnapshot, localTaskCreates],
+  );
   // When this device last had a task snapshot confirmed by the cloud. Task
   // sync is its own settings domain; it must not borrow the ledger timestamp.
   const [taskConfirmedAt, setTaskConfirmedAt] = useState<number | null>(null);
@@ -308,13 +333,13 @@ export function MobileApp() {
   // the old selection/title survive that snapshot transition and create an unlinked session with
   // a stale task name.
   useEffect(() => {
-    if (!selectedTaskId || !taskSnapshot) return;
+    if (!selectedTaskId) return;
     const stillPresent =
-      taskSnapshot.snapshot?.tasks.some((task) => task.id === selectedTaskId) ?? false;
+      visibleTaskSnapshot.snapshot?.tasks.some((task) => task.id === selectedTaskId) ?? false;
     if (stillPresent) return;
     setSelectedTaskId('');
     setTitleDraft('');
-  }, [selectedTaskId, taskSnapshot]);
+  }, [selectedTaskId, visibleTaskSnapshot]);
 
   const [deviceId, setDeviceId] = useState(() => getOrCreateDeviceId());
   const startupDeviceId = useRef(deviceId).current;
@@ -451,16 +476,17 @@ export function MobileApp() {
     liveGeneration.current += 1;
     liveRequest.current?.abort();
     liveRequest.current = null;
-    liveSnapshotRef.current = null;
-    setLiveSnapshot(null);
-    setLiveSnapshotSource('none');
+    const local = resolveMobileDisplaySnapshot(offlineRuntimeRef.current, null, deviceId);
+    liveSnapshotRef.current = local;
+    setLiveSnapshot(local);
+    setLiveSnapshotSource(local ? 'local' : 'none');
     try {
       await enqueueMutation(cacheMutationQueue, clearCachedLiveFocusSnapshot);
       return [];
     } catch {
       return ['live-cache'];
     }
-  }, [commandRequests]);
+  }, [commandRequests, deviceId]);
 
   const resetAccountScopedState = useCallback(async (): Promise<string[]> => {
     ledgerPulls.invalidate();
@@ -1042,7 +1068,7 @@ export function MobileApp() {
             ifNoneMatch,
           });
           if (!canCommit()) return null;
-          if (fetched.etag) taskSnapshotEtag.current = { connectionKey, etag: fetched.etag };
+          taskSnapshotEtag.current = fetched.etag ? { connectionKey, etag: fetched.etag } : null;
           if (fetched.notModified) {
             // The cloud register still matches our confirmed revision: keep the snapshot and
             // only move the freshness clock, so an idle poll stops re-downloading the list.
@@ -1063,7 +1089,7 @@ export function MobileApp() {
           // A different revision means somebody wrote: go back to the fast 5 s cadence.
           taskSnapshotCadence.current.unchangedStreak = advanceMobileTaskSnapshotStreak(
             taskSnapshotCadence.current.unchangedStreak,
-            'changed',
+            reconciliation.freshness === 'refresh' ? 'unchanged' : 'changed',
           );
           taskSnapshotRef.current = reconciliation.snapshot;
           setTaskSnapshot(reconciliation.snapshot);
@@ -1105,55 +1131,150 @@ export function MobileApp() {
     throw new Error('任务清单状态异常，请刷新后重试');
   }, [preferences, refreshTasks]);
 
+  useEffect(() => {
+    let current = true;
+    void readLocalTaskCreates(localTaskScope)
+      .then((records) => {
+        if (current) setLocalTaskCreates(records);
+      })
+      .catch(() => {
+        if (current) setCommandNotice('无法读取本机待同步任务，原记录未清除');
+      });
+    return () => {
+      current = false;
+    };
+  }, [localTaskScope, localTaskQueueEpoch]);
+
+  useEffect(() => {
+    if (!foregroundActive || !online || localTaskScope === 'unpaired') return;
+    const eligible = localTaskCreates.filter((r) => !r.blocked);
+    if (eligible.length === 0) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    const delay = Math.max(0, Math.min(...eligible.map((r) => r.nextRetryAt)) - Date.now());
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const write = beginTaskWrite();
+        const abort = () => controller.abort();
+        write.signal.addEventListener('abort', abort, { once: true });
+        const current = () => !cancelled && !controller.signal.aborted && write.canCommit();
+        try {
+          for (const original of eligible) {
+            if (!current() || original.nextRetryAt > Date.now()) continue;
+            const latest = (await readLocalTaskCreates(localTaskScope)).find(
+              (r) => r.id === original.id,
+            );
+            if (!current()) return;
+            if (!latest) continue;
+            let record = latest;
+            try {
+              const fetched = await fetchTaskSnapshotConditional({
+                endpoint: preferences.endpoint,
+                token: preferences.token,
+                signal: controller.signal,
+              });
+              if (!current()) return;
+              if (fetched.notModified) {
+                record = { ...record, blocked: true, lastErrorCode: 'contract_error' };
+                throw new Error('任务快照响应异常，已保留本机任务');
+              }
+              const remote = fetched.response;
+              // Unpaired local records bind only after this account has answered a read.
+              record = prepareLocalTaskCreate({ ...record, scope: localTaskScope }, remote);
+              await writeLocalTaskCreate(record);
+              if (!current()) return;
+              const response = await mutateTaskSnapshot({
+                endpoint: preferences.endpoint,
+                token: preferences.token,
+                deviceId,
+                signal: controller.signal,
+                operationId: record.operationId,
+                expectedRevision: record.expectedRevision!,
+                mutation: {
+                  kind: 'create_task',
+                  taskId: record.id,
+                  title: record.title,
+                  projectId: record.projectId,
+                },
+              });
+              if (!current()) return;
+              if (
+                response.operationId !== record.operationId ||
+                response.result.entityId !== record.id
+              ) {
+                record = { ...record, blocked: true, lastErrorCode: 'contract_error' };
+                throw new Error('任务回执身份不一致，已保留本机任务');
+              }
+              await enqueueMutation(cacheMutationQueue, async () => {
+                if (!current()) return;
+                const reconciled = reconcileTaskSnapshot(taskSnapshotRef.current, response);
+                if (reconciled.freshness === 'inconsistent') {
+                  record = { ...record, blocked: true, lastErrorCode: 'contract_error' };
+                  throw new Error('任务回执与本机已确认内容不一致，已保留待同步任务');
+                }
+                taskSnapshotRef.current = reconciled.snapshot;
+                setTaskSnapshot(reconciled.snapshot);
+                setTaskConfirmedAt(Date.now());
+                await writeCachedTaskSnapshot(reconciled.snapshot, localTaskScope);
+              });
+              if (!current()) return;
+              await writeLocalTaskCreate(record, true);
+            } catch (error) {
+              if (!current() || isAbortError(error)) return;
+              const failed = record.blocked
+                ? record
+                : retryLocalTaskCreate(
+                    record,
+                    error instanceof MobileLiveRequestError ? error.status : null,
+                    Date.now(),
+                    error instanceof MobileLiveRequestError ? error.retryAfterMs : null,
+                  );
+              await writeLocalTaskCreate(failed);
+              setCommandNotice(
+                localTaskCreateIssue(failed) ??
+                  '任务已保存在本机，云端暂未确认；恢复连接后将继续同步',
+              );
+            }
+          }
+        } finally {
+          write.signal.removeEventListener('abort', abort);
+          write.finish();
+          if (!cancelled) setLocalTaskQueueEpoch((n) => n + 1);
+        }
+      })().catch(() => {
+        if (!cancelled) setCommandNotice('任务同步暂未完成，本机待同步任务仍保留');
+      });
+    }, delay);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [
+    beginTaskWrite,
+    deviceId,
+    foregroundActive,
+    localTaskCreates,
+    localTaskScope,
+    online,
+    preferences,
+  ]);
+
   const createCloudTask = useCallback(
     async (title: string, projectId: string | null) => {
-      const now = Date.now();
-      const snapshot = await requireLatestEditableTaskSnapshot();
-      const write = beginTaskWrite();
-      try {
-        const response = await publishTaskSnapshot({
-          endpoint: preferences.endpoint,
-          token: preferences.token,
-          deviceId,
-          signal: write.signal,
-          snapshot: {
-            publishedAt: now,
-            projects: snapshot.projects,
-            tasks: [
-              ...snapshot.tasks,
-              {
-                id: crypto.randomUUID(),
-                source: 'local',
-                projectId: projectId || FOCUSLINK_INBOX_PROJECT_ID,
-                title,
-                status: 'incomplete',
-                priority: null,
-                dueDate: null,
-                tags: [],
-                parentId: null,
-                isCompleted: false,
-                updatedAt: now,
-              },
-            ],
-          },
-        });
-        if (!write.canCommit()) return;
-        taskSnapshotRef.current = response;
-        setTaskSnapshot(response);
-        setTaskConfirmedAt(Date.now());
-        const accountId = mobileAccountId(preferences);
-        if (accountId) {
-          await enqueueMutation(cacheMutationQueue, async () => {
-            if (!write.canCommit()) return;
-            await writeCachedTaskSnapshot(response, accountId);
-          });
-        }
-        setCommandNotice('任务已保存到 FocusLink 云端');
-      } finally {
-        write.finish();
-      }
+      if (accountTransitionOperation.current !== null)
+        throw new Error('正在切换同步空间，请稍后再保存');
+      const record = newLocalTaskCreate(crypto.randomUUID(), localTaskScope, title, projectId);
+      await writeLocalTaskCreate(record);
+      if ((mobileAccountId(preferencesRef.current) ?? 'unpaired') !== record.scope) return;
+      setLocalTaskCreates((records) => [
+        ...records.filter((item) => item.id !== record.id),
+        record,
+      ]);
+      setLocalTaskQueueEpoch((n) => n + 1);
+      setCommandNotice('任务已保存在本机；联网时自动同步');
     },
-    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [localTaskScope],
   );
 
   const createCloudProject = useCallback(
@@ -2208,6 +2329,10 @@ export function MobileApp() {
 
   const handleCommand = useCallback(
     async (action: MobileFocusCommand, taskOverride?: SyncedTask, titleOverride?: string) => {
+      if (!cacheReady) {
+        setCommandNotice('正在恢复本机记录，请稍候');
+        return;
+      }
       if (pendingCommandRef.current) return;
       const snapshot = liveSnapshotRef.current ?? makeIdleSnapshot();
       const connection = preferencesRef.current;
@@ -2219,11 +2344,16 @@ export function MobileApp() {
       }
 
       const selectedTask =
-        taskOverride ?? taskSnapshot?.snapshot?.tasks.find((task) => task.id === selectedTaskId);
+        taskOverride ??
+        taskSnapshot?.snapshot?.tasks.find((task) => task.id === selectedTaskId) ??
+        localTaskCreates.filter((task) => task.id === selectedTaskId).map(localTaskFromCreate)[0];
       const title =
         (titleOverride ?? titleDraft).trim() || selectedTask?.title.trim() || '自由专注';
       const canStartOffline =
-        action === 'start' && !offlineRuntimeRef.current && liveConnectionRef.current !== 'live';
+        action === 'start' &&
+        !offlineRuntimeRef.current &&
+        (liveConnectionRef.current !== 'live' ||
+          localTaskCreates.some((task) => task.id === selectedTask?.id));
       if (offlineRuntimeRef.current || canStartOffline) {
         pendingCommandRef.current = action;
         setPendingCommand(action);
@@ -2354,12 +2484,14 @@ export function MobileApp() {
     },
     [
       commandRequests,
+      cacheReady,
       commitLiveSnapshot,
       deviceId,
       online,
       requestLedgerPull,
       selectedTaskId,
       taskSnapshot,
+      localTaskCreates,
       titleDraft,
     ],
   );
@@ -2373,6 +2505,9 @@ export function MobileApp() {
     // The explicit refresh must never be dropped by the de-duplication policy;
     // joining an in-flight pull is the one case where it does no new work.
     void requestLedgerPull('manual');
+    void retryLocalTaskCreates(localTaskScope)
+      .then(() => setLocalTaskQueueEpoch((n) => n + 1))
+      .catch(() => setCommandNotice('待同步任务仍保留，暂未能重新安排同步'));
     setConnectionEpoch((value) => value + 1);
   };
 
@@ -2415,8 +2550,8 @@ export function MobileApp() {
   };
 
   const handleForgetToken = async () => {
-    if (offlineRuntimeRef.current || pendingUploadCount > 0) {
-      setCommandNotice('还有本机离线会话未补传，暂不能退出此设备同步');
+    if (offlineRuntimeRef.current || pendingUploadCount > 0 || localTaskCreates.length > 0) {
+      setCommandNotice('还有本机专注或任务未同步，暂不能退出此设备同步');
       return;
     }
     const operation = accountLifecycle.invalidate();
@@ -2511,6 +2646,10 @@ export function MobileApp() {
   };
 
   const configured = Boolean(preferences.endpoint && preferences.token);
+  const displaySnapshot = useMemo(
+    () => resolveMobileDisplaySnapshot(offlineRuntime, liveSnapshot, deviceId),
+    [offlineRuntime, liveSnapshot, deviceId],
+  );
   // The sync chip doubles as the manual-refresh receipt: while a ledger check runs it
   // says so, instead of looking like the tap did nothing until the pull settles.
   const syncActivity = presentMobileSyncActivity({ configured, pullState });
@@ -2526,7 +2665,7 @@ export function MobileApp() {
   // 非专注页的活动专注条：规范要求 64px、位于导航上方、只显示任务简称 + 当前时间 + 暂停/继续，
   // 没有活动会话时完全移除。计时只在可见时按秒推进，页面不可见时不占帧。
   const [activityNow, setActivityNow] = useState(() => Date.now());
-  const activityState = liveSnapshot?.state ?? 'idle';
+  const activityState = displaySnapshot?.state ?? 'idle';
   const activityVisible =
     activeView !== 'focus' && (activityState === 'running' || activityState === 'paused');
   useEffect(() => {
@@ -2536,11 +2675,11 @@ export function MobileApp() {
     return () => window.clearInterval(timer);
   }, [activityVisible]);
   const liveActivity = useMemo(() => {
-    if (!activityVisible || !liveSnapshot) return null;
-    const durations = projectLiveFocusDurations(liveSnapshot, activityNow);
-    const title = liveSnapshot.title?.trim() || liveSnapshot.taskTitle?.trim() || '自由专注';
+    if (!activityVisible || !displaySnapshot) return null;
+    const durations = projectLiveFocusDurations(displaySnapshot, activityNow);
+    const title = displaySnapshot.title?.trim() || displaySnapshot.taskTitle?.trim() || '自由专注';
     return { state: activityState, title, elapsedMs: durations.primaryElapsedMs };
-  }, [activityState, activityNow, activityVisible, liveSnapshot]);
+  }, [activityState, activityNow, activityVisible, displaySnapshot]);
 
   return (
     <div className={`mobile-shell view-${activeView}${liveActivity ? ' has-live-activity' : ''}`}>
@@ -2628,18 +2767,20 @@ export function MobileApp() {
             >
               {activeView === 'focus' && (
                 <FocusConsole
-                  snapshot={liveSnapshot}
+                  snapshot={displaySnapshot}
                   connection={liveConnection}
                   connectionNotice={liveConnectionNotice}
                   titleDraft={titleDraft}
                   pendingCommand={pendingCommand}
                   commandNotice={commandNotice}
                   localDeviceId={deviceId}
-                  tasks={taskSnapshot?.snapshot?.tasks ?? []}
+                  tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
                   selectedTaskId={selectedTaskId}
                   onTaskChange={(taskId) => {
                     setSelectedTaskId(taskId);
-                    const task = taskSnapshot?.snapshot?.tasks.find((item) => item.id === taskId);
+                    const task = visibleTaskSnapshot.snapshot?.tasks.find(
+                      (item) => item.id === taskId,
+                    );
                     if (task) setTitleDraft(task.title);
                   }}
                   onTitleChange={setTitleDraft}
@@ -2654,18 +2795,24 @@ export function MobileApp() {
                   authorityMode={authorityMode}
                   allowOfflineStart={offlineRuntime === null && liveConnection !== 'live'}
                   timerStyle={appearance.timerStyle}
+                  runtimeReady={cacheReady}
                   appActive={appActive}
                   documentVisible={documentVisible}
                 />
               )}
               {activeView === 'tasks' && (
                 <TaskBrowser
-                  tasks={taskSnapshot?.snapshot?.tasks ?? []}
-                  projects={taskSnapshot?.snapshot?.projects ?? []}
+                  tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
+                  projects={visibleTaskSnapshot.snapshot?.projects ?? []}
+                  pendingLocalCount={localTaskCreates.length}
+                  pendingLocalIssue={
+                    localTaskCreates.map(localTaskCreateIssue).find(Boolean) ?? null
+                  }
                   publishedAt={taskSnapshot?.snapshot?.publishedAt ?? null}
                   revision={taskSnapshot?.revision ?? 0}
                   selectedTaskId={selectedTaskId}
                   canStart={
+                    cacheReady &&
                     pendingCommand === null &&
                     offlineRuntime === null &&
                     (liveConnection !== 'live' || (liveSnapshot?.state ?? 'idle') === 'idle')
@@ -2685,7 +2832,12 @@ export function MobileApp() {
                   onUpdateProject={updateCloudProject}
                   onDeleteProject={deleteCloudProject}
                   onMoveTask={moveCloudTask}
-                  onToggleComplete={toggleCloudTaskComplete}
+                  onToggleComplete={async (task) => {
+                    if (localTaskCreates.some((record) => record.id === task.id)) {
+                      throw new Error('任务已保存在本机，联网确认后可修改完成状态');
+                    }
+                    await toggleCloudTaskComplete(task);
+                  }}
                 />
               )}
               {activeView === 'history' && (
@@ -2889,7 +3041,7 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
 
 function connectionTitle(state: LiveConnectionState): string {
   if (state === 'live') return '实时状态已连接';
-  if (state === 'connecting') return '正在连接多端状态';
+  if (state === 'connecting') return '连接中 · 本机可用';
   if (state === 'offline') return '未连接 · 本机专注可用';
   if (state === 'error') return '未连接';
   return '尚未配对设备';

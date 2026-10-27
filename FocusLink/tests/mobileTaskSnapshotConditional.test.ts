@@ -131,9 +131,7 @@ describe('conditional task snapshot read', () => {
     expect(headers).not.toHaveProperty(TASK_SNAPSHOT_IF_NONE_MATCH_HEADER);
   });
 
-  it('derives the validator when a proxy hides the ETag header', async () => {
-    // No Access-Control-Expose-Headers means the WebView cannot see the tag; the client must
-    // still be able to keep polling conditionally instead of downloading the register forever.
+  it('requires gateway evidence before adding a validator and retains a proven marker', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(FULL_BODY)));
 
     const full = await fetchTaskSnapshotConditional({
@@ -141,7 +139,7 @@ describe('conditional task snapshot read', () => {
       token: DEVICE_TOKEN,
     });
     expect(full.notModified).toBe(false);
-    expect(full.etag).toBe(ETAG);
+    expect(full.etag).toBeNull();
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(MARKER)));
     const marker = await fetchTaskSnapshotConditional({
@@ -151,6 +149,39 @@ describe('conditional task snapshot read', () => {
     });
     expect(marker.notModified).toBe(true);
     expect(marker.etag).toBe(ETAG);
+  });
+
+  it('falls back once to a plain GET if a stale gateway blocks a previous validator', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(Response.json(FULL_BODY));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await fetchTaskSnapshotConditional({
+      endpoint: FOCUSLINK_CANONICAL_SYNC_ORIGIN,
+      token: DEVICE_TOKEN,
+      ifNoneMatch: ETAG,
+    });
+    expect(result.etag).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const headers = (fetchMock.mock.calls[2][1] as RequestInit).headers as Record<string, string>;
+    expect(headers).not.toHaveProperty(TASK_SNAPSHOT_IF_NONE_MATCH_HEADER);
+  });
+
+  it('never bypasses an authoritative authentication rejection', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(Response.json({ code: 'unauthorized' }, { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      fetchTaskSnapshotConditional({
+        endpoint: FOCUSLINK_CANONICAL_SYNC_ORIGIN,
+        token: DEVICE_TOKEN,
+        ifNoneMatch: ETAG,
+      }),
+    ).rejects.toThrow('设备凭据已失效');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('treats a marker on an unconditional read as a contract error', async () => {

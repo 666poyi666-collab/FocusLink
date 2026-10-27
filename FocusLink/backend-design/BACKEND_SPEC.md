@@ -1,8 +1,18 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前 Windows 候选 v1.6.2（本地任务读写不等待网络、renderer 变更事件、实时命令防重入和有界超时；不改数据库或云端协议。用户 2026-10-15 限定本轮只开发 PC。）
+> 状态：v1.x 后端单一真相；当前源码基线 v1.7.0。2026-10-27 移动端本机可用性修复仍在开发验证，不代表新版本已安装；Electron 主进程、IPC 与云端 wire shape 保持现有边界。
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
+
+## 移动端本机可用性合同（2026-10-27，待实装）
+
+- IndexedDB 的活动本机草稿是本轮本机计时权威。原生凭据恢复、云端缓存清理和连接重试不能把本机会话显示为空闲；`resolveMobileDisplaySnapshot` 在本机 runtime 存在时始终由它投影，结束耐久提交前不移除草稿。启动恢复未完成时禁止新建第二份活动态。
+- 移动端新建任务先向同一 IndexedDB 的 `meta/localTaskCreates.v1` 写入持久 intent，然后立即返回 UI。intent 含稳定 task id、operationId、scope、创建时间、CAS base、尝试次数和重试时间；不保存凭据。原有清缓存不能删除此队列，有待同步任务时禁止退出设备同步。
+- 本机 pending 是叠加到远端快照上的 UI 投影，不能伪造 authority revision 或把本机保存时间当成云端确认。尚未配对的 intent 只在当前账号完成一次可信读取后原子绑定该 scope，其他账号的 intent 不读取、不上传、不覆盖。
+- 任务投递复用既有 `create_task + taskId` mutation，读取当前 revision 后先固化操作身份再发送。响应丢失保留原 operationId、base 与正文；只有明确 409 才可读取新 base 并生成新的 operationId。applied/duplicate 且回执身份匹配后才清除 intent。
+- 自动任务补传只在 renderer 前台且在线时运行，后台 abort，账号变更继承请求 lease 与提交闸门。网络/服务错误指数退避并按 task id 分散，设计上限 15 分钟；401/403 和确定性拒绝保留记录并停止盲重试，用户显式重试可重新安排。
+- 条件读取只有在服务端明确返回可读 ETag 或已验证的 unchanged marker 时才继续发送 validator。全量响应没有可读 ETag 时使用普通 GET；相同 revision/正文可用于客户端降频。旧 validator 出现 transport/CORS 失败时只降级一次普通只读 GET，401/403 和其他 HTTP 权威结果不得被降级或备用域掩盖。
+- HTML 视觉实验与真实客户端隔离；其中的任务、统计与系统岛均为设计夹具，不能进入生产空态、authority 或设备能力声明。
 
 ## v1.6.2 本地任务与实时控制响应合同
 

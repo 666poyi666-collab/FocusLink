@@ -1,5 +1,17 @@
 # FocusLink Windows 安装器错误索引
 
+## FL-INSTALL-018：Windows 清理测试创建的 junction 未被 Node 识别为链接
+
+### 现象与边界（2026-10-27）
+
+`tests/tempDataCleanup.test.ts:53` 创建 junction 成功，但 `assertSafeDirectChild` 未拒绝，导致完整 `npm test` exit 1。本轮只读探针在同一个测试根观察到：PowerShell 的 `Get-Item` 显示 `ReparsePoint` / `Junction`，Node 22.22.2 的 `lstatSync().isSymbolicLink()` 却为 false，`readlinkSync()` 返回 EINVAL。清理脚本本轮未修改，不能把测试失败归为已修复，具体 Windows 重解析点兼容原因仍待定位。
+
+### 诊断与处理
+
+1. 在隔离测试目录用 `fsp.symlink(target, link, 'junction')` 重现，分别记录 Node 版本、真实根与 ASCII 路径、lstat/readlink 和系统文件属性；不要对发布目录或用户数据试删。
+2. 保持“只允许指定根直接子项、拒绝链接”的安全合同。不得跳过该测试、吞掉断言或只改预期来获得全绿；只有补齐可靠的重解析点检测并实测拒绝后才恢复清理/打包门禁。
+3. 中文路径的 dida fixture 可通过把仓库父目录临时 `subst` 到空闲 ASCII 盘符、仅将 TEMP/TMP 指向映射下的测试目录来隔离；命令仍从真实 `FocusLink/` 运行，并在 finally 解除映射。这不等于 junction 检测已通过。
+
 ## FL-INSTALL-017：`smoke:window-visible:launch` 报「当天日志里没有本次 pid 的 `main window shown` 证据」（假失败）
 
 ### 症状

@@ -729,15 +729,42 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 
 ### 含义
 
-条件读要三段同时成立才算省流：① 生产 Account DO 认 `If-None-Match` 并回 `unchanged` marker（`cloudflare/accountDurableObject.ts:636-652`）；② Worker 预检允许 `if-none-match`（`cloudflare/worker.ts:461-464`）、并在响应上暴露 `etag`（`cloudflare/worker.ts:479`）；③ 客户端能拿到 tag（`src/mobile/syncClient.ts:707-720`，拿不到时按 revision 本地推导兜底）。缺任一段，客户端就退回整份下载，而且本地测试永远是绿的。
+条件读要三段同时成立才算省流：① 生产 Account DO 认 `If-None-Match` 并回 `unchanged` marker（`cloudflare/accountDurableObject.ts:636-652`）；② Worker/gateway 预检允许 `if-none-match`，响应暴露 `etag`；③ 客户端拿到可读 ETag 或已验证的 unchanged marker。没有 validator 能力证据时客户端使用普通 GET，并根据实际相同 revision/正文降频，不能猜一个 tag 来触发下一次不被允许的预检。
 
 ### 处理步骤
 
 1. 先用行为测试确认转发与暴露：`npx vitest run tests/cloudflareWorkerRouting.test.ts tests/taskSnapshotConditionalRead.test.ts`——前者断言带 `if-none-match` 的 `GET /sync/v2/tasks` 透传到 DO、响应 `access-control-expose-headers` 为 `etag`；后者断言两个后端共用同一判定。
 2. 线上排查顺序固定为「预检 → 响应头 → DO 行为」：先看 `OPTIONS /sync/v2/tasks` 的 `access-control-allow-headers` 是否含 `if-none-match`；再看实际 GET 响应是否有 `access-control-expose-headers: etag` 与 `ETag`；最后确认响应体是否出现 `unchanged: true`。
-3. 客户端兜底是兜底，不是修复：若 `ETag` 被网关丢弃，客户端会按 `revision + 设备 + capability` 推导 tag 继续条件轮询，但**服务端仍必须**认这个 tag；不要靠改客户端 tag 格式去绕过服务端判定。
+3. 客户端兼容路径：全量响应没有可读 ETag 时不发送 `If-None-Match`。先前的 validator 遇到 transport/CORS 错误时可降级一次普通只读 GET，并清除无法确认能力的 tag；鉴权拒绝或其他 HTTP 结果不能降级重试。要获得真正的条件响应省流，仍需部署完整 gateway/Worker/DO 实现。
 4. 不要为了省事把条件读改回「固定 30 秒全量」：那会把跨设备可见延迟从秒级拉到半分钟（见 FL-SYNC-033），且流量并未下降。
 
 ### 补充（2026-10-26 晚）：个人云 gateway 那一跳
 
 手机装的是 1.6.x，拨到的生产入口是 `CANONICAL_SYNC_ORIGIN`（`android/app/build.gradle:46`），它指向 `cloud/mcp/src/exchange.ts` 这一层 gateway，与上面「Worker → Account DO」不是同一跳。该层同样要三件齐：转发 `if-none-match`、把上游 `ETag` 写回重建的响应、预检允许 `if-none-match` 且 `access-control-expose-headers` 暴露 `etag`。缺任何一件，手机上仍然每 5 秒整份下载，而 `npm test` 全绿。核对入口：`npx vitest run tests/exchange.test.ts`（`cloud/mcp` 目录）里的 `carries the task conditional read across the canonical hop`。
+
+### 线上复核（2026-10-27）
+
+本轮从 Windows 对官方域与 canonical Worker 分别发起带 `Origin: https://localhost` 的任务预检，均返回 HTTP 204；`access-control-allow-headers` 仍只有 `authorization, content-type, x-focuslink-task-capabilities`，没有 `if-none-match`，也没有 expose 头。两个域的只读 health 均返回 HTTP 200，匿名 status 均返回 HTTP 401。前者证明传输可达，后者仅证明鉴权边界存在，不能据此认定小米设备凭据有效。
+
+2026-10-26 的 gateway/Worker/DO 源码与本地测试记录继续保留；2026-10-27 实际响应说明线上尚不能按新条件读合同验收。本轮客户端兼容修复不等于服务器已经部署。用手机的真实 WebView origin 重测预检、认证 GET 与 unchanged marker，三项通过后才记录生产省流通过；不要把请求头禁用误报为用户未联网。
+
+## FL-SYNC-036：本机会话仍在，却无法开始或控制；新建任务一直等网络
+
+### 区分症状
+
+1. 本机 IndexedDB 有活动 runtime，云端/原生凭据恢复后 `liveSnapshot` 却为 null；界面只见连接中，开始按钮禁用，也没有暂停、继续或结束本机专注的入口。
+2. 创建任务先等待云端整份任务读取和发布，网络不通时保存迟迟不返回；操作回执若再被 `sr-only` 或裁切规则隐藏，普通用户无法知道失败原因。
+3. 小米原生状态能返回 `xiaomi-island`、协议版本与厂商权限，但 `canPostNotification=false`；协议被选中不能证明系统已展示超级岛。
+
+### 处理步骤
+
+1. 先只读本机 runtime 与当前渲染 props；不要清除应用数据、离线草稿或凭据来让按钮恢复。保留两者的时间戳，以本机 runtime 投影本机活动态；本机恢复完成前禁止新建第二份会话。
+2. 先验收不联网的开始、重开恢复、暂停、继续、结束与账本耐久保存，再单独核对设备认证与云端 live。真实远端活动态不能在网络失败时偷偷变成本机计时。
+3. 新建任务只等 IndexedDB intent 提交，立即出现在目标清单并显示等待云端确认。补传复用稳定 task id、operationId 和已固化 CAS base；明确冲突后才换 base 与操作身份，匹配回执后才删队列。
+4. 任务补传只在前台在线时执行；限流和临时失败退避，鉴权失效停止盲重试并保留任务。手动重试只更新投递字段，不能用旧 UI 状态覆盖已固化正文或 CAS base；旧操作的回执不能清除新操作。
+5. 同步分开验收：传输 → 设备鉴权 → 任务确认 → 已结束账本 → 在线实时控制 → 第三方投递。OAuth 只读成功、已配对、系统通知显示均不能相互替代。
+6. 小米系统表面先读通知权限，再实测运行、暂停、继续和结束。网页预览的胶囊始终标为示意；通知权限未授予或没有实际可见结果时，不写“超级岛已完成”。
+
+### 当前边界
+
+本轮源码支持本机新建任务与待确认任务的本机专注；待确认任务的完成、移动和清单管理仍需云端确认，尚未实现完整离线任务编辑。2026-10-27 后续无线 ADB 连接超时且设备列表为空，原生系统表面与新版安装尚未通过；用户明确本轮仅验收 Windows＋小米，华为暂不安装。

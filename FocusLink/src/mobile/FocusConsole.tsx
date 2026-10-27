@@ -16,7 +16,7 @@ import type { MobileAuthorityMode } from './cache';
 import { MobileConfirmDialog } from './MobileConfirmDialog';
 import { liveFocusSnapshotToTimerSnapshot } from './liveTimerSnapshotAdapter';
 import { focusDeviceLabel, isTabletFocusViewport } from './viewportPolicy';
-import { MobileFocusChronograph } from './MobileFocusChronograph';
+import { MobileTimerInstrument } from './MobileTimerInstrument';
 import { TemporalRibbon } from '../features/focus/TemporalRibbon';
 import type { MobileAppearance } from './appearance';
 import { createMobileSecondTicker } from './backgroundPolicy';
@@ -54,6 +54,7 @@ export interface FocusConsoleProps {
   authorityMode: MobileAuthorityMode;
   allowOfflineStart: boolean;
   timerStyle: MobileAppearance['timerStyle'];
+  runtimeReady?: boolean;
   /**
    * Foreground flags. The once-per-second readout must not keep waking a backgrounded or
    * locked app; when either flag is off the ticker stops and only the last reading stays.
@@ -88,6 +89,7 @@ export function FocusConsole({
   authorityMode,
   allowOfflineStart,
   timerStyle,
+  runtimeReady = true,
   appActive = true,
   documentVisible = true,
 }: FocusConsoleProps) {
@@ -161,7 +163,7 @@ export function FocusConsole({
   const controls = runtimeControlAvailability({
     snapshot: current,
     connection,
-    pending: pendingCommand !== null,
+    pending: pendingCommand !== null || !runtimeReady,
     localSession: localOfflineMode,
     allowOfflineStart,
   });
@@ -256,7 +258,11 @@ export function FocusConsole({
               <i aria-hidden="true" />
               {statusLabel}
             </p>
-            <MobileFocusChronograph ms={durations.primaryElapsedMs} state={current.state} />
+            <MobileTimerInstrument
+              ms={durations.primaryElapsedMs}
+              state={current.state}
+              style={timerStyle}
+            />
           </div>
 
           {/* 3 · 主操作：单主按钮；运行或暂停时与「结束」并排。 */}
@@ -269,7 +275,11 @@ export function FocusConsole({
                 onClick={() => onCommand('start')}
               >
                 <Play className="focus-action-icon" aria-hidden="true" />
-                {pendingCommand === 'start' ? '正在开始…' : '开始专注'}
+                {!runtimeReady
+                  ? '正在恢复本机记录…'
+                  : pendingCommand === 'start'
+                    ? '正在开始…'
+                    : '开始专注'}
               </button>
             )}
             {current.state === 'running' && (
@@ -385,14 +395,16 @@ export function FocusConsole({
             {authorityMode === 'forked-local' && (
               <span>本机离线会话正在运行：其他设备另有云端会话，两份会话独立控制、独立入账</span>
             )}
-            <button className="focus-sync-open" type="button" onClick={onOpenConnection}>
-              多端同步设置
-            </button>
           </aside>
 
           {commandNotice && (
-            <p className="focus-command-notice sr-only" role="status" aria-live="polite">
+            <p className="focus-command-notice" role="status" aria-live="polite">
               {commandNotice}
+              {connection !== 'live' && (
+                <button type="button" onClick={onOpenConnection}>
+                  同步详情
+                </button>
+              )}
             </p>
           )}
         </div>

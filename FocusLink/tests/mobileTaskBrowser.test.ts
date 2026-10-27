@@ -460,7 +460,8 @@ describe('mobile task browser model', () => {
     expect(browser).toContain('setProjectComposerOpen(false)');
     expect(app).toContain('const projectId = crypto.randomUUID()');
     expect(app).toContain('return projectId;');
-    expect(app).toContain('if (!selectedTaskId || !taskSnapshot) return;');
+    expect(app).toContain('if (!selectedTaskId) return;');
+    expect(app).toContain('visibleTaskSnapshot.snapshot?.tasks.some');
     expect(app).toContain("setSelectedTaskId('')");
     expect(app).toContain("setTitleDraft('')");
   });
