@@ -70,7 +70,15 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"mobile/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"*.config.ts\"",
     "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\" \"mobile/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"shared/**/*.ts\" \"cloud/**/*.ts\" \"cloudflare/**/*.ts\" \"tests/**/*.ts\" \"*.config.ts\"",
     "version:next": "node --experimental-strip-types scripts/build/next-release-version.mjs",
-    "verify:budget": "node scripts/verify/perf-budget.mjs"
+    "verify:budget": "node scripts/verify/perf-budget.mjs",
+    "re": "pwsh -NoProfile -File scripts/re/rea.ps1",
+    "re:doctor": "pwsh -NoProfile -File scripts/re/rea.ps1 doctor",
+    "re:package": "pwsh -NoProfile -File scripts/re/rea.ps1 package",
+    "re:decode": "pwsh -NoProfile -File scripts/re/rea.ps1 decode",
+    "re:class": "pwsh -NoProfile -File scripts/re/rea.ps1 class",
+    "re:method": "pwsh -NoProfile -File scripts/re/rea.ps1 method",
+    "re:sign": "pwsh -NoProfile -File scripts/re/rea.ps1 sign",
+    "re:screen": "pwsh -NoProfile -File scripts/re/rea.ps1 screen"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
