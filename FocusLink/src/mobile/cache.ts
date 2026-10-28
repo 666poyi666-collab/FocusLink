@@ -16,6 +16,7 @@ import {
 } from './offlineCompletionIdentity';
 import { isOfflineFocusRuntime, type OfflineFocusRuntime } from './offlineFocusRuntime';
 import type { LocalTaskCreate } from './localTaskQueue';
+import type { LocalTaskEdit } from './localTaskEdits';
 import type { LiveFocusSnapshotLike } from './runtimeModel';
 import {
   TASK_SNAPSHOT_PROTOCOL_VERSION,
@@ -43,6 +44,71 @@ const TASK_SNAPSHOT_KEY = 'taskSnapshot';
 const OFFLINE_FOCUS_KEY = 'offlineFocusRuntime';
 const COMPLETION_FREEZE_PREFIX = 'offlineCompletionFreeze.';
 const LOCAL_TASK_CREATE_KEY = 'localTaskCreates.v1';
+const LOCAL_TASK_EDIT_KEY = 'localTaskEdits.v1';
+
+export async function readLocalTaskEdits(scope: string): Promise<LocalTaskEdit[]> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readonly');
+    const row = await requestValue<MetaRecord | undefined>(
+      tx.objectStore(META_STORE).get(LOCAL_TASK_EDIT_KEY),
+    );
+    await transactionDone(tx);
+    const records = Array.isArray(row?.value) ? (row.value as LocalTaskEdit[]) : [];
+    return records.filter((r) => r.scope === scope || r.scope === 'unpaired');
+  } finally {
+    database.close();
+  }
+}
+
+/** Insert or drop one pending edit; records from another sync space are never rewritten. */
+export async function writeLocalTaskEdit(record: LocalTaskEdit, remove = false): Promise<void> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(META_STORE);
+    const row = await requestValue<MetaRecord | undefined>(store.get(LOCAL_TASK_EDIT_KEY));
+    const records = Array.isArray(row?.value) ? (row.value as LocalTaskEdit[]) : [];
+    const index = records.findIndex((r) => r.taskId === record.taskId);
+    if (
+      index >= 0 &&
+      records[index].scope !== record.scope &&
+      records[index].scope !== 'unpaired'
+    ) {
+      tx.abort();
+      await done.catch(() => undefined);
+      throw new Error('任务属于另一同步空间，已保留原记录');
+    }
+    const next = records.filter((r) => r.taskId !== record.taskId);
+    if (!remove) next.push(record);
+    store.put({ key: LOCAL_TASK_EDIT_KEY, value: next } satisfies MetaRecord);
+    await done;
+  } finally {
+    database.close();
+  }
+}
+
+/** Clear backoff/blocked so the next reconnect attempts every pending edit again. */
+export async function retryLocalTaskEdits(scope: string): Promise<void> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(META_STORE);
+    const row = await requestValue<MetaRecord | undefined>(store.get(LOCAL_TASK_EDIT_KEY));
+    const records = Array.isArray(row?.value) ? (row.value as LocalTaskEdit[]) : [];
+    store.put({
+      key: LOCAL_TASK_EDIT_KEY,
+      value: records.map((r) =>
+        r.scope === scope || r.scope === 'unpaired' ? { ...r, blocked: false, nextRetryAt: 0 } : r,
+      ),
+    } satisfies MetaRecord);
+    await done;
+  } finally {
+    database.close();
+  }
+}
 
 export async function readLocalTaskCreates(scope: string): Promise<LocalTaskCreate[]> {
   const database = await openDatabase();

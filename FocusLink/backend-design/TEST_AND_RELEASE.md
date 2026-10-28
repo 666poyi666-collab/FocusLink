@@ -100,6 +100,7 @@ canonical foxlink-cloud-mcp → private service binding → Account DO 链路。
   `app.focuslink.mobile.v012104`），不得卸载、降级或清数据换取通过，且必须单独记录包名与签名事实。保留现有用户数据和
   配对凭据的前提下验证 native Keystore 凭据恢复、权限逐项申请与 readback、Dashboard 日期/24 小时段、
   清单与任务完成/恢复、本机和云端专注、前后台恢复、通知/overlay 以及本轮受影响的手机布局与交互。
+- 2026-10-29 用户指令「先只弄小米」：本轮起设备门禁只要求 Windows + 小米两台上同版；华为平板不在线（192.168.1.6/7/8/9:5555 均 10060 超时），不阻塞候选、也不得写成已安装。恢复华为门禁前必须先拿到用户明确要求。
 - 指定华为平板只执行同一份正式 APK 的 `adb install -r`，然后从已安装包回读
   `versionName=1.3.0` / `versionCode=1306`。本轮不要求在华为执行功能、视觉、胶囊、同步、
   instrumentation 或 connected test；历史华为证据只保留为历史，不得冒充本轮通过。

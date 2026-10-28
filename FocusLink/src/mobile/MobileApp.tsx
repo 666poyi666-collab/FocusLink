@@ -54,6 +54,8 @@ import {
   readLocalTaskCreates,
   writeLocalTaskCreate,
   retryLocalTaskCreates,
+  readLocalTaskEdits,
+  writeLocalTaskEdit,
   type MobileCacheSnapshot,
   type LocalSessionSyncMeta,
   type MobileAuthorityMode,
@@ -206,6 +208,15 @@ import {
 import { presentMobileSyncActivity } from './syncFeedback';
 import { isTabletFocusViewport } from './viewportPolicy';
 import {
+  localTaskEditIssue,
+  mergeLocalTaskEdit,
+  newLocalTaskEdit,
+  overlayLocalTaskEdits,
+  retryLocalTaskEdit,
+  type LocalTaskEdit,
+  type LocalTaskEditPatch,
+} from './localTaskEdits';
+import {
   createEmptyTaskSnapshot,
   deleteTaskSnapshotProject,
   deleteTaskSnapshotTask,
@@ -278,14 +289,23 @@ export function MobileApp() {
   const [taskSnapshot, setTaskSnapshot] = useState<TaskSnapshotResponse | null>(null);
   const [localTaskRecords, setLocalTaskCreates] = useState<LocalTaskCreate[]>([]);
   const [localTaskQueueEpoch, setLocalTaskQueueEpoch] = useState(0);
+  const [localTaskEditRecords, setLocalTaskEdits] = useState<LocalTaskEdit[]>([]);
   const localTaskScope = mobileAccountId(preferences) ?? 'unpaired';
   const localTaskCreates = useMemo(
     () => localTaskRecords.filter((r) => r.scope === localTaskScope || r.scope === 'unpaired'),
     [localTaskRecords, localTaskScope],
   );
+  const localTaskEdits = useMemo(
+    () => localTaskEditRecords.filter((r) => r.scope === localTaskScope || r.scope === 'unpaired'),
+    [localTaskEditRecords, localTaskScope],
+  );
   const visibleTaskSnapshot = useMemo(
-    () => overlayLocalTaskCreates(taskSnapshot, localTaskCreates),
-    [taskSnapshot, localTaskCreates],
+    () =>
+      overlayLocalTaskEdits(
+        overlayLocalTaskCreates(taskSnapshot, localTaskCreates),
+        localTaskEdits,
+      ),
+    [taskSnapshot, localTaskCreates, localTaskEdits],
   );
   // When this device last had a task snapshot confirmed by the cloud. Task
   // sync is its own settings domain; it must not borrow the ledger timestamp.
@@ -1142,6 +1162,13 @@ export function MobileApp() {
       .catch(() => {
         if (current) setCommandNotice('无法读取本机待同步任务，原记录未清除');
       });
+    void readLocalTaskEdits(localTaskScope)
+      .then((records) => {
+        if (current) setLocalTaskEdits(records);
+      })
+      .catch(() => {
+        if (current) setCommandNotice('无法读取本机待同步修改，原记录未清除');
+      });
     return () => {
       current = false;
     };
@@ -1490,23 +1517,28 @@ export function MobileApp() {
     [beginTaskWrite, deviceId, preferences, refreshTasks],
   );
 
-  const updateCloudTask = useCallback(
-    async (
-      task: SyncedTask,
-      patch: {
-        title?: string;
-        priority?: number | null;
-        startDate?: number | null;
-        dueDate?: number | null;
-        tags?: string[];
-        parentId?: string | null;
-      },
-    ) => {
+  const enqueueTaskEdit = useCallback(
+    async (task: SyncedTask, patch: LocalTaskEditPatch, deleted: boolean) => {
+      const now = Date.now();
+      const previous = localTaskEditRecords.find((record) => record.taskId === task.id);
+      const merged = previous
+        ? mergeLocalTaskEdit(previous, deleted ? null : patch)
+        : newLocalTaskEdit(task.id, localTaskScope, deleted ? {} : patch, deleted, now);
+      await writeLocalTaskEdit(merged);
+      setLocalTaskEdits((records) => [...records.filter((r) => r.taskId !== task.id), merged]);
+      return merged;
+    },
+    [localTaskEditRecords, localTaskScope],
+  );
+
+  /** Publish one pending edit; the record is dropped only after the cloud confirms it. */
+  const flushTaskEdit = useCallback(
+    async (record: LocalTaskEdit) => {
       const snapshot = await requireLatestEditableTaskSnapshot();
-      if (!snapshot.tasks.some((candidate) => candidate.id === task.id)) {
-        throw new Error('FocusLink 任务不存在，请刷新后重试');
-      }
-      const next = updateTaskSnapshotTask(snapshot, task.id, patch, Date.now());
+      const now = Date.now();
+      const next = record.deleted
+        ? deleteTaskSnapshotTask(snapshot, record.taskId, now).snapshot
+        : updateTaskSnapshotTask(snapshot, record.taskId, record.patch, now);
       const write = beginTaskWrite();
       try {
         const response = await publishTaskSnapshot({
@@ -1527,7 +1559,8 @@ export function MobileApp() {
             await writeCachedTaskSnapshot(response, accountId);
           });
         }
-        setCommandNotice('任务已更新');
+        await writeLocalTaskEdit(record, true);
+        setLocalTaskEdits((records) => records.filter((r) => r.taskId !== record.taskId));
       } finally {
         write.finish();
       }
@@ -1535,46 +1568,92 @@ export function MobileApp() {
     [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
-  const deleteCloudTask = useCallback(
-    async (task: SyncedTask) => {
-      const snapshot = await requireLatestEditableTaskSnapshot();
-      if (!snapshot.tasks.some((candidate) => candidate.id === task.id)) {
-        throw new Error('FocusLink 任务不存在，请刷新后重试');
-      }
-      const { snapshot: next, removedTaskCount } = deleteTaskSnapshotTask(
-        snapshot,
-        task.id,
-        Date.now(),
-      );
-      const write = beginTaskWrite();
+  const queueTaskEdit = useCallback(
+    async (task: SyncedTask, patch: LocalTaskEditPatch, deleted: boolean) => {
+      const record = await enqueueTaskEdit(task, patch, deleted);
       try {
-        const response = await publishTaskSnapshot({
-          endpoint: preferences.endpoint,
-          token: preferences.token,
-          deviceId,
-          signal: write.signal,
-          snapshot: next,
-        });
-        if (!write.canCommit()) throw new Error('账号已切换，本次删除已取消');
-        taskSnapshotRef.current = response;
-        setTaskSnapshot(response);
-        setTaskConfirmedAt(Date.now());
-        const accountId = mobileAccountId(preferences);
-        if (accountId) {
-          await enqueueMutation(cacheMutationQueue, async () => {
-            if (!write.canCommit()) return;
-            await writeCachedTaskSnapshot(response, accountId);
-          });
-        }
-        setCommandNotice(
-          removedTaskCount > 1 ? `任务及其 ${removedTaskCount - 1} 个子任务已删除` : '任务已删除',
+        await flushTaskEdit(record);
+        setCommandNotice(deleted ? '任务已删除' : '任务已更新');
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        const retried = retryLocalTaskEdit(
+          record,
+          error instanceof MobileLiveRequestError ? error.status : null,
+          Date.now(),
         );
-      } finally {
-        write.finish();
+        await writeLocalTaskEdit(retried);
+        setLocalTaskEdits((records) => [...records.filter((r) => r.taskId !== task.id), retried]);
+        setCommandNotice(
+          localTaskEditIssue(retried)
+            ? '本机修改已保留，服务端拒绝后需你确认'
+            : '修改已保存在本机；联网时自动同步',
+        );
       }
     },
-    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
+    [enqueueTaskEdit, flushTaskEdit],
   );
+
+  const updateCloudTask = useCallback(
+    async (task: SyncedTask, patch: LocalTaskEditPatch) => {
+      await queueTaskEdit(task, patch, false);
+    },
+    [queueTaskEdit],
+  );
+
+  const deleteCloudTask = useCallback(
+    async (task: SyncedTask) => {
+      await queueTaskEdit(task, {}, true);
+    },
+    [queueTaskEdit],
+  );
+
+  // 一条任务在离线期间的多次修改已经合并成一条记录；联网后按创建时间顺序补发。
+  useEffect(() => {
+    if (!foregroundActive || !online || localTaskScope === 'unpaired') return;
+    const pending = localTaskEdits.filter(
+      (record) => !record.blocked && record.nextRetryAt <= Date.now(),
+    );
+    if (pending.length === 0) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => {
+        void (async () => {
+          for (const record of pending) {
+            if (cancelled || controller.signal.aborted) return;
+            const latest = (await readLocalTaskEdits(localTaskScope)).find(
+              (candidate) => candidate.taskId === record.taskId,
+            );
+            if (!latest || latest.blocked) continue;
+            try {
+              await flushTaskEdit(latest);
+              if (!cancelled) setCommandNotice('本机修改已同步到云端');
+            } catch (error) {
+              if (cancelled || isAbortError(error)) return;
+              const retried = retryLocalTaskEdit(
+                latest,
+                error instanceof MobileLiveRequestError ? error.status : null,
+                Date.now(),
+                error instanceof MobileLiveRequestError ? error.retryAfterMs : null,
+              );
+              await writeLocalTaskEdit(retried);
+              setLocalTaskEdits((records) => [
+                ...records.filter((r) => r.taskId !== latest.taskId),
+                retried,
+              ]);
+              if (retried.blocked) return;
+            }
+          }
+        })();
+      },
+      Math.max(0, Math.min(...pending.map((r) => r.nextRetryAt)) - Date.now()),
+    );
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [flushTaskEdit, foregroundActive, localTaskEdits, localTaskScope, online]);
 
   const pullLedger = useCallback(
     (connection: MobileConnectionPreferences, _startCursor: string | null): Promise<void> => {
