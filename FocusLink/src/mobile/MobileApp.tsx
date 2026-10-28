@@ -43,6 +43,8 @@ import {
   readCachedLiveFocusSnapshot,
   readCachedTaskSnapshot,
   readCachedTaskSnapshotConfirmedAt,
+  readLegacyCachedTaskSnapshot,
+  writeLegacyCachedTaskSnapshot,
   readMobileCache,
   readOfflineFocusRuntime,
   readLocalSessionSyncMeta,
@@ -290,6 +292,7 @@ export function MobileApp() {
   const [localTaskRecords, setLocalTaskCreates] = useState<LocalTaskCreate[]>([]);
   const [localTaskQueueEpoch, setLocalTaskQueueEpoch] = useState(0);
   const [localTaskEditRecords, setLocalTaskEdits] = useState<LocalTaskEdit[]>([]);
+  const [localTaskEditEpoch, setLocalTaskEditEpoch] = useState(0);
   const localTaskScope = mobileAccountId(preferences) ?? 'unpaired';
   const localTaskCreates = useMemo(
     () => localTaskRecords.filter((r) => r.scope === localTaskScope || r.scope === 'unpaired'),
@@ -1118,7 +1121,11 @@ export function MobileApp() {
           setTaskConfirmedAt(Date.now());
           const accountId = mobileAccountId(connection);
           await enqueueMutation(cacheMutationQueue, async () => {
-            if (canCommit() && accountId) {
+            if (!canCommit()) return;
+            // 与账号无关的一份兜底快照：旧版配对令牌没有 accountId，
+            // 缺了它离线冷启动只能显示空列表。
+            await writeLegacyCachedTaskSnapshot(reconciliation.snapshot);
+            if (accountId) {
               await writeCachedTaskSnapshot(reconciliation.snapshot, accountId);
             }
           });
@@ -1152,6 +1159,34 @@ export function MobileApp() {
     if (confirmed.revision === 0) return createEmptyTaskSnapshot(Date.now());
     throw new Error('任务清单状态异常，请刷新后重试');
   }, [preferences, refreshTasks]);
+
+  // 冷启动先还原上次确认过的任务快照，否则离线重开会显示「还没有任务」。
+  useEffect(() => {
+    let current = true;
+    const accountId = mobileAccountId(preferences);
+    if (!accountId)
+      return () => {
+        current = false;
+      };
+    void (accountId ? readCachedTaskSnapshot(accountId) : readLegacyCachedTaskSnapshot())
+      .then((cached) => cached ?? readLegacyCachedTaskSnapshot())
+      .then((cached) => {
+        if (!current || !cached) return;
+        setTaskSnapshot((existing) =>
+          existing && existing.revision > cached.revision ? existing : cached,
+        );
+      })
+      .catch(() => undefined);
+    void readCachedTaskSnapshotConfirmedAt(accountId)
+      .then((confirmedAt) => {
+        if (!current || confirmedAt === null) return;
+        setTaskConfirmedAt((existing) => existing ?? confirmedAt);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [preferences]);
 
   useEffect(() => {
     let current = true;
@@ -1610,10 +1645,16 @@ export function MobileApp() {
   // 一条任务在离线期间的多次修改已经合并成一条记录；联网后按创建时间顺序补发。
   useEffect(() => {
     if (!foregroundActive || !online || localTaskScope === 'unpaired') return;
-    const pending = localTaskEdits.filter(
-      (record) => !record.blocked && record.nextRetryAt <= Date.now(),
-    );
-    if (pending.length === 0) return;
+    const retryable = localTaskEdits.filter((record) => !record.blocked);
+    if (retryable.length === 0) return;
+    const due = retryable.filter((record) => record.nextRetryAt <= Date.now());
+    if (due.length === 0) {
+      // 退避中的记录必须自己醒来，否则联网后没有任何事件会重新触发补发。
+      const wait = Math.max(0, Math.min(...retryable.map((r) => r.nextRetryAt)) - Date.now());
+      const wake = window.setTimeout(() => setLocalTaskEditEpoch((n) => n + 1), wait);
+      return () => window.clearTimeout(wake);
+    }
+    const pending = due;
     let cancelled = false;
     const controller = new AbortController();
     const timer = window.setTimeout(
@@ -1653,7 +1694,7 @@ export function MobileApp() {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [flushTaskEdit, foregroundActive, localTaskEdits, localTaskScope, online]);
+  }, [flushTaskEdit, foregroundActive, localTaskEditEpoch, localTaskEdits, localTaskScope, online]);
 
   const pullLedger = useCallback(
     (connection: MobileConnectionPreferences, _startCursor: string | null): Promise<void> => {
@@ -2051,10 +2092,12 @@ export function MobileApp() {
           }
           setPendingUploadCount(cachedPresentation.pendingCount);
           setLedgerRejectedCount(currentV2Status?.rejected ?? 0);
+          // 离线冷启动时 refresh 已尝试过并失败（generation 已推进），
+          // 只要当前还没有任何快照，就必须让缓存顶上，否则任务页会显示「还没有任务」。
           if (
             cachedTasks &&
             cacheConnectionConfigured &&
-            taskRequests.generation() === taskCacheGeneration
+            (taskRequests.generation() === taskCacheGeneration || taskSnapshotRef.current === null)
           ) {
             taskSnapshotRef.current = cachedTasks;
             setTaskSnapshot(cachedTasks);

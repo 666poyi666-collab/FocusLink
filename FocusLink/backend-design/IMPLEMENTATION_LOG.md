@@ -1,5 +1,30 @@
 # FocusLink 实施日志
 
+## 2026-10-29 · `FL-UI-20261029-OFFLINE-CACHE`：离线冷启动空列表与离线修改不补发（v1.8.6 已修）
+
+**结论**
+
+旧版配对令牌不是 `fl2_` 前缀，`parseDeviceToken` 返回 null，`mobileAccountId` 恒为 null；任务缓存写入与读取都以账号 id 为准，于是缓存从未落盘，离线冷启动必然显示「还没有任务」。同时离线修改入队后进入退避，但没有定时器唤醒补发，恢复联网也不会同步。两处均已修复并在小米真机端到端验证。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 真机偏好里的 token 不以 `fl2_` 开头，`parseDeviceToken` 返回 null | `run-as ... cat shared_prefs/*.xml` | 实测 |
+| ② | 缓存键存在（`taskSnapshot` 出现在 IndexedDB 的 .ldb/.log），说明结构正常、只是写入被 accountId 挡掉 | `grep -ral taskSnapshot app_webview/Default/IndexedDB` | 实测 |
+| ③ | 修前：断网冷启动列表为空（`visibleTaskSnapshot` 为 null） | 真机截图 `verify186-01-offline-start.png` | 实测 |
+| ④ | 修后：断网冷启动恢复 60 条任务，`revision=724` | 真机 + DOM 调试属性 | 实测 |
+| ⑤ | 修后：断网把任务改为「高」，队列 `edits=1`；强杀重启仍 `edits=1` 且面板显示「高」 | 真机 + DOM 调试属性 | 实测 |
+| ⑥ | 修后：恢复联网约 10 秒，`edits=0`、`revision 724 → 725`，云端已接收 | 真机 + DOM 调试属性 | 实测 |
+| ⑦ | 排查教训：重复添加 iptables 规则时只删一条会残留；残留规则会让应用一直「离线」，误判修复无效 | `iptables -S OUTPUT | grep 10328` | 实测 |
+
+**处置**
+
+- 新增与账号无关的兜底快照行 `taskSnapshot.legacy.v1`：每次确认刷新同时写入；冷启动在账号快照缺失时用它顶上。
+- 编辑队列补自唤醒：没有到期记录时按最早 `nextRetryAt` 设定时器，到点递增 epoch 触发补发。
+- 冷启动缓存守卫在「当前无任何快照」时放行，避免离线 refresh 已推进 generation 就丢弃缓存。
+- 断网演练统一用 `iptables -A OUTPUT -m owner --uid-owner <appUid> -j REJECT`，收尾必须循环删除直到 `grep -c` 为 0。
+
 ## 2026-10-29 · `FL-UI-20261029-TASK-EDIT`：任务编辑面板与离线队列的真机核验（v1.8.5，部分未完成）
 
 **结论**

@@ -688,6 +688,38 @@ export async function clearCachedLiveFocusSnapshot(): Promise<void> {
   database.close();
 }
 
+const LEGACY_TASK_SNAPSHOT_KEY = 'taskSnapshot.legacy.v1';
+
+/** Legacy pairing tokens carry no account id; keep one unscoped snapshot so offline start still has data. */
+export async function readLegacyCachedTaskSnapshot(): Promise<TaskSnapshotResponse | null> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readonly');
+    const row = await requestValue<MetaRecord | undefined>(
+      tx.objectStore(META_STORE).get(LEGACY_TASK_SNAPSHOT_KEY),
+    );
+    await transactionDone(tx);
+    return isCachedTaskSnapshotRecord(row?.value) ? row.value.snapshot : null;
+  } finally {
+    database.close();
+  }
+}
+
+export async function writeLegacyCachedTaskSnapshot(snapshot: TaskSnapshotResponse): Promise<void> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    tx.objectStore(META_STORE).put({
+      key: LEGACY_TASK_SNAPSHOT_KEY,
+      value: { accountId: 'legacy', cachedAt: Date.now(), snapshot },
+    } satisfies MetaRecord);
+    await done;
+  } finally {
+    database.close();
+  }
+}
+
 export async function readCachedTaskSnapshot(
   expectedAccountId: string | null,
 ): Promise<TaskSnapshotResponse | null> {
