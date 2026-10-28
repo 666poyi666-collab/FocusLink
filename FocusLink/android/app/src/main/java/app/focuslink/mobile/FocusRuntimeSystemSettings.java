@@ -63,7 +63,9 @@ final class FocusRuntimeSystemSettings {
     }
 
     static synchronized boolean isOverlayEnabled(Context context) {
-        return preferences(context).getBoolean(KEY_OVERLAY_ENABLED, false);
+        // 顶部胶囊默认开启：权限未授予时 FocusDesktopOverlayController 自己会跳过绘制，
+        // 不需要用户先找到开关。用户显式关闭过才尊重关闭值。
+        return preferences(context).getBoolean(KEY_OVERLAY_ENABLED, true);
     }
 
     static synchronized boolean setOverlayEnabled(Context context, boolean enabled) {
