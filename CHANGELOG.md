@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.8.8 - 2026-10-29（修前台通知被判过期；超级岛仍卡在通知未发出）
+
+- **原生过期判定**：本机权威会话改为按「收到时间 ≤30 分钟」判新鲜，不再被 `validUntilEpochMs` 一过期就停掉前台服务。
+- **JS 心跳补推**：会话进行中每 60 秒重推原生快照，顺带续有效期。
+- **定位结论**：装上 1.8.8 后新开会话，系统通知列表里仍无 FocusLink 记录、原生日志缺失，问题在“前端包未把快照推给原生”这一层。
+- 调试包新增 `DebugIslandReceiver`；HyperOS `Greezer` 拒绝后台广播投递，命令行触发不可用。
+
 ## v1.8.7 - 2026-10-29（超级岛载荷按小米官方 schema 重写）
 
 - 补齐必填 `business`/`aodTitle`/`ticker`，新增 `tickerPic`/`aodPic`/`shareData`/`islandFirstFloat`。

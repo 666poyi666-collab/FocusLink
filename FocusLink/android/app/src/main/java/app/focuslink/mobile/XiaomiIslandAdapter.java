@@ -120,8 +120,8 @@ final class XiaomiIslandAdapter {
                 UUID.nameUUIDFromBytes(businessId.getBytes()).toString()
             );
             notification.extras.putString("focuslink.systemSurface", "xiaomi-island");
-        } catch (JSONException ignored) {
-            // The independent standard ongoing notification remains valid.
+        } catch (JSONException | RuntimeException error) {
+            android.util.Log.w("FocusLinkIsland", "payload build failed", error);
         }
         return notification;
     }

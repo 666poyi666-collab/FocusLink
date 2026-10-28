@@ -243,7 +243,16 @@ final class FocusRuntimeSnapshot {
     }
 
     boolean isFresh(Context context, long nowEpochMs, long nowElapsedMs) {
-        if (!isActive() || validUntilEpochMs <= nowEpochMs) {
+        if (!isActive()) {
+            return false;
+        }
+        // 本机会话没有云端续约：只要收到不久（≤30 分钟）就按新鲜处理，
+        // 否则 validUntil 一过，前台通知与超级岛都会被静默停掉。
+        boolean localAuthorityFresh =
+            localAuthority &&
+            receivedAtEpochMs > 0L &&
+            nowEpochMs - receivedAtEpochMs <= FocusRuntimeContract.MAX_NATIVE_SNAPSHOT_AGE_MS;
+        if (!localAuthorityFresh && validUntilEpochMs <= nowEpochMs) {
             return false;
         }
         int currentBootCount = readBootCount(context);

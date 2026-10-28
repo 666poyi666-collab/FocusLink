@@ -2362,16 +2362,23 @@ export function MobileApp() {
 
   useEffect(() => {
     const snapshot = liveSnapshot ?? makeIdleSnapshot();
-    void updateNativeFocusSnapshot(
-      snapshot,
-      deviceId,
-      nativeConnectionLease,
-      liveConnection === 'live' && offlineRuntime === null,
-      Date.now(),
-      offlineRuntime !== null,
-    ).catch(() => {
-      // Native controls are optional; Web/PWA live sync remains usable if the bridge is absent.
-    });
+    const push = () => {
+      void updateNativeFocusSnapshot(
+        snapshot,
+        deviceId,
+        nativeConnectionLease,
+        liveConnection === 'live' && offlineRuntime === null,
+        Date.now(),
+        offlineRuntime !== null,
+      ).catch(() => {
+        // Native controls are optional; Web/PWA live sync remains usable if the bridge is absent.
+      });
+    };
+    push();
+    // 原生侧 validUntil 只有 30 分钟：会话进行中每 60 秒补推一次，
+    // 否则前台通知会被判定过期而不再展示，超级岛也随之消失。
+    const heartbeat = window.setInterval(push, 60_000);
+    return () => window.clearInterval(heartbeat);
   }, [deviceId, liveConnection, liveSnapshot, nativeConnectionLease, offlineRuntime]);
 
   const refreshNativeDisplayStatus = useCallback(async () => {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 仅调试包：adb 可直接触发一条岛通知，用来验证 miui.focus.param 载荷。 -->
+        <receiver
+            android:name=".DebugIslandReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="app.focuslink.mobile.DEBUG_ISLAND_POST" />
+                <action android:name="app.focuslink.mobile.DEBUG_ISLAND_CANCEL" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
