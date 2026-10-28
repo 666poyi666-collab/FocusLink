@@ -139,3 +139,89 @@ export function moveTaskSnapshotSubtree(
     ),
   };
 }
+
+/** Update one local FocusLink task's editable fields; imported tasks stay read-only. */
+export function updateTaskSnapshotTask(
+  snapshot: TaskSnapshotPayload,
+  taskId: string,
+  patch: {
+    title?: string;
+    priority?: number | null;
+    startDate?: number | null;
+    dueDate?: number | null;
+    tags?: string[];
+    parentId?: string | null;
+  },
+  publishedAt: number,
+): TaskSnapshotPayload {
+  const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) throw new Error('FocusLink 任务不存在');
+  if (task.source !== 'local') throw new Error('导入任务需先转为 FocusLink 任务');
+  let title = task.title;
+  if (patch.title !== undefined) {
+    title = patch.title.trim();
+    if (!title) throw new Error('任务标题不能为空');
+  }
+  if (patch.priority !== undefined && patch.priority !== null) {
+    if (!Number.isInteger(patch.priority) || patch.priority < 0 || patch.priority > 3) {
+      throw new Error('优先级只能是 0–3');
+    }
+  }
+  if (patch.parentId !== undefined && patch.parentId !== null) {
+    if (patch.parentId === taskId) throw new Error('任务不能成为自己的子任务');
+    const parent = snapshot.tasks.find((candidate) => candidate.id === patch.parentId);
+    if (!parent) throw new Error('父任务不存在');
+    if (parent.parentId) throw new Error('暂不支持三级子任务');
+  }
+  return {
+    ...snapshot,
+    publishedAt,
+    tasks: snapshot.tasks.map((candidate) =>
+      candidate.id === taskId
+        ? {
+            ...candidate,
+            title,
+            priority: patch.priority === undefined ? candidate.priority : patch.priority,
+            startDate: patch.startDate === undefined ? candidate.startDate : patch.startDate,
+            dueDate: patch.dueDate === undefined ? candidate.dueDate : patch.dueDate,
+            tags:
+              patch.tags === undefined
+                ? candidate.tags
+                : patch.tags.map((tag) => tag.trim()).filter(Boolean),
+            parentId: patch.parentId === undefined ? candidate.parentId : patch.parentId,
+            updatedAt: publishedAt,
+          }
+        : candidate,
+    ),
+  };
+}
+
+/** Delete a local FocusLink task together with its subtasks. */
+export function deleteTaskSnapshotTask(
+  snapshot: TaskSnapshotPayload,
+  taskId: string,
+  publishedAt: number,
+): { snapshot: TaskSnapshotPayload; removedTaskCount: number } {
+  const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) throw new Error('FocusLink 任务不存在');
+  if (task.source !== 'local') throw new Error('导入任务需先转为 FocusLink 任务');
+  const removing = new Set([task.id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const candidate of snapshot.tasks) {
+      if (candidate.parentId && removing.has(candidate.parentId) && !removing.has(candidate.id)) {
+        removing.add(candidate.id);
+        changed = true;
+      }
+    }
+  }
+  return {
+    removedTaskCount: removing.size,
+    snapshot: {
+      ...snapshot,
+      publishedAt,
+      tasks: snapshot.tasks.filter((candidate) => !removing.has(candidate.id)),
+    },
+  };
+}

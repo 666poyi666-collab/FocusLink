@@ -208,9 +208,11 @@ import { isTabletFocusViewport } from './viewportPolicy';
 import {
   createEmptyTaskSnapshot,
   deleteTaskSnapshotProject,
+  deleteTaskSnapshotTask,
   mobileTaskCompletionOperationId,
   moveTaskSnapshotSubtree,
   updateTaskSnapshotProject,
+  updateTaskSnapshotTask,
 } from './taskSnapshotMutations';
 
 type PullState = 'idle' | 'pulling' | 'confirmed' | 'partial' | 'error';
@@ -1486,6 +1488,92 @@ export function MobileApp() {
       }
     },
     [beginTaskWrite, deviceId, preferences, refreshTasks],
+  );
+
+  const updateCloudTask = useCallback(
+    async (
+      task: SyncedTask,
+      patch: {
+        title?: string;
+        priority?: number | null;
+        startDate?: number | null;
+        dueDate?: number | null;
+        tags?: string[];
+        parentId?: string | null;
+      },
+    ) => {
+      const snapshot = await requireLatestEditableTaskSnapshot();
+      if (!snapshot.tasks.some((candidate) => candidate.id === task.id)) {
+        throw new Error('FocusLink 任务不存在，请刷新后重试');
+      }
+      const next = updateTaskSnapshotTask(snapshot, task.id, patch, Date.now());
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: next,
+        });
+        if (!write.canCommit()) throw new Error('账号已切换，本次修改已取消');
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice('任务已更新');
+      } finally {
+        write.finish();
+      }
+    },
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
+  );
+
+  const deleteCloudTask = useCallback(
+    async (task: SyncedTask) => {
+      const snapshot = await requireLatestEditableTaskSnapshot();
+      if (!snapshot.tasks.some((candidate) => candidate.id === task.id)) {
+        throw new Error('FocusLink 任务不存在，请刷新后重试');
+      }
+      const { snapshot: next, removedTaskCount } = deleteTaskSnapshotTask(
+        snapshot,
+        task.id,
+        Date.now(),
+      );
+      const write = beginTaskWrite();
+      try {
+        const response = await publishTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          snapshot: next,
+        });
+        if (!write.canCommit()) throw new Error('账号已切换，本次删除已取消');
+        taskSnapshotRef.current = response;
+        setTaskSnapshot(response);
+        setTaskConfirmedAt(Date.now());
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(response, accountId);
+          });
+        }
+        setCommandNotice(
+          removedTaskCount > 1 ? `任务及其 ${removedTaskCount - 1} 个子任务已删除` : '任务已删除',
+        );
+      } finally {
+        write.finish();
+      }
+    },
+    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
   const pullLedger = useCallback(
@@ -2850,6 +2938,8 @@ export function MobileApp() {
                     setActiveView('focus');
                     void handleCommand('start', task, task.title);
                   }}
+                  onUpdateTask={updateCloudTask}
+                  onDeleteTask={deleteCloudTask}
                   onCreate={createCloudTask}
                   onCreateProject={createCloudProject}
                   onUpdateProject={updateCloudProject}

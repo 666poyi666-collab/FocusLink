@@ -45,6 +45,18 @@ interface TickTickTaskPageProps {
   onDeleteProject?: (project: SyncedTaskProject) => Promise<void>;
   onMoveTask?: (task: SyncedTask, projectId: string) => Promise<void>;
   onToggleComplete?: (task: SyncedTask) => Promise<void>;
+  onUpdateTask?: (
+    task: SyncedTask,
+    patch: {
+      title?: string;
+      priority?: number | null;
+      startDate?: number | null;
+      dueDate?: number | null;
+      tags?: string[];
+      parentId?: string | null;
+    },
+  ) => Promise<void>;
+  onDeleteTask?: (task: SyncedTask) => Promise<void>;
 }
 
 type ComposerMode = 'closed' | 'task' | 'project';
@@ -260,6 +272,8 @@ export function TickTickTaskPage({
   onCreateProject,
   onMoveTask,
   onToggleComplete,
+  onUpdateTask,
+  onDeleteTask,
 }: TickTickTaskPageProps) {
   const [now, setNow] = useState(() => Date.now());
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -275,11 +289,24 @@ export function TickTickTaskPage({
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [moveTaskId, setMoveTaskId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const task = tasks.find((candidate) => candidate.id === detailTaskId);
+    setEditTitle(task?.title ?? '');
+    setEditTags(task?.tags.join(' ') ?? '');
+    setEditError(null);
+    setConfirmDelete(false);
+  }, [detailTaskId, tasks]);
 
   const groups = useMemo<SyncedTaskGroup[]>(
     () =>
@@ -314,6 +341,39 @@ export function TickTickTaskPage({
       else next.add(id);
       return next;
     });
+  };
+
+  const applyPatch = (patch: {
+    title?: string;
+    priority?: number | null;
+    startDate?: number | null;
+    dueDate?: number | null;
+    tags?: string[];
+  }) => {
+    if (!onUpdateTask || !detailTask || editBusy) return;
+    setEditBusy(true);
+    setEditError(null);
+    void onUpdateTask(detailTask, patch)
+      .catch((reason: unknown) => {
+        setEditError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => setEditBusy(false));
+  };
+
+  const handleDelete = () => {
+    if (!onDeleteTask || !detailTask || editBusy) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    void onDeleteTask(detailTask)
+      .then(() => setDetailTaskId(null))
+      .catch((reason: unknown) => {
+        setEditError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => setEditBusy(false));
   };
 
   const handleComplete = (task: SyncedTask) => {
@@ -759,14 +819,94 @@ export function TickTickTaskPage({
                 </span>
               </span>
             </div>
-            <h2 className="tt-detail-title">{detailTask.title}</h2>
-            {detailTask.tags.length > 0 ? (
-              <p className="tt-detail-tags">
-                {detailTask.tags.map((tag) => (
-                  <span key={tag}>#{tag}</span>
-                ))}
+            <input
+              className="tt-detail-title-input"
+              aria-label="任务标题"
+              value={editTitle}
+              disabled={editBusy}
+              onChange={(event) => setEditTitle(event.target.value)}
+              onBlur={() => {
+                const next = editTitle.trim();
+                if (next && next !== detailTask.title) applyPatch({ title: next });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+            />
+            {editError ? (
+              <p className="tt-detail-error" role="alert">
+                {editError}
               </p>
             ) : null}
+            <div className="tt-detail-chips" role="group" aria-label="优先级">
+              {[
+                { value: null, label: '无' },
+                { value: 1, label: '低' },
+                { value: 2, label: '中' },
+                { value: 3, label: '高' },
+              ].map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  className="tt-chip"
+                  data-active={(detailTask.priority ?? null) === option.value}
+                  disabled={editBusy}
+                  onClick={() => applyPatch({ priority: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="tt-detail-chips" role="group" aria-label="截止日期">
+              {[
+                { value: null, label: '无日期' },
+                { value: startOfDay(now) + DAY_MS - 1, label: '今天' },
+                { value: startOfDay(now) + 2 * DAY_MS - 1, label: '明天' },
+              ].map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  className="tt-chip"
+                  data-active={
+                    option.value === null
+                      ? detailTask.dueDate === null
+                      : detailTask.dueDate !== null &&
+                        startOfDay(detailTask.dueDate) === startOfDay(option.value)
+                  }
+                  disabled={editBusy}
+                  onClick={() => applyPatch({ dueDate: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <input
+              className="tt-detail-tags-input"
+              aria-label="标签，空格分隔"
+              placeholder="标签（空格分隔）"
+              value={editTags}
+              disabled={editBusy}
+              onChange={(event) => setEditTags(event.target.value)}
+              onBlur={() => {
+                const next = editTags
+                  .split(/\s+/)
+                  .map((tag) => tag.trim())
+                  .filter(Boolean);
+                if (next.join(' ') !== detailTask.tags.join(' ')) applyPatch({ tags: next });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+            />
+            <button
+              type="button"
+              className="tt-detail-delete"
+              data-confirm={confirmDelete}
+              disabled={editBusy || !onDeleteTask}
+              onClick={handleDelete}
+            >
+              {confirmDelete ? '确认删除（含子任务）' : '删除任务'}
+            </button>
             {detailChildren.length > 0 ? (
               <ul className="tt-detail-subtasks">
                 {detailChildren.map((child) => (

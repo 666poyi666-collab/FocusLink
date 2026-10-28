@@ -35,6 +35,9 @@ param(
   [int]$Overload = 0
 )
 
+# REA 版本固定：工具输出进证据链，版本漂移会让历史结论不可复现。
+$ReaVersion = '6.8.0'
+
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
@@ -88,21 +91,41 @@ function Ensure-Jadx {
 
 function Ensure-Adb {
   if ($env:REA_ADB_PATH -and (Test-Path $env:REA_ADB_PATH)) { return $env:REA_ADB_PATH }
-  $candidates = @(
-    (Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'),
-    (Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'),
-    (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\adb.exe')
-  ) | Where-Object { $_ -and (Test-Path $_) }
+  $candidates = @(Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe')
+  if ($env:ANDROID_HOME) {
+    $candidates += Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
+  }
+  if ($env:ANDROID_SDK_ROOT) {
+    $candidates += Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\adb.exe'
+  }
+  $candidates = $candidates | Where-Object { $_ -and (Test-Path $_) }
   if ($candidates.Count -eq 0) { throw '找不到 adb，请设置 REA_ADB_PATH' }
   $env:REA_ADB_PATH = $candidates[0]
   return $candidates[0]
 }
 
+function Write-EvidenceLog([string[]]$reaArgs) {
+  # 每次调用都留一行指纹：时间、命令、rea 版本、工具版本，便于复现历史结论。
+  try {
+    $entry = [ordered]@{
+      at = (Get-Date).ToString('o')
+      command = ($reaArgs -join ' ')
+      rea = $ReaVersion
+      apktool = '2.10.0'
+      jadx = '0.7.1'
+    } | ConvertTo-Json -Compress
+    Add-Content -Path (Join-Path $ToolsDir 'evidence.jsonl') -Value $entry -Encoding utf8
+  } catch {
+    Write-Step "证据日志写入失败：$($_.Exception.Message)"
+  }
+}
+
 function Invoke-Rea([string[]]$reaArgs) {
   $env:npm_config_yes = 'true'
+  Write-EvidenceLog $reaArgs
   Push-Location $RepoRoot
   try {
-    & npx --yes rea-agents@latest @reaArgs
+    & npx --yes "rea-agents@$ReaVersion" @reaArgs
     $code = $LASTEXITCODE
   } finally {
     Pop-Location
@@ -127,11 +150,17 @@ switch ($Command) {
   }
   'decode' {
     if (-not $Target) { throw '用法: rea.ps1 decode <apk> [-OutDir dir]' }
-    Ensure-Apktool | Out-Null
+    $apktool = Ensure-Apktool
     $dir = if ($OutDir) { $OutDir } else { Join-Path $ToolsDir ("decoded-" + [IO.Path]::GetFileNameWithoutExtension($Target)) }
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    Invoke-Rea @('decode-android-resources', $Target, '--format', 'md')
-    Write-Step "解码目录由 rea 临时落盘；需要长期保存请用 apktool 直接解包到 $dir"
+    $apkHash = (Get-FileHash $Target -Algorithm SHA256).Hash.ToLower()
+    Write-Step "apk    = $Target"
+    Write-Step "sha256 = $apkHash"
+    Write-Step "工具   = apktool 2.10.0 / jadx-headless-mcp 0.7.1 / rea-agents $ReaVersion"
+    & $apktool d -f -s -o $dir $Target | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "apktool 解码失败（退出码 $LASTEXITCODE）" }
+    Write-Step "解码目录 = $dir"
+    Invoke-Rea @('inspect-apk-signature', $Target, '--format', 'json', '--filter-output', 'evidence_id')
   }
   'class' {
     if (-not $Target -or -not $Arg1) { throw '用法: rea.ps1 class <apk> <className>' }
