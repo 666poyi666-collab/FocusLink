@@ -295,6 +295,10 @@ export function TickTickTaskPage({
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 刚勾选完成的任务先在原位停留一会儿：动效要看得见，并且给一次撤销机会。
+  const [recentlyCompleted, setRecentlyCompleted] = useState<string[]>([]);
+  const [undoTarget, setUndoTarget] = useState<SyncedTask | null>(null);
+  const undoTimer = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -309,14 +313,23 @@ export function TickTickTaskPage({
     setConfirmDelete(false);
   }, [detailTaskId, tasks]);
 
-  const groups = useMemo<SyncedTaskGroup[]>(
-    () =>
-      groupSyncedTaskForest(
-        filterSyncedTaskForest(tasks, '', ALL_PROJECTS, showCompleted ? 'completed' : 'open'),
-        projects,
-      ),
-    [projects, showCompleted, tasks],
-  );
+  const groups = useMemo<SyncedTaskGroup[]>(() => {
+    const primary = filterSyncedTaskForest(
+      tasks,
+      '',
+      ALL_PROJECTS,
+      showCompleted ? 'completed' : 'open',
+    );
+    if (showCompleted || recentlyCompleted.length === 0) {
+      return groupSyncedTaskForest(primary, projects);
+    }
+    // 刚勾选的任务在窗口期内继续显示，并且强制画成已勾选：
+    // 否则云端确认前后它会整行消失，用户既看不到动效也没有撤销机会。
+    const pending = [...primary, ...filterSyncedTaskForest(tasks, '', ALL_PROJECTS, 'completed')]
+      .filter((node) => recentlyCompleted.includes(node.id))
+      .map((node) => ({ ...node, isCompleted: true }));
+    return groupSyncedTaskForest([...primary, ...pending], projects);
+  }, [projects, recentlyCompleted, showCompleted, tasks]);
   const activeGroups = useMemo(
     () =>
       projectFilter === ALL_PROJECTS
@@ -379,13 +392,38 @@ export function TickTickTaskPage({
 
   const handleComplete = (task: SyncedTask) => {
     if (!onToggleComplete || busy) return;
+    const completing = !task.isCompleted;
     setBusy(true);
     setError(null);
+    if (completing) {
+      setRecentlyCompleted((ids) => [...ids.filter((id) => id !== task.id), task.id]);
+      setUndoTarget(task);
+      if (undoTimer.current !== null) window.clearTimeout(undoTimer.current);
+      undoTimer.current = window.setTimeout(() => {
+        setRecentlyCompleted((ids) => ids.filter((id) => id !== task.id));
+        setUndoTarget(null);
+        undoTimer.current = null;
+      }, 1400);
+    }
     void onToggleComplete(task)
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)),
-      )
+      .catch((reason: unknown) => {
+        if (completing) {
+          setRecentlyCompleted((ids) => ids.filter((id) => id !== task.id));
+          setUndoTarget(null);
+        }
+        setError(reason instanceof Error ? reason.message : String(reason));
+      })
       .finally(() => setBusy(false));
+  };
+
+  const undoComplete = () => {
+    const task = undoTarget;
+    if (!task || !onToggleComplete) return;
+    setUndoTarget(null);
+    setRecentlyCompleted((ids) => ids.filter((id) => id !== task.id));
+    void onToggleComplete(task).catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
   };
 
   const openComposer = () => {
@@ -510,6 +548,15 @@ export function TickTickTaskPage({
         <p className="tt-error" role="alert">
           {error}
         </p>
+      ) : null}
+
+      {undoTarget ? (
+        <div className="tt-undo" role="status">
+          <span className="tt-undo-text">已完成「{undoTarget.title}」</span>
+          <button type="button" className="tt-undo-action" onClick={undoComplete}>
+            撤销
+          </button>
+        </div>
       ) : null}
 
       <button type="button" className="tt-fab" aria-label="新建任务" onClick={openComposer}>
