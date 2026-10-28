@@ -1,5 +1,29 @@
 # FocusLink 实施日志
 
+## 2026-10-29 · `FL-UI-20261029-ISLAND-PAYLOAD`：超级岛参数不符合官方 schema（v1.8.7 已按规范重写，待真机肉眼验收）
+
+**结论**
+
+公开资料确认：超级岛与焦点通知数据同源，`miui.focus.param` 必须带 `param_v2.business`、`aodTitle`、`ticker`、`param_island.{islandProperty,bigIslandArea,smallIslandArea}` 与 `baseInfo`，且引用的图片键必须在 `miui.focus.pics` 里真实存在。我们此前的载荷缺 `business`/`aodTitle`、键名用了自造的 `textInfo`（官方是 `miui.focus.paramtextInfo`）、也没提供 `miui.focus.pics`，因此 SystemUI 收下通知但不渲染岛。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 官方流程要求开通超级岛服务并申请焦点通知权限，客户端本地可用 `miui.focus.param` + `miui.focus.pics` 直接发岛 | 小米澎湃OS开发指南（pId=2131）、阿里云 EMAS 小米超级岛推送指南 | 证据记录 |
+| ② | `param_v2.business`、`aodTitle`、`ticker` 为必填；`param_island` 为必填对象 | 同上 | 证据记录 |
+| ③ | 大岛图文键名为 `miui.focus.paramtextInfo`，官方示例同时给出 `picInfo.pic` 指向 `miui.focus.pic_*` | 同上 | 证据记录 |
+| ④ | 真机设置：`if_allow_focus_notification=1`、`notification_focus_protocol=3`、`support_dynamic_island=1`、`updatable_focus_notifs=[]` | `settings get system/secure` | 实测 |
+| ⑤ | 真机已装 KernelSU，且存在 `/data/adb/lspd`（LSPosed 数据目录），为 HyperIsland 类模块留了后路 | `pm list packages`、`ls /data/adb` | 实测 |
+| ⑥ | `content call` 查询 `canShowFocus` 被 SecurityException 拒绝（提供方要求调用方就是该包），只能由应用内调用 | 真机命令输出 | 实测 |
+| ⑦ | v1.8.7 已按官方 schema 重写载荷并补 `miui.focus.pics`；协议号跟随系统 `notification_focus_protocol` | `XiaomiIslandAdapter.java` | 实测 |
+
+**处置**
+
+- 载荷：补齐 `business`/`aodTitle`/`ticker`/`tickerPic`/`aodPic`/`shareData`，改用官方键名 `miui.focus.paramtextInfo`，新增 `miui.focus.pics` Bundles。
+- 待办：需要一次真机专注会话观察顶部是否出现岛；若仍不渲染，再走 HyperIsland（LSPosed 模块，需重启）作为最后手段。
+- 真机门禁：1.8.7 已装小米（1363）与 Windows（1.8.7.0）。
+
 ## 2026-10-29 · `FL-UI-20261029-OFFLINE-CACHE`：离线冷启动空列表与离线修改不补发（v1.8.6 已修）
 
 **结论**

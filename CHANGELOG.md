@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.8.7 - 2026-10-29（超级岛载荷按小米官方 schema 重写）
+
+- 补齐必填 `business`/`aodTitle`/`ticker`，新增 `tickerPic`/`aodPic`/`shareData`/`islandFirstFloat`。
+- 键名改为官方 `miui.focus.paramtextInfo`（此前是自造 `textInfo`）。
+- 新增 `miui.focus.pics` Bundles，图片键不再悬空；协议号跟随系统 `notification_focus_protocol`。
+- 真机取证：`if_allow_focus_notification=1`、`protocol=3`、`support_dynamic_island=1`、`updatable_focus_notifs=[]`；设备为 KernelSU + LSPosed 数据目录。
+- 岛上可见仍待一次真机专注会话观察；备选 HyperIsland（LSPosed）。
+
 ## v1.8.6 - 2026-10-29（修复离线冷启动空列表与离线修改不补发）
 
 - **离线冷启动**：旧版配对令牌解析不出账号段，任务缓存从未写入；新增与账号无关的兜底快照 `taskSnapshot.legacy.v1`，冷启动在账号快照缺失时用它顶上。

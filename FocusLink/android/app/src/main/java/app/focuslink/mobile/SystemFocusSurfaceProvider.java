@@ -37,7 +37,13 @@ final class SystemFocusSurfaceProvider {
         String surface = selectedSurface(context);
         StandardNotificationAdapter.apply(notification, surface);
         if (SURFACE_XIAOMI_ISLAND.equals(surface)) {
-            XiaomiIslandAdapter.apply(notification, snapshot, displayTitle, displayContent);
+            XiaomiIslandAdapter.apply(
+                context,
+                notification,
+                snapshot,
+                displayTitle,
+                displayContent
+            );
         } else if (SURFACE_HUAWEI_LIVE_CAPSULE.equals(surface)) {
             HuaweiCapsuleAdapter.apply(notification, snapshot);
         }
