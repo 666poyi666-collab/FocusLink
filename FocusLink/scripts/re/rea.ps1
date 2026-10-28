@@ -141,7 +141,7 @@ switch ($Command) {
   'method' {
     if (-not $Target -or -not $Arg1 -or -not $Arg2) { throw '用法: rea.ps1 method <apk> <className> <method> [--overload n]' }
     Ensure-Jadx | Out-Null
-    Invoke-Rea @('inspect-android-method', $Target, $Arg1, $Arg2, '--overload', "$Overload", '--format', 'md')
+    Invoke-Rea @('inspect-android-method', $Target, $Arg1, $Arg2, '--overload-index', "$Overload", '--format', 'md')
   }
   'sign' {
     if (-not $Target) { throw '用法: rea.ps1 sign <apk>' }

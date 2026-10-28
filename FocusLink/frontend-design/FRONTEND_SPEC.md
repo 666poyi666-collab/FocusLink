@@ -14,6 +14,21 @@
 - 详情：底部面板（清单与移动、完成按钮、勾选框 + 日期、22px 标题、标签、子任务列表、开始专注、本机保存状态）。
 - 导航：底部四项，激活项蓝底圆角图标 + 蓝字，其余仅图标。
 
+**设计源 → 实现对照（滴答清单 APK 解码资源 / jadx 反编译）**
+
+| 设计源 | 真实值 | 我们的实现 |
+|---|---|---|
+| `res/layout/standard_task_list_item.xml` | 勾选区 `paddingStart 15dp / paddingEnd 8dp / paddingVertical 10dp`；标题 16sp、`marginVertical 10dp`、`paddingEnd 8dp`；日期 13sp、`marginEnd 2dp`；箭头 18dp、`marginEnd 10dp`；右预留 14dp | 行高 `44px`、勾选框 `22px`、标题 `16px`、日期 `13px`、右箭头 18px |
+| `res/values/styles.xml#taskItemCheckbox` | 24dp × 24dp、`padding 1dp` | `--tt-check: 22px` + 1.5px 描边 |
+| `res/drawable/ic_svg_tasklist_checkbox_unchecked_v8.xml` | 圆角方形、viewport 24×24、圆角半径 5、描边 1.5dp | `border-radius: 5px`、`border: 1.5px` |
+| `res/values/colors.xml` | 强调蓝 `617FDE`、高优先级 `E13E39`、中 `F2B04B`、低 `617FDE`、无 `A3A3A3`、正文 `262626`、次要 `757575`、页底 `F5F5F5` | `--tt-blue/--tt-red/--tt-orange/--tt-muted/--tt-text/--tt-secondary/--tt-bg` |
+| `res/values/dimens.xml` | `bottom_navigation_height 58dp`、`icon_size 24dp`、`active_text_size 14sp` | 导航 `calc(58px + safe-area)`、图标 24px、激活标签 14px |
+| `res/layout/detail_list_date_info.xml` | 勾选框 32dp（内边距 4dp）、日期 16sp、副日期 11sp、左右内边距 14/24dp | 详情日期行 24px 圈 + 16px/11px 文本、面板左右 14/24px |
+| `res/layout/detail_list_item_title.xml` | 标题加粗、`marginStart 10dp`、上下 7dp | 22px/700、`margin-left 10px`、`padding 7px 0` |
+| `res/layout/detail_list_header_info.xml` | 清单行 14sp、次色、左边距 10dp、上下 7/8dp | `.tt-detail-parent` 14px + 12px 箭头 |
+| `res/layout/detail_list_item_tags.xml` | 左边距 6dp、内边距 2dp、上边距 8dp | `.tt-detail-tags` 同值 |
+| `res/values/colors.xml#swipe_task_wont_do` | `4C52E4` | 左滑动作底色 |
+| `Constants.CustomSwipe`（jadx 反编译） | 加标签/改期/改优先级/删除/编辑/估番茄/完成/移动/开始番茄/星标/不做/置顶 | 只实现协议支持的「完成 / 移到清单」两种 |
 **未搬入的部分**：搜索、批量操作、清单改名 / 删除入口仍由旧任务页逻辑承载；统计与专注页保持原设计语言。
 ## 移动端重设计：设计语言与设计文件（2026-10-27，v1.7.0 已实现）
 
