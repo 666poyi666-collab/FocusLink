@@ -39,8 +39,8 @@ android {
         applicationId focuslinkApplicationId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1357
-        versionName "1.8.1"
+        versionCode 1358
+        versionName "1.8.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "DEFAULT_SYNC_ENDPOINT", '""'
         buildConfigField "String", "CANONICAL_SYNC_ORIGIN", '"https://foxlink-mcp.focuslink-poyi-6465e9.workers.dev"'

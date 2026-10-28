@@ -686,30 +686,7 @@ export function TickTickTaskPage({
               >
                 <ChevronLeft aria-hidden="true" />
               </button>
-              <span className="tt-detail-list">
-                {listTitle(detailTask.projectId, projects)}
-                {onMoveTask ? (
-                  <select
-                    className="tt-detail-move"
-                    aria-label="移动到清单"
-                    value={detailTask.projectId ?? ''}
-                    onChange={(event) => {
-                      const next = event.target.value || null;
-                      if (next === null) return;
-                      void onMoveTask(detailTask, next);
-                    }}
-                  >
-                    <option value="" disabled>
-                      移动
-                    </option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-              </span>
+              <span className="tt-detail-head-title">任务</span>
               <button
                 type="button"
                 className="tt-detail-done"
@@ -721,6 +698,32 @@ export function TickTickTaskPage({
                 完成
               </button>
             </header>
+            <div className="tt-detail-parent">
+              <span className="tt-detail-parent-name">
+                {listTitle(detailTask.projectId, projects)}
+              </span>
+              {onMoveTask ? (
+                <select
+                  className="tt-detail-move"
+                  aria-label="移动到清单"
+                  value={detailTask.projectId ?? ''}
+                  onChange={(event) => {
+                    const next = event.target.value || null;
+                    if (next === null) return;
+                    void onMoveTask(detailTask, next);
+                  }}
+                >
+                  <option value="" disabled>
+                    移动
+                  </option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
             <div className="tt-detail-date">
               <button
                 type="button"
