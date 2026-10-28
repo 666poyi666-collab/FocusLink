@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.8.1 - 2026-10-28（勾选框改为圆角方形，对齐矢量资源）
+
+- **勾选框形状修正**：滴答清单的勾选框是 `ic_svg_tasklist_checkbox_unchecked_v8.xml`（24dp、圆角半径 5、1.5dp 描边、白底）的圆角方形，不是圆形；上一版按截图猜错了。真机截图 6 倍放大裁切确认后改为 `border-radius: 5px` + 1.5px 描边，完成态保持灰底白勾。
+- 其余沿用 v1.8.0：详情面板按 `detail_*` 布局重排、任务行按 `standard_task_list_item` 直译、资源真值配色、滑动完成/移清单、清单抽屉、root 顶部胶囊。
+
 ## v1.8.0 - 2026-10-28（详情面板按滴答清单详情布局重排）
 
 - **详情布局直译**：读 `detail_list_date_info.xml`、`detail_list_item_title.xml`、`detail_subtask_list_item.xml` 后重排任务详情——日期行 32dp 勾选框（可见圈 24dp、内边距 4dp）、日期 16sp、副标题 11sp；标题加粗、左边距 10dp、上下 7dp；标签 12sp；子任务行复用列表行规格（24dp 勾选框、16sp 标题、13sp 日期、右端 10dp）。

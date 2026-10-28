@@ -7083,8 +7083,8 @@ html[data-runtime='mobile-focus'] .tt-check {
   width: var(--tt-check);
   height: var(--tt-check);
   padding: 0;
-  border: 1.6px solid var(--tt-muted);
-  border-radius: 50%;
+  border: 1.5px solid var(--tt-muted);
+  border-radius: 5px;
   background: none;
   color: transparent;
   cursor: pointer;
