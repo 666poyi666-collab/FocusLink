@@ -256,6 +256,29 @@ export function SettingsView({
     <section className="settings-view view-surface" aria-label="设置">
       {panel === 'root' && (
         <div className="settings-root">
+          <button
+            type="button"
+            className="settings-account-card"
+            onClick={onOpenAccount}
+            aria-label={authenticated ? '账号与同步设置' : '未配对，点击配对'}
+          >
+            <span className="settings-account-avatar" aria-hidden="true">
+              {(accountLabel ?? 'F').trim().slice(0, 1).toUpperCase()}
+            </span>
+            <span className="settings-account-body">
+              <span className="settings-account-name">
+                {authenticated ? (accountLabel ?? '已配对设备') : '本机使用'}
+              </span>
+              <span className="settings-account-meta">
+                {authenticated
+                  ? taskConfirmedAt
+                    ? `已连接 · 上次同步 ${relativeSyncLabel(taskConfirmedAt)}`
+                    : '已连接 · 正在同步'
+                  : '未配对 · 任务只保存在本机'}
+              </span>
+            </span>
+            <ChevronRight className="settings-row-chevron" aria-hidden="true" />
+          </button>
           <p className="m-aux settings-root-note">按你的方式专注。</p>
           <div className="m-card settings-groups" role="group" aria-label="设置分组">
             <SettingsGroupRow
@@ -730,4 +753,14 @@ function SettingsFactRow({
       <span className="settings-fact-value">{value}</span>
     </div>
   );
+}
+
+function relativeSyncLabel(timestamp: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return '刚刚';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.round(hours / 24)} 天前`;
 }

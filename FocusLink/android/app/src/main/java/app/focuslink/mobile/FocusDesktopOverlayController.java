@@ -272,6 +272,19 @@ final class FocusDesktopOverlayController {
     private void restorePosition() {
         if (overlayView == null || layoutParams == null) return;
         Rect frame = availableFrame();
+        if (!FocusRuntimeSystemSettings.isOverlayUserPositioned(context)) {
+            // 未手动拖过：像原生超级岛一样水平居中、竖直落在状态栏那一行。
+            WindowMetrics metrics = windowManager.getCurrentWindowMetrics();
+            Rect bounds = new Rect(metrics.getBounds());
+            int statusBarHeight = statusBarHeightPx();
+            layoutParams.x = Math.round((bounds.width() - overlayView.getWidth()) / 2f) + bounds.left;
+            // 贴在状态栏那一行：底边对齐状态栏底部、留 2dp。
+            layoutParams.y = statusBarHeight > 0
+                ? Math.max(0, statusBarHeight - overlayView.getHeight() - dp(2))
+                : frame.top;
+            clampPosition(true);
+            return;
+        }
         FocusRuntimeSystemSettings.OverlayPosition stored =
             FocusRuntimeSystemSettings.getOverlayPosition(context);
         int travelX = Math.max(0, frame.width() - overlayView.getWidth());
@@ -331,6 +344,15 @@ final class FocusDesktopOverlayController {
         background.setColor(Color.parseColor(color));
         background.setCornerRadius(dp(radiusDp));
         return background;
+    }
+
+    private int statusBarHeightPx() {
+        int id = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (id > 0) {
+            int value = context.getResources().getDimensionPixelSize(id);
+            if (value > 0) return value;
+        }
+        return 0;
     }
 
     private Rect availableFrame() {

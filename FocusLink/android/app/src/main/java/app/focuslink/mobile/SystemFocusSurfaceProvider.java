@@ -80,12 +80,13 @@ final class SystemFocusSurfaceProvider {
     }
 
     static String selectedSurface(Context context) {
-        int protocol = xiaomiFocusProtocol(context);
+        // 用户要求移除超级岛投影：小米焦点通知被 SystemUI 白名单拦在 onAuthFailed，
+        // 继续选择岛表面只会让通知链路被反复拒绝，这里固定退回普通常驻通知。
         boolean promotedAllowed = Build.VERSION.SDK_INT >= 36 && Api36.canPostPromoted(context);
         return SystemFocusSurfacePolicy.select(
             isHuaweiOrHonor(),
-            protocol,
-            hasXiaomiFocusPermission(context),
+            0,
+            false,
             promotedAllowed
         );
     }

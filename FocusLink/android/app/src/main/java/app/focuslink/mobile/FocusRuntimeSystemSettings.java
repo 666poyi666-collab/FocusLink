@@ -13,6 +13,7 @@ final class FocusRuntimeSystemSettings {
     private static final String KEY_PAUSE_REMINDER_DELAY_MINUTES = "pauseReminderDelayMinutes";
     private static final String KEY_OVERLAY_ENABLED = "overlayEnabled";
     private static final String KEY_OVERLAY_X_FRACTION = "overlayXFraction";
+    private static final String KEY_OVERLAY_USER_POSITIONED = "overlayUserPositioned";
     private static final String KEY_OVERLAY_Y_FRACTION = "overlayYFraction";
 
     static final class PauseReminderPreference {
@@ -63,9 +64,8 @@ final class FocusRuntimeSystemSettings {
     }
 
     static synchronized boolean isOverlayEnabled(Context context) {
-        // 顶部胶囊默认开启：权限未授予时 FocusDesktopOverlayController 自己会跳过绘制，
-        // 不需要用户先找到开关。用户显式关闭过才尊重关闭值。
-        return preferences(context).getBoolean(KEY_OVERLAY_ENABLED, true);
+        // 用户要求移除超级岛替代方案：悬浮胶囊不再绘制，开关保持可写但恒为关闭。
+        return false;
     }
 
     static synchronized boolean setOverlayEnabled(Context context, boolean enabled) {
@@ -82,9 +82,15 @@ final class FocusRuntimeSystemSettings {
         return new OverlayPosition(x, y);
     }
 
+    /** 只有用户手动拖过才沿用坐标；否则始终像原生岛一样居中贴在状态栏。 */
+    static synchronized boolean isOverlayUserPositioned(Context context) {
+        return preferences(context).getBoolean(KEY_OVERLAY_USER_POSITIONED, false);
+    }
+
     static synchronized void setOverlayPosition(Context context, float xFraction, float yFraction) {
         boolean committed = preferences(context)
             .edit()
+            .putBoolean(KEY_OVERLAY_USER_POSITIONED, true)
             .putFloat(KEY_OVERLAY_X_FRACTION, clampFraction(xFraction))
             .putFloat(KEY_OVERLAY_Y_FRACTION, clampFraction(yFraction))
             .commit();

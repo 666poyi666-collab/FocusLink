@@ -193,6 +193,7 @@ function TaskRow({
       >
         <button
           type="button"
+          key={node.isCompleted ? 'done' : 'open'}
           className="tt-check"
           data-tone={tone}
           data-checked={node.isCompleted}
@@ -787,6 +788,7 @@ export function TickTickTaskPage({
             <div className="tt-detail-date">
               <button
                 type="button"
+                key={detailTask.isCompleted ? 'done' : 'open'}
                 className="tt-check tt-check-lg"
                 data-tone={priorityTone(detailTask.priority)}
                 data-checked={detailTask.isCompleted}

@@ -7862,4 +7862,112 @@ html[data-runtime='mobile-focus'] .tt-detail-delete[data-confirm='true'] {
   font-weight: 700;
 }
 
+/* 勾选动效：只动合成器属性（transform/opacity），元素按完成态重挂载后播放一次。 */
+html[data-runtime='mobile-focus'] .tt-check {
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+html[data-runtime='mobile-focus'] .tt-check svg {
+  width: 100%;
+  height: 100%;
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] {
+  animation: tt-check-pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] svg {
+  animation: tt-check-tick 220ms 40ms both;
+}
+
+@keyframes tt-check-pop {
+  0% {
+    transform: scale(0.78);
+  }
+
+  60% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes tt-check-tick {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) translateY(1px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 设置页账户卡片：对齐滴答清单的「头像 + 账号 + 同步状态」一行式入口。 */
+html[data-runtime='mobile-focus'] .settings-account-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 14px;
+  border: 0;
+  border-radius: 16px;
+  background: rgb(255 255 255);
+  color: var(--tt-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .settings-account-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: rgba(97, 127, 222, 0.14);
+  color: var(--tt-blue);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+html[data-runtime='mobile-focus'] .settings-account-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+html[data-runtime='mobile-focus'] .settings-account-name {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .settings-account-meta {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--tt-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .tt-check[data-checked='true'],
+  html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] svg {
+    animation: none;
+  }
+}
+
 /* ===== END SECTION: TASKS-TICKTICK ===== */
