@@ -12,14 +12,21 @@ import {
   markPendingDeviceSyncUploading,
   readCachedLiveFocusSnapshot,
   readLocalSessionSyncMeta,
+  readLocalTaskCompletions,
   readOfflineFocusRuntime,
   readPendingDeviceSyncBundles,
   readCachedTaskSnapshot,
   removePendingDeviceSyncBundle,
+  retryLocalTaskCompletions,
   writeCachedLiveFocusSnapshot,
   writeCachedTaskSnapshot,
+  writeLocalTaskCompletion,
   type LocalSessionSyncMeta,
 } from '../src/mobile/cache';
+import {
+  newLocalTaskCompletion,
+  retryLocalTaskCompletion,
+} from '../src/mobile/localTaskCompletions';
 import { startOfflineFocus } from '../src/mobile/offlineFocusRuntime';
 import type { LiveFocusSnapshotLike } from '../src/mobile/runtimeModel';
 import {
@@ -218,6 +225,70 @@ describe('mobile IndexedDB local-first persistence', () => {
     expect(await readCachedLiveFocusSnapshot('account-b')).toBeNull();
     await clearCachedTaskSnapshot();
     expect(await readCachedTaskSnapshot('account-a')).toBeNull();
+  });
+
+  it('round-trips completion intents per sync space and keeps one intent per task', async () => {
+    const paired = newLocalTaskCompletion('task-paired', 'device-a', true, 1_000);
+    const unpaired = newLocalTaskCompletion('task-unpaired', 'unpaired', false, 2_000);
+    const foreign = newLocalTaskCompletion('task-foreign', 'device-b', true, 3_000);
+
+    await writeLocalTaskCompletion(paired);
+    await writeLocalTaskCompletion(unpaired);
+    await writeLocalTaskCompletion(foreign);
+
+    expect(await readLocalTaskCompletions('device-a')).toEqual([paired, unpaired]);
+    expect(await readLocalTaskCompletions('device-b')).toEqual([unpaired, foreign]);
+
+    const replaced = newLocalTaskCompletion('task-paired', 'device-a', false, 5_000);
+    await writeLocalTaskCompletion(replaced);
+    const afterReplace = await readLocalTaskCompletions('device-a');
+    expect(afterReplace.map((record) => record.taskId).sort()).toEqual([
+      'task-paired',
+      'task-unpaired',
+    ]);
+    expect(afterReplace.find((record) => record.taskId === 'task-paired')).toEqual(replaced);
+
+    await expect(
+      writeLocalTaskCompletion(newLocalTaskCompletion('task-paired', 'device-b', true, 6_000)),
+    ).rejects.toThrow('任务属于另一同步空间，已保留原记录');
+    expect(await readLocalTaskCompletions('device-a')).toEqual(afterReplace);
+
+    await writeLocalTaskCompletion(replaced, true);
+    expect(await readLocalTaskCompletions('device-a')).toEqual([unpaired]);
+  });
+
+  it('keeps a newer intent against a stale receipt and clears backoff on retry', async () => {
+    const intent = newLocalTaskCompletion('task-a', 'device-a', true, 1_000);
+    await writeLocalTaskCompletion(intent);
+    const rebased = { ...retryLocalTaskCompletion(intent, 409, 2_000), nextRetryAt: 3_000 };
+    await writeLocalTaskCompletion(rebased);
+
+    // A receipt for the pre-rebase intent must not delete the newer one.
+    await writeLocalTaskCompletion(intent, true);
+    expect(await readLocalTaskCompletions('device-a')).toEqual([rebased]);
+
+    await writeLocalTaskCompletion(rebased, true);
+    expect(await readLocalTaskCompletions('device-a')).toEqual([]);
+
+    const blocked = retryLocalTaskCompletion(
+      newLocalTaskCompletion('task-b', 'device-a', true, 1_000),
+      401,
+      2_000,
+    );
+    const otherSpace = retryLocalTaskCompletion(
+      newLocalTaskCompletion('task-c', 'device-b', true, 1_000),
+      403,
+      2_000,
+    );
+    await writeLocalTaskCompletion(blocked);
+    await writeLocalTaskCompletion(otherSpace);
+    expect(await readLocalTaskCompletions('device-a')).toEqual([blocked]);
+
+    await retryLocalTaskCompletions('device-a');
+    expect(await readLocalTaskCompletions('device-a')).toEqual([
+      { ...blocked, blocked: false, nextRetryAt: 0 },
+    ]);
+    expect(await readLocalTaskCompletions('device-b')).toEqual([otherSpace]);
   });
 });
 

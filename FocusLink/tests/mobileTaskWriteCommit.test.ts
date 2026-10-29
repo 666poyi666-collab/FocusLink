@@ -29,7 +29,15 @@ describe('mobile task write commit gate', () => {
   });
 
   it('re-checks the account identity before committing a task write and its cache write', () => {
-    expect(countOccurrences(mobileAppSource, 'if (!write.canCommit()) return;')).toBe(10);
+    expect(countOccurrences(mobileAppSource, 'if (!write.canCommit()) return;')).toBe(9);
+    // 完成/恢复的补发在回执后必须回 null（调用方据此保留记录），同样是一次身份复验。
+    expect(countOccurrences(mobileAppSource, 'if (!write.canCommit()) return null;')).toBe(1);
+    expect(
+      countOccurrences(
+        mobileAppSource,
+        "if (!write.canCommit()) throw new Error('账号已切换，本次完成状态已取消');",
+      ),
+    ).toBe(1);
     expect(
       countOccurrences(
         mobileAppSource,

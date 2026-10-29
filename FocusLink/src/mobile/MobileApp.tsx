@@ -16,6 +16,14 @@ import {
   localTaskCreateIssue,
   type LocalTaskCreate,
 } from './localTaskQueue';
+import {
+  localTaskCompletionIssue,
+  overlayLocalTaskCompletions,
+  planTaskCompletionIntent,
+  retryLocalTaskCompletion,
+  sortLocalTaskCompletions,
+  type LocalTaskCompletion,
+} from './localTaskCompletions';
 import { normalizeDeviceSyncEndpoint } from '@shared/sync/deviceProtocol';
 import { parseDeviceToken } from '@shared/sync/v2Protocol';
 import {
@@ -58,6 +66,8 @@ import {
   retryLocalTaskCreates,
   readLocalTaskEdits,
   writeLocalTaskEdit,
+  readLocalTaskCompletions,
+  writeLocalTaskCompletion,
   type MobileCacheSnapshot,
   type LocalSessionSyncMeta,
   type MobileAuthorityMode,
@@ -222,7 +232,6 @@ import {
   createEmptyTaskSnapshot,
   deleteTaskSnapshotProject,
   deleteTaskSnapshotTask,
-  mobileTaskCompletionOperationId,
   moveTaskSnapshotSubtree,
   updateTaskSnapshotProject,
   updateTaskSnapshotTask,
@@ -293,6 +302,10 @@ export function MobileApp() {
   const [localTaskQueueEpoch, setLocalTaskQueueEpoch] = useState(0);
   const [localTaskEditRecords, setLocalTaskEdits] = useState<LocalTaskEdit[]>([]);
   const [localTaskEditEpoch, setLocalTaskEditEpoch] = useState(0);
+  const [localTaskCompletionRecords, setLocalTaskCompletions] = useState<LocalTaskCompletion[]>([]);
+  const [localTaskCompletionEpoch, setLocalTaskCompletionEpoch] = useState(0);
+  const [syncedCompletionIds, setSyncedCompletionIds] = useState<Record<string, number>>({});
+  const completionSyncedTimers = useRef(new Map<string, number>());
   const localTaskScope = mobileAccountId(preferences) ?? 'unpaired';
   const localTaskCreates = useMemo(
     () => localTaskRecords.filter((r) => r.scope === localTaskScope || r.scope === 'unpaired'),
@@ -302,14 +315,35 @@ export function MobileApp() {
     () => localTaskEditRecords.filter((r) => r.scope === localTaskScope || r.scope === 'unpaired'),
     [localTaskEditRecords, localTaskScope],
   );
+  const localTaskCompletions = useMemo(
+    () =>
+      localTaskCompletionRecords.filter(
+        (r) => r.scope === localTaskScope || r.scope === 'unpaired',
+      ),
+    [localTaskCompletionRecords, localTaskScope],
+  );
   const visibleTaskSnapshot = useMemo(
     () =>
-      overlayLocalTaskEdits(
-        overlayLocalTaskCreates(taskSnapshot, localTaskCreates),
-        localTaskEdits,
+      overlayLocalTaskCompletions(
+        overlayLocalTaskEdits(
+          overlayLocalTaskCreates(taskSnapshot, localTaskCreates),
+          localTaskEdits,
+        ),
+        localTaskCompletions,
       ),
-    [taskSnapshot, localTaskCreates, localTaskEdits],
+    [taskSnapshot, localTaskCompletions, localTaskCreates, localTaskEdits],
   );
+  // 行内状态只由本机意图队列给出：待同步、已同步、同步失败，页面不自行猜测。
+  const taskCompletionStates = useMemo(() => {
+    const states: Record<string, 'pending' | 'synced' | 'failed'> = {};
+    for (const [taskId, at] of Object.entries(syncedCompletionIds)) {
+      if (at > 0) states[taskId] = 'synced';
+    }
+    for (const record of localTaskCompletions) {
+      states[record.taskId] = record.blocked ? 'failed' : 'pending';
+    }
+    return states;
+  }, [localTaskCompletions, syncedCompletionIds]);
   // When this device last had a task snapshot confirmed by the cloud. Task
   // sync is its own settings domain; it must not borrow the ledger timestamp.
   const [taskConfirmedAt, setTaskConfirmedAt] = useState<number | null>(null);
@@ -472,6 +506,23 @@ export function MobileApp() {
       finish: () => lease.release(),
     };
   }, [taskWrites]);
+
+  /** 完成状态刚被云端确认：行内先显示 3 秒「已同步」，随后回到干净状态。 */
+  const markCompletionSynced = useCallback((taskId: string) => {
+    setSyncedCompletionIds((current) => ({ ...current, [taskId]: Date.now() }));
+    const existing = completionSyncedTimers.current.get(taskId);
+    if (existing !== undefined) window.clearTimeout(existing);
+    const timer = window.setTimeout(() => {
+      completionSyncedTimers.current.delete(taskId);
+      setSyncedCompletionIds((current) => {
+        if (current[taskId] === undefined) return current;
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+    }, 3_000);
+    completionSyncedTimers.current.set(taskId, timer);
+  }, []);
 
   const commitNativeConnectionLease = useCallback((lease: string | null) => {
     nativeConnectionLeaseRef.current = lease;
@@ -1204,6 +1255,13 @@ export function MobileApp() {
       .catch(() => {
         if (current) setCommandNotice('无法读取本机待同步修改，原记录未清除');
       });
+    void readLocalTaskCompletions(localTaskScope)
+      .then((records) => {
+        if (current) setLocalTaskCompletions(records);
+      })
+      .catch(() => {
+        if (current) setCommandNotice('无法读取本机完成状态，原记录未清除');
+      });
     return () => {
       current = false;
     };
@@ -1497,59 +1555,52 @@ export function MobileApp() {
     [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
-  const toggleCloudTaskComplete = useCallback(
-    async (task: SyncedTask) => {
+  /**
+   * 完成/恢复先落本机：只等 IndexedDB 写入，不再先刷新远端整份清单，连续勾选因此互不阻塞。
+   * 真正的云端提交由补发流程在撤销窗口之后按顺序完成。
+   */
+  const setCloudTaskCompleted = useCallback(
+    async (task: SyncedTask, completed: boolean) => {
       if (!preferences.endpoint || !preferences.token) {
         throw new Error('请先完成设备配对');
       }
-      const confirmed = await refreshTasks(preferences);
-      if (!confirmed) throw new Error('未能确认最新任务清单，请检查网络后重试');
-      const freshTask = confirmed.snapshot?.tasks.find((candidate) => candidate.id === task.id);
-      if (!freshTask) throw new Error('FocusLink 任务不存在，请刷新后重试');
-      const completing = !freshTask.isCompleted;
-      const write = beginTaskWrite();
-      try {
-        const response = await mutateTaskSnapshot({
-          endpoint: preferences.endpoint,
-          token: preferences.token,
-          deviceId,
-          signal: write.signal,
-          operationId: mobileTaskCompletionOperationId({
-            deviceId,
-            taskId: freshTask.id,
-            completed: completing,
-            expectedRevision: confirmed.revision,
-          }),
-          expectedRevision: confirmed.revision,
-          mutation: {
-            kind: 'set_task_completed',
-            taskId: freshTask.id,
-            completed: completing,
-          },
-        });
-        if (!write.canCommit()) return;
-        taskSnapshotRef.current = response;
-        setTaskSnapshot(response);
-        setTaskConfirmedAt(Date.now());
-        const accountId = mobileAccountId(preferences);
-        if (accountId) {
-          await enqueueMutation(cacheMutationQueue, async () => {
-            if (!write.canCommit()) return;
-            await writeCachedTaskSnapshot(response, accountId);
-          });
-        }
-        setCommandNotice(
-          completing && response.result.recurrenceRolled
-            ? '本次已完成，下次循环已推进'
-            : completing
-              ? '任务已完成'
-              : '任务已恢复',
-        );
-      } finally {
-        write.finish();
+      if (accountTransitionOperation.current !== null) {
+        throw new Error('正在切换同步空间，请稍后再试');
       }
+      const scope = localTaskScope;
+      const plan = planTaskCompletionIntent({
+        records: localTaskCompletions,
+        taskId: task.id,
+        scope,
+        completed,
+        now: Date.now(),
+      });
+      if (plan.kind === 'noop') return;
+      if (plan.kind === 'drop') {
+        // 撤销窗口内：直接丢弃意图。云端从未看到这次完成，循环任务也不会被推进。
+        await writeLocalTaskCompletion(plan.record, true);
+        setLocalTaskCompletions((records) => records.filter((r) => r.taskId !== task.id));
+        setCommandNotice('已撤销，本次完成没有发往云端');
+        return;
+      }
+      await writeLocalTaskCompletion(plan.record);
+      if ((mobileAccountId(preferencesRef.current) ?? 'unpaired') !== scope) return;
+      setLocalTaskCompletions((records) => [
+        ...records.filter((r) => r.taskId !== task.id),
+        plan.record,
+      ]);
+      setLocalTaskCompletionEpoch((n) => n + 1);
+      setCommandNotice(
+        plan.kind === 'replace'
+          ? completed
+            ? '已完成，已保存在本机'
+            : '已恢复，已保存在本机'
+          : completed
+            ? '已完成，已保存在本机；网络恢复后自动同步'
+            : '已恢复，已保存在本机；网络恢复后自动同步',
+      );
     },
-    [beginTaskWrite, deviceId, preferences, refreshTasks],
+    [localTaskCompletions, localTaskScope, preferences],
   );
 
   const enqueueTaskEdit = useCallback(
@@ -1695,6 +1746,163 @@ export function MobileApp() {
       window.clearTimeout(timer);
     };
   }, [flushTaskEdit, foregroundActive, localTaskEditEpoch, localTaskEdits, localTaskScope, online]);
+
+  /**
+   * 提交一条完成/恢复意图。撤销窗口结束后才第一次调用；只有仍是同一意图才清记录。
+   * 返回 null 表示回执期间意图已被改写，记录保留给下一轮补发。
+   */
+  const flushTaskCompletion = useCallback(
+    async (record: LocalTaskCompletion): Promise<{ recurrenceRolled: boolean } | null> => {
+      const confirmed = await refreshTasks(preferences);
+      if (!confirmed) throw new Error('未能确认最新任务清单，请检查网络后重试');
+      const write = beginTaskWrite();
+      try {
+        if (!write.canCommit()) throw new Error('账号已切换，本次完成状态已取消');
+        const response = await mutateTaskSnapshot({
+          endpoint: preferences.endpoint,
+          token: preferences.token,
+          deviceId,
+          signal: write.signal,
+          operationId: record.operationId,
+          expectedRevision: confirmed.revision,
+          mutation: {
+            kind: 'set_task_completed',
+            taskId: record.taskId,
+            completed: record.completed,
+          },
+        });
+        if (!write.canCommit()) return null;
+        if (response.operationId !== record.operationId) {
+          throw new Error('完成回执身份不一致，已保留本机记录');
+        }
+        const reconciled = reconcileTaskSnapshot(taskSnapshotRef.current, response);
+        if (reconciled.freshness === 'inconsistent') {
+          throw new Error('任务回执与本机已确认内容不一致，已保留本机完成记录');
+        }
+        taskSnapshotRef.current = reconciled.snapshot;
+        setTaskSnapshot(reconciled.snapshot);
+        setTaskConfirmedAt(Date.now());
+        const accountId = mobileAccountId(preferences);
+        if (accountId) {
+          await enqueueMutation(cacheMutationQueue, async () => {
+            if (!write.canCommit()) return;
+            await writeCachedTaskSnapshot(reconciled.snapshot, accountId);
+          });
+        }
+        // 回执期间用户可能已经改成反向意图：只有仍是同一意图才清记录。
+        const after = (await readLocalTaskCompletions(localTaskScope)).find(
+          (candidate) => candidate.taskId === record.taskId,
+        );
+        if (after && after.operationId === record.operationId) {
+          await writeLocalTaskCompletion(record, true);
+          return { recurrenceRolled: response.result.recurrenceRolled === true };
+        }
+        return null;
+      } finally {
+        write.finish();
+      }
+    },
+    [beginTaskWrite, deviceId, localTaskScope, preferences, refreshTasks],
+  );
+
+  /**
+   * 完成/恢复意图补发：撤销窗口结束后才第一次发出，按创建顺序逐条提交。
+   *
+   * 队列只从 IndexedDB 读，不用 React 状态做调度：每次提交成功都会更新状态，
+   * 若把状态放进依赖，effect 会被自己的更新打断，队尾那条记录永远发不出去。
+   * 一轮结束后隔 400ms 再看一次，覆盖「上一轮里还没到 notBefore」的记录。
+   */
+  useEffect(() => {
+    if (!foregroundActive || !online || localTaskScope === 'unpaired') return;
+    let cancelled = false;
+    const controller = new AbortController();
+    let timer: number | null = null;
+
+    const schedule = (delay: number) => {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        void run();
+      }, delay);
+    };
+
+    const run = async () => {
+      if (cancelled) return;
+      const records = (await readLocalTaskCompletions(localTaskScope)).filter(
+        (record) => !record.blocked,
+      );
+      if (cancelled) return;
+      if (records.length === 0) return;
+      const nextDue = Math.min(
+        ...records.map((record) => Math.max(record.nextRetryAt, record.notBefore)),
+      );
+      const now = Date.now();
+      if (nextDue > now) {
+        // 最长等 15 秒就重新看一次队列：前台恢复或网络刚回来时能比退避更早地接上。
+        schedule(Math.min(nextDue - now, 15_000));
+        return;
+      }
+      for (const record of sortLocalTaskCompletions(records)) {
+        if (cancelled || controller.signal.aborted) return;
+        if (record.notBefore > Date.now() || record.nextRetryAt > Date.now()) continue;
+        const latest = (await readLocalTaskCompletions(localTaskScope)).find(
+          (candidate) => candidate.taskId === record.taskId,
+        );
+        if (cancelled) return;
+        if (!latest || latest.blocked) continue;
+        try {
+          const response = await flushTaskCompletion(latest);
+          if (cancelled) return;
+          if (!response) continue;
+          setLocalTaskCompletions((current) =>
+            current.filter((candidate) => candidate.taskId !== latest.taskId),
+          );
+          markCompletionSynced(latest.taskId);
+          if (latest.completed) {
+            setCommandNotice(
+              response.recurrenceRolled ? '本次已完成，下次循环已推进；已同步' : '已完成并同步',
+            );
+          } else {
+            setCommandNotice('已恢复未完成并同步');
+          }
+        } catch (error) {
+          if (cancelled || isAbortError(error)) return;
+          const failed = retryLocalTaskCompletion(
+            latest,
+            error instanceof MobileLiveRequestError ? error.status : null,
+            Date.now(),
+            error instanceof MobileLiveRequestError ? error.retryAfterMs : null,
+          );
+          await writeLocalTaskCompletion(failed);
+          if (cancelled) return;
+          setLocalTaskCompletions((current) => [
+            ...current.filter((candidate) => candidate.taskId !== failed.taskId),
+            failed,
+          ]);
+          setCommandNotice(
+            localTaskCompletionIssue(failed) ??
+              '完成状态已保存在本机，云端暂未确认；恢复连接后继续同步',
+          );
+          if (failed.blocked) continue;
+        }
+      }
+      schedule(400);
+    };
+
+    schedule(0);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [
+    flushTaskCompletion,
+    foregroundActive,
+    localTaskCompletionEpoch,
+    localTaskScope,
+    markCompletionSynced,
+    online,
+  ]);
 
   const pullLedger = useCallback(
     (connection: MobileConnectionPreferences, _startCursor: string | null): Promise<void> => {
@@ -3044,9 +3252,11 @@ export function MobileApp() {
                 <TickTickTaskPage
                   tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
                   projects={visibleTaskSnapshot.snapshot?.projects ?? []}
-                  pendingLocalCount={localTaskCreates.length}
+                  pendingLocalCount={localTaskCreates.length + localTaskCompletions.length}
                   pendingLocalIssue={
-                    localTaskCreates.map(localTaskCreateIssue).find(Boolean) ?? null
+                    localTaskCreates.map(localTaskCreateIssue).find(Boolean) ??
+                    localTaskCompletions.map(localTaskCompletionIssue).find(Boolean) ??
+                    null
                   }
                   publishedAt={taskSnapshot?.snapshot?.publishedAt ?? null}
                   revision={taskSnapshot?.revision ?? 0}
@@ -3074,11 +3284,12 @@ export function MobileApp() {
                   onUpdateProject={updateCloudProject}
                   onDeleteProject={deleteCloudProject}
                   onMoveTask={moveCloudTask}
-                  onToggleComplete={async (task) => {
+                  completionStates={taskCompletionStates}
+                  onToggleComplete={async (task, completed) => {
                     if (localTaskCreates.some((record) => record.id === task.id)) {
-                      throw new Error('任务已保存在本机，联网确认后可修改完成状态');
+                      throw new Error('这条任务还没同步到云端，联网确认后才能勾选');
                     }
-                    await toggleCloudTaskComplete(task);
+                    await setCloudTaskCompleted(task, completed);
                   }}
                 />
               )}

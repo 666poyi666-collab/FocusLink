@@ -17,6 +17,7 @@ import {
 import { isOfflineFocusRuntime, type OfflineFocusRuntime } from './offlineFocusRuntime';
 import type { LocalTaskCreate } from './localTaskQueue';
 import type { LocalTaskEdit } from './localTaskEdits';
+import type { LocalTaskCompletion } from './localTaskCompletions';
 import type { LiveFocusSnapshotLike } from './runtimeModel';
 import {
   TASK_SNAPSHOT_PROTOCOL_VERSION,
@@ -45,6 +46,7 @@ const OFFLINE_FOCUS_KEY = 'offlineFocusRuntime';
 const COMPLETION_FREEZE_PREFIX = 'offlineCompletionFreeze.';
 const LOCAL_TASK_CREATE_KEY = 'localTaskCreates.v1';
 const LOCAL_TASK_EDIT_KEY = 'localTaskEdits.v1';
+const LOCAL_TASK_COMPLETION_KEY = 'localTaskCompletions.v1';
 
 export async function readLocalTaskEdits(scope: string): Promise<LocalTaskEdit[]> {
   const database = await openDatabase();
@@ -100,6 +102,81 @@ export async function retryLocalTaskEdits(scope: string): Promise<void> {
     const records = Array.isArray(row?.value) ? (row.value as LocalTaskEdit[]) : [];
     store.put({
       key: LOCAL_TASK_EDIT_KEY,
+      value: records.map((r) =>
+        r.scope === scope || r.scope === 'unpaired' ? { ...r, blocked: false, nextRetryAt: 0 } : r,
+      ),
+    } satisfies MetaRecord);
+    await done;
+  } finally {
+    database.close();
+  }
+}
+
+export async function readLocalTaskCompletions(scope: string): Promise<LocalTaskCompletion[]> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readonly');
+    const row = await requestValue<MetaRecord | undefined>(
+      tx.objectStore(META_STORE).get(LOCAL_TASK_COMPLETION_KEY),
+    );
+    await transactionDone(tx);
+    const records = Array.isArray(row?.value) ? (row.value as LocalTaskCompletion[]) : [];
+    return records.filter((r) => r.scope === scope || r.scope === 'unpaired');
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Insert or drop one completion intent. A stale acknowledgement (its operationId no longer
+ * matches the stored intent) never clears the record, so a concurrent undo survives an old
+ * receipt, and records from another sync space are never rewritten.
+ */
+export async function writeLocalTaskCompletion(
+  record: LocalTaskCompletion,
+  remove = false,
+): Promise<void> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(META_STORE);
+    const row = await requestValue<MetaRecord | undefined>(store.get(LOCAL_TASK_COMPLETION_KEY));
+    const records = Array.isArray(row?.value) ? (row.value as LocalTaskCompletion[]) : [];
+    const index = records.findIndex((r) => r.taskId === record.taskId);
+    if (
+      index >= 0 &&
+      records[index].scope !== record.scope &&
+      records[index].scope !== 'unpaired'
+    ) {
+      tx.abort();
+      await done.catch(() => undefined);
+      throw new Error('任务属于另一同步空间，已保留原记录');
+    }
+    if (remove && index >= 0 && records[index].operationId !== record.operationId) {
+      await done;
+      return;
+    }
+    const next = records.filter((r) => r.taskId !== record.taskId);
+    if (!remove) next.push(record);
+    store.put({ key: LOCAL_TASK_COMPLETION_KEY, value: next } satisfies MetaRecord);
+    await done;
+  } finally {
+    database.close();
+  }
+}
+
+/** Clear backoff/blocked so the next reconnect attempts every pending completion again. */
+export async function retryLocalTaskCompletions(scope: string): Promise<void> {
+  const database = await openDatabase();
+  try {
+    const tx = database.transaction(META_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(META_STORE);
+    const row = await requestValue<MetaRecord | undefined>(store.get(LOCAL_TASK_COMPLETION_KEY));
+    const records = Array.isArray(row?.value) ? (row.value as LocalTaskCompletion[]) : [];
+    store.put({
+      key: LOCAL_TASK_COMPLETION_KEY,
       value: records.map((r) =>
         r.scope === scope || r.scope === 'unpaired' ? { ...r, blocked: false, nextRetryAt: 0 } : r,
       ),

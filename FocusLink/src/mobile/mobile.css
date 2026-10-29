@@ -7139,6 +7139,9 @@ html[data-runtime='mobile-focus'] .tt-row-title {
 
 html[data-runtime='mobile-focus'] .tt-row[data-completed='true'] .tt-row-title {
   color: var(--tt-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentColor;
 }
 
 html[data-runtime='mobile-focus'] .tt-row-tags {
@@ -7874,11 +7877,12 @@ html[data-runtime='mobile-focus'] .tt-check svg {
   height: 100%;
 }
 
-html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] {
+/* 只有本次刚勾选的行才播放弹跳；打开已完成列表或刷新后带出的已勾选行不再重播。 */
+html[data-runtime='mobile-focus'] .tt-check[data-just-checked='true'] {
   animation: tt-check-pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] svg {
+html[data-runtime='mobile-focus'] .tt-check[data-just-checked='true'] svg {
   animation: tt-check-tick 220ms 40ms both;
 }
 
@@ -7964,8 +7968,8 @@ html[data-runtime='mobile-focus'] .settings-account-meta {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-runtime='mobile-focus'] .tt-check[data-checked='true'],
-  html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] svg {
+  html[data-runtime='mobile-focus'] .tt-check[data-just-checked='true'],
+  html[data-runtime='mobile-focus'] .tt-check[data-just-checked='true'] svg {
     animation: none;
   }
 }
@@ -7997,8 +8001,11 @@ html[data-runtime='mobile-focus'] .tt-undo-text {
 }
 
 html[data-runtime='mobile-focus'] .tt-undo-action {
+  display: grid;
   flex: 0 0 auto;
-  padding: 4px 8px;
+  place-items: center;
+  min-height: 44px;
+  padding: 0 12px;
   border: 0;
   background: none;
   color: rgb(140 170 255);
@@ -8023,6 +8030,48 @@ html[data-runtime='mobile-focus'] .tt-undo-action {
 @media (prefers-reduced-motion: reduce) {
   html[data-runtime='mobile-focus'] .tt-undo {
     animation: none;
+  }
+}
+
+/* 行内状态：本机已保存 / 已同步 / 同步失败，不打断行内点击。 */
+html[data-runtime='mobile-focus'] .tt-row-status {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--tt-secondary);
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-row-status[data-state='failed'] {
+  color: var(--tt-red);
+}
+
+/* 撤销窗口结束后的收拢：只动 grid-template-rows 与 opacity，行高平滑收回，
+   周围任务随之上移补位。动画结束后 React 才真正移除节点。 */
+html[data-runtime='mobile-focus'] .tt-node-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html[data-runtime='mobile-focus'] .tt-node-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+html[data-runtime='mobile-focus'] .tt-node[data-exit='true'] .tt-node-collapse {
+  grid-template-rows: 0fr;
+}
+
+html[data-runtime='mobile-focus'] .tt-node[data-exit='true'] .tt-node-content {
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .tt-node-collapse,
+  html[data-runtime='mobile-focus'] .tt-node[data-exit='true'] .tt-node-content {
+    transition: none;
   }
 }
 

@@ -1,6 +1,50 @@
 # FocusLink 实施日志
 
 ## 2026-10-29 · `FL-UI-20261029-ISLAND-PAYLOAD`：超级岛参数不符合官方 schema（v1.8.7 已按规范重写，待真机肉眼验收）
+## 2026-10-29 · `FL-UI-20261029-TASK-COMPLETION`：打勾改成本机先保存 + 6 秒撤销 + 原位收拢（v1.9.1 已装小米）
+
+**结论**
+
+v1.9.1 把任务完成改成「本机先保存、撤销窗口结束后才发云端、按创建顺序补发」：点勾不再先刷新整份远端清单，连续勾选互不阻塞；撤销窗口内撤销直接丢弃本机意图，云端从未见过这次完成（循环任务因此不会被推进）；断网勾选落在本机队列，强杀重开仍在，恢复联网后补传。小米真机按连续勾选、撤销、父子任务、断网重启四种场景实测通过。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 旧完成通道先 `await refreshTasks` 再 `mutateTaskSnapshot`，点一次要等整份清单往返 | `src/mobile/MobileApp.tsx`（v1.9.0 的 toggleCloudTaskComplete） | 证据记录 |
+| ② | 新通道只写 IndexedDB；`notBefore = now + 6000` 之后才由 `flushTaskCompletion` 提交，`planTaskCompletionIntent` 决定新建/替换/丢弃 | `src/mobile/localTaskCompletions.ts`、`src/mobile/MobileApp.tsx` | 实测 |
+| ③ | 小米 1.9.1 / versionCode 1367 安装成功并回读 | `adb -s 192.168.1.5:5555 install -r` + `dumpsys package` | 实测 |
+| ④ | 连续点 3 次：300ms 时行数 16→16（原位不动）、`data-just-checked=true`、状态「本机已保存」、删除线生效、撤销条「已完成 3 项」 | 真机 CDP `expr-a1.js` | 实测 |
+| ⑤ | 6 秒后 3 行收拢为 0、队列 3→0、revision 750→753 | 真机 CDP + IndexedDB | 实测 |
+| ⑥ | 撤销窗口内撤销：行回到未完成、队列 0、revision 保持 757 不变 | 真机 CDP `expr-undo.js` | 实测 |
+| ⑦ | 父任务（第一章第一节，10 个子任务）restore→complete：父状态正确翻转，10 个子任务状态全程不变，revision 753→756→757 | 真机 CDP + 快照 | 实测 |
+| ⑧ | 断网（iptables+ip6tables 拒 443）勾选：队列 1 条、attempts=1、`network_error`、revision 保持 760 | 真机 CDP + IndexedDB | 实测 |
+| ⑨ | 断网状态下强杀重开：队列记录仍在（attempts=2），任务页仍显示「1 条已存本机，等待同步」，刚勾选的任务不在待办里 | 真机 CDP | 实测 |
+| ⑩ | 恢复联网：队列排空、revision 760→761、任务在云端为已完成 | 真机 CDP | 实测 |
+
+**问题**
+
+P1 补发依赖前台在线 — 锁屏或切走应用时补发暂停（沿用 `FL-SYNC-036` 的既有规则），回到前台后自动收敛 — 事实⑧⑨。
+P2 本机仍只用 `taskSnapshot.legacy.v1` 兜底 — 账号作用域缓存键在本账号（id 为 `primary`）下没有写入，离线冷启动可用但依赖 legacy 行 — 事实⑨旁的 IndexedDB 键清单。
+P2 循环任务只有单测覆盖 — 设备上 60 条任务没有 `recurrence`，本轮真机未构造循环任务，循环投影与 completedCount 推进由 `tests/localTaskCompletions.test.ts` 锁定。
+
+**处置**
+
+- 新增 `src/mobile/localTaskCompletions.ts`：完成意图类型、6 秒撤销窗口、只有 409 才换 base、退避（5 秒起、封顶 60 秒、尊重 Retry-After）、`planTaskCompletionIntent`、`overlayLocalTaskCompletions`（用 `applyTaskSnapshotMutation` 投影，循环推进按权威规则算）。
+- `src/mobile/cache.ts`：`readLocalTaskCompletions` / `writeLocalTaskCompletion`（旧 operationId 回执不得删除新记录）/ `retryLocalTaskCompletions`。
+- `src/mobile/MobileApp.tsx`：`setCloudTaskCompleted` 本机先行；`flushTaskCompletion` 提交并比对 operationId；补发循环从 IndexedDB 读队列并自唤醒（最长 15 秒复查），不再被自身状态更新打断。
+- `src/mobile/TickTickTaskPage.tsx`：6 秒原位停留 + `data-exit` 收拢、批次撤销条、行内「本机已保存/已同步/同步失败」、`data-just-checked` 只给本次刚勾选的行；切页清理计时器。
+- `src/mobile/mobile.css`：`.tt-node-collapse` 的 `1fr→0fr` 收拢、`.tt-row-status`、已完成标题删除线、撤销按钮 44px 命中区。
+- 测试：新增 `tests/localTaskCompletions.test.ts`（6）与 `tests/mobileTaskCompletionFlow.test.ts`（8），`tests/mobileCacheIndexedDb.test.ts` 补 2 条，`tests/mobileTaskWriteCommit.test.ts` 更新写入计数并补 `return null` 身份复验断言。
+
+**门禁**
+
+- `npm run format:check` / `typecheck` / `lint` 全绿；`npm test` 168 文件 / 1440 用例全绿。
+- 小米 1.9.1 / 1367 已装并按上述四场景实测；演练后数据已复位（19 条待办，revision 772，循环1/2/4/5/6 未被改动）。
+- 华为按 2026-10-29 用户指令「先只弄小米」不在线、不纳入本轮门禁。
+- 断网口径教训：按 uid 的 `iptables` REJECT 拦不住这台设备上 WebView 的云请求（实测 revision 仍 +1），必须同时拒 IPv4/IPv6 的 443 端口；演练有效性用队列 `attempts` 与 revision 双证，不用页面内 fetch。
+
+
 
 **结论**
 

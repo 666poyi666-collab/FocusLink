@@ -15,6 +15,13 @@ import {
   type SyncedTaskGroup,
   type SyncedTaskTreeNode,
 } from './taskBrowserModel';
+import { TASK_COMPLETION_UNDO_MS } from './localTaskCompletions';
+
+/** 行内同步状态：本机已保存 / 已同步 / 同步失败。 */
+export type TaskCompletionSyncState = 'pending' | 'synced' | 'failed';
+
+/** 撤销窗口结束后行高收起的时长，与 .tt-node 的 transition 保持一致。 */
+const NODE_COLLAPSE_MS = 220;
 
 /**
  * 滴答清单移动端任务页复刻（结构 / 交互 / 视觉）。
@@ -44,7 +51,10 @@ interface TickTickTaskPageProps {
   ) => Promise<void>;
   onDeleteProject?: (project: SyncedTaskProject) => Promise<void>;
   onMoveTask?: (task: SyncedTask, projectId: string) => Promise<void>;
-  onToggleComplete?: (task: SyncedTask) => Promise<void>;
+  /** completed 是明确的目标状态：true=完成，false=恢复到未完成。 */
+  onToggleComplete?: (task: SyncedTask, completed: boolean) => Promise<void>;
+  /** 由调用方按本机意图队列算出的行内状态，页面不自行猜测。 */
+  completionStates?: Readonly<Record<string, TaskCompletionSyncState>>;
   onUpdateTask?: (
     task: SyncedTask,
     patch: {
@@ -103,8 +113,15 @@ interface RowProps {
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
   onOpen: (task: SyncedTask) => void;
-  onComplete: (task: SyncedTask) => void;
+  /** 目标状态由调用方明确给出：完成 true，恢复 false。 */
+  onToggle: (task: SyncedTask, completed: boolean) => void;
   onMoveRequest: (task: SyncedTask) => void;
+  completionState?: TaskCompletionSyncState;
+  completionError?: string;
+  /** 只有本次会话里刚勾选的行才播放弹跳；打开已完成列表不重播。 */
+  justCompleted?: boolean;
+  /** 行当前显示的勾选态（本机意图覆盖后可能是 true，而底层快照还没完成）。 */
+  completed: boolean;
   now: number;
 }
 
@@ -115,8 +132,12 @@ function TaskRow({
   collapsed,
   onToggleCollapse,
   onOpen,
-  onComplete,
+  onToggle,
   onMoveRequest,
+  completionState,
+  completionError,
+  justCompleted = false,
+  completed,
   now,
 }: RowProps) {
   const hasChildren = node.children.length > 0;
@@ -167,7 +188,7 @@ function TaskRow({
     window.setTimeout(() => {
       suppressClickRef.current = false;
     }, 260);
-    if (value >= 72) onComplete(node);
+    if (value >= 72) onToggle(node, true);
     else if (value <= -72) onMoveRequest(node);
   };
 
@@ -184,7 +205,7 @@ function TaskRow({
       <div
         className="tt-row"
         data-depth={depth > 2 ? 2 : depth}
-        data-completed={node.isCompleted}
+        data-completed={completed}
         style={offset === 0 ? undefined : { transform: `translateX(${offset}px)` }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -193,14 +214,15 @@ function TaskRow({
       >
         <button
           type="button"
-          key={node.isCompleted ? 'done' : 'open'}
+          key={completed ? 'done' : 'open'}
           className="tt-check"
           data-tone={tone}
-          data-checked={node.isCompleted}
-          aria-label={node.isCompleted ? `取消完成 ${node.title}` : `完成 ${node.title}`}
-          onClick={() => onComplete(node)}
+          data-checked={completed}
+          data-just-checked={justCompleted}
+          aria-label={completed ? `取消完成 ${node.title}` : `完成 ${node.title}`}
+          onClick={() => onToggle(node, !completed)}
         >
-          {node.isCompleted ? (
+          {completed ? (
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path
                 d="M4.5 10.5 8 14l7.5-8"
@@ -231,6 +253,20 @@ function TaskRow({
           ) : null}
         </button>
         {hasChildren ? <ListTree className="tt-subtasks-icon" aria-hidden="true" /> : null}
+        {completionState ? (
+          <span
+            className="tt-row-status"
+            data-state={completionState}
+            title={completionError ?? undefined}
+            aria-live="polite"
+          >
+            {completionState === 'pending'
+              ? '本机已保存'
+              : completionState === 'synced'
+                ? '已同步'
+                : '同步失败'}
+          </span>
+        ) : null}
         {due ? (
           <span className="tt-row-due" data-overdue={due.overdue}>
             {due.text}
@@ -273,6 +309,7 @@ export function TickTickTaskPage({
   onCreateProject,
   onMoveTask,
   onToggleComplete,
+  completionStates,
   onUpdateTask,
   onDeleteTask,
 }: TickTickTaskPageProps) {
@@ -295,14 +332,32 @@ export function TickTickTaskPage({
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // 刚勾选完成的任务先在原位停留一会儿：动效要看得见，并且给一次撤销机会。
-  const [recentlyCompleted, setRecentlyCompleted] = useState<string[]>([]);
-  const [undoTarget, setUndoTarget] = useState<SyncedTask | null>(null);
-  const undoTimer = useRef<number | null>(null);
+  // 刚勾选完成的任务先在原位停留 6 秒：动效看得见，撤销够得着；窗口结束后行高收起。
+  // 每个任务独立计时，连续勾选互不阻塞。
+  const [heldCompletions, setHeldCompletions] = useState<
+    Record<string, { completedAt: number; phase: 'held' | 'exiting' }>
+  >({});
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const holdTimers = useRef(new Map<string, number>());
+  const exitTimers = useRef(new Map<string, number>());
+  const completionStatesRef = useRef(completionStates);
+  completionStatesRef.current = completionStates;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  // 页面切走时清掉所有计时器，避免回到任务页时补播已经过期的收拢动画。
+  useEffect(() => {
+    const holds = holdTimers.current;
+    const exits = exitTimers.current;
+    return () => {
+      for (const timer of holds.values()) window.clearTimeout(timer);
+      for (const timer of exits.values()) window.clearTimeout(timer);
+      holds.clear();
+      exits.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -313,23 +368,29 @@ export function TickTickTaskPage({
     setConfirmDelete(false);
   }, [detailTaskId, tasks]);
 
-  const groups = useMemo<SyncedTaskGroup[]>(() => {
-    const primary = filterSyncedTaskForest(
-      tasks,
-      '',
-      ALL_PROJECTS,
-      showCompleted ? 'completed' : 'open',
-    );
-    if (showCompleted || recentlyCompleted.length === 0) {
-      return groupSyncedTaskForest(primary, projects);
-    }
-    // 刚勾选的任务在窗口期内继续显示，并且强制画成已勾选：
-    // 否则云端确认前后它会整行消失，用户既看不到动效也没有撤销机会。
-    const pending = [...primary, ...filterSyncedTaskForest(tasks, '', ALL_PROJECTS, 'completed')]
-      .filter((node) => recentlyCompleted.includes(node.id))
-      .map((node) => ({ ...node, isCompleted: true }));
-    return groupSyncedTaskForest([...primary, ...pending], projects);
-  }, [projects, recentlyCompleted, showCompleted, tasks]);
+  // 窗口中刚勾选的任务必须继续留在「待办」森林里才能保住原位：过滤器按 isCompleted 选状态，
+  // 所以这里把它按未完成交给过滤器，勾选态由 TaskRow 的 completed 单独渲染。
+  const displayTasks = useMemo(() => {
+    if (showCompleted) return tasks;
+    return tasks
+      .filter((task) => !task.isCompleted || heldCompletions[task.id] !== undefined)
+      .map((task) =>
+        heldCompletions[task.id] === undefined ? task : { ...task, isCompleted: false },
+      );
+  }, [heldCompletions, showCompleted, tasks]);
+  const groups = useMemo<SyncedTaskGroup[]>(
+    () =>
+      groupSyncedTaskForest(
+        filterSyncedTaskForest(
+          displayTasks,
+          '',
+          ALL_PROJECTS,
+          showCompleted ? 'completed' : 'open',
+        ),
+        projects,
+      ),
+    [displayTasks, projects, showCompleted],
+  );
   const activeGroups = useMemo(
     () =>
       projectFilter === ALL_PROJECTS
@@ -390,40 +451,113 @@ export function TickTickTaskPage({
       .finally(() => setEditBusy(false));
   };
 
-  const handleComplete = (task: SyncedTask) => {
-    if (!onToggleComplete || busy) return;
-    const completing = !task.isCompleted;
-    setBusy(true);
-    setError(null);
-    if (completing) {
-      setRecentlyCompleted((ids) => [...ids.filter((id) => id !== task.id), task.id]);
-      setUndoTarget(task);
-      if (undoTimer.current !== null) window.clearTimeout(undoTimer.current);
-      undoTimer.current = window.setTimeout(() => {
-        setRecentlyCompleted((ids) => ids.filter((id) => id !== task.id));
-        setUndoTarget(null);
-        undoTimer.current = null;
-      }, 1400);
-    }
-    void onToggleComplete(task)
-      .catch((reason: unknown) => {
-        if (completing) {
-          setRecentlyCompleted((ids) => ids.filter((id) => id !== task.id));
-          setUndoTarget(null);
-        }
-        setError(reason instanceof Error ? reason.message : String(reason));
-      })
-      .finally(() => setBusy(false));
+  const clearTimers = (taskId: string) => {
+    const hold = holdTimers.current.get(taskId);
+    if (hold !== undefined) window.clearTimeout(hold);
+    holdTimers.current.delete(taskId);
+    const exit = exitTimers.current.get(taskId);
+    if (exit !== undefined) window.clearTimeout(exit);
+    exitTimers.current.delete(taskId);
   };
 
-  const undoComplete = () => {
-    const task = undoTarget;
-    if (!task || !onToggleComplete) return;
-    setUndoTarget(null);
-    setRecentlyCompleted((ids) => ids.filter((id) => id !== task.id));
-    void onToggleComplete(task).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : String(reason));
+  const dropHeld = (taskId: string) =>
+    setHeldCompletions((current) => {
+      if (current[taskId] === undefined) return current;
+      const next = { ...current };
+      delete next[taskId];
+      return next;
     });
+
+  // 撤销窗口结束后先标记退出（触发收拢动画），动画结束再真正移出列表。
+  const scheduleCollapse = (taskId: string) => {
+    clearTimers(taskId);
+    const hold = window.setTimeout(() => {
+      holdTimers.current.delete(taskId);
+      // 同步失败：撤销不再成立，勾选态回到未完成，行留在原位并显示失败状态。
+      if (completionStatesRef.current?.[taskId] === 'failed') {
+        dropHeld(taskId);
+        return;
+      }
+      setHeldCompletions((current) =>
+        current[taskId] === undefined
+          ? current
+          : { ...current, [taskId]: { ...current[taskId], phase: 'exiting' } },
+      );
+      const exit = window.setTimeout(() => {
+        exitTimers.current.delete(taskId);
+        dropHeld(taskId);
+      }, NODE_COLLAPSE_MS);
+      exitTimers.current.set(taskId, exit);
+    }, TASK_COMPLETION_UNDO_MS);
+    holdTimers.current.set(taskId, hold);
+  };
+
+  /**
+   * 勾选不再串行等待网络：先给出行内反馈，本机保存成功后回调立刻返回。
+   * 失败只影响这一行，不阻断其他行的连续勾选。
+   */
+  const setTaskCompleted = (task: SyncedTask, completed: boolean) => {
+    if (!onToggleComplete) return;
+    const now = Date.now();
+    setError(null);
+    setRowErrors((current) => {
+      if (current[task.id] === undefined) return current;
+      const next = { ...current };
+      delete next[task.id];
+      return next;
+    });
+    if (completed) {
+      setHeldCompletions((current) => ({
+        ...current,
+        [task.id]: { completedAt: now, phase: 'held' },
+      }));
+      scheduleCollapse(task.id);
+    } else {
+      clearTimers(task.id);
+      dropHeld(task.id);
+    }
+    void onToggleComplete(task, completed).catch((reason: unknown) => {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      if (completed) {
+        clearTimers(task.id);
+        dropHeld(task.id);
+        setRowErrors((current) => ({ ...current, [task.id]: message }));
+        return;
+      }
+      // 撤销失败：这次完成仍然成立，把勾选状态放回原位，避免它凭空消失。
+      setHeldCompletions((current) => ({
+        ...current,
+        [task.id]: { completedAt: now, phase: 'held' },
+      }));
+      setRowErrors((current) => ({ ...current, [task.id]: message }));
+      scheduleCollapse(task.id);
+    });
+  };
+
+  const undoableIds = useMemo(
+    () =>
+      Object.entries(heldCompletions)
+        .filter(([, held]) => held.phase === 'held')
+        .map(([taskId]) => taskId),
+    [heldCompletions],
+  );
+
+  /** 一批连续勾选一起撤销：每一条都明确要求恢复到未完成。 */
+  const undoBatch = () => {
+    if (!onToggleComplete || undoableIds.length === 0) return;
+    const targets = undoableIds
+      .map((id) => tasks.find((task) => task.id === id))
+      .filter((task): task is SyncedTask => task !== undefined);
+    for (const task of targets) {
+      clearTimers(task.id);
+      dropHeld(task.id);
+      void onToggleComplete(task, false).catch((reason: unknown) => {
+        setRowErrors((current) => ({
+          ...current,
+          [task.id]: reason instanceof Error ? reason.message : String(reason),
+        }));
+      });
+    }
   };
 
   const openComposer = () => {
@@ -466,25 +600,37 @@ export function TickTickTaskPage({
 
   const renderNodes = (nodes: readonly SyncedTaskTreeNode[], depth: number): ReactNode =>
     nodes.map((node) => (
-      <div key={node.id} className="tt-node">
-        <ul className="tt-rows">
-          <TaskRow
-            node={node}
-            depth={depth}
-            collapsed={collapsed.has(node.id)}
-            onToggleCollapse={toggleCollapsed}
-            onOpen={(task) => {
-              setDetailTaskId(task.id);
-              onSelect(task);
-            }}
-            onComplete={handleComplete}
-            onMoveRequest={(task) => setMoveTaskId(task.id)}
-            now={now}
-          />
-        </ul>
-        {node.children.length > 0 && !collapsed.has(node.id)
-          ? renderNodes(node.children, depth + 1)
-          : null}
+      <div
+        key={node.id}
+        className="tt-node"
+        data-exit={heldCompletions[node.id]?.phase === 'exiting'}
+      >
+        <div className="tt-node-collapse">
+          <div className="tt-node-content">
+            <ul className="tt-rows">
+              <TaskRow
+                node={node}
+                depth={depth}
+                collapsed={collapsed.has(node.id)}
+                onToggleCollapse={toggleCollapsed}
+                onOpen={(task) => {
+                  setDetailTaskId(task.id);
+                  onSelect(task);
+                }}
+                onToggle={setTaskCompleted}
+                onMoveRequest={(task) => setMoveTaskId(task.id)}
+                completionState={rowErrors[node.id] ? 'failed' : completionStates?.[node.id]}
+                completionError={rowErrors[node.id]}
+                justCompleted={!showCompleted && heldCompletions[node.id] !== undefined}
+                completed={heldCompletions[node.id] !== undefined || node.isCompleted}
+                now={now}
+              />
+            </ul>
+            {node.children.length > 0 && !collapsed.has(node.id)
+              ? renderNodes(node.children, depth + 1)
+              : null}
+          </div>
+        </div>
       </div>
     ));
 
@@ -550,10 +696,14 @@ export function TickTickTaskPage({
         </p>
       ) : null}
 
-      {undoTarget ? (
+      {undoableIds.length > 0 ? (
         <div className="tt-undo" role="status">
-          <span className="tt-undo-text">已完成「{undoTarget.title}」</span>
-          <button type="button" className="tt-undo-action" onClick={undoComplete}>
+          <span className="tt-undo-text">
+            {undoableIds.length === 1
+              ? `已完成「${tasks.find((task) => task.id === undoableIds[0])?.title ?? '任务'}」`
+              : `已完成 ${undoableIds.length} 项`}
+          </span>
+          <button type="button" className="tt-undo-action" onClick={undoBatch}>
             撤销
           </button>
         </div>
@@ -799,7 +949,7 @@ export function TickTickTaskPage({
                 type="button"
                 className="tt-detail-done"
                 onClick={() => {
-                  handleComplete(detailTask);
+                  setTaskCompleted(detailTask, !detailTask.isCompleted);
                   setDetailTaskId(null);
                 }}
               >
@@ -840,7 +990,7 @@ export function TickTickTaskPage({
                 data-tone={priorityTone(detailTask.priority)}
                 data-checked={detailTask.isCompleted}
                 aria-label={detailTask.isCompleted ? '取消完成' : '完成任务'}
-                onClick={() => handleComplete(detailTask)}
+                onClick={() => setTaskCompleted(detailTask, !detailTask.isCompleted)}
               >
                 {detailTask.isCompleted ? (
                   <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -968,7 +1118,7 @@ export function TickTickTaskPage({
                       aria-label={
                         child.isCompleted ? `取消完成 ${child.title}` : `完成 ${child.title}`
                       }
-                      onClick={() => handleComplete(child)}
+                      onClick={() => setTaskCompleted(child, !child.isCompleted)}
                     />
                     <span className="tt-detail-subtask-title">{child.title}</span>
                     <span
