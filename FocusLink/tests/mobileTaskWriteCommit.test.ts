@@ -15,21 +15,25 @@ describe('mobile task write commit gate', () => {
   it('cancels every cloud task write on an account transition', () => {
     const writeCalls =
       mobileAppSource.match(/await (?:publishTaskSnapshot|mutateTaskSnapshot)\(/g) ?? [];
-    expect(writeCalls.length).toBe(7);
-    expect(countOccurrences(mobileAppSource, 'const write = beginTaskWrite();')).toBe(7);
-    expect(countOccurrences(mobileAppSource, 'signal: write.signal,')).toBe(6);
+    // 1.9.2：移到清单改走本机编辑队列（queueTaskEdit），不再单独占一条发布通道。
+    expect(writeCalls.length).toBe(6);
+    expect(countOccurrences(mobileAppSource, 'const write = beginTaskWrite();')).toBe(6);
+    expect(countOccurrences(mobileAppSource, 'signal: write.signal,')).toBe(5);
+    expect(mobileAppSource).toContain(
+      'await queueTaskEdit(task, { projectId: targetProjectId }, false);',
+    );
     // The durable task-create worker combines its own lifecycle cancellation with the account lease.
     expect(mobileAppSource).toContain(
       "write.signal.addEventListener('abort', abort, { once: true });",
     );
     expect(mobileAppSource).toContain('signal: controller.signal,');
     expect(mobileAppSource).toContain('!controller.signal.aborted && write.canCommit()');
-    expect(countOccurrences(mobileAppSource, '} finally {\n        write.finish();')).toBe(6);
+    expect(countOccurrences(mobileAppSource, '} finally {\n        write.finish();')).toBe(5);
     expect(countOccurrences(mobileAppSource, '      taskWrites.invalidate();')).toBe(1);
   });
 
   it('re-checks the account identity before committing a task write and its cache write', () => {
-    expect(countOccurrences(mobileAppSource, 'if (!write.canCommit()) return;')).toBe(9);
+    expect(countOccurrences(mobileAppSource, 'if (!write.canCommit()) return;')).toBe(7);
     // 完成/恢复的补发在回执后必须回 null（调用方据此保留记录），同样是一次身份复验。
     expect(countOccurrences(mobileAppSource, 'if (!write.canCommit()) return null;')).toBe(1);
     expect(
@@ -49,7 +53,7 @@ describe('mobile task write commit gate', () => {
         mobileAppSource,
         'if (!write.canCommit()) return;\n            await writeCachedTaskSnapshot(',
       ),
-    ).toBe(6);
+    ).toBe(5);
     expect(mobileAppSource).toContain(
       'await writeCachedTaskSnapshot(reconciled.snapshot, localTaskScope);',
     );

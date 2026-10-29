@@ -118,8 +118,9 @@ export function DashboardView({
     dashboardPause,
     analytics.totals.gapMs,
   ]);
+  // 手机统计页按「各任务投入」读：最多列 6 个具名任务，其余并成「其他已关联任务」。
   const taskAllocation = useMemo(
-    () => buildDashboardTaskAllocation(analytics.tasks, dashboardFocus),
+    () => buildDashboardTaskAllocation(analytics.tasks, dashboardFocus, 6),
     [analytics.tasks, dashboardFocus],
   );
   const hasFocusData = dashboardFocus > 0 || dashboardPause > 0 || analytics.activeDays > 0;
@@ -181,6 +182,38 @@ export function DashboardView({
   const todayHourSlots = useMemo(
     () => hourSlotsOf(todayAnalytics.dayLedgers.at(-1)),
     [todayAnalytics],
+  );
+
+  // 三个问题必须在折叠区之前就能回答，所以这里先把读数算好：
+  // 「做了什么」= 已结束会话 + 今天的段数/时长；「任务投入」= 任务排行；
+  // 「暂停与空档」= 暂停损耗/次数 + 空档总时长/段数。
+  const todayKey = dayKey(referenceNow);
+  const todaySessionCount = records.filter(
+    (record) =>
+      record.bundle.session.status === 'finished' &&
+      dayKey(record.bundle.session.startedAt) === todayKey,
+  ).length;
+  const todayFocusMs = todayAnalytics.totals.focusMs + todayAnalytics.totals.estimatedFocusMs;
+  // 只有范围真的盖到今天，「做了什么」的副标题才用「今天」口径；否则用本范围口径。
+  const includesToday =
+    bounds.start <= todayAnalytics.range.start && bounds.end > todayAnalytics.range.start;
+  const scopeDay = selectedDate && selectedLedger ? selectedLedger.date : null;
+  const activityTitle = scopeDay
+    ? `${formatMonthDay(scopeDay)}做了什么`
+    : range === 'today'
+      ? '今天做了什么'
+      : '做了什么';
+  const activityDetail =
+    includesToday && !scopeDay && range !== 'today'
+      ? `今天 ${todaySessionCount} 段 · ${formatDurationText(todayFocusMs)}`
+      : `${sessionCount} 段 · ${formatDurationText(dashboardFocus)}`;
+  const pauseIntervalCount = analytics.dayLedgers.reduce(
+    (total, ledger) => total + ledger.intervals.filter((item) => item.kind === 'pause').length,
+    0,
+  );
+  const gapSegmentCount = analytics.dayLedgers.reduce(
+    (total, ledger) => total + ledger.gaps.length,
+    0,
   );
 
   return (
@@ -340,10 +373,82 @@ export function DashboardView({
                   </div>
                 </section>
               )}
+
+              {/* 问题一：今天做了什么——按天列出已结束的会话（时间 + 名称 + 时长）。 */}
+              <section
+                className="dashboard-band dashboard-recent"
+                aria-labelledby="dashboard-recent-title"
+              >
+                <AnalyticsHeading
+                  id="dashboard-recent-title"
+                  title={activityTitle}
+                  detail={activityDetail}
+                />
+                <RecentSessions sessions={recentSessions} referenceNow={referenceNow} />
+                {sessionCount > recentSessions.length && (
+                  <p className="analytics-empty">
+                    {`还有 ${sessionCount - recentSessions.length} 段更早的专注，展开页尾「更多明细」可看全部账本。`}
+                  </p>
+                )}
+              </section>
+
+              {/* 问题二：各任务投入多久——100% 构成带 + 按投入从多到少的时长行。 */}
+              <section
+                className="dashboard-band task-allocation-band"
+                aria-labelledby="dashboard-task-allocation-title"
+              >
+                <AnalyticsHeading
+                  id="dashboard-task-allocation-title"
+                  title="任务投入"
+                  detail="按投入从多到少 · 已关联 / 未关联 / 旧记录"
+                />
+                <MobileTaskAllocation allocation={taskAllocation} />
+              </section>
+
+              {/* 问题三：暂停与空档在哪——先给损耗数字，再逐段列出空档起止。 */}
+              <section
+                className="dashboard-band dashboard-pause-gap"
+                aria-labelledby="dashboard-pause-gap-title"
+              >
+                <AnalyticsHeading
+                  id="dashboard-pause-gap-title"
+                  title="暂停与空档"
+                  detail="专注以外的时间去哪了"
+                />
+                <div className="dashboard-summary" aria-label="暂停与空档读数">
+                  <div className="dashboard-summary-item">
+                    <strong>{formatDurationText(dashboardPause)}</strong>
+                    <span>暂停损耗</span>
+                  </div>
+                  <div className="dashboard-summary-item">
+                    <strong>{`${pauseIntervalCount} 次`}</strong>
+                    <span>暂停次数</span>
+                  </div>
+                  <div className="dashboard-summary-item">
+                    <strong>{formatDurationText(analytics.totals.gapMs)}</strong>
+                    <span>空档时长</span>
+                  </div>
+                </div>
+                <p className="dashboard-ledger-caption">
+                  {`本范围共 ${gapSegmentCount} 段空档：两轮专注之间既没计时也没暂停的时间；没开应用、睡觉的时间不算空档。`}
+                </p>
+              </section>
+
+              <GapLedger ledger={selectedLedger} />
+              <MobileTimeBudget
+                focusRate={focusRate}
+                pauseRate={pauseRate}
+                gapRate={gapRate}
+                estimated={analytics.estimated}
+              />
             </>
           ) : (
             <div className="dashboard-empty" role="status">
-              <p>{records.length === 0 ? '还没有已结束的专注' : '这个范围没有可统计的专注'}</p>
+              <p>
+                {records.length === 0
+                  ? '还没有任何专注记录。点下面的「开始专注」，今天做了什么、每个任务花了多久都会记在这里。'
+                  : '这个时间范围里没有结束的专注。换一个范围，或者现在开始一次专注。'}
+              </p>
               {onStartFocus && (
                 <button type="button" className="m-button-primary" onClick={onStartFocus}>
                   <Play aria-hidden="true" />
@@ -353,12 +458,12 @@ export function DashboardView({
             </div>
           )}
 
-          {/* 详细分析不删功能：折叠到页尾次级区，不占首屏。 */}
+          {/* 三块结论已在折叠区之前；这里只留逐日时间轴与逐条账本。 */}
           {hasFocusData && (
             <details id="dashboard-details" className="dashboard-more">
               <summary className="dashboard-more-summary">
                 <span>更多明细</span>
-                <span className="dashboard-more-hint">时间轴 / 空档 / 任务投入 / 账本</span>
+                <span className="dashboard-more-hint">24 小时时间轴 / 逐条账本</span>
               </summary>
               <div className="dashboard-more-body">
                 {selectedDate && selectedLedger && (
@@ -367,38 +472,11 @@ export function DashboardView({
                     onClear={() => setSelectedDate(null)}
                   />
                 )}
-                <section
-                  className="dashboard-band dashboard-recent"
-                  aria-labelledby="dashboard-recent-title"
-                >
-                  <h3 id="dashboard-recent-title" className="dashboard-group-label">
-                    最近记录
-                  </h3>
-                  <RecentSessions sessions={recentSessions} />
-                </section>
                 <DayLedgerTimeline
                   key={selectedLedger?.date ?? 'no-ledger'}
                   ledger={selectedLedger}
                   records={records}
                   tasks={tasks}
-                />
-                <section
-                  className="dashboard-band task-allocation-band"
-                  aria-labelledby="dashboard-task-allocation-title"
-                >
-                  <AnalyticsHeading
-                    id="dashboard-task-allocation-title"
-                    title="任务投入"
-                    detail="已关联 / 未关联 / 估算"
-                  />
-                  <MobileTaskAllocation allocation={taskAllocation} />
-                </section>
-                <GapLedger ledger={selectedLedger} />
-                <MobileTimeBudget
-                  focusRate={focusRate}
-                  pauseRate={pauseRate}
-                  gapRate={gapRate}
-                  estimated={analytics.estimated}
                 />
                 <SessionLedger
                   records={visibleRecords}
@@ -493,15 +571,17 @@ function hourSlotsOf(ledger: DayLedgerAnalytics | undefined): HourSlot[] {
 
 function RecentSessions({
   sessions,
+  referenceNow,
 }: {
   sessions: ReadonlyArray<{ key: string; startedAt: number; title: string; durationMs: number }>;
+  referenceNow: number;
 }) {
   if (sessions.length === 0) {
     return <p className="analytics-empty">这个范围还没有已结束的专注。</p>;
   }
   const groups: Array<{ label: string; rows: typeof sessions }> = [];
   for (const session of sessions) {
-    const label = sessionDayLabel(session.startedAt);
+    const label = sessionDayLabel(session.startedAt, referenceNow);
     const current = groups.at(-1);
     if (current && current.label === label) {
       current.rows = [...current.rows, session];
@@ -850,7 +930,7 @@ function GapLedger({ ledger }: { ledger: DayLedgerAnalytics | undefined }) {
       <AnalyticsHeading
         id="mobile-gap-title"
         title="精确空档"
-        detail={ledger?.date ?? '所选日期'}
+        detail={ledger ? `${formatFullDate(ledger.date)} · ${ledger.gaps.length} 段` : '所选日期'}
       />
       {ledger && ledger.gaps.length > 0 ? (
         <ol>
@@ -995,8 +1075,8 @@ function sessionTitle(record: CachedBundle): string {
   return title && title.trim().length > 0 ? title.trim() : '未命名专注';
 }
 
-function sessionDayLabel(timestamp: number): string {
-  const today = new Date();
+function sessionDayLabel(timestamp: number, now: number): string {
+  const today = new Date(now);
   const target = new Date(timestamp);
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const startOfTarget = new Date(

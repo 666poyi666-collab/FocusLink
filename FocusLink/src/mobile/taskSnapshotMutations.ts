@@ -151,6 +151,7 @@ export function updateTaskSnapshotTask(
     dueDate?: number | null;
     tags?: string[];
     parentId?: string | null;
+    projectId?: string | null;
   },
   publishedAt: number,
 ): TaskSnapshotPayload {
@@ -173,7 +174,7 @@ export function updateTaskSnapshotTask(
     if (!parent) throw new Error('父任务不存在');
     if (parent.parentId) throw new Error('暂不支持三级子任务');
   }
-  return {
+  const updated: TaskSnapshotPayload = {
     ...snapshot,
     publishedAt,
     tasks: snapshot.tasks.map((candidate) =>
@@ -194,6 +195,11 @@ export function updateTaskSnapshotTask(
         : candidate,
     ),
   };
+  // 换清单要连子树一起搬，和滑动「移到清单」保持同一套规则。
+  if (patch.projectId !== undefined) {
+    return moveTaskSnapshotSubtree(updated, taskId, patch.projectId, publishedAt);
+  }
+  return updated;
 }
 
 /** Delete a local FocusLink task together with its subtasks. */

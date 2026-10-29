@@ -8,6 +8,8 @@ import { AppNavigation, type MobileView } from './AppNavigation';
 import { isMobileForegroundActive } from './backgroundPolicy';
 import { resolveMobileDisplaySnapshot } from './localFocusPresentation';
 import {
+  completeLocalTaskCreate,
+  editLocalTaskCreate,
   newLocalTaskCreate,
   prepareLocalTaskCreate,
   retryLocalTaskCreate,
@@ -18,6 +20,7 @@ import {
 } from './localTaskQueue';
 import {
   localTaskCompletionIssue,
+  newLocalTaskCompletion,
   overlayLocalTaskCompletions,
   planTaskCompletionIntent,
   retryLocalTaskCompletion,
@@ -38,11 +41,7 @@ import {
   type SyncedTaskProject,
   type TaskSnapshotResponse,
 } from '@shared/sync/taskSnapshotProtocol';
-import {
-  defaultTaskProjectColor,
-  FOCUSLINK_INBOX_PROJECT_ID,
-  isFocusLinkInboxProject,
-} from '@shared/taskProjectPolicy';
+import { defaultTaskProjectColor, isFocusLinkInboxProject } from '@shared/taskProjectPolicy';
 import {
   clearCachedLiveFocusSnapshot,
   clearCachedTaskSnapshot,
@@ -232,7 +231,6 @@ import {
   createEmptyTaskSnapshot,
   deleteTaskSnapshotProject,
   deleteTaskSnapshotTask,
-  moveTaskSnapshotSubtree,
   updateTaskSnapshotProject,
   updateTaskSnapshotTask,
 } from './taskSnapshotMutations';
@@ -1317,6 +1315,12 @@ export function MobileApp() {
                   taskId: record.id,
                   title: record.title,
                   projectId: record.projectId,
+                  parentId: record.parentId,
+                  ...(record.patch.priority === undefined
+                    ? {}
+                    : { priority: record.patch.priority }),
+                  ...(record.patch.dueDate === undefined ? {} : { dueDate: record.patch.dueDate }),
+                  ...(record.patch.tags === undefined ? {} : { tags: record.patch.tags }),
                 },
               });
               if (!current()) return;
@@ -1341,6 +1345,18 @@ export function MobileApp() {
               });
               if (!current()) return;
               await writeLocalTaskCreate(record, true);
+              // 同步完成前用户就勾了：创建成功后立刻补一条完成意图，复用完成队列的顺序与重试。
+              if (record.completed) {
+                const completion = newLocalTaskCompletion(record.id, record.scope, true);
+                await writeLocalTaskCompletion(completion);
+                if (current()) {
+                  setLocalTaskCompletions((records) => [
+                    ...records.filter((candidate) => candidate.taskId !== record.id),
+                    completion,
+                  ]);
+                  setLocalTaskCompletionEpoch((n) => n + 1);
+                }
+              }
             } catch (error) {
               if (!current() || isAbortError(error)) return;
               const failed = record.blocked
@@ -1383,10 +1399,17 @@ export function MobileApp() {
   ]);
 
   const createCloudTask = useCallback(
-    async (title: string, projectId: string | null) => {
+    async (title: string, projectId: string | null, parentId: string | null = null) => {
       if (accountTransitionOperation.current !== null)
         throw new Error('正在切换同步空间，请稍后再保存');
-      const record = newLocalTaskCreate(crypto.randomUUID(), localTaskScope, title, projectId);
+      const record = newLocalTaskCreate(
+        crypto.randomUUID(),
+        localTaskScope,
+        title,
+        projectId,
+        Date.now(),
+        parentId,
+      );
       await writeLocalTaskCreate(record);
       if ((mobileAccountId(preferencesRef.current) ?? 'unpaired') !== record.scope) return;
       setLocalTaskCreates((records) => [
@@ -1517,44 +1540,6 @@ export function MobileApp() {
     [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
   );
 
-  const moveCloudTask = useCallback(
-    async (task: SyncedTask, targetProjectId: string) => {
-      const snapshot = await requireLatestEditableTaskSnapshot();
-      const freshTask = snapshot.tasks.find((candidate) => candidate.id === task.id);
-      if (!freshTask) throw new Error('FocusLink 任务不存在，请刷新后重试');
-      const projectId = targetProjectId || FOCUSLINK_INBOX_PROJECT_ID;
-      const now = Date.now();
-      const write = beginTaskWrite();
-      try {
-        const response = await publishTaskSnapshot({
-          endpoint: preferences.endpoint,
-          token: preferences.token,
-          deviceId,
-          signal: write.signal,
-          snapshot: moveTaskSnapshotSubtree(snapshot, freshTask.id, projectId, now),
-        });
-        if (!write.canCommit()) return;
-        taskSnapshotRef.current = response;
-        setTaskSnapshot(response);
-        setTaskConfirmedAt(Date.now());
-        const accountId = mobileAccountId(preferences);
-        if (accountId) {
-          await enqueueMutation(cacheMutationQueue, async () => {
-            if (!write.canCommit()) return;
-            await writeCachedTaskSnapshot(response, accountId);
-          });
-        }
-        const destination = response.snapshot?.projects.find(
-          (project) => project.id === projectId,
-        )?.name;
-        setCommandNotice(`任务已移到「${destination ?? '收件箱'}」`);
-      } finally {
-        write.finish();
-      }
-    },
-    [beginTaskWrite, deviceId, preferences, requireLatestEditableTaskSnapshot],
-  );
-
   /**
    * 完成/恢复先落本机：只等 IndexedDB 写入，不再先刷新远端整份清单，连续勾选因此互不阻塞。
    * 真正的云端提交由补发流程在撤销窗口之后按顺序完成。
@@ -1568,6 +1553,18 @@ export function MobileApp() {
         throw new Error('正在切换同步空间，请稍后再试');
       }
       const scope = localTaskScope;
+      // 还没同步出去的新任务：完成状态直接落在创建记录上，创建成功后自动补交。
+      const pendingCreate = localTaskCreates.find((record) => record.id === task.id);
+      if (pendingCreate) {
+        const updated = completeLocalTaskCreate(pendingCreate, completed);
+        await writeLocalTaskCreate(updated);
+        setLocalTaskCreates((records) =>
+          records.map((record) => (record.id === updated.id ? updated : record)),
+        );
+        setLocalTaskQueueEpoch((n) => n + 1);
+        setCommandNotice(completed ? '已完成，已保存在本机' : '已恢复，已保存在本机');
+        return;
+      }
       const plan = planTaskCompletionIntent({
         records: localTaskCompletions,
         taskId: task.id,
@@ -1600,7 +1597,7 @@ export function MobileApp() {
             : '已恢复，已保存在本机；网络恢复后自动同步',
       );
     },
-    [localTaskCompletions, localTaskScope, preferences],
+    [localTaskCompletions, localTaskCreates, localTaskScope, preferences],
   );
 
   const enqueueTaskEdit = useCallback(
@@ -1622,6 +1619,12 @@ export function MobileApp() {
     async (record: LocalTaskEdit) => {
       const snapshot = await requireLatestEditableTaskSnapshot();
       const now = Date.now();
+      // 目标已经不在云端（别的设备删了、或重复的删除动作）：目的已达成，丢掉记录而不是反复报冲突。
+      if (!snapshot.tasks.some((task) => task.id === record.taskId)) {
+        await writeLocalTaskEdit(record, true);
+        setLocalTaskEdits((records) => records.filter((r) => r.taskId !== record.taskId));
+        return;
+      }
       const next = record.deleted
         ? deleteTaskSnapshotTask(snapshot, record.taskId, now).snapshot
         : updateTaskSnapshotTask(snapshot, record.taskId, record.patch, now);
@@ -1656,6 +1659,30 @@ export function MobileApp() {
 
   const queueTaskEdit = useCallback(
     async (task: SyncedTask, patch: LocalTaskEditPatch, deleted: boolean) => {
+      // 还没同步出去的新任务：编辑/删除直接改创建记录，不排队发远端。
+      const pendingCreate = localTaskCreates.find((record) => record.id === task.id);
+      if (pendingCreate) {
+        if (deleted) {
+          await writeLocalTaskCreate(pendingCreate, true);
+          setLocalTaskCreates((records) => records.filter((r) => r.id !== pendingCreate.id));
+          setCommandNotice('任务已从本机删除');
+          return;
+        }
+        const updated = editLocalTaskCreate(pendingCreate, {
+          ...(patch.title === undefined ? {} : { title: patch.title }),
+          ...(patch.priority === undefined ? {} : { priority: patch.priority }),
+          ...(patch.dueDate === undefined ? {} : { dueDate: patch.dueDate }),
+          ...(patch.tags === undefined ? {} : { tags: patch.tags }),
+          ...(patch.parentId === undefined ? {} : { parentId: patch.parentId }),
+        });
+        await writeLocalTaskCreate(updated);
+        setLocalTaskCreates((records) =>
+          records.map((record) => (record.id === updated.id ? updated : record)),
+        );
+        setLocalTaskQueueEpoch((n) => n + 1);
+        setCommandNotice('修改已保存在本机；联网时自动同步');
+        return;
+      }
       const record = await enqueueTaskEdit(task, patch, deleted);
       try {
         await flushTaskEdit(record);
@@ -1676,7 +1703,7 @@ export function MobileApp() {
         );
       }
     },
-    [enqueueTaskEdit, flushTaskEdit],
+    [enqueueTaskEdit, flushTaskEdit, localTaskCreates],
   );
 
   const updateCloudTask = useCallback(
@@ -1691,6 +1718,83 @@ export function MobileApp() {
       await queueTaskEdit(task, {}, true);
     },
     [queueTaskEdit],
+  );
+
+  /** 移到清单也走本机编辑队列：断网时先排队，联网后和别的字段一次发布。 */
+  const moveCloudTask = useCallback(
+    async (task: SyncedTask, targetProjectId: string) => {
+      const destination = taskSnapshot?.snapshot?.projects.find(
+        (project) => project.id === targetProjectId,
+      )?.name;
+      await queueTaskEdit(task, { projectId: targetProjectId }, false);
+      setCommandNotice(`任务已移到「${destination ?? '收件箱'}」`);
+    },
+    [queueTaskEdit, taskSnapshot],
+  );
+
+  /** 批量勾选：逐条走同一本机意图通道，失败汇总成一句话而不是只报第一条。 */
+  const setTasksCompleted = useCallback(
+    async (tasks: SyncedTask[], completed: boolean) => {
+      let failed = 0;
+      for (const task of tasks) {
+        try {
+          await setCloudTaskCompleted(task, completed);
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed > 0) throw new Error(`${failed} 条没有保存成功，请重试`);
+    },
+    [setCloudTaskCompleted],
+  );
+
+  const deleteTasks = useCallback(
+    async (tasks: SyncedTask[]) => {
+      let failed = 0;
+      for (const task of tasks) {
+        try {
+          await deleteCloudTask(task);
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed > 0) throw new Error(`${failed} 条没有删除成功，请重试`);
+    },
+    [deleteCloudTask],
+  );
+
+  const moveTasks = useCallback(
+    async (tasks: SyncedTask[], projectId: string) => {
+      let failed = 0;
+      for (const task of tasks) {
+        try {
+          await moveCloudTask(task, projectId);
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed > 0) throw new Error(`${failed} 条没有移动成功，请重试`);
+    },
+    [moveCloudTask],
+  );
+
+  /** 详情面板里新增子任务：和新建任务同一条本机通道，创建时带上 parentId。 */
+  const createSubtask = useCallback(
+    async (parent: SyncedTask, title: string) => {
+      await createCloudTask(title, parent.projectId, parent.id);
+    },
+    [createCloudTask],
+  );
+
+  // 用展开传给任务页：页面新增回调时这里自动生效，不需要再改一次调用点。
+  const taskPageActions = useMemo(
+    () => ({
+      onSetTasksCompleted: setTasksCompleted,
+      onDeleteTasks: deleteTasks,
+      onMoveTasks: moveTasks,
+      onCreateSubtask: createSubtask,
+    }),
+    [createSubtask, deleteTasks, moveTasks, setTasksCompleted],
   );
 
   // 一条任务在离线期间的多次修改已经合并成一条记录；联网后按创建时间顺序补发。
@@ -3250,6 +3354,7 @@ export function MobileApp() {
               )}
               {activeView === 'tasks' && (
                 <TickTickTaskPage
+                  {...taskPageActions}
                   tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
                   projects={visibleTaskSnapshot.snapshot?.projects ?? []}
                   pendingLocalCount={localTaskCreates.length + localTaskCompletions.length}
@@ -3285,12 +3390,7 @@ export function MobileApp() {
                   onDeleteProject={deleteCloudProject}
                   onMoveTask={moveCloudTask}
                   completionStates={taskCompletionStates}
-                  onToggleComplete={async (task, completed) => {
-                    if (localTaskCreates.some((record) => record.id === task.id)) {
-                      throw new Error('这条任务还没同步到云端，联网确认后才能勾选');
-                    }
-                    await setCloudTaskCompleted(task, completed);
-                  }}
+                  onToggleComplete={setCloudTaskCompleted}
                 />
               )}
               {activeView === 'history' && (

@@ -1,6 +1,49 @@
 # FocusLink 实施日志
 
 ## 2026-10-29 · `FL-UI-20261029-ISLAND-PAYLOAD`：超级岛参数不符合官方 schema（v1.8.7 已按规范重写，待真机肉眼验收）
+## 2026-10-29 · `FL-UI-20261029-TASK-WORKBENCH`：任务工作台、离线动作全打通、专注与统计统一（v1.9.2）
+
+**结论**
+
+v1.9.2 把任务页补成完整工作台（搜索、批量、子任务），把「没同步出去的新任务」也纳入离线动作（勾选/改字段/加子任务/删除都落在创建记录上，创建成功后自动补交完成），并把移到清单改成走本机编辑队列；专注页三条入口与控制位置、统计页三个问题同时收口。小米真机逐项走通搜索、批量、子任务与「离线新建即勾选」全链路。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 搜索在真机把 19 行过滤到 5 行（标题含「循环」），空态提示「没有匹配的任务」，清除后回到 19 行 | 真机 CDP `expr-search.js` | 实测 |
+| ② | 批量模式：19 个选择框、选中 2 条后标题「已选 2 项」、三动作由 disabled 变可用、取消可退出 | 真机 CDP `expr-batch.js` | 实测 |
+| ③ | 批量删除在真机把 2 条测试任务删掉，队列清空、revision 779→782 | 真机 CDP + IndexedDB | 实测 |
+| ④ | 详情面板新增子任务「验证子任务ZZ」出现在父任务子任务列表并可删除，全程无行内错误 | 真机 CDP `expr-subtask.js` | 实测 |
+| ⑤ | 断网（iptables+ip6tables 拒 443）新建并立刻勾选：创建记录 `completed=true`、attempts=0、没有额外完成意图 | 真机 CDP + IndexedDB | 实测 |
+| ⑥ | 恢复联网后：创建补发成功 → 自动补一条完成意图 → 该任务在云端为已完成，队列清空，revision 777→779 | 真机 CDP + 快照 | 实测 |
+| ⑦ | 既有任务的离线完成同样补传成功（离线验证任务ZZ：离线队列 → 联网后云端 completed=true） | 真机 CDP | 实测 |
+| ⑧ | 源码门禁：`format:check` / `typecheck` / `lint` 通过；`npm test` 171 文件 / 1467 用例全绿（含新增 27 条契约） | 命令输出 | 实测 |
+| ⑨ | 原生补漏：目标任务已不在快照里的编辑记录（重复删除）会被直接丢弃，不再反复报 409 | `src/mobile/MobileApp.tsx` flushTaskEdit | 实测 |
+| ⑩ | 华为按 2026-10-29 用户指令不在线、本轮未安装 | `TEST_AND_RELEASE.md` 103 行 | 证据记录 |
+
+**问题**
+
+P1 批量动作没有逐条撤销窗 — 批量完成/删除/移动只给 4 秒结果提示，撤销只服务单条勾选 — 事实②③。
+P1 名字键/直接开始不校验 startReady — 由 handleCommand 兜底提示或走本机离线开始，不会凭空建会话 — task-4 交接。
+P2 批量通道串行写本机 — 选几十上百条时只有「处理中…」没有进度，耗时随 N 线性增长 — 事实②。
+P2 后台时补发暂停 — 锁屏/切走后勾选要回前台才同步（沿用 `FL-SYNC-036`）— 事实⑤⑥。
+
+**处置**
+
+- 任务页（`src/mobile/TickTickTaskPage.tsx`）：搜索框接既有森林过滤器；批量模式（长按/右侧选择/全选/二次确认删除/移动/完成）；详情新增子任务与行内报错；Esc 逐层关闭；composer 取消与保存中文案。
+- 本机动作（`localTaskQueue.ts` / `localTaskEdits.ts` / `taskSnapshotMutations.ts` / `MobileApp.tsx`）：创建记录新增 `parentId/completed/patch`，未同步新任务可勾选/改字段/删除；`create_task` 带上优先级/日期/标签/父任务；创建成功后自动补完成意图；移到清单改走 `queueTaskEdit({projectId})`，断网也排队；目标已不存在的编辑记录直接丢弃。
+- 专注/统计（`FocusConsole.tsx` / `DashboardView.tsx`）：sheet 抽成 `FocusSetupSheet`，三条入口各一块动作，名字键直接 start；主控制行两格固定不抖位；统计页三问前置到折叠区之前，空态改人话。
+- 设置页（`SettingsView.tsx`）：同步范围合并成一张卡，帮助并入版本块。
+- 样式（`mobile.css`）：任务工作台 20 余条规则（输入 16px、按钮 ≥44px、token 化），专注/统计两条收口微调。
+- 测试：新增 `tests/mobileTaskWorkbench.test.ts`（16）、`tests/mobileFocusStatsUnification.test.ts`（6）、`tests/localTaskCreateActions.test.ts`（5）；更新 `mobileTaskWriteCommit` 计数。
+
+**门禁**
+
+- 小米 1.9.2 / 1368 已装，真机四类场景实测；演练数据已复位（60 条任务、revision 782，测试任务已删除）。
+- Windows 1.9.2 覆盖安装与窗口可见性门禁见本轮发布记录。
+
+
 ## 2026-10-29 · `FL-UI-20261029-TASK-COMPLETION`：打勾改成本机先保存 + 6 秒撤销 + 原位收拢（v1.9.1 已装小米）
 
 **结论**

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { ChevronRight, Maximize2, Minimize2, Pause, PictureInPicture2, Play } from 'lucide-react';
 import {
   formatClockDuration,
@@ -209,6 +209,21 @@ export function FocusConsole({
     setSheetOpen(false);
   };
 
+  const openAllTasks = () => {
+    setSheetOpen(false);
+    onOpenTasks();
+  };
+
+  /**
+   * 「用这个名字开始」：名字在每次输入时已经写回父级，这里关掉面板直接发 start，
+   * 不再要求先关面板、再回主屏找开始键。
+   */
+  const startWithName = () => {
+    if (!titleDraft.trim() || pendingCommand !== null) return;
+    setSheetOpen(false);
+    onCommand('start');
+  };
+
   const startWithoutName = () => {
     freeStartPending.current = true;
     setSheetOpen(false);
@@ -242,6 +257,7 @@ export function FocusConsole({
               disabled={pendingCommand !== null}
               aria-haspopup="dialog"
               aria-expanded={sheetOpen}
+              aria-label={`${draftLabel}，选择任务、写名字或直接开始`}
             >
               <span className="focus-task-entry-title">{draftLabel}</span>
               <ChevronRight className="focus-task-entry-chevron" aria-hidden="true" />
@@ -265,9 +281,11 @@ export function FocusConsole({
             />
           </div>
 
-          {/* 3 · 主操作：单主按钮；运行或暂停时与「结束」并排。 */}
+          {/* 3 · 主操作：主键永远是左边第一格，结束键常驻右边第二格。
+              待开始→运行→暂停只换主键的字与图标；结束键在未开始时禁用但保留占位，
+              所以整行宽度、主键位置都不随状态跳动。 */}
           <div className="focus-actions">
-            {current.state === 'idle' && (
+            {current.state === 'idle' ? (
               <button
                 className="focus-action primary start-action"
                 type="button"
@@ -281,8 +299,7 @@ export function FocusConsole({
                     ? '正在开始…'
                     : '开始专注'}
               </button>
-            )}
-            {current.state === 'running' && (
+            ) : current.state === 'running' ? (
               <button
                 className="focus-action primary pause-action"
                 type="button"
@@ -292,8 +309,7 @@ export function FocusConsole({
                 <Pause className="focus-action-icon" aria-hidden="true" />
                 {pendingCommand === 'pause' ? '正在暂停…' : '暂停'}
               </button>
-            )}
-            {current.state === 'paused' && (
+            ) : (
               <button
                 className="focus-action primary resume-action"
                 type="button"
@@ -304,16 +320,21 @@ export function FocusConsole({
                 {pendingCommand === 'resume' ? '正在继续…' : '继续'}
               </button>
             )}
-            {active && (
-              <button
-                className="focus-action finish-action"
-                type="button"
-                disabled={!controls.finish}
-                onClick={requestFinish}
-              >
-                {pendingCommand === 'finish' ? '正在结束…' : '结束'}
-              </button>
-            )}
+            <button
+              className="focus-action finish-action"
+              type="button"
+              disabled={!controls.finish}
+              onClick={requestFinish}
+              title={
+                controls.finish
+                  ? '结束本轮专注'
+                  : current.state === 'idle'
+                    ? '开始专注后才能结束'
+                    : '连接未就绪，暂时不能结束'
+              }
+            >
+              {pendingCommand === 'finish' ? '正在结束…' : '结束'}
+            </button>
           </div>
 
           {/* 4 · 时间之带（移动端三模式：流线 / 光栅 / 时段） */}
@@ -418,83 +439,18 @@ export function FocusConsole({
       {sheetOpen && (
         <>
           <div className="m-sheet-scrim" role="presentation" onClick={() => setSheetOpen(false)} />
-          <div
-            className="m-sheet focus-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="focus-sheet-title"
-            tabIndex={-1}
-            ref={sheetDialogRef}
-          >
-            <h2 className="focus-sheet-title" id="focus-sheet-title">
-              这次专注做什么
-            </h2>
-
-            <section className="focus-sheet-block">
-              <div className="focus-sheet-block-head">
-                <h3 className="focus-sheet-heading">最近任务</h3>
-                <button
-                  className="focus-sheet-link"
-                  type="button"
-                  onClick={() => {
-                    setSheetOpen(false);
-                    onOpenTasks();
-                  }}
-                >
-                  全部任务
-                </button>
-              </div>
-              {recentTasks.length > 0 ? (
-                <ul className="focus-sheet-list">
-                  {recentTasks.map((task) => (
-                    <li key={task.id}>
-                      <button
-                        className={
-                          task.id === selectedTaskId
-                            ? 'focus-task-row focus-sheet-task is-selected'
-                            : 'focus-task-row focus-sheet-task'
-                        }
-                        type="button"
-                        onClick={() => chooseTask(task.id)}
-                      >
-                        {task.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="focus-sheet-empty">还没有任务，可以直接开始自由专注</p>
-              )}
-            </section>
-
-            <details className="focus-title-details focus-sheet-block" open>
-              <summary className="focus-sheet-heading">输入这次专注的名字</summary>
-              <div className="focus-title-input">
-                <input
-                  id="focus-title"
-                  value={titleDraft}
-                  onChange={(event) => onTitleChange(event.target.value)}
-                  maxLength={1_000}
-                  placeholder="例如：整理化学错题"
-                  autoComplete="off"
-                  enterKeyHint="done"
-                  aria-label="这次专注的名字"
-                />
-                <button
-                  className="focus-sheet-name-apply"
-                  type="button"
-                  disabled={!titleDraft.trim()}
-                  onClick={() => setSheetOpen(false)}
-                >
-                  用这个名字
-                </button>
-              </div>
-            </details>
-
-            <button className="focus-sheet-free" type="button" onClick={startWithoutName}>
-              直接开始，不写名字
-            </button>
-          </div>
+          <FocusSetupSheet
+            recentTasks={recentTasks}
+            selectedTaskId={selectedTaskId}
+            titleDraft={titleDraft}
+            pendingCommand={pendingCommand}
+            dialogRef={sheetDialogRef}
+            onChooseTask={chooseTask}
+            onTitleChange={onTitleChange}
+            onStartWithName={startWithName}
+            onStartWithoutName={startWithoutName}
+            onOpenTasks={openAllTasks}
+          />
         </>
       )}
 
@@ -511,6 +467,118 @@ export function FocusConsole({
         }}
       />
     </section>
+  );
+}
+
+export interface FocusSetupSheetProps {
+  recentTasks: readonly SyncedTask[];
+  selectedTaskId: string;
+  titleDraft: string;
+  pendingCommand: MobileFocusCommand | null;
+  dialogRef: RefObject<HTMLDivElement>;
+  onChooseTask: (taskId: string) => void;
+  onTitleChange: (value: string) => void;
+  onStartWithName: () => void;
+  onStartWithoutName: () => void;
+  onOpenTasks: () => void;
+}
+
+/**
+ * 「这次专注做什么」底部面板：三条入口各占一块，动作互不隐藏——
+ * 选最近任务（一行一个按钮）、输入这次的名字（输入框 + 用这个名字开始）、
+ * 直接开始（不写名字，立即发 start）。
+ */
+export function FocusSetupSheet({
+  recentTasks,
+  selectedTaskId,
+  titleDraft,
+  pendingCommand,
+  dialogRef,
+  onChooseTask,
+  onTitleChange,
+  onStartWithName,
+  onStartWithoutName,
+  onOpenTasks,
+}: FocusSetupSheetProps) {
+  const canStartWithName = titleDraft.trim().length > 0 && pendingCommand === null;
+  return (
+    <div
+      className="m-sheet focus-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="focus-sheet-title"
+      tabIndex={-1}
+      ref={dialogRef}
+    >
+      <h2 className="focus-sheet-title" id="focus-sheet-title">
+        这次专注做什么
+      </h2>
+
+      <section className="focus-sheet-block" aria-labelledby="focus-sheet-recent-heading">
+        <div className="focus-sheet-block-head">
+          <h3 className="focus-sheet-heading" id="focus-sheet-recent-heading">
+            最近任务
+          </h3>
+          <button className="focus-sheet-link" type="button" onClick={onOpenTasks}>
+            全部任务
+          </button>
+        </div>
+        {recentTasks.length > 0 ? (
+          <ul className="focus-sheet-list">
+            {recentTasks.map((task) => (
+              <li key={task.id}>
+                <button
+                  className={
+                    task.id === selectedTaskId
+                      ? 'focus-task-row focus-sheet-task is-selected'
+                      : 'focus-task-row focus-sheet-task'
+                  }
+                  type="button"
+                  onClick={() => onChooseTask(task.id)}
+                >
+                  {task.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="focus-sheet-empty">还没有任务，可以直接开始自由专注</p>
+        )}
+      </section>
+
+      <details className="focus-title-details focus-sheet-block" open>
+        <summary className="focus-sheet-heading">输入这次专注的名字</summary>
+        <div className="focus-title-input">
+          <input
+            id="focus-title"
+            value={titleDraft}
+            onChange={(event) => onTitleChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              if (canStartWithName) onStartWithName();
+            }}
+            maxLength={1_000}
+            placeholder="例如：整理化学错题"
+            autoComplete="off"
+            enterKeyHint="done"
+            aria-label="这次专注的名字"
+          />
+          <button
+            className="focus-sheet-name-apply"
+            type="button"
+            disabled={!canStartWithName}
+            onClick={onStartWithName}
+          >
+            用这个名字开始
+          </button>
+        </div>
+      </details>
+
+      <button className="focus-sheet-free" type="button" onClick={onStartWithoutName}>
+        直接开始，不写名字
+      </button>
+    </div>
   );
 }
 

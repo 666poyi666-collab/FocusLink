@@ -6,7 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { ChevronLeft, ChevronRight, ListTree, MoreVertical, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ListTree, MoreVertical, Plus, Search, X } from 'lucide-react';
 import type { SyncedTask, SyncedTaskProject } from '@shared/sync/taskSnapshotProtocol';
 import {
   ALL_PROJECTS,
@@ -22,6 +22,9 @@ export type TaskCompletionSyncState = 'pending' | 'synced' | 'failed';
 
 /** 撤销窗口结束后行高收起的时长，与 .tt-node 的 transition 保持一致。 */
 const NODE_COLLAPSE_MS = 220;
+
+/** 长按进入批量选择的阈值；必须大于滑动判定的 8px 抖动。 */
+const LONG_PRESS_MS = 480;
 
 /**
  * 滴答清单移动端任务页复刻（结构 / 交互 / 视觉）。
@@ -67,6 +70,14 @@ interface TickTickTaskPageProps {
     },
   ) => Promise<void>;
   onDeleteTask?: (task: SyncedTask) => Promise<void>;
+  /** 批量完成/恢复：一次交出一组任务和目标状态；失败必须 reject，页面行内报错。 */
+  onSetTasksCompleted?: (tasks: SyncedTask[], completed: boolean) => Promise<void>;
+  /** 批量删除：失败必须 reject；页面负责二次确认。 */
+  onDeleteTasks?: (tasks: SyncedTask[]) => Promise<void>;
+  /** 批量移动：projectId 为目标清单；失败必须 reject。 */
+  onMoveTasks?: (tasks: SyncedTask[], projectId: string) => Promise<void>;
+  /** 新增子任务：title 已去空白且非空；失败必须 reject，详情面板保持打开。 */
+  onCreateSubtask?: (parent: SyncedTask, title: string) => Promise<void>;
 }
 
 type ComposerMode = 'closed' | 'task' | 'project';
@@ -107,6 +118,22 @@ function listTitle(projectId: string | null, projects: readonly SyncedTaskProjec
   return projects.find((project) => project.id === projectId)?.name ?? '清单';
 }
 
+/** 批量选择只认屏幕上真的看得到的行：折叠起来的子任务不算，顺序按渲染顺序。 */
+function collectVisibleTaskIds(
+  nodes: readonly SyncedTaskTreeNode[],
+  isCollapsed: (id: string) => boolean,
+): string[] {
+  const ids: string[] = [];
+  const visit = (list: readonly SyncedTaskTreeNode[]) => {
+    for (const node of list) {
+      ids.push(node.id);
+      if (!isCollapsed(node.id)) visit(node.children);
+    }
+  };
+  visit(nodes);
+  return ids;
+}
+
 interface RowProps {
   node: SyncedTaskTreeNode;
   depth: number;
@@ -123,6 +150,13 @@ interface RowProps {
   /** 行当前显示的勾选态（本机意图覆盖后可能是 true，而底层快照还没完成）。 */
   completed: boolean;
   now: number;
+  /** 批量选择模式：行不再打开详情，点击即选中。 */
+  selectMode: boolean;
+  selected: boolean;
+  /** 切换单个任务的选择态（批量条与行共用）。 */
+  onSelect: (task: SyncedTask) => void;
+  /** 行右侧「选择」与长按共用：进入批量模式并选中该行。 */
+  onEnterSelectMode: (task: SyncedTask) => void;
 }
 
 /** 滴答清单式滑动：右滑完成、左滑移到清单；纵向滑动仍然交还给页面滚动。 */
@@ -139,6 +173,10 @@ function TaskRow({
   justCompleted = false,
   completed,
   now,
+  selectMode,
+  selected,
+  onSelect,
+  onEnterSelectMode,
 }: RowProps) {
   const hasChildren = node.children.length > 0;
   const due = dueLabel(node, now);
@@ -151,15 +189,41 @@ function TaskRow({
     horizontal: boolean;
   } | null>(null);
   const suppressClickRef = useRef(false);
+  const longPressRef = useRef<number | null>(null);
+
+  const cancelLongPress = () => {
+    if (longPressRef.current !== null) {
+      window.clearTimeout(longPressRef.current);
+      longPressRef.current = null;
+    }
+  };
+
+  // 行被批量选择替换掉时，挂在行上的长按计时器必须一起收掉。
+  useEffect(() => {
+    return () => {
+      if (longPressRef.current !== null) window.clearTimeout(longPressRef.current);
+    };
+  }, []);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    // 批量模式下行本身就是选择框，不再起滑动和长按。
+    if (selectMode) return;
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
       active: true,
       horizontal: false,
     };
+    cancelLongPress();
+    longPressRef.current = window.setTimeout(() => {
+      longPressRef.current = null;
+      suppressClickRef.current = true;
+      onEnterSelectMode(node);
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 260);
+    }, LONG_PRESS_MS);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -167,6 +231,8 @@ function TaskRow({
     if (!drag?.active) return;
     const deltaX = event.clientX - drag.startX;
     const deltaY = event.clientY - drag.startY;
+    // 一旦真的开始移动，就不能再当成「长按」。
+    if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) cancelLongPress();
     if (!drag.horizontal) {
       if (Math.abs(deltaX) < 8) return;
       if (Math.abs(deltaY) > Math.abs(deltaX)) {
@@ -179,6 +245,7 @@ function TaskRow({
   };
 
   const finishGesture = () => {
+    cancelLongPress();
     const drag = dragRef.current;
     dragRef.current = null;
     const value = offset;
@@ -206,40 +273,77 @@ function TaskRow({
         className="tt-row"
         data-depth={depth > 2 ? 2 : depth}
         data-completed={completed}
+        data-select-mode={selectMode}
+        data-selected={selectMode ? selected : undefined}
         style={offset === 0 ? undefined : { transform: `translateX(${offset}px)` }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishGesture}
         onPointerCancel={finishGesture}
       >
-        <button
-          type="button"
-          key={completed ? 'done' : 'open'}
-          className="tt-check"
-          data-tone={tone}
-          data-checked={completed}
-          data-just-checked={justCompleted}
-          aria-label={completed ? `取消完成 ${node.title}` : `完成 ${node.title}`}
-          onClick={() => onToggle(node, !completed)}
-        >
-          {completed ? (
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path
-                d="M4.5 10.5 8 14l7.5-8"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          ) : null}
-        </button>
+        {selectMode ? (
+          <button
+            type="button"
+            className="tt-check tt-select-mark"
+            data-checked={selected}
+            aria-pressed={selected}
+            aria-label={selected ? `取消选择 ${node.title}` : `选择 ${node.title}`}
+            onClick={(event) => {
+              // 批量模式下最显眼的目标是复选框本身，点它必须真的切换选中。
+              event.stopPropagation();
+              onSelect(node);
+            }}
+          >
+            {selected ? (
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path
+                  d="M4.5 10.5 8 14l7.5-8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : null}
+          </button>
+        ) : (
+          <button
+            type="button"
+            key={completed ? 'done' : 'open'}
+            className="tt-check"
+            data-tone={tone}
+            data-checked={completed}
+            data-just-checked={justCompleted}
+            aria-label={completed ? `取消完成 ${node.title}` : `完成 ${node.title}`}
+            onClick={() => onToggle(node, !completed)}
+          >
+            {completed ? (
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path
+                  d="M4.5 10.5 8 14l7.5-8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : null}
+          </button>
+        )}
         <button
           type="button"
           className="tt-row-main"
+          data-selected={selectMode ? selected : undefined}
+          aria-pressed={selectMode ? selected : undefined}
           onClick={() => {
             if (suppressClickRef.current) return;
+            // 批量模式下行点击就是选中/取消，不再打开详情。
+            if (selectMode) {
+              onSelect(node);
+              return;
+            }
             onOpen(node);
           }}
         >
@@ -272,7 +376,7 @@ function TaskRow({
             {due.text}
           </span>
         ) : null}
-        {hasChildren ? (
+        {hasChildren && !selectMode ? (
           <button
             type="button"
             className="tt-disclosure"
@@ -288,6 +392,33 @@ function TaskRow({
           </button>
         ) : (
           <span className="tt-disclosure-space" aria-hidden="true" />
+        )}
+        {selectMode ? (
+          <button
+            type="button"
+            className="tt-row-select"
+            data-selected={selected}
+            aria-pressed={selected}
+            aria-label={selected ? `取消选择 ${node.title}` : `选择 ${node.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(node);
+            }}
+          >
+            {selected ? '已选' : '选择'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="tt-row-select"
+            aria-label={`选择 ${node.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onEnterSelectMode(node);
+            }}
+          >
+            选择
+          </button>
         )}
       </div>
     </li>
@@ -312,6 +443,10 @@ export function TickTickTaskPage({
   completionStates,
   onUpdateTask,
   onDeleteTask,
+  onSetTasksCompleted,
+  onDeleteTasks,
+  onMoveTasks,
+  onCreateSubtask,
 }: TickTickTaskPageProps) {
   const [now, setNow] = useState(() => Date.now());
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -332,6 +467,24 @@ export function TickTickTaskPage({
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 搜索只在页面内过滤：不改排序、不改层级，仍走 filterSyncedTaskForest 这同一条通道。
+  const [query, setQuery] = useState('');
+  // 批量选择：selectMode 决定行的形态，selection 只存 id，任务消失即自动失效。
+  const [selectMode, setSelectMode] = useState(false);
+  const [selection, setSelection] = useState<Set<string>>(() => new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchConfirmDelete, setBatchConfirmDelete] = useState(false);
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false);
+  const [batchNotice, setBatchNotice] = useState<string | null>(null);
+  // 详情面板的子任务输入：失败只报错，面板保持打开。
+  const [subtaskDraft, setSubtaskDraft] = useState('');
+  const [subtaskBusy, setSubtaskBusy] = useState(false);
+  const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  // 单任务「移动到清单」浮层自己的 busy / 错误，不再静默吞掉 reject。
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
   // 刚勾选完成的任务先在原位停留 6 秒：动效看得见，撤销够得着；窗口结束后行高收起。
   // 每个任务独立计时，连续勾选互不阻塞。
   const [heldCompletions, setHeldCompletions] = useState<
@@ -360,12 +513,65 @@ export function TickTickTaskPage({
     };
   }, []);
 
+  // 批量提示（已完成 3 项）自动消失，页面切走时也要清掉，不留悬挂计时器。
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    };
+  }, []);
+
+  // Esc / 返回键按「最上层先关」的顺序退出：异步进行中也不阻塞关闭。
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (moveTaskId) {
+        setMoveTaskId(null);
+        setMoveError(null);
+        return;
+      }
+      if (composer !== 'closed') {
+        setComposer('closed');
+        return;
+      }
+      if (menuOpen) {
+        setMenuOpen(false);
+        return;
+      }
+      if (drawerOpen) {
+        setDrawerOpen(false);
+        return;
+      }
+      if (detailTaskId) {
+        setDetailTaskId(null);
+        return;
+      }
+      if (batchMoveOpen) {
+        setBatchMoveOpen(false);
+        return;
+      }
+      if (selectMode) {
+        setSelectMode(false);
+        setSelection(new Set());
+        setBatchError(null);
+        setBatchConfirmDelete(false);
+        setBatchMoveOpen(false);
+        return;
+      }
+      if (query !== '') setQuery('');
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [batchMoveOpen, composer, detailTaskId, drawerOpen, menuOpen, moveTaskId, query, selectMode]);
+
   useEffect(() => {
     const task = tasks.find((candidate) => candidate.id === detailTaskId);
     setEditTitle(task?.title ?? '');
     setEditTags(task?.tags.join(' ') ?? '');
     setEditError(null);
     setConfirmDelete(false);
+    // 换到另一条任务时，上一条留下的子任务草稿和错误不能跟过来。
+    setSubtaskDraft('');
+    setSubtaskError(null);
   }, [detailTaskId, tasks]);
 
   // 窗口中刚勾选的任务必须继续留在「待办」森林里才能保住原位：过滤器按 isCompleted 选状态，
@@ -378,18 +584,20 @@ export function TickTickTaskPage({
         heldCompletions[task.id] === undefined ? task : { ...task, isCompleted: false },
       );
   }, [heldCompletions, showCompleted, tasks]);
+  // 搜索词只交给同一条森林过滤器：排序、层级、父任务折叠都是现成的，不再另造一套。
+  const trimmedQuery = query.trim();
   const groups = useMemo<SyncedTaskGroup[]>(
     () =>
       groupSyncedTaskForest(
         filterSyncedTaskForest(
           displayTasks,
-          '',
+          trimmedQuery,
           ALL_PROJECTS,
           showCompleted ? 'completed' : 'open',
         ),
         projects,
       ),
-    [displayTasks, projects, showCompleted],
+    [displayTasks, projects, showCompleted, trimmedQuery],
   );
   const activeGroups = useMemo(
     () =>
@@ -398,6 +606,41 @@ export function TickTickTaskPage({
         : groups.filter((group) => group.projectId === projectFilter),
     [groups, projectFilter],
   );
+  /** 当前可见（含搜索过滤、折叠之后）的任务 id：批量选择的合法范围。 */
+  const visibleTaskIds = useMemo(
+    () =>
+      collectVisibleTaskIds(
+        activeGroups.flatMap((group) => group.tasks),
+        (id) => collapsed.has(id),
+      ),
+    [activeGroups, collapsed],
+  );
+  // 不再按 isCompleted 过滤：已完成列表里同样要能批量删除/移动。
+  const selectedTasks = useMemo(() => {
+    if (selection.size === 0) return [] as SyncedTask[];
+    return tasks.filter((task) => selection.has(task.id));
+  }, [selection, tasks]);
+  const selectedCount = selectedTasks.length;
+  const allVisibleSelected =
+    visibleTaskIds.length > 0 && visibleTaskIds.every((id) => selection.has(id));
+  const searching = trimmedQuery !== '';
+  const searchEmpty = searching && activeGroups.length === 0;
+
+  // 搜索或切清单之后，选中项收缩到当前可见范围：计数永远等于看得见的行。
+  useEffect(() => {
+    if (!selectMode) return;
+    const visible = new Set(visibleTaskIds);
+    setSelection((current) => {
+      if (current.size === 0) return current;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of current) {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [selectMode, visibleTaskIds]);
   const openCount = useMemo(() => tasks.filter((task) => !task.isCompleted).length, [tasks]);
   const detailTask = useMemo(
     () => tasks.find((task) => task.id === detailTaskId) ?? null,
@@ -598,6 +841,146 @@ export function TickTickTaskPage({
       .finally(() => setBusy(false));
   };
 
+  const showBatchNotice = (text: string) => {
+    setBatchNotice(text);
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => {
+      noticeTimer.current = null;
+      setBatchNotice(null);
+    }, 4000);
+  };
+
+  const enterSelectMode = (task?: SyncedTask) => {
+    setSelectMode(true);
+    setSelection(task ? new Set([task.id]) : new Set());
+    setBatchError(null);
+    setBatchConfirmDelete(false);
+    setBatchMoveOpen(false);
+    setBatchNotice(null);
+  };
+
+  /** 退出批量只清页面状态：正在跑的批量请求不取消、也不阻塞关闭。 */
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelection(new Set());
+    setBatchError(null);
+    setBatchConfirmDelete(false);
+    setBatchMoveOpen(false);
+  };
+
+  const toggleSelected = (task: SyncedTask) => {
+    setBatchError(null);
+    setBatchConfirmDelete(false);
+    setSelection((current) => {
+      const next = new Set(current);
+      if (next.has(task.id)) next.delete(task.id);
+      else next.add(task.id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setBatchError(null);
+    setBatchConfirmDelete(false);
+    setSelection((current) => {
+      const allSelected =
+        visibleTaskIds.length > 0 && visibleTaskIds.every((id) => current.has(id));
+      return allSelected ? new Set<string>() : new Set(visibleTaskIds);
+    });
+  };
+
+  /**
+   * 批量动作统一入口：busy 期间按钮禁用，但取消/Esc 始终可点；
+   * 失败只写 batchError，选中项保留，用户能原地重试。
+   */
+  const runBatchAction = (label: string, action: (targets: SyncedTask[]) => Promise<void>) => {
+    if (batchBusy || selectedTasks.length === 0) return;
+    const targets = selectedTasks;
+    setBatchBusy(true);
+    setBatchError(null);
+    setBatchConfirmDelete(false);
+    void action(targets)
+      .then(() => {
+        setSelection(new Set());
+        setSelectMode(false);
+        setBatchMoveOpen(false);
+        showBatchNotice(`${label} ${targets.length} 项`);
+      })
+      .catch((reason: unknown) => {
+        setBatchError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => setBatchBusy(false));
+  };
+
+  const batchComplete = () => {
+    const handler = onSetTasksCompleted;
+    if (!handler) return;
+    runBatchAction('已完成', (targets) => handler(targets, true));
+  };
+
+  const batchDelete = () => {
+    const handler = onDeleteTasks;
+    if (!handler) return;
+    if (!batchConfirmDelete) {
+      setBatchConfirmDelete(true);
+      return;
+    }
+    runBatchAction('已删除', handler);
+  };
+
+  const batchMove = (projectId: string) => {
+    const handler = onMoveTasks;
+    if (!handler) return;
+    setBatchMoveOpen(false);
+    runBatchAction('已移动', (targets) => handler(targets, projectId));
+  };
+
+  const addSubtask = () => {
+    const title = subtaskDraft.trim();
+    const handler = onCreateSubtask;
+    if (!title || !detailTask || !handler || subtaskBusy) return;
+    const parent = detailTask;
+    setSubtaskBusy(true);
+    setSubtaskError(null);
+    void handler(parent, title)
+      .then(() => setSubtaskDraft(''))
+      .catch((reason: unknown) => {
+        // 面板不关闭：错误就地显示，改个名字可以直接重试。
+        setSubtaskError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => setSubtaskBusy(false));
+  };
+
+  const moveSelectedTask = (projectId: string) => {
+    const target = tasks.find((task) => task.id === moveTaskId);
+    const handler = onMoveTask;
+    if (!target || !handler) {
+      setMoveTaskId(null);
+      return;
+    }
+    setMoveBusy(true);
+    setMoveError(null);
+    void handler(target, projectId)
+      .then(() => setMoveTaskId(null))
+      .catch((reason: unknown) => {
+        setMoveError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => setMoveBusy(false));
+  };
+
+  const moveDetailTask = (projectId: string) => {
+    const handler = onMoveTask;
+    if (!handler || !detailTask || editBusy) return;
+    const target = detailTask;
+    setEditBusy(true);
+    setEditError(null);
+    void handler(target, projectId)
+      .catch((reason: unknown) => {
+        setEditError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => setEditBusy(false));
+  };
+
   const renderNodes = (nodes: readonly SyncedTaskTreeNode[], depth: number): ReactNode =>
     nodes.map((node) => (
       <div
@@ -618,12 +1001,19 @@ export function TickTickTaskPage({
                   onSelect(task);
                 }}
                 onToggle={setTaskCompleted}
-                onMoveRequest={(task) => setMoveTaskId(task.id)}
+                onMoveRequest={(task) => {
+                  setMoveError(null);
+                  setMoveTaskId(task.id);
+                }}
                 completionState={rowErrors[node.id] ? 'failed' : completionStates?.[node.id]}
                 completionError={rowErrors[node.id]}
                 justCompleted={!showCompleted && heldCompletions[node.id] !== undefined}
                 completed={heldCompletions[node.id] !== undefined || node.isCompleted}
                 now={now}
+                selectMode={selectMode}
+                selected={selection.has(node.id)}
+                onSelect={toggleSelected}
+                onEnterSelectMode={(task) => enterSelectMode(task)}
               />
             </ul>
             {node.children.length > 0 && !collapsed.has(node.id)
@@ -635,37 +1025,87 @@ export function TickTickTaskPage({
     ));
 
   return (
-    <section className="tt-page" aria-label="任务">
-      <header className="tt-appbar">
-        <button
-          type="button"
-          className="tt-appbar-button"
-          aria-label="打开清单列表"
-          onClick={() => setDrawerOpen(true)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="tt-hamburger">
-            <path
-              d="M4 7h16M4 12h16M4 17h11"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-        <h1 className="tt-appbar-title">{headline}</h1>
-        <button
-          type="button"
-          className="tt-appbar-button"
-          aria-label="更多操作"
-          onClick={() => setMenuOpen(true)}
-        >
-          <MoreVertical aria-hidden="true" />
-        </button>
+    <section className="tt-page" aria-label="任务" data-select-mode={selectMode}>
+      <header className="tt-appbar" data-select-mode={selectMode}>
+        {selectMode ? (
+          <>
+            <button
+              type="button"
+              className="tt-appbar-text"
+              aria-label="退出批量选择"
+              onClick={exitSelectMode}
+            >
+              取消
+            </button>
+            <h1 className="tt-appbar-title">已选 {selectedCount} 项</h1>
+            <button type="button" className="tt-appbar-text" onClick={selectAllVisible}>
+              {allVisibleSelected ? '取消全选' : '全选'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="tt-appbar-button"
+              aria-label="打开清单列表"
+              onClick={() => setDrawerOpen(true)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="tt-hamburger">
+                <path
+                  d="M4 7h16M4 12h16M4 17h11"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+            <h1 className="tt-appbar-title">{headline}</h1>
+            <button
+              type="button"
+              className="tt-appbar-button"
+              aria-label="更多操作"
+              onClick={() => setMenuOpen(true)}
+            >
+              <MoreVertical aria-hidden="true" />
+            </button>
+          </>
+        )}
       </header>
 
       <div className="tt-sheet">
-        {activeGroups.length === 0 ? (
+        <div className="tt-search" role="search">
+          <Search className="tt-search-icon" aria-hidden="true" />
+          <input
+            className="tt-search-input"
+            type="search"
+            aria-label="搜索任务或标签"
+            placeholder="搜索任务或标签"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setQuery('');
+            }}
+          />
+          {searching ? (
+            <button
+              type="button"
+              className="tt-search-clear"
+              aria-label="清除搜索"
+              onClick={() => setQuery('')}
+            >
+              <X aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        {searchEmpty ? (
+          <div className="tt-empty">
+            <p>没有匹配的任务</p>
+            <button type="button" className="tt-empty-action" onClick={() => setQuery('')}>
+              清除搜索
+            </button>
+          </div>
+        ) : activeGroups.length === 0 ? (
           <div className="tt-empty">
             <p>还没有任务</p>
             <p className="tt-empty-hint">点右下角的加号，写下第一件事</p>
@@ -709,9 +1149,88 @@ export function TickTickTaskPage({
         </div>
       ) : null}
 
-      <button type="button" className="tt-fab" aria-label="新建任务" onClick={openComposer}>
-        <Plus aria-hidden="true" />
-      </button>
+      {selectMode ? (
+        <div className="tt-batch" role="toolbar" aria-label="批量操作">
+          <div className="tt-batch-head">
+            <span className="tt-batch-count" role="status">
+              已选 {selectedCount} 项
+            </span>
+            {batchBusy ? <span className="tt-batch-busy">处理中…</span> : null}
+          </div>
+          {batchError ? (
+            <p className="tt-batch-error" role="alert">
+              {batchError}
+            </p>
+          ) : null}
+          {batchMoveOpen ? (
+            <div className="tt-batch-move">
+              <p className="tt-batch-move-title">移动到清单</p>
+              <div className="tt-batch-move-list">
+                {projects.map((project) => (
+                  <button
+                    type="button"
+                    key={project.id}
+                    className="tt-batch-move-item"
+                    disabled={batchBusy}
+                    onClick={() => batchMove(project.id)}
+                  >
+                    {project.name}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="tt-batch-action"
+                onClick={() => setBatchMoveOpen(false)}
+              >
+                取消移动
+              </button>
+            </div>
+          ) : null}
+          <div className="tt-batch-actions">
+            <button
+              type="button"
+              className="tt-batch-action"
+              disabled={batchBusy || selectedCount === 0 || !onSetTasksCompleted}
+              onClick={batchComplete}
+            >
+              完成
+            </button>
+            <button
+              type="button"
+              className="tt-batch-action"
+              data-tone="danger"
+              data-confirm={batchConfirmDelete}
+              disabled={batchBusy || selectedCount === 0 || !onDeleteTasks}
+              onClick={batchDelete}
+            >
+              {batchConfirmDelete ? `确认删除 ${selectedCount} 项` : '删除'}
+            </button>
+            <button
+              type="button"
+              className="tt-batch-action"
+              disabled={batchBusy || selectedCount === 0 || !onMoveTasks}
+              onClick={() => setBatchMoveOpen((current) => !current)}
+            >
+              移动
+            </button>
+            <button type="button" className="tt-batch-action" onClick={exitSelectMode}>
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {batchNotice ? (
+        <p className="tt-batch-notice" role="status">
+          {batchNotice}
+        </p>
+      ) : null}
+
+      {!selectMode ? (
+        <button type="button" className="tt-fab" aria-label="新建任务" onClick={openComposer}>
+          <Plus aria-hidden="true" />
+        </button>
+      ) : null}
 
       {drawerOpen ? (
         <div
@@ -803,6 +1322,15 @@ export function TickTickTaskPage({
             >
               展开全部子任务
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                enterSelectMode();
+              }}
+            >
+              批量选择
+            </button>
             <p className="tt-menu-meta">
               本机 · rev {revision}
               {publishedAt
@@ -855,11 +1383,18 @@ export function TickTickTaskPage({
                   </label>
                   <button
                     type="button"
+                    className="tt-composer-cancel"
+                    onClick={() => setComposer('closed')}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
                     className="tt-composer-submit"
                     disabled={busy || draft.trim() === ''}
                     onClick={submitTask}
                   >
-                    添加
+                    {busy ? '保存中…' : '添加'}
                   </button>
                 </div>
               </>
@@ -878,11 +1413,18 @@ export function TickTickTaskPage({
                 <div className="tt-composer-tools">
                   <button
                     type="button"
+                    className="tt-composer-cancel"
+                    onClick={() => setComposer('closed')}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
                     className="tt-composer-submit"
                     disabled={busy || projectDraft.trim() === ''}
                     onClick={submitProject}
                   >
-                    创建
+                    {busy ? '创建中…' : '创建'}
                   </button>
                 </div>
               </>
@@ -904,20 +1446,25 @@ export function TickTickTaskPage({
             aria-label="移动到清单"
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="tt-menu-meta">移动到清单</p>
+            <p className="tt-menu-meta">{moveBusy ? '正在移动…' : '移动到清单'}</p>
+            {moveError ? (
+              <p className="tt-detail-error" role="alert">
+                {moveError}
+              </p>
+            ) : null}
             {projects.map((project) => (
               <button
                 type="button"
                 key={project.id}
-                onClick={() => {
-                  const target = tasks.find((task) => task.id === moveTaskId);
-                  if (target && onMoveTask) void onMoveTask(target, project.id);
-                  setMoveTaskId(null);
-                }}
+                disabled={moveBusy}
+                onClick={() => moveSelectedTask(project.id)}
               >
                 {project.name}
               </button>
             ))}
+            <button type="button" onClick={() => setMoveTaskId(null)}>
+              取消
+            </button>
           </div>
         </div>
       ) : null}
@@ -965,10 +1512,11 @@ export function TickTickTaskPage({
                   className="tt-detail-move"
                   aria-label="移动到清单"
                   value={detailTask.projectId ?? ''}
+                  disabled={editBusy}
                   onChange={(event) => {
                     const next = event.target.value || null;
                     if (next === null) return;
-                    void onMoveTask(detailTask, next);
+                    moveDetailTask(next);
                   }}
                 >
                   <option value="" disabled>
@@ -1035,6 +1583,11 @@ export function TickTickTaskPage({
             {editError ? (
               <p className="tt-detail-error" role="alert">
                 {editError}
+              </p>
+            ) : null}
+            {rowErrors[detailTask.id] ? (
+              <p className="tt-detail-error" role="alert">
+                {rowErrors[detailTask.id]}
               </p>
             ) : null}
             <div className="tt-detail-chips" role="group" aria-label="优先级">
@@ -1115,6 +1668,8 @@ export function TickTickTaskPage({
                       className="tt-check"
                       data-tone={priorityTone(child.priority)}
                       data-checked={child.isCompleted}
+                      data-pending={completionStates?.[child.id] === 'pending'}
+                      aria-busy={completionStates?.[child.id] === 'pending'}
                       aria-label={
                         child.isCompleted ? `取消完成 ${child.title}` : `完成 ${child.title}`
                       }
@@ -1127,9 +1682,42 @@ export function TickTickTaskPage({
                     >
                       {dueLabel(child, now)?.text ?? ''}
                     </span>
+                    {rowErrors[child.id] ? (
+                      <span className="tt-subtask-error" role="alert">
+                        {rowErrors[child.id]}
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
+            ) : null}
+            {onCreateSubtask ? (
+              <div className="tt-subtask">
+                <input
+                  className="tt-subtask-input"
+                  aria-label="子任务标题"
+                  placeholder="添加子任务"
+                  value={subtaskDraft}
+                  disabled={subtaskBusy}
+                  onChange={(event) => setSubtaskDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') addSubtask();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="tt-subtask-add"
+                  disabled={subtaskBusy || subtaskDraft.trim() === ''}
+                  onClick={addSubtask}
+                >
+                  {subtaskBusy ? '添加中…' : '添加'}
+                </button>
+              </div>
+            ) : null}
+            {subtaskError ? (
+              <p className="tt-subtask-error" role="alert">
+                {subtaskError}
+              </p>
             ) : null}
             <footer className="tt-detail-foot">
               <button

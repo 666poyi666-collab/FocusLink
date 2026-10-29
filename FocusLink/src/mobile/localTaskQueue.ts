@@ -3,11 +3,21 @@ import { TASK_SNAPSHOT_PROTOCOL_VERSION } from '@shared/sync/taskSnapshotProtoco
 import { createEmptyTaskSnapshot } from './taskSnapshotMutations';
 import { FOCUSLINK_INBOX_PROJECT_ID } from '@shared/taskProjectPolicy';
 
+/** 尚未同步的新任务身上还能继续改的字段；创建成功后按顺序补交。 */
+export interface LocalTaskCreatePatch {
+  title?: string;
+  priority?: number | null;
+  dueDate?: number | null;
+  tags?: string[];
+  parentId?: string | null;
+}
+
 export interface LocalTaskCreate {
   id: string;
   scope: string;
   title: string;
   projectId: string | null;
+  parentId: string | null;
   createdAt: number;
   expectedRevision: number | null;
   operationId: string;
@@ -16,6 +26,10 @@ export interface LocalTaskCreate {
   nextRetryAt: number;
   blocked: boolean;
   lastErrorCode: string | null;
+  /** 用户在同步完成前就把它勾了：创建成功后立刻补一次完成。 */
+  completed: boolean;
+  /** 同步完成前的编辑，创建成功后按顺序补交。 */
+  patch: LocalTaskCreatePatch;
 }
 
 export function newLocalTaskCreate(
@@ -24,6 +38,7 @@ export function newLocalTaskCreate(
   title: string,
   projectId: string | null,
   now = Date.now(),
+  parentId: string | null = null,
 ): LocalTaskCreate {
   const cleanTitle = title.trim();
   if (!cleanTitle) throw new Error('任务名称不能为空');
@@ -32,11 +47,42 @@ export function newLocalTaskCreate(
     scope,
     title: cleanTitle,
     projectId,
+    parentId,
     createdAt: now,
     expectedRevision: null,
     operationId: `local-task:${id}:create:0`,
     revisionAttempt: 0,
     attemptCount: 0,
+    nextRetryAt: 0,
+    blocked: false,
+    lastErrorCode: null,
+    completed: false,
+    patch: {},
+  };
+}
+
+/** 同步完成前勾选/恢复：只是改本机意图，不发网络请求。 */
+export function completeLocalTaskCreate(
+  record: LocalTaskCreate,
+  completed: boolean,
+): LocalTaskCreate {
+  return { ...record, completed, nextRetryAt: 0, blocked: false, lastErrorCode: null };
+}
+
+/** 同步完成前改标题/优先级/日期/标签/父任务：创建成功后补交。 */
+export function editLocalTaskCreate(
+  record: LocalTaskCreate,
+  patch: LocalTaskCreatePatch,
+): LocalTaskCreate {
+  const nextTitle = patch.title === undefined ? record.title : patch.title.trim();
+  if (!nextTitle) throw new Error('任务标题不能为空');
+  const rest = { ...patch };
+  delete rest.title;
+  return {
+    ...record,
+    title: nextTitle,
+    parentId: patch.parentId === undefined ? record.parentId : patch.parentId,
+    patch: { ...record.patch, ...rest },
     nextRetryAt: 0,
     blocked: false,
     lastErrorCode: null,
@@ -115,17 +161,18 @@ export function localTaskCreateIssue(record: LocalTaskCreate): string | null {
 }
 
 export function localTaskFromCreate(record: LocalTaskCreate): SyncedTask {
+  const patch = record.patch ?? {};
   return {
     id: record.id,
     source: 'local',
     projectId: record.projectId || FOCUSLINK_INBOX_PROJECT_ID,
-    title: record.title,
-    status: 'incomplete',
-    priority: null,
-    dueDate: null,
-    tags: [],
-    parentId: null,
-    isCompleted: false,
+    title: patch.title ?? record.title,
+    status: record.completed ? 'completed' : 'incomplete',
+    priority: patch.priority ?? null,
+    dueDate: patch.dueDate ?? null,
+    tags: patch.tags ?? [],
+    parentId: record.parentId ?? patch.parentId ?? null,
+    isCompleted: record.completed === true,
     updatedAt: record.createdAt,
   };
 }

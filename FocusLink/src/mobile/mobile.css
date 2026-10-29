@@ -8075,4 +8075,328 @@ html[data-runtime='mobile-focus'] .tt-node[data-exit='true'] .tt-node-content {
   }
 }
 
+/* ===== 任务工作台：搜索 / 批量 / 子任务（v1.9.2） ===== */
+html[data-runtime='mobile-focus'] .tt-appbar-text {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--tt-blue);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 8px 16px 6px;
+  padding: 0 8px 0 12px;
+  border-radius: 12px;
+  background: var(--tt-bg);
+}
+
+html[data-runtime='mobile-focus'] .tt-search:focus-within {
+  box-shadow: 0 0 0 2px var(--tt-blue);
+}
+
+html[data-runtime='mobile-focus'] .tt-search-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--tt-muted);
+  stroke: currentColor;
+}
+
+html[data-runtime='mobile-focus'] .tt-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tt-text);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+html[data-runtime='mobile-focus'] .tt-search-input:focus {
+  outline: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-search-clear {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tt-muted);
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-search-clear svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+html[data-runtime='mobile-focus'] .tt-row[data-selected='true'] {
+  background: rgba(97, 127, 222, 0.12);
+}
+
+html[data-runtime='mobile-focus'] .tt-check.tt-select-mark[data-checked='true'] {
+  border-color: transparent;
+  background: var(--tt-blue);
+  color: rgb(255 255 255);
+}
+
+/* 批量操作条：避开底部导航与新建按钮，按钮全部 ≥44px。 */
+html[data-runtime='mobile-focus'] .tt-batch {
+  position: fixed;
+  right: 12px;
+  bottom: calc(58px + var(--fl-edge-bottom) + 76px);
+  left: 12px;
+  z-index: 36;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgb(38 38 38);
+  color: rgb(255 255 255);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.26);
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-count {
+  font-weight: 600;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-busy {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-error {
+  margin: 8px 0 0;
+  color: rgb(255 170 166);
+  font-size: 12px;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-action {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: none;
+  color: rgb(255 255 255);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-action[data-tone='danger'] {
+  border-color: rgba(255, 170, 166, 0.5);
+  color: rgb(255 170 166);
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-action[data-confirm='true'] {
+  background: rgb(225 62 57);
+  border-color: transparent;
+  color: rgb(255 255 255);
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-move {
+  margin-top: 10px;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-move-title {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-move-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-move-item {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgb(255 255 255);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-batch-notice {
+  position: fixed;
+  right: 16px;
+  bottom: calc(58px + var(--fl-edge-bottom) + 214px);
+  left: 16px;
+  z-index: 35;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(23, 24, 26, 0.86);
+  color: rgb(255 255 255);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 详情：新增子任务 */
+html[data-runtime='mobile-focus'] .tt-subtask {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+html[data-runtime='mobile-focus'] .tt-subtask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 10px;
+  background: var(--tt-bg);
+  color: var(--tt-text);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+html[data-runtime='mobile-focus'] .tt-subtask-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--tt-blue);
+}
+
+html[data-runtime='mobile-focus'] .tt-subtask-add {
+  min-width: 72px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--tt-blue);
+  color: rgb(255 255 255);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-subtask-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+html[data-runtime='mobile-focus'] .tt-subtask-error {
+  font-size: 12px;
+  color: var(--tt-red);
+}
+
+/* v1.9.2 专注与统计的收口微调 */
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-pause-gap .dashboard-ledger-caption {
+  margin-top: var(--m-2);
+}
+
+html[data-runtime='mobile-focus'] .focus-console .focus-actions > .finish-action:disabled {
+  color: var(--m-muted);
+}
+
+/* 任务工作台补丁：只补页面真的用到、mobile.css 还没有的 5 处。 */
+html[data-runtime='mobile-focus'] .tt-row-select {
+  flex: 0 0 auto;
+  min-width: 40px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--tt-muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-row-select[data-selected='true'] {
+  color: var(--tt-blue);
+  font-weight: 600;
+}
+
+html[data-runtime='mobile-focus'] .tt-search-input::placeholder {
+  color: var(--tt-muted);
+}
+
+/* 自绘了清除入口，隐藏 WebKit 自带的那个，否则 Android 上会出现两个 ✕。 */
+html[data-runtime='mobile-focus'] .tt-search-input::-webkit-search-cancel-button,
+html[data-runtime='mobile-focus'] .tt-search-input::-webkit-search-decoration {
+  display: none;
+  appearance: none;
+}
+
+html[data-runtime='mobile-focus'] .tt-empty-action {
+  min-height: 40px;
+  margin-top: 14px;
+  padding: 0 18px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 20px;
+  background: none;
+  color: var(--tt-blue);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-composer-cancel {
+  height: 40px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 20px;
+  background: none;
+  color: var(--tt-secondary);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+html[data-runtime='mobile-focus'] .tt-check[data-pending='true'] {
+  opacity: 0.55;
+}
+
+/* 批量条浮在列表上方，给面板补足底部留白，最后几行仍能滚到可见处。 */
+html[data-runtime='mobile-focus'] .tt-page[data-select-mode='true'] .tt-sheet {
+  padding-bottom: calc(58px + var(--fl-edge-bottom) + 140px);
+}
+
 /* ===== END SECTION: TASKS-TICKTICK ===== */

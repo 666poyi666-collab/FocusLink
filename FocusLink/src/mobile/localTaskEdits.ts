@@ -9,6 +9,8 @@ export interface LocalTaskEditPatch {
   dueDate?: number | null;
   tags?: string[];
   parentId?: string | null;
+  /** 换清单；离线时和别的字段一起排队，联网后一次发布。 */
+  projectId?: string;
 }
 
 /**

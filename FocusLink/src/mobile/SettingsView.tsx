@@ -581,43 +581,30 @@ export function SettingsView({
 
           {panel === 'sync' && syncSection === 'what' && (
             <>
-              <section className="m-card settings-block" aria-label="会同步的内容">
+              <section className="m-card settings-block" aria-label="同步范围">
                 <div className="settings-block-head">
-                  <h3 className="settings-block-title is-domain">会同步</h3>
+                  <h3 className="settings-block-title is-domain">同步范围</h3>
                 </div>
-                <SettingsFactRow
-                  label="任务"
-                  value="会同步"
-                  detail="任务的关联与完成状态、清单颜色"
-                />
+                <SettingsFactRow label="任务" value="会同步" detail="关联、完成状态与清单颜色" />
                 <SettingsFactRow
                   label="专注记录"
                   value="会同步"
-                  detail="已结束的专注会话、时长与冲突处理结果"
+                  detail="已结束会话与冲突处理结果"
                 />
-                <p className="settings-hint">配对之后，只有这两类内容会在设备之间流转。</p>
-              </section>
-
-              <section className="m-card settings-block" aria-label="只在本机的内容">
-                <div className="settings-block-head">
-                  <h3 className="settings-block-title is-domain">只在本机</h3>
-                </div>
                 <SettingsFactRow
                   label="外观偏好"
                   value="仅本机"
-                  detail="计时仪表、主题、字体、强调色"
+                  detail="仪表、主题、字体、强调色"
                 />
                 <SettingsFactRow
                   label="界面状态"
                   value="仅本机"
-                  detail="当前页面、筛选条件与滚动位置"
+                  detail="当前页面、筛选与滚动位置"
                 />
-                <p className="settings-hint">这些偏好不会上传，也不会因为换设备而改变。</p>
+                <p className="settings-hint">
+                  配对后只有任务与专注记录在设备间流转；没配对时它们同样完整保存在本机。
+                </p>
               </section>
-
-              <p className="settings-hint">
-                同步要先配对；没有配对时，任务与专注记录仍然完整保存在本机。
-              </p>
               <button
                 className="m-text-action settings-sync-more"
                 type="button"
@@ -668,16 +655,9 @@ export function SettingsView({
               <section className="m-card settings-block" aria-label="版本与构建">
                 <SettingsFactRow label="版本" value={`v${APP_DISPLAY_VERSION}`} />
                 <SettingsFactRow label="构建" value={APP_COMMIT} />
-                <p className="settings-hint">反馈问题时附上版本与构建标识。</p>
-              </section>
-
-              <section className="m-card settings-block" aria-label="帮助">
-                <div className="settings-hint-group">
-                  <strong>帮助</strong>
-                  <p className="settings-hint">
-                    配对、同步与第三方投递在移动端只读展示；需要修改导入、投递或导出的规则时，请到电脑端设置里操作。
-                  </p>
-                </div>
+                <p className="settings-hint">
+                  反馈问题时附上版本与构建标识。配对、同步与第三方投递在这里只读展示，改导入/投递规则请到电脑端设置。
+                </p>
               </section>
             </>
           )}
