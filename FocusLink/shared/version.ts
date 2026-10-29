@@ -4,5 +4,5 @@ import { APP_COMMIT, APP_BUILD_TIME } from './version.generated';
 
 export const APP_VERSION = '1.9.1';
 export const APP_DISPLAY_VERSION = '1.9.1';
-export const APP_RELEASE_DIR = 'release-v190';
+export const APP_RELEASE_DIR = 'release-v191';
 export { APP_COMMIT, APP_BUILD_TIME };
