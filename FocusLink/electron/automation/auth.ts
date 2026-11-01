@@ -1,10 +1,13 @@
 /**
  * 本地自动化凭据与发现配置。
  *
- * 与云端 device / OAuth token 完全分离，只用于回环业务 API：
- * - `business-api-tokens.json`：多条具名 token，每条带显式 scope，可单独撤销。
- * - `business-api-token`：旧 MCP 凭据，按兼容路径保留，默认拥有全部四个 scope，
- *   迁移时不静默轮换（否则已装好的调用方会突然失效）。
+ * 与云端 device / OAuth token 完全分离，只用于回环业务 API，优先级固定：
+ * 1. 环境变量 `FOXLINK_BUSINESS_API_TOKEN`（临时排障用）。
+ * 2. `%ProgramData%\Poyi\FoxlinkMcp\tokens.json`：多条具名 token，各带显式 scope，可单独撤销。
+ * 3. 旧 `business-api-token`：按兼容路径保留，默认拥有全部四个 scope，
+ *    迁移时不静默轮换（否则已装好的调用方会突然失效）。
+ * 4. 以上都不存在时，在**当前用户**目录首次签发一对凭据（全权 + 只读），
+ *    让安装后开箱即可被 CLI 使用，不需要用户手工粘贴密钥。
  *
  * 文件里只有本机凭据，没有云端身份；发现配置只写端口与文件位置，不写密钥。
  */
@@ -24,17 +27,19 @@ import {
 export interface AutomationCredential {
   tokenId: string;
   scopes: AutomationScope[];
+  /** 只在本进程内存里与请求头逐字节比较；不写日志、不回传。 */
+  secret: string;
 }
 
 export interface AutomationTokenSet {
   credentials: AutomationCredential[];
-  source: 'scoped-file' | 'legacy-file' | 'environment';
+  source: 'scoped-file' | 'legacy-file' | 'environment' | 'provisioned';
   tokenFile: string | null;
 }
 
 const TOKEN_PATTERN = /^fla_[A-Za-z0-9-]{2,32}_[A-Za-z0-9_-]{32,160}$/;
 
-function configDirectory(): string {
+function programDataDirectory(): string {
   return path.join(
     process.env['ProgramData'] ?? path.join(os.homedir(), 'AppData', 'Local'),
     'Poyi',
@@ -42,24 +47,27 @@ function configDirectory(): string {
   );
 }
 
+/** 用户数据目录下的自动化配置；缺省值与打包后的 `%APPDATA%\focuslink` 对齐。 */
+export function defaultUserConfigDirectory(): string {
+  const roaming = process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming');
+  return path.join(roaming, 'focuslink', 'automation');
+}
+
 export function legacyTokenPath(): string {
   return (
     process.env['FOXLINK_BUSINESS_API_TOKEN_FILE'] ??
-    path.join(configDirectory(), 'business-api-token')
+    path.join(programDataDirectory(), 'business-api-token')
   );
 }
 
-export function scopedTokenPath(): string {
-  return (
-    process.env['FOXLINK_AUTOMATION_TOKENS_FILE'] ??
-    path.join(configDirectory(), 'business-api-tokens.json')
-  );
+export function scopedTokenPath(directory = programDataDirectory()): string {
+  return process.env['FOXLINK_AUTOMATION_TOKENS_FILE'] ?? path.join(directory, 'tokens.json');
 }
 
-export function discoveryPath(): string {
+export function discoveryPath(directory = programDataDirectory()): string {
   return (
     process.env['FOXLINK_AUTOMATION_DISCOVERY_FILE'] ??
-    path.join(configDirectory(), 'automation-discovery.json')
+    path.join(directory, 'automation-discovery.json')
   );
 }
 
@@ -93,49 +101,87 @@ function parseScopedTokens(raw: string): AutomationCredential[] {
     if (typeof record.token !== 'string' || !TOKEN_PATTERN.test(record.token)) continue;
     const scopes = normalizeScopes(record.scopes);
     if (scopes.length === 0) continue;
-    credentials.push({ tokenId: record.id, scopes });
+    credentials.push({ tokenId: record.id, scopes, secret: record.token });
   }
   return credentials;
 }
 
-export function loadAutomationTokens(): AutomationTokenSet {
-  const scoped = readRegularFile(scopedTokenPath());
-  if (scoped) {
-    const credentials = parseScopedTokens(scoped);
-    if (credentials.length > 0) {
-      return { credentials, source: 'scoped-file', tokenFile: scopedTokenPath() };
-    }
+function newToken(tokenId: string): string {
+  return `fla_${tokenId}_${crypto.randomBytes(36).toString('base64url')}`;
+}
+
+/** 首次签发：全权与只读各一，便于把只读 token 交给只需要读的调用方。 */
+function provisionTokens(directory: string): AutomationTokenSet | null {
+  const credentials: AutomationCredential[] = [
+    { tokenId: 'local-default', scopes: [...AUTOMATION_SCOPES], secret: newToken('local-default') },
+    { tokenId: 'local-readonly', scopes: ['focus:read'], secret: newToken('local-readonly') },
+  ];
+  const filePath = scopedTokenPath(directory);
+  const payload = {
+    version: 1,
+    note: 'FocusLink 本机自动化凭据；token 等同密码，勿提交到仓库或贴进对话',
+    tokens: credentials.map((credential) => ({
+      id: credential.tokenId,
+      token: credential.secret,
+      scopes: credential.scopes,
+      createdAt: Date.now(),
+    })),
+  };
+  try {
+    fs.mkdirSync(directory, { recursive: true });
+    const temporary = `${filePath}.tmp-${process.pid}`;
+    fs.writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    fs.renameSync(temporary, filePath);
+  } catch {
+    return null;
   }
+  return { credentials, source: 'provisioned', tokenFile: filePath };
+}
+
+export function loadAutomationTokens(
+  options: { userDirectory?: string | null } = {},
+): AutomationTokenSet {
   const fromEnvironment = process.env['FOXLINK_BUSINESS_API_TOKEN']?.trim();
   if (fromEnvironment && fromEnvironment.length >= 32) {
     return {
-      credentials: [{ tokenId: 'environment', scopes: [...AUTOMATION_SCOPES] }],
+      credentials: [
+        { tokenId: 'environment', scopes: [...AUTOMATION_SCOPES], secret: fromEnvironment },
+      ],
       source: 'environment',
       tokenFile: null,
     };
   }
-  const legacy = readRegularFile(legacyTokenPath());
-  const legacyToken = legacy?.trim() ?? '';
-  if (legacyToken.length >= 32) {
+  const programDataFile = scopedTokenPath();
+  const programDataRaw = readRegularFile(programDataFile);
+  if (programDataRaw) {
+    const credentials = parseScopedTokens(programDataRaw);
+    if (credentials.length > 0) {
+      return { credentials, source: 'scoped-file', tokenFile: programDataFile };
+    }
+  }
+  const legacyRaw = readRegularFile(legacyTokenPath())?.trim() ?? '';
+  if (legacyRaw.length >= 32) {
     return {
-      credentials: [{ tokenId: 'legacy-mcp', scopes: [...AUTOMATION_SCOPES] }],
+      credentials: [{ tokenId: 'legacy-mcp', scopes: [...AUTOMATION_SCOPES], secret: legacyRaw }],
       source: 'legacy-file',
       tokenFile: legacyTokenPath(),
     };
   }
-  return { credentials: [], source: 'legacy-file', tokenFile: null };
-}
-
-function secretOf(credentialId: string): string | null {
-  const scoped = readRegularFile(scopedTokenPath());
-  if (!scoped) return null;
-  try {
-    const parsed = JSON.parse(scoped) as { tokens?: Array<{ id?: unknown; token?: unknown }> };
-    const found = parsed.tokens?.find((item) => item.id === credentialId);
-    return typeof found?.token === 'string' ? found.token : null;
-  } catch {
-    return null;
+  const userDirectory = options.userDirectory ?? defaultUserConfigDirectory();
+  const userFile = scopedTokenPath(userDirectory);
+  const userRaw = readRegularFile(userFile);
+  if (userRaw) {
+    const credentials = parseScopedTokens(userRaw);
+    if (credentials.length > 0) {
+      return { credentials, source: 'scoped-file', tokenFile: userFile };
+    }
   }
+  const provisioned = provisionTokens(userDirectory);
+  if (provisioned) return provisioned;
+  return { credentials: [], source: 'legacy-file', tokenFile: null };
 }
 
 function equalSecret(actual: string, expected: string): boolean {
@@ -151,24 +197,14 @@ function equalSecret(actual: string, expected: string): boolean {
 export function authenticateAutomation(
   authorization: string | undefined,
   tokens: AutomationTokenSet,
-): AutomationCredential | null {
+): Omit<AutomationCredential, 'secret'> | null {
   if (!authorization?.startsWith('Bearer ')) return null;
   const presented = authorization.slice(7).trim();
   if (presented.length < 32) return null;
   for (const credential of tokens.credentials) {
-    const expected =
-      tokens.source === 'scoped-file' ? secretOf(credential.tokenId) : legacySecret(tokens);
-    if (!expected) continue;
-    if (equalSecret(presented, expected)) return credential;
+    if (!equalSecret(presented, credential.secret)) continue;
+    return { tokenId: credential.tokenId, scopes: credential.scopes };
   }
-  return null;
-}
-
-function legacySecret(tokens: AutomationTokenSet): string | null {
-  if (tokens.source === 'environment') {
-    return process.env['FOXLINK_BUSINESS_API_TOKEN']?.trim() ?? null;
-  }
-  if (tokens.source === 'legacy-file') return readRegularFile(legacyTokenPath())?.trim() ?? null;
   return null;
 }
 
@@ -184,9 +220,12 @@ export interface AutomationDiscovery {
 }
 
 /** 供 CLI 自动解析端口与凭据位置；不含任何密钥正文。 */
-export function writeAutomationDiscovery(tokens: AutomationTokenSet): string | null {
+export function writeAutomationDiscovery(
+  tokens: AutomationTokenSet,
+  directory?: string | null,
+): string | null {
   if (!tokens.tokenFile) return null;
-  const target = discoveryPath();
+  const target = discoveryPath(directory ?? programDataDirectory());
   const value: AutomationDiscovery = {
     version: 1,
     protocolVersion: AUTOMATION_PROTOCOL_VERSION,
@@ -208,7 +247,7 @@ export function writeAutomationDiscovery(tokens: AutomationTokenSet): string | n
   }
 }
 
-export function readAutomationDiscovery(filePath = discoveryPath()): AutomationDiscovery | null {
+export function readAutomationDiscovery(filePath: string): AutomationDiscovery | null {
   const raw = readRegularFile(filePath);
   if (!raw) return null;
   try {

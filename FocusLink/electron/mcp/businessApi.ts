@@ -111,15 +111,18 @@ function sessionDetail(id: string): Json {
 export function startFoxlinkBusinessApi(
   timer: FocusTimerController,
   automation: AutomationService | null = null,
+  options: { automationDirectory?: string } = {},
 ): FoxlinkBusinessApi | null {
-  const tokens = loadAutomationTokens();
+  const automationDirectory = options.automationDirectory ?? null;
+  const tokens = loadAutomationTokens({ userDirectory: automationDirectory });
   if (tokens.credentials.length === 0) {
-    logger.warn('foxlinkMcp', 'business API disabled because its credential file is missing', {
+    logger.warn('foxlinkMcp', 'business API disabled because no automation credential exists', {
       tokenFile: legacyTokenPath(),
     });
     return null;
   }
-  const discoveryFile = writeAutomationDiscovery(tokens);
+  // 发现配置始终写到当前用户目录：ProgramData 常需提权写入，而 CLI 以同一用户运行。
+  const discoveryFile = writeAutomationDiscovery(tokens, automationDirectory);
   logger.info('foxlinkMcp', 'automation credential loaded', {
     source: tokens.source,
     credentials: tokens.credentials.length,

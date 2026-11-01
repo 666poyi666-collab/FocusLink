@@ -328,12 +328,29 @@ function defaultConfigDirectory(): string {
   return path.join(process.env['LOCALAPPDATA'] ?? process.env['HOME'] ?? '.', 'Poyi', 'FoxlinkMcp');
 }
 
+/** 应用把自动化配置写在当前用户目录；CLI 以同一用户运行，优先读这里。 */
+function defaultUserDirectory(): string {
+  const roaming =
+    process.env['APPDATA'] ?? path.join(process.env['HOME'] ?? '.', 'AppData', 'Roaming');
+  return path.join(roaming, 'focuslink', 'automation');
+}
+
 function readDiscovery(
   environment: FocusLinkCliEnvironment,
 ): { port: number; tokenFile: string | null } | null {
-  const file =
-    environment.FOCUSLINK_AUTOMATION_DISCOVERY_FILE ??
-    path.join(defaultConfigDirectory(), 'automation-discovery.json');
+  const candidates = [
+    environment.FOCUSLINK_AUTOMATION_DISCOVERY_FILE,
+    path.join(defaultUserDirectory(), 'automation-discovery.json'),
+    path.join(defaultConfigDirectory(), 'automation-discovery.json'),
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+  for (const candidate of candidates) {
+    const parsed = readDiscoveryFile(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function readDiscoveryFile(file: string): { port: number; tokenFile: string | null } | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       port?: unknown;
@@ -360,13 +377,23 @@ function readLocalTokenFile(filePath: string): { token: string; scopes: Automati
   }
   if (raw.length >= 32 && !raw.startsWith('{')) return { token: raw, scopes: [] };
   try {
-    const parsed = JSON.parse(raw) as { tokens?: Array<{ token?: unknown; scopes?: unknown }> };
-    const first = parsed.tokens?.[0];
-    if (!first || typeof first.token !== 'string') return null;
-    const scopes = Array.isArray(first.scopes)
-      ? (first.scopes.filter((scope) => typeof scope === 'string') as AutomationScope[])
+    const parsed = JSON.parse(raw) as {
+      tokens?: Array<{ token?: unknown; scopes?: unknown; revoked?: unknown }>;
+    };
+    const usable = (parsed.tokens ?? []).filter(
+      (item) => typeof item.token === 'string' && item.revoked !== true,
+    );
+    // 默认取权限最多的一条，避免只读凭据被悄悄当成全权使用。
+    const best = usable.sort(
+      (left, right) =>
+        (Array.isArray(right.scopes) ? right.scopes.length : 0) -
+        (Array.isArray(left.scopes) ? left.scopes.length : 0),
+    )[0];
+    if (!best || typeof best.token !== 'string') return null;
+    const scopes = Array.isArray(best.scopes)
+      ? (best.scopes.filter((scope) => typeof scope === 'string') as AutomationScope[])
       : [];
-    return { token: first.token, scopes };
+    return { token: best.token, scopes };
   } catch {
     return null;
   }
@@ -390,8 +417,9 @@ function connectLocal(environment: FocusLinkCliEnvironment): LocalConnection {
   const tokenFile =
     environment.FOCUSLINK_LOCAL_TOKEN_FILE ??
     discovery?.tokenFile ??
-    path.join(defaultConfigDirectory(), 'business-api-token');
-  const credential = readLocalTokenFile(tokenFile);
+    path.join(defaultUserDirectory(), 'tokens.json');
+  const legacyTokenFile = path.join(defaultConfigDirectory(), 'business-api-token');
+  const credential = readLocalTokenFile(tokenFile) ?? readLocalTokenFile(legacyTokenFile);
   if (!credential) {
     throw new FocusLinkCliError('AUTH_FAILED', { reason: 'token_file_missing' });
   }

@@ -1460,7 +1460,9 @@ app.whenReady().then(async () => {
   timer = new FocusTimerController(localTimer);
   timer.setSegmentBehavior(settings.segmentBehavior);
   automationService = startAutomationService(timer);
-  foxlinkBusinessApi = startFoxlinkBusinessApi(timer, automationService);
+  foxlinkBusinessApi = startFoxlinkBusinessApi(timer, automationService, {
+    automationDirectory: path.join(app.getPath('userData'), 'automation'),
+  });
 
   mainWindow = createMainWindow();
 
