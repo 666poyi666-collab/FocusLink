@@ -8,7 +8,10 @@ describe('Foxlink independent MCP contract', () => {
   it('keeps the business API inside Electron and outside PersonalMcpGateway', () => {
     const api = fs.readFileSync(path.join(root, 'electron/mcp/businessApi.ts'), 'utf8');
     expect(api).toContain("const HOST = '127.0.0.1'");
-    expect(api).toContain('const PORT = 18770');
+    // 端口只在共享合同里写一次：自动化路由与旧 /v1 路由必须共用一个 listener。
+    expect(api).toContain('const PORT = AUTOMATION_LISTEN_PORT');
+    const contract = fs.readFileSync(path.join(root, 'shared/automation/contract.ts'), 'utf8');
+    expect(contract).toContain('export const AUTOMATION_LISTEN_PORT = 18770');
     expect(api).toContain('/v1/status');
     expect(api).toContain('/v1/health');
     expect(api).toContain('/v1/capabilities');

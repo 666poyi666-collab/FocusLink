@@ -1,10 +1,18 @@
 #!/usr/bin/env -S npx tsx
 
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { DEVICE_SYNC_MAX_TIMESTAMP_MS } from '../../shared/sync/deviceProtocol';
+import {
+  AUTOMATION_API_PREFIX,
+  AUTOMATION_PROTOCOL_VERSION,
+  AUTOMATION_LISTEN_PORT,
+  cliExitForError,
+  type AutomationScope,
+} from '../../shared/automation/contract';
 import {
   TASK_SNAPSHOT_MUTATION_PATH,
   TASK_SNAPSHOT_PATH,
@@ -29,6 +37,10 @@ export interface FocusLinkCliEnvironment {
   FOCUSLINK_CLI_DEVICE_ID?: string;
   FOCUSLINK_TIME_ZONE?: string;
   FOCUSLINK_MCP_ACCESS_TOKEN?: string;
+  FOCUSLINK_LOCAL_PORT?: string;
+  FOCUSLINK_LOCAL_TOKEN_FILE?: string;
+  FOCUSLINK_AUTOMATION_DISCOVERY_FILE?: string;
+  FOCUSLINK_LOCAL_ENDPOINT?: string;
 }
 
 export interface FocusLinkCliIo {
@@ -142,8 +154,12 @@ export async function runFocusLinkCli(
       io.stdout(helpText());
       return 0;
     }
-    const client = createClient(environment, fetchImpl);
     const [domain, action = 'list'] = parsed.positionals;
+    if (LOCAL_DOMAINS.has(domain)) {
+      await runLocalCommand(domain, action, parsed, environment, io, fetchImpl);
+      return 0;
+    }
+    const client = createClient(environment, fetchImpl);
     if (domain === 'time') {
       const snapshot = await client.read();
       const timezone =
@@ -168,7 +184,7 @@ export async function runFocusLinkCli(
     const code = error instanceof FocusLinkCliError ? error.code : 'focuslink_cli_failed';
     const details = error instanceof FocusLinkCliError ? error.details : {};
     io.stderr(JSON.stringify({ ok: false, error: code, ...details }));
-    return 1;
+    return cliExitForError(code);
   }
 }
 
@@ -286,6 +302,387 @@ async function runTaskCommand(
     throw new FocusLinkCliError('unknown_task_command');
   }
   writeJson(io, confirmation(await writeMutation(client, mutation, snapshot.revision, flags)));
+}
+
+const LOCAL_DOMAINS = new Set([
+  'status',
+  'focus',
+  'records',
+  'tomatodo',
+  'operations',
+  'schema',
+  'doctor',
+]);
+
+const LOCAL_COMMAND_TTL_MS = 60_000;
+
+interface LocalConnection {
+  endpoint: URL;
+  token: string;
+  scopes: AutomationScope[];
+}
+
+function defaultConfigDirectory(): string {
+  const programData = process.env['ProgramData'];
+  if (programData) return path.join(programData, 'Poyi', 'FoxlinkMcp');
+  return path.join(process.env['LOCALAPPDATA'] ?? process.env['HOME'] ?? '.', 'Poyi', 'FoxlinkMcp');
+}
+
+function readDiscovery(
+  environment: FocusLinkCliEnvironment,
+): { port: number; tokenFile: string | null } | null {
+  const file =
+    environment.FOCUSLINK_AUTOMATION_DISCOVERY_FILE ??
+    path.join(defaultConfigDirectory(), 'automation-discovery.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      port?: unknown;
+      tokenFile?: unknown;
+      protocolVersion?: unknown;
+    };
+    if (parsed.protocolVersion !== AUTOMATION_PROTOCOL_VERSION) return null;
+    if (typeof parsed.port !== 'number' || parsed.port <= 0 || parsed.port > 65_535) return null;
+    return {
+      port: parsed.port,
+      tokenFile: typeof parsed.tokenFile === 'string' ? parsed.tokenFile : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readLocalTokenFile(filePath: string): { token: string; scopes: AutomationScope[] } | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return null;
+  }
+  if (raw.length >= 32 && !raw.startsWith('{')) return { token: raw, scopes: [] };
+  try {
+    const parsed = JSON.parse(raw) as { tokens?: Array<{ token?: unknown; scopes?: unknown }> };
+    const first = parsed.tokens?.[0];
+    if (!first || typeof first.token !== 'string') return null;
+    const scopes = Array.isArray(first.scopes)
+      ? (first.scopes.filter((scope) => typeof scope === 'string') as AutomationScope[])
+      : [];
+    return { token: first.token, scopes };
+  } catch {
+    return null;
+  }
+}
+
+/** 从发现配置解析本机接口；密钥不经命令行传递。 */
+function connectLocal(environment: FocusLinkCliEnvironment): LocalConnection {
+  const discovery = readDiscovery(environment);
+  const port =
+    Number(environment.FOCUSLINK_LOCAL_PORT ?? '') || discovery?.port || AUTOMATION_LISTEN_PORT;
+  const endpointInput = environment.FOCUSLINK_LOCAL_ENDPOINT ?? `http://127.0.0.1:${port}`;
+  let endpoint: URL;
+  try {
+    endpoint = new URL(endpointInput);
+    endpoint.pathname = '/';
+    endpoint.search = '';
+    endpoint.hash = '';
+  } catch {
+    throw new FocusLinkCliError('LOCAL_API_UNAVAILABLE', { reason: 'endpoint_invalid' });
+  }
+  const tokenFile =
+    environment.FOCUSLINK_LOCAL_TOKEN_FILE ??
+    discovery?.tokenFile ??
+    path.join(defaultConfigDirectory(), 'business-api-token');
+  const credential = readLocalTokenFile(tokenFile);
+  if (!credential) {
+    throw new FocusLinkCliError('AUTH_FAILED', { reason: 'token_file_missing' });
+  }
+  return { endpoint, token: credential.token, scopes: credential.scopes };
+}
+
+class FocusLinkLocalClient {
+  constructor(
+    private readonly connection: LocalConnection,
+    private readonly fetchImpl: FetchLike,
+  ) {}
+
+  async get(
+    route: string,
+    query: Record<string, string | number | undefined> = {},
+  ): Promise<unknown> {
+    const url = new URL(`${AUTOMATION_API_PREFIX}${route}`, this.connection.endpoint);
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === '') continue;
+      url.searchParams.set(key, String(value));
+    }
+    return this.send(url, 'GET');
+  }
+
+  async post(route: string, body: unknown): Promise<unknown> {
+    const url = new URL(`${AUTOMATION_API_PREFIX}${route}`, this.connection.endpoint);
+    return this.send(url, 'POST', body);
+  }
+
+  private async send(url: URL, method: 'GET' | 'POST', body?: unknown): Promise<unknown> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url, {
+        method,
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${this.connection.token}`,
+          ...(body === undefined ? {} : { 'content-type': 'application/json; charset=utf-8' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        redirect: 'error',
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new FocusLinkCliError('APP_NOT_RUNNING', {
+        hint: 'FocusLink 未运行，或本机自动化接口未开启',
+      });
+    }
+    const payload = await responseJson(response);
+    if (response.ok) return payload;
+    const code = extractErrorCode(payload) ?? 'LOCAL_API_UNAVAILABLE';
+    if (isRecord(payload) && isRecord(payload.error)) {
+      throw new FocusLinkCliError(code, { current: payload.error });
+    }
+    throw new FocusLinkCliError(code);
+  }
+}
+
+function extractErrorCode(value: unknown): string | null {
+  if (!isRecord(value) || !isRecord(value.error)) return null;
+  const code = value.error.code;
+  return typeof code === 'string' && /^[A-Z_]{3,60}$/.test(code) ? code : null;
+}
+
+function emitResult(io: FocusLinkCliIo, result: unknown): number {
+  writeJson(io, result);
+  if (!isRecord(result)) return 1;
+  const status = result.status;
+  if (status === 'applied' || status === 'duplicate') return 0;
+  if (status === 'accepted') return 6;
+  const error = isRecord(result.error) ? result.error : null;
+  const code = error && typeof error.code === 'string' ? error.code : 'LOCAL_API_UNAVAILABLE';
+  return cliExitForError(code);
+}
+
+function timestampValue(value: unknown, field: string): number {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  throw new FocusLinkCliError('INVALID_ARGUMENT', { field, reason: 'invalid_timestamp' });
+}
+
+function normalizeTimelineItems(value: unknown): unknown {
+  if (!Array.isArray(value)) {
+    throw new FocusLinkCliError('INVALID_ARGUMENT', { field: 'timeline' });
+  }
+  return value.map((item) => {
+    if (!isRecord(item)) throw new FocusLinkCliError('INVALID_ARGUMENT', { field: 'timeline' });
+    return {
+      ...item,
+      startedAt: timestampValue(item['startedAt'], 'timeline.startedAt'),
+      endedAt: timestampValue(item['endedAt'], 'timeline.endedAt'),
+    };
+  });
+}
+
+function normalizeRecordCreateInput(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) throw new FocusLinkCliError('INVALID_ARGUMENT', { field: 'input' });
+  return {
+    ...value,
+    startedAt: timestampValue(value['startedAt'], 'startedAt'),
+    endedAt: timestampValue(value['endedAt'], 'endedAt'),
+    timeline: normalizeTimelineItems(value['timeline']),
+  };
+}
+
+function normalizeRecordPatch(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) throw new FocusLinkCliError('INVALID_ARGUMENT', { field: 'patch' });
+  const timeline = value['timeline'];
+  if (!isRecord(timeline)) return value;
+  return {
+    ...value,
+    timeline: {
+      ...timeline,
+      startedAt: timestampValue(timeline['startedAt'], 'timeline.startedAt'),
+      endedAt: timestampValue(timeline['endedAt'], 'timeline.endedAt'),
+      timeline: normalizeTimelineItems(timeline['timeline']),
+    },
+  };
+}
+
+function readJsonInput(
+  flags: ReadonlyMap<string, FlagValue>,
+  flagName: string,
+  field: string,
+): unknown {
+  const filePath = stringFlag(flags, flagName);
+  if (filePath) {
+    try {
+      return JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
+    } catch {
+      throw new FocusLinkCliError('INVALID_ARGUMENT', { field, reason: 'file_unreadable' });
+    }
+  }
+  return null;
+}
+
+function commandEnvelope(
+  flags: ReadonlyMap<string, FlagValue>,
+  command: Record<string, unknown>,
+): Record<string, unknown> {
+  const operationId = operationIdFlag(flags) ?? `cli:${crypto.randomUUID()}`;
+  return { operationId, sourceClient: 'focuslink-cli', command };
+}
+
+const LOCAL_FOCUS_ACTIONS = new Set(['start', 'pause', 'resume', 'finish', 'abort', 'current']);
+
+function readControlVersion(state: unknown): string | null {
+  if (!isRecord(state) || !isRecord(state.timer)) return null;
+  const value = state.timer.controlVersion;
+  return typeof value === 'string' ? value : null;
+}
+
+async function runLocalCommand(
+  domain: string,
+  action: string,
+  parsed: { positionals: string[]; flags: ReadonlyMap<string, FlagValue> },
+  environment: FocusLinkCliEnvironment,
+  io: FocusLinkCliIo,
+  fetchImpl: FetchLike,
+): Promise<number> {
+  const flags = parsed.flags;
+  const targets = parsed.positionals.slice(2);
+  const client = new FocusLinkLocalClient(connectLocal(environment), fetchImpl);
+  const timezone =
+    stringFlag(flags, 'timezone') ?? environment.FOCUSLINK_TIME_ZONE ?? 'Asia/Shanghai';
+
+  if (domain === 'status') {
+    writeJson(io, await client.get('/state'));
+    return 0;
+  }
+  if (domain === 'schema') {
+    writeJson(io, await client.get('/schema'));
+    return 0;
+  }
+  if (domain === 'doctor') {
+    const health = await client.get('/doctor');
+    writeJson(io, health);
+    return isRecord(health) && health.ok === true ? 0 : 6;
+  }
+  if (domain === 'operations') {
+    if (action !== 'get') throw new FocusLinkCliError('unknown_command');
+    const operationId = targets[0] ?? requiredStringFlag(flags, 'operation-id');
+    writeJson(io, await client.get(`/operations/${encodeURIComponent(operationId)}`));
+    return 0;
+  }
+  if (domain === 'records') {
+    if (action === 'list') {
+      writeJson(
+        io,
+        await client.get('/records', {
+          date: stringFlag(flags, 'date') ?? 'today',
+          timezone,
+          limit: integerFlag(flags, 'limit') ?? undefined,
+          cursor: stringFlag(flags, 'cursor'),
+        }),
+      );
+      return 0;
+    }
+    if (action === 'get') {
+      const sessionId = targets[0] ?? requiredStringFlag(flags, 'session');
+      writeJson(io, await client.get(`/records/${encodeURIComponent(sessionId)}`));
+      return 0;
+    }
+    if (action === 'create') {
+      const raw = readJsonInput(flags, 'input-file', 'input') ?? {};
+      const command = {
+        type: 'records.create',
+        expiresAt: Date.now() + LOCAL_COMMAND_TTL_MS,
+        input: normalizeRecordCreateInput(raw),
+      };
+      return emitResult(io, await client.post('/commands', commandEnvelope(flags, command)));
+    }
+    if (action === 'update') {
+      const sessionId = targets[0] ?? requiredStringFlag(flags, 'session');
+      const expected = integerFlag(flags, 'if-version');
+      if (expected === null) throw new FocusLinkCliError('missing_if_version');
+      const raw = readJsonInput(flags, 'input-file', 'patch') ?? {};
+      const command = {
+        type: 'records.update',
+        expiresAt: Date.now() + LOCAL_COMMAND_TTL_MS,
+        sessionId,
+        expectedRecordVersion: expected,
+        patch: normalizeRecordPatch(raw),
+      };
+      return emitResult(io, await client.post('/commands', commandEnvelope(flags, command)));
+    }
+    throw new FocusLinkCliError('unknown_records_command');
+  }
+  if (domain === 'tomatodo') {
+    if (action === 'preview') {
+      const sessionId = targets[0] ?? requiredStringFlag(flags, 'session');
+      writeJson(io, await client.get('/tomatodo/preview', { session: sessionId }));
+      return 0;
+    }
+    if (action === 'sync') {
+      const planId = stringFlag(flags, 'plan') ?? targets[0];
+      if (!planId) throw new FocusLinkCliError('missing_plan');
+      const sessionId = stringFlag(flags, 'session') ?? targets[1];
+      if (!sessionId) throw new FocusLinkCliError('missing_session');
+      const command = {
+        type: 'tomatodo.sync',
+        expiresAt: Date.now() + LOCAL_COMMAND_TTL_MS,
+        planId,
+        sessionId,
+      };
+      return emitResult(io, await client.post('/commands', commandEnvelope(flags, command)));
+    }
+    throw new FocusLinkCliError('unknown_tomatodo_command');
+  }
+  if (domain === 'focus') {
+    if (action === 'current') {
+      writeJson(io, await client.get('/state'));
+      return 0;
+    }
+    if (!LOCAL_FOCUS_ACTIONS.has(action)) throw new FocusLinkCliError('unknown_focus_command');
+    const state = await client.get('/state');
+    const controlVersion = stringFlag(flags, 'if-control-version') ?? readControlVersion(state);
+    if (!controlVersion) {
+      throw new FocusLinkCliError('LOCAL_API_UNAVAILABLE', { reason: 'state_missing' });
+    }
+    const timerState = isRecord(state) && isRecord(state.timer) ? state.timer.state : null;
+    let expectedState: 'idle' | 'running' | 'paused';
+    if (action === 'start') expectedState = 'idle';
+    else if (action === 'pause') expectedState = 'running';
+    else if (action === 'resume') expectedState = 'paused';
+    else if (timerState === 'running' || timerState === 'paused') expectedState = timerState;
+    else throw new FocusLinkCliError('STATE_CONFLICT', { state: timerState });
+    const command: Record<string, unknown> = {
+      type: `focus.${action}`,
+      expiresAt: Date.now() + LOCAL_COMMAND_TTL_MS,
+      expectedControlVersion: controlVersion,
+      expectedState,
+    };
+    if (action === 'start') {
+      const taskId = stringFlag(flags, 'task-id');
+      if (taskId) {
+        command.task = {
+          taskId,
+          taskSource: stringFlag(flags, 'task-source') ?? 'local',
+          taskTitle: stringFlag(flags, 'task-title') ?? taskId,
+        };
+      }
+      const title = stringFlag(flags, 'title');
+      if (title) command.title = title;
+    }
+    return emitResult(io, await client.post('/commands', commandEnvelope(flags, command)));
+  }
+  throw new FocusLinkCliError('unknown_command');
 }
 
 function taskMetadata(flags: ReadonlyMap<string, FlagValue>, allowClear: boolean) {
@@ -609,10 +1006,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function helpText() {
   return `FocusLink CLI
 
-环境：FOCUSLINK_ENDPOINT、FOCUSLINK_DEVICE_TOKEN；deviceId 从 fl2 凭据绑定段验证派生。
-      ChatGPT Web 使用 OAuth MCP，OAuth access token 不用于本机 CLI。
+本机命令（只访问本机回环接口，不经过云端）：
+  status --json
+  focus current --json
+  focus start|pause|resume|finish|abort [--if-control-version <v>] [--operation-id <id>]
+  records list [--date today|YYYY-MM-DD] [--timezone Asia/Shanghai] [--limit N] [--cursor <c>]
+  records get <session-id>
+  records create --input-file <record.json> --operation-id <stable-id>
+  records update <session-id> --input-file <patch.json> --if-version <n> --operation-id <stable-id>
+  tomatodo preview --session <session-id>
+  tomatodo sync --plan <plan-id> --session <session-id> --operation-id <stable-id>
+  operations get <operation-id>
+  schema --json
+  doctor --json
+  连接配置从发现文件自动解析；可用 FOCUSLINK_LOCAL_PORT / FOCUSLINK_LOCAL_TOKEN_FILE /
+  FOCUSLINK_AUTOMATION_DISCOVERY_FILE 覆盖。密钥不写在命令行参数里。
 
-命令：
+云端任务命令（需要 FOCUSLINK_ENDPOINT、FOCUSLINK_DEVICE_TOKEN）：
   time [--timezone Asia/Shanghai]
   projects list
   projects get --project-id <id>
@@ -627,6 +1037,7 @@ function helpText() {
   tasks update --task-id <id> [任务字段|清空字段]
   tasks move --task-id <id> --project-id <id|inbox>
   tasks complete|restore|delete --task-id <id>
+  deviceId 从 fl2 凭据绑定段验证派生；ChatGPT Web 使用 OAuth MCP，OAuth access token 不用于本机 CLI。
 
 任务字段：--task-id <id> --title <title> --project-id <id|inbox> --parent-id <id|none>
           --priority 0..5 --start <ISO|ms> --due <ISO|ms> --tag <name>
@@ -635,7 +1046,10 @@ function helpText() {
           --weekdays 1,3,5 --month-days 1,15 --repeat-end <ISO|ms> --repeat-count N
           --rollover from_schedule|from_completion
 写入控制：--operation-id <stable-id> --expected-revision <revision>
-临时网络失败会用同一 operationId 重试一次；最终失败 JSON 会返回可复用的 operationId/revision。`;
+临时网络失败会用同一 operationId 重试一次；最终失败 JSON 会返回可复用的 operationId/revision。
+
+退出码：0 已生效/重放命中，2 参数错误，3 鉴权或权限不足，4 版本或状态冲突，
+        5 找不到目标，6 本机接口不可用或可重试失败，7 需要重新取快照。`;
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : '';

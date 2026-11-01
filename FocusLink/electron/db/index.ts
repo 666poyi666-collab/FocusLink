@@ -5,13 +5,14 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { logger } from '../logger.js';
 import { SCHEMA_SQL } from './schema.js';
+import { mapPauseRow, mapSegmentRow, mapSessionRow } from './rows.js';
+import type { PauseRow, SegmentRow, SessionRow } from './rows.js';
 import type {
   FocusSession,
   FocusSegment,
   PauseEvent,
   TaskCache,
   SyncQueueItem,
-  SessionStatus,
   TaskSource,
   SyncStatus,
   TomatodoSubject,
@@ -335,7 +336,7 @@ export function getSession(id: string): FocusSession | null {
   const db = getDb();
   const row = db.prepare('SELECT * FROM focus_sessions WHERE id = ?').get(id) as
     SessionRow | undefined;
-  return row ? rowToSession(row) : null;
+  return row ? mapSessionRow(row) : null;
 }
 
 export function getActiveSession(): FocusSession | null {
@@ -345,7 +346,7 @@ export function getActiveSession(): FocusSession | null {
       "SELECT * FROM focus_sessions WHERE status = 'active' ORDER BY started_at DESC LIMIT 1",
     )
     .get() as SessionRow | undefined;
-  return row ? rowToSession(row) : null;
+  return row ? mapSessionRow(row) : null;
 }
 
 export function listSessions(limit = 100): FocusSession[] {
@@ -372,7 +373,7 @@ export function listSessions(limit = 100): FocusSession[] {
     }
   >;
   return rows.map((row) => ({
-    ...rowToSession(row),
+    ...mapSessionRow(row),
     segmentCount: Number(row.segment_count ?? 0),
     linkedSegmentCount: Number(row.linked_segment_count ?? 0),
     ticktickLinkedSegmentCount: Number(row.ticktick_linked_segment_count ?? 0),
@@ -388,7 +389,7 @@ export function listFinishedSessionsForDeviceSync(): FocusSession[] {
        ORDER BY started_at ASC`,
     )
     .all() as SessionRow[];
-  return rows.map(rowToSession);
+  return rows.map(mapSessionRow);
 }
 
 /**
@@ -461,7 +462,7 @@ export function listSessionsInRange(start: number, end: number): FocusSession[] 
     }
   >;
   return rows.map((row) => ({
-    ...rowToSession(row),
+    ...mapSessionRow(row),
     segmentCount: Number(row.segment_count ?? 0),
     linkedSegmentCount: Number(row.linked_segment_count ?? 0),
     ticktickLinkedSegmentCount: Number(row.ticktick_linked_segment_count ?? 0),
@@ -523,7 +524,7 @@ export function getSegment(id: string): FocusSegment | null {
   const db = getDb();
   const row = db.prepare('SELECT * FROM focus_segments WHERE id = ?').get(id) as
     SegmentRow | undefined;
-  return row ? rowToSegment(row) : null;
+  return row ? mapSegmentRow(row) : null;
 }
 
 export function listSegments(sessionId: string): FocusSegment[] {
@@ -531,7 +532,7 @@ export function listSegments(sessionId: string): FocusSegment[] {
   const rows = db
     .prepare('SELECT * FROM focus_segments WHERE session_id = ? ORDER BY started_at ASC')
     .all(sessionId) as SegmentRow[];
-  return rows.map(rowToSegment);
+  return rows.map(mapSegmentRow);
 }
 
 export function deleteSegment(id: string): void {
@@ -708,7 +709,7 @@ export function getOpenPause(sessionId: string): PauseEvent | null {
       `SELECT * FROM pause_events WHERE session_id = ? AND pause_ended_at IS NULL ORDER BY pause_started_at DESC LIMIT 1`,
     )
     .get(sessionId) as PauseRow | undefined;
-  return row ? rowToPause(row) : null;
+  return row ? mapPauseRow(row) : null;
 }
 
 export function listPauses(sessionId: string): PauseEvent[] {
@@ -716,7 +717,7 @@ export function listPauses(sessionId: string): PauseEvent[] {
   const rows = db
     .prepare('SELECT * FROM pause_events WHERE session_id = ? ORDER BY pause_started_at ASC')
     .all(sessionId) as PauseRow[];
-  return rows.map(rowToPause);
+  return rows.map(mapPauseRow);
 }
 
 export function listSegmentsInSessionRange(start: number, end: number): FocusSegment[] {
@@ -730,7 +731,7 @@ export function listSegmentsInSessionRange(start: number, end: number): FocusSeg
        ORDER BY seg.started_at ASC`,
     )
     .all(end, start) as SegmentRow[];
-  return rows.map(rowToSegment);
+  return rows.map(mapSegmentRow);
 }
 
 export function listPausesInSessionRange(start: number, end: number): PauseEvent[] {
@@ -744,7 +745,7 @@ export function listPausesInSessionRange(start: number, end: number): PauseEvent
        ORDER BY pause.pause_started_at ASC`,
     )
     .all(end, start) as PauseRow[];
-  return rows.map(rowToPause);
+  return rows.map(mapPauseRow);
 }
 
 // ============ Tasks cache ============
@@ -956,105 +957,6 @@ export function setMeta(key: string, value: string): void {
 }
 
 // ============ Row mappers ============
-
-interface SessionRow {
-  id: string;
-  title: string | null;
-  status: string;
-  started_at: number;
-  ended_at: number | null;
-  active_elapsed_ms: number;
-  pause_elapsed_ms: number;
-  wall_elapsed_ms: number;
-  default_task_id: string | null;
-  default_task_source: string | null;
-  default_task_title: string | null;
-  note: string | null;
-  created_at: number;
-  updated_at: number;
-  tomatodo_subject: string | null;
-  tomatodo_record_name: string | null;
-}
-function rowToSession(r: SessionRow): FocusSession {
-  return {
-    id: r.id,
-    title: r.title,
-    status: r.status as SessionStatus,
-    startedAt: r.started_at,
-    endedAt: r.ended_at,
-    activeElapsedMs: r.active_elapsed_ms,
-    pauseElapsedMs: r.pause_elapsed_ms,
-    wallElapsedMs: r.wall_elapsed_ms,
-    defaultTaskId: r.default_task_id,
-    defaultTaskSource: (r.default_task_source as TaskSource | null) ?? null,
-    defaultTaskTitle: r.default_task_title ?? null,
-    note: r.note,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    tomatodoSubject: (r.tomatodo_subject as TomatodoSubject | null) ?? null,
-    tomatodoRecordName: r.tomatodo_record_name ?? null,
-  };
-}
-
-interface SegmentRow {
-  id: string;
-  session_id: string;
-  task_id: string | null;
-  task_source: string | null;
-  title: string | null;
-  started_at: number;
-  ended_at: number | null;
-  active_elapsed_ms: number;
-  note: string | null;
-  cloud_focus_id: string | null;
-  tomatodo_subject: string | null;
-  tomatodo_record_name: string | null;
-  created_at: number;
-  updated_at: number;
-}
-function rowToSegment(r: SegmentRow): FocusSegment {
-  return {
-    id: r.id,
-    sessionId: r.session_id,
-    taskId: r.task_id,
-    taskSource: (r.task_source as TaskSource | null) ?? null,
-    title: r.title,
-    startedAt: r.started_at,
-    endedAt: r.ended_at,
-    activeElapsedMs: r.active_elapsed_ms,
-    note: r.note,
-    cloudFocusId: r.cloud_focus_id,
-    tomatodoSubject: (r.tomatodo_subject as TomatodoSubject | null) ?? null,
-    tomatodoRecordName: r.tomatodo_record_name ?? null,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
-
-interface PauseRow {
-  id: string;
-  session_id: string;
-  segment_id: string | null;
-  pause_started_at: number;
-  pause_ended_at: number | null;
-  duration_ms: number;
-  reason: string | null;
-  created_at: number;
-  updated_at: number;
-}
-function rowToPause(r: PauseRow): PauseEvent {
-  return {
-    id: r.id,
-    sessionId: r.session_id,
-    segmentId: r.segment_id,
-    pauseStartedAt: r.pause_started_at,
-    pauseEndedAt: r.pause_ended_at,
-    durationMs: r.duration_ms,
-    reason: r.reason,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
 
 interface TaskCacheRow {
   id: string;

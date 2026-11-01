@@ -147,6 +147,14 @@ export class FocusTimerController {
     return this.isLiveEnabled() ? this.send('finish') : this.local.stop();
   }
 
+  /**
+   * 中止当前会话。实时模式下发真正的 abort 命令；本机模式没有独立的中止出口，
+   * 仍走 stop 收尾，由调用方把账本状态标为 aborted。
+   */
+  async abortActive(): Promise<TimerSnapshot> {
+    return this.isLiveEnabled() ? this.send('abort') : this.local.stop();
+  }
+
   async reset(): Promise<TimerSnapshot> {
     if (
       this.isLiveEnabled() &&

@@ -1,6 +1,6 @@
 # FocusLink 后端与共享契约规范
 
-> 状态：v1.x 后端单一真相；当前源码基线 v1.8.0。移动端本机可用性修复自 v1.7.4 起已随版本安装；Electron 主进程、IPC 与云端 wire shape 保持现有边界。
+> 状态：v1.x 后端单一真相；当前源码基线 v1.9.3。移动端本机可用性修复自 v1.7.4 起已随版本安装；Electron 主进程、IPC 与云端 wire shape 保持现有边界。
 >
 > 边界：Electron 主进程持有计时、持久化、外部服务和窗口事实；renderer 只能通过 preload API 请求能力。
 
@@ -22,11 +22,11 @@
 - 实时命令以 generation/session/action/task/segment 识别在途请求；同一意图共用 Promise，不同意图明确拒绝而不是叠发同 revision。普通请求预算 4 秒，long-poll 保留 `LIVE_FOCUS_MAX_WAIT_MS + 5 秒`，重试复用同 commandId 和截止信号。
 - finish/abort 的 authority ACK 先发布真实 idle/`ledgerImportPending`；账本导入异步执行。导入和 finished 收束必须校验连接、generation、revision 与当前状态，不能覆盖新的活动会话。网络中断不把已确认的远端活动会话偷偷转换为本机计时。
 
-## 本地自动化接口方案（2026-11-02，待实现）
+## 本地自动化接口（2026-11-02 方案，v1.9.3 已实装）
 
 **结论**
 
-以现有 Electron 回环业务 API 为基础，交付 `focuslink` CLI 和本地 HTTP 接口，让其他项目与 AI 读取、补录、修正专注并显式同步到番茄 To-do；人工与 AI 共享业务入口、版本校验和界面通知。方案状态：已完成；实现状态：未开始。
+以现有 Electron 回环业务 API 为基础，交付 `focuslink` CLI 和本地 HTTP 接口，让其他项目与 AI 读取、补录、修正专注并显式同步到番茄 To-do；人工与 AI 共享业务入口、版本校验和界面通知。方案状态：已完成；实现状态：v1.9.3 已实装（见本节末「已实装边界」）。
 
 **事实**
 
@@ -53,7 +53,7 @@ P2 第三方确认能力 — 客户端回执不足以证明手机可见，API �
 
 **改动**
 
-本轮文档改动：`FocusLink/backend-design/BACKEND_SPEC.md` 写入本方案；`FocusLink/backend-design/README.md` 增加入口。以下均为拟实施内容，不表示接口已经可用。
+本轮文档改动：本节记录方案。v1.9.3 的源码改动见本节末「已实装边界」；该小节之外仍属拟实施或尚未开放的能力。
 
 **交付范围与调用方式**
 
@@ -159,7 +159,7 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 
 先实现共享命令合同、并发调度、版本和提交事件，将人工计时/历史操作与云端导入接入；再开放读取、历史补录与 correction；随后接 CLI、番茄投递与操作查询；最后完成安装版的开箱接入和人工/AI 同时使用的真实验收。本地验收完成后再排云端 MCP 写能力，不与首轮混交付。
 
-拟新增 `shared/automation/` 合同和 `electron/automation/` 业务服务；扩展既有 API、IPC、控制器、数据库迁移、V2 Outbox、番茄服务及 CLI。renderer 仅消费提交事件和展示冲突。旧运维写脚本改为调用同一入口，禁止保留绕过服务的生产写路径。实现文件名在开发时确定，目录仍遵守现有责任边界。
+新增 `shared/automation/` 合同与 `electron/automation/` 业务服务，并扩展既有 API、控制器、数据库迁移、番茄服务与 CLI（实际文件名见本节末「已实装边界」）。renderer 仅消费提交事件和展示冲突。旧运维写脚本改为调用同一入口，禁止保留绕过服务的生产写路径。
 
 以下性能均为设计目标，尚未实测：同机应用已运行、历史数据本机就绪、无外部网络等待时，HTTP 读取 p95 不超过 `200 毫秒`，本地补录/编辑耐久回执 p95 不超过 `300 毫秒`，事务提交到已打开相关界面呈现 p95 不超过 `500 毫秒`；每类至少采样 `30 次`，以单调时钟计时并按 nearest-rank 计算 p95。CLI 从进程启动到 JSON 读结果 p95 不超过 `1000 毫秒`，单独计入进程启动开销。外部上传返回耐久操作身份，后续状态轮询不阻塞界面；不能把 accepted 计入上传完成延迟。
 
@@ -171,7 +171,20 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 - 番茄未运行/无桥/身份不符、未批准、超窗、节流、旧回执、新版本修改、重复 marker 与更新字段能力；手机可见性另行提供真实证据。
 - 普通网页、只读 token、非法字段、错误账号代际与过期计划拒绝；端口被占、应用退出时给出可操作错误，不连接到身份不符的本地服务。
 
-本轮是文档方案，不升产品版本、不运行真实写入或安装。功能实现进入候选后按 `TEST_AND_RELEASE.md` 执行完整源码、真实番茄临时数据、构建、安装回读和发布记录门禁；设备范围在实施前按当轮有效用户指令重新核对。本地与人工共用、冲突拒绝、显示收敛和可恢复重试全部通过后，才算本地能力交付。
+上述验收项在 v1.9.3 的首轮实装中只覆盖本机可自动断言的部分（见下）；真实番茄临时数据、人工/AI 同时操作的手工矩阵与安装回读按 `TEST_AND_RELEASE.md` 单独执行，未执行的项目不得写成已通过。设备范围按当轮有效用户指令核对：2026-10-29 起华为平板不在线，门禁只要求 Windows + 指定小米手机同版。
+
+### 已实装边界（v1.9.3）
+
+- 合同：`shared/automation/contract.ts`（命令、结果、错误码与 HTTP/CLI 映射、读取视图白名单、schema 生成）、`shared/automation/timeline.ts`（时间线校验、三时间守恒、controlVersion 编码、番茄计划规范正文）。
+- 服务：`electron/automation/` 下的 `service.ts`（读改写与命令分发）、`store.ts`（操作账本、实体版本、提交事件、番茄计划、修正审计）、`recordRepository.ts`（同一批 `focus_*` 表的裸写，事务由 store 统一开启）、`scheduler.ts`（按域的共享调度）、`auth.ts`（分 scope 凭据与发现配置）、`http.ts`（`/automation/v1` 路由）。
+- 端口与命名空间：沿用 `127.0.0.1:18770`（`AUTOMATION_LISTEN_PORT` 为唯一数值来源）；新增 `/automation/v1`，原有 `/v1` 保持兼容，两者共用同一 listener 与同一业务服务。
+- 计时域调度：自动化控制命令在 `runExclusive('timer')` 内执行并前后各校验一次 `controlVersion` 与后置状态；人工入口（按钮/快捷键/托盘）继续走 `FocusTimerController` 既有的 `pendingCommand` 串行闸门。两者叠加后的实际语义是「同一时刻只有一个控制意图被接受」，但版本校验与执行之间存在一个同步调用窗口，跨窗口的竞态由后置条件判为 `STATE_CONFLICT`，不会被记成 applied。
+- 版本：`recordVersion` 按 `(连接 scope, session, id)` 单调存储于 `automation_entity_versions`，只在业务变更时推进；`controlVersion` = `会话 id:控制修订:连接代际`，每秒累计显示不推进。连接 scope 参与操作身份，切换账号后同一 operationId 会返回 `CONNECTION_CHANGED`。
+- 幂等：`automation_operations` 先写 `accepted` 预留，事务内改为终态；同 ID 同文重放返回原结果并标 `duplicate`，同 ID 异文拒绝；保留期过后只清空结果正文并保留拒重 tombstone，旧 ID 只能得到 `OPERATION_EXPIRED`。
+- 中止：本机模式没有独立中止出口，`focus.abort` = 结束计时 + 账本状态置为 `aborted`；实时模式走控制器新增的 `abortActive()` 下发真正的 abort。
+- 番茄：`preview` 生成绑定会话版本与 payload 摘要的计划（TTL 5 分钟，持久化），`sync` 重新计算摘要，记录或版本变化即 `PLAN_STALE`；结果按 `localCommitted / focuslinkCloudState / tomatodoLocalWritten / uploadConfirmed / phoneDeliveryState / remoteReadbackSupported` 分阶段返回，`focuslinkCloudState` 在本轮缺省为 `unknown`（尚未接 V2 Outbox 投影）。
+- 凭据：`business-api-tokens.json` 提供具名 token 与 `focus:read|focus:control|records:write|tomatodo:write`；旧 `business-api-token` 按兼容路径保留并默认拥有四个 scope，不静默轮换。发现配置 `automation-discovery.json` 只写端口与凭据文件位置，CLI 自行读取，密钥不出现在命令行。
+- 未开放：删除、任意 SQL、通用脚本执行、批量扫描历史后上传、远端番茄记录删除与回读；`records.update` 拒绝对进行中的会话做时间覆盖。
 
 ## 当前三端同步修复需求（2026-07-22）
 

@@ -1,9 +1,7 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
 import { APP_VERSION } from '@shared/version';
+import { AUTOMATION_API_PREFIX, AUTOMATION_LISTEN_PORT } from '@shared/automation/contract';
 import type { TimerSnapshot, TimerState } from '@shared/types';
 import {
   getDb,
@@ -16,9 +14,17 @@ import {
 } from '../db/index.js';
 import { logger } from '../logger.js';
 import type { FocusTimerController } from '../timer/focusTimerController.js';
+import {
+  authenticateAutomation,
+  legacyTokenPath,
+  loadAutomationTokens,
+  writeAutomationDiscovery,
+} from '../automation/auth.js';
+import { AutomationHttpRouter } from '../automation/http.js';
+import type { AutomationService } from '../automation/service.js';
 
 const HOST = '127.0.0.1';
-const PORT = 18770;
+const PORT = AUTOMATION_LISTEN_PORT;
 const REVISION_KEY = 'foxlink.mcp.controlRevision';
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -38,34 +44,6 @@ class ApiError extends Error {
   ) {
     super(message);
   }
-}
-
-function tokenPath(): string {
-  if (process.env['FOXLINK_BUSINESS_API_TOKEN_FILE'])
-    return process.env['FOXLINK_BUSINESS_API_TOKEN_FILE'];
-  return path.join(
-    process.env['ProgramData'] ?? path.join(os.homedir(), 'AppData', 'Local'),
-    'Poyi',
-    'FoxlinkMcp',
-    'business-api-token',
-  );
-}
-
-function readToken(): string | null {
-  const fromEnvironment = process.env['FOXLINK_BUSINESS_API_TOKEN']?.trim();
-  if (fromEnvironment) return fromEnvironment;
-  try {
-    const value = fs.readFileSync(tokenPath(), 'utf8').trim();
-    return value.length >= 32 ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-function equalSecret(actual: string, expected: string): boolean {
-  const left = Buffer.from(actual);
-  const right = Buffer.from(expected);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 function send(response: http.ServerResponse, status: number, value: Json): void {
@@ -130,14 +108,24 @@ function sessionDetail(id: string): Json {
   return { session, segments: listSegments(id), pauses: listPauses(id) } as unknown as Json;
 }
 
-export function startFoxlinkBusinessApi(timer: FocusTimerController): FoxlinkBusinessApi | null {
-  const token = readToken();
-  if (!token) {
+export function startFoxlinkBusinessApi(
+  timer: FocusTimerController,
+  automation: AutomationService | null = null,
+): FoxlinkBusinessApi | null {
+  const tokens = loadAutomationTokens();
+  if (tokens.credentials.length === 0) {
     logger.warn('foxlinkMcp', 'business API disabled because its credential file is missing', {
-      tokenPath: tokenPath(),
+      tokenFile: legacyTokenPath(),
     });
     return null;
   }
+  const discoveryFile = writeAutomationDiscovery(tokens);
+  logger.info('foxlinkMcp', 'automation credential loaded', {
+    source: tokens.source,
+    credentials: tokens.credentials.length,
+    discoveryWritten: discoveryFile !== null,
+  });
+  const automationRouter = automation ? new AutomationHttpRouter(automation) : null;
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS foxlink_api_idempotency (
       idempotency_key TEXT PRIMARY KEY,
@@ -258,9 +246,26 @@ export function startFoxlinkBusinessApi(timer: FocusTimerController): FoxlinkBus
       const url = new URL(request.url ?? '/', `http://${HOST}:${PORT}`);
       if (request.method === 'GET' && url.pathname === '/v1/health')
         return send(response, 200, { status: 'ok', product: 'Foxlink', version: APP_VERSION });
-      const authorization = request.headers.authorization ?? '';
-      if (!authorization.startsWith('Bearer ') || !equalSecret(authorization.slice(7), token))
-        throw new ApiError(401, 'AUTH_FAILED', 'Authentication failed');
+      if (request.method === 'GET' && url.pathname === `${AUTOMATION_API_PREFIX}/health`)
+        return send(response, 200, {
+          status: 'ok',
+          product: 'FocusLink',
+          apiVersion: '1',
+          version: APP_VERSION,
+        });
+      // 只接受回环 Host：普通网页无法把本机端口当成可调用的跨域接口。
+      const host = (request.headers.host ?? '').toLowerCase();
+      if (
+        host !== HOST &&
+        host !== `${HOST}:${PORT}` &&
+        host !== `localhost:${PORT}` &&
+        host !== 'localhost'
+      )
+        throw new ApiError(403, 'HOST_REJECTED', 'Host header is not allowed');
+      const credential = authenticateAutomation(request.headers.authorization, tokens);
+      if (!credential) throw new ApiError(401, 'AUTH_FAILED', 'Authentication failed');
+      if (automationRouter && (await automationRouter.handle(request, response, url, credential)))
+        return;
       if (request.method === 'GET' && url.pathname === '/v1/status')
         return send(response, 200, {
           product: 'Foxlink',

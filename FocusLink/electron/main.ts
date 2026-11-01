@@ -79,8 +79,13 @@ import {
   syncSessionToTomatodo,
   uploadPendingTomatodoRecords,
   getPendingTomatodoCount,
+  getTomatodoSyncStatus,
 } from './sync/tomatodoSyncService.js';
-import { runAutomaticDeviceSync } from './sync/deviceSyncService.js';
+import {
+  getDeviceSyncRuntimeConnection,
+  runAutomaticDeviceSync,
+} from './sync/deviceSyncService.js';
+import { AutomationService } from './automation/service.js';
 import { installDeviceSyncProxy } from './sync/deviceSyncProxy.js';
 import { startFoxlinkBusinessApi, type FoxlinkBusinessApi } from './mcp/businessApi.js';
 import { migrateLegacyLoopbackAccountConnection } from './sync/deviceSyncAccountService.js';
@@ -119,6 +124,63 @@ const autoSyncInFlight = new Set<Promise<void>>();
 let runtimeUiInitialized = false;
 let snapshotUnsubscribe: (() => void) | null = null;
 let foxlinkBusinessApi: FoxlinkBusinessApi | null = null;
+let automationService: AutomationService | null = null;
+
+/**
+ * 本地自动化业务服务：界面与 HTTP/CLI 共用同一入口。
+ *
+ * 计时控制直接复用 FocusTimerController（它自己也在共享调度内执行），
+ * 番茄状态与同步复用既有会话级服务，不在这里复制任何业务算法。
+ */
+function startAutomationService(controller: FocusTimerController): AutomationService {
+  const service = new AutomationService({
+    database: getDb(),
+    timer: {
+      getSnapshot: () => controller.getSnapshot(),
+      onSnapshot: (listener) => controller.onSnapshot(listener),
+      toggle: () => controller.toggle(),
+      pause: () => controller.pause(),
+      resume: () => controller.resume(),
+      stop: () => controller.stop(),
+      abort: () => controller.abortActive(),
+      startWithTask: (taskId, taskSource, taskTitle) =>
+        controller.startWithTask(taskId, taskSource, taskTitle),
+    },
+    tomatodo: {
+      status: (sessionId) => {
+        const status = getTomatodoSyncStatus(sessionId);
+        return {
+          enabled: status.enabled,
+          autoSyncEnabled: status.autoSyncEnabled,
+          minutes: status.minutes,
+          subject: status.subject,
+          recordName: status.recordName,
+          writtenLocally: status.writtenLocally,
+          cloudSynced: status.cloudSynced,
+          state: status.state,
+        };
+      },
+      sync: async (sessionId) => {
+        const result = await syncSessionToTomatodo(sessionId);
+        return {
+          ok: result.ok,
+          synced: result.synced,
+          skipped: result.skipped,
+          failed: result.failed,
+          phoneSynced: result.results.some((item) => item.phoneSynced),
+          cloudSynced: result.results.some((item) => item.cloudSynced),
+          error: result.results.find((item) => item.error)?.error,
+        };
+      },
+    },
+    now: () => Date.now(),
+    scope: () => getDeviceSyncRuntimeConnection()?.scope ?? 'local',
+    generation: () => getDeviceSyncRuntimeConnection()?.generation ?? 0,
+    appVersion: () => APP_VERSION,
+  });
+  service.start();
+  return service;
+}
 
 const RENDERER_UNRESPONSIVE_GRACE_MS = 5_000;
 const RENDERER_RECOVERY_WINDOW_MS = 60_000;
@@ -1397,7 +1459,8 @@ app.whenReady().then(async () => {
   localTimer = new TimerManager();
   timer = new FocusTimerController(localTimer);
   timer.setSegmentBehavior(settings.segmentBehavior);
-  foxlinkBusinessApi = startFoxlinkBusinessApi(timer);
+  automationService = startAutomationService(timer);
+  foxlinkBusinessApi = startFoxlinkBusinessApi(timer, automationService);
 
   mainWindow = createMainWindow();
 
@@ -1629,6 +1692,8 @@ app.on('before-quit', (e) => {
     unregisterAll();
     await foxlinkBusinessApi?.close();
     foxlinkBusinessApi = null;
+    automationService?.dispose();
+    automationService = null;
     closeDatabase();
     app.exit(0);
   })();
