@@ -22,6 +22,157 @@
 - 实时命令以 generation/session/action/task/segment 识别在途请求；同一意图共用 Promise，不同意图明确拒绝而不是叠发同 revision。普通请求预算 4 秒，long-poll 保留 `LIVE_FOCUS_MAX_WAIT_MS + 5 秒`，重试复用同 commandId 和截止信号。
 - finish/abort 的 authority ACK 先发布真实 idle/`ledgerImportPending`；账本导入异步执行。导入和 finished 收束必须校验连接、generation、revision 与当前状态，不能覆盖新的活动会话。网络中断不把已确认的远端活动会话偷偷转换为本机计时。
 
+## 本地自动化接口方案（2026-11-02，待实现）
+
+**结论**
+
+以现有 Electron 回环业务 API 为基础，交付 `focuslink` CLI 和本地 HTTP 接口，让其他项目与 AI 读取、补录、修正专注并显式同步到番茄 To-do；人工与 AI 共享业务入口、版本校验和界面通知。方案状态：已完成；实现状态：未开始。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 已有回环 HTTP 服务、凭据校验、会话读取和计时控制路由 | `FocusLink/electron/mcp/businessApi.ts:133` | 证据记录 |
+| ② | 现有 API 控制版本按计时状态与会话身份变化；控制完成后另写幂等回执，串行队列位于 HTTP 层 | `FocusLink/electron/mcp/businessApi.ts:152` | 证据记录 |
+| ③ | 现有 CLI 分发时间、清单与任务命令，客户端使用云端任务合同 | `FocusLink/scripts/cli/focuslink-cli.ts:133` | 证据记录 |
+| ④ | 人工计时 IPC 直接调用控制器，主窗与小窗消费同一快照广播 | `FocusLink/electron/ipc.ts:140`、`FocusLink/electron/main.ts:1118` | 证据记录 |
+| ⑤ | 番茄已有会话级同步与操作锁，可复用适配器和稳定 marker | `FocusLink/electron/sync/tomatodoSyncService.ts:512`、`FocusLink/shared/tomatodoPolicy.ts:315` | 证据记录 |
+| ⑥ | 已结束账本的变更已有 correction 与 Outbox 路径 | `FocusLink/electron/sync/deviceSyncV2Service.ts:541` | 证据记录 |
+| ⑦ | 历史故障规范分别记录批准闸门、投递节流、云回读与远端删除边界 | `FocusLink/backend-design/SYNC_TROUBLESHOOTING.md:426`、`FocusLink/backend-design/SYNC_TROUBLESHOOTING.md:485`、`FocusLink/backend-design/SYNC_TROUBLESHOOTING.md:514` | 证据记录 |
+| ⑧ | 当前实施日志记录移动工作台与离线动作现状；本轮只核对记录，未复跑设备或第三方同步 | `FocusLink/backend-design/IMPLEMENTATION_LOG.md:4` | 证据记录 |
+
+**问题**
+
+P0 无本轮实测事故 — 当前工作仅编写方案，以下是落地前必须解决的设计约束 — 证据①至⑧。
+
+P1 写入口一致性 — 只扩充 HTTP 层无法覆盖人工入口和异步导入，必须下沉并发控制及提交通知 — 证据②④⑥。
+
+P1 专注命令合同 — 现有 CLI 路由尚未覆盖目标操作，需要补齐补录、修正、同步及结果查询 — 证据①③⑤。
+
+P2 第三方确认能力 — 客户端回执不足以证明手机可见，API 必须返回分阶段状态和能力限制 — 证据⑦。
+
+**改动**
+
+本轮文档改动：`FocusLink/backend-design/BACKEND_SPEC.md` 写入本方案；`FocusLink/backend-design/README.md` 增加入口。以下均为拟实施内容，不表示接口已经可用。
+
+**交付范围与调用方式**
+
+首轮完成本地读取、历史补录、历史修正、计时控制、番茄预览与显式同步、操作查询。删除、任意 SQL、通用脚本执行和自动扫描全部历史后上传不纳入首轮能力。
+
+调用链固定为：`AI / 其他项目 → CLI 或 HTTP → Electron 业务服务 → 计时控制器 / SQLite / 既有同步队列`。界面按钮、快捷键、托盘与小窗也进入同一业务服务；CLI、MCP 和运维脚本不直接打开生产 SQLite，不维护第二套专注账本。
+
+扩展 `electron/mcp/businessApi.ts` 已有回环 listener，沿用端口 `18770`，该值来自现有 `PORT` 常量；新增自动化路由命名空间 `/automation/v1`，保留既有 `/v1` 兼容入口。它是业务 API，不是另起一个设备同步 authority。新旧路由最终必须调用同一服务。
+
+CLI 扩展既有 `scripts/cli/focuslink-cli.*`，保留原来的云端任务命令；新增 `focus`、`records`、`tomatodo` 命令只访问本地。连接失败明确返回 `APP_NOT_RUNNING` 或 `LOCAL_API_UNAVAILABLE`，不静默切换到云端。应用退到托盘仍可服务，完全退出后本地接口不可用。
+
+安装包附带预打包 CLI 客户端和 `focuslink` 启动入口，从任意项目目录可调用，不依赖源码目录、`tsx` 或现场构建。主进程保持唯一数据拥有者，不通过启动第二个 Electron profile 执行业务。CLI 冷启动开销另行验收。
+
+交互参考[滴答 CLI 说明](https://help.dida365.com/articles/7464976698707017728)和仓库既有 dida Provider 的命令调用方式；以下命令及 `schema`、`doctor`、JSON 合同是本方案拟定的 FocusLink 能力。
+
+```text
+focuslink status --json
+focuslink focus current --json
+focuslink records list --date today --timezone Asia/Shanghai --json
+focuslink records get <session-id> --json
+focuslink records create --input-file <record.json> --operation-id <stable-id> --json
+focuslink records update <session-id> --input-file <patch.json> --if-version <record-version> --operation-id <stable-id> --json
+focuslink focus pause --session <session-id> --if-version <control-version> --operation-id <stable-id> --json
+focuslink tomatodo preview --session <session-id> --json
+focuslink tomatodo sync --plan <plan-id> --operation-id <stable-id> --json
+focuslink operations get <operation-id> --json
+focuslink schema --json
+focuslink doctor --json
+```
+
+计时控制还包括明确的 `start`、`resume`、`finish`、`abort` 与任务关联命令，禁止把 `toggle` 暴露成可重试的自动化命令。中文与多行正文走 UTF-8 文件或 stdin；程序调用使用参数数组。按标题查找出现多个候选时返回候选 ID，不猜测目标。
+
+**统一的读写合同**
+
+- 读取覆盖当前运行/暂停状态、默认任务及片段覆盖、三项累计、会话/片段/暂停明细、按日期与任务汇总、各同步域状态；状态附 `observedAt`、数据来源和新鲜度。
+- 当前会话使用控制器与 `liveSessionProjection`；历史和统计复用共享查询/selector，按会话 ID 去重。日期以 IANA 时区计算边界，列表分页，汇总不受列表页长或固定条数截断。
+- 自动化返回字段使用明确白名单；默认不含备注、标签、设备标识、凭据、数据库路径及本地诊断正文。`doctor` 只输出脱敏能力与稳定错误码。
+
+`records create` 是补录已结束历史，输入必须包含带偏移的开始/结束时刻及专注/暂停时间线，或明确的无暂停连续区间；服务器计算毫秒累计并校验边界、非重叠与三时间守恒。缺失或矛盾的时间不能由 AI 默补，跨会话重叠返回 `OVERLAPPING_RECORD` 及候选摘要，不静默去重或合并。
+
+`records update` 使用字段级 patch：缺省表示不改，显式 `null` 表示清空；metadata 与时间线修正分开。metadata 允许标题、任务关联、学科与经明确指定的番茄标题；时间修正必须携带原因和完整受影响时间线，服务端重算累计，复用 `focus_ledger_correction_v2`，保留原始账本及修正链。进行中的会话只允许计时控制和既有任务关联，不接受历史时间覆盖。
+
+学科与番茄标题先按当前会话级本机字段保存；现有跨设备白名单未携带这些会话字段，首轮不得宣称它们已跨设备同步。读取与显示共同消费应用 correction 后的有效账本，原始记录仅用于追溯，避免界面和接口各读一套数值。
+
+默认任务与片段覆盖按现有三态合同解释，接口不能用修改默认任务悄悄覆盖已单独关联的片段。会话与片段批量关联需要一个服务事务，返回精确影响范围。
+
+`GET /automation/v1/state`、`/records`、`/records/{id}`、`/summary`、`/capabilities` 提供读取；`POST /automation/v1/commands` 接受类型化命令，`GET /automation/v1/operations/{id}` 查询结果，`GET /automation/v1/events` 提供认证变化流。`schema` 由 `shared/` 合同生成，CLI 和后续 MCP 不另写字段语义。
+
+每条写命令包含 `operationId`、目标 ID、预期版本、必要的预期状态及有效期；`sourceClient` 是审计标签，不是权限证明。时间控制还绑定当前会话身份，避免旧“暂停”请求作用到后来开始的新会话。新建通过持久化 operation 预留稳定 session ID；重试沿用原 ID、原正文和原版本。
+
+返回区分 `applied`、`duplicate`、`accepted`、`conflict`、`rejected`。`accepted` 仅表示操作已耐久登记，不能当成计时或第三方同步完成。写响应包含操作身份、目标 ID、新版本与必要的规范化回读；错误含稳定 `code`、`retryable` 及安全的当前版本，HTTP 状态与 CLI 退出码都须稳定并写入 schema。
+
+**人工与 AI 并发、重试与崩溃恢复**
+
+- 业务服务按计时域、会话实体和 provider 操作建立共享调度；所有人工入口、API、旧脚本与云端导入均参加，不能只锁 HTTP 请求。冲突域外的历史编辑不阻塞当前专注。
+- 本地实体使用独立单调 `recordVersion`，计时使用包含会话身份、控制修订和连接代际的 `controlVersion`；版本在业务变更时推进，每秒累计显示不推进。不能把现有状态/会话版本当成完整编辑版本。
+- 所有写入在共享调度内重核预期版本；同一旧版本的人工与 AI 写入最多一项成功，另一项返回冲突和最新状态。禁止读取最新版本后自动覆盖或把冲突当网络错误盲重试。
+- 已接入云端 live 的命令必须携带与本次观测对应的 authority revision，并由 Account DO 再做 CAS；本地锁不能替代跨设备 CAS。异步返回前复核连接代际和目标身份，旧账号结果不能进入新账号。
+
+本地修改、版本、脱敏审计、幂等回执与同步 Outbox 在同一 SQLite 事务落盘，事务中不调用网络或番茄桥。同一 `operationId + 正文摘要` 重放返回原结果；同 ID 异文拒绝。连接 scope 纳入操作身份，重启保留回执，过期清理后旧 ID 也不得重新执行，可保留压缩拒重 tombstone。
+
+云端 live 与第三方调用不能与 SQLite 跨系统原子提交。执行前先持久化 pending 操作及原 command ID/版本/正文；响应丢失先查操作状态或按原 ID 重放，不能换 ID 重做。处于未知结果时如实返回 `accepted` 或待核对状态，并通过原始事实恢复，不承诺第三方不具备的全链路 exactly-once。
+
+**显示一致性与人工编辑保护**
+
+事务提交后发布带单调 `changeSeq`、实体 ID、版本和变更域的事件；同一业务变化同时通知主窗、固定两态小窗、历史、统计与外部订阅者。计时仍复用现有快照广播，历史变更不伪造计时状态切换，也不靠切页或重启刷新。
+
+renderer 按实体版本与请求代际接收结果，迟到的旧查询不能覆盖新事件或刚提交的数据。界面编辑表单保存其打开时版本和未提交字段；AI 更新同一记录时保留用户输入并显示“记录已更新”，保存发生冲突后给出差异，不自动清空输入或强制覆盖。
+
+事件和提交序号耐久关联；订阅断开、事件超出保留窗口或 renderer 重建时，使用变化序号重新获取一致快照。外部变化流支持游标续读和 `resync-required`，不会把未收到事件误判为数据未变。网络同步、番茄上传失败不回滚已成功的本机修改。
+
+例：AI 读取运行中的会话后，用户已经点暂停；AI 再发旧版本的暂停必须冲突并返回当前暂停快照。用户正在编辑记录标题时，AI 补改学科可以提交新版本，但界面保留标题草稿，用户保存前必须确认它基于哪个版本。
+
+**番茄 To-do 的批准、版本绑定和真实结果**
+
+补录或修改专注默认只改 FocusLink；番茄上传通过独立 `preview → sync` 命令显式触发。预览不写业务数据、不启动外部应用，生成的计划绑定会话 ID、记录版本、实际学科/标题、开始时间、取整分钟、payload 摘要及有效期；同步时计划过期或数据已变即返回 `PLAN_STALE`。
+
+保留“批准后同步”。调用方已有 `tomatodo:write` 权限且用户明确要求同步指定记录/范围时，该次意图即可进入执行，不增加机械的人工点击；普通读写权限或 `approved:true` 字段不能替代授权。自定义番茄标题仅在用户明确指定时使用，默认名称为学科名。未批准记录不能被后台任务或云端 provider 意图绕过闸门。
+
+复用现有会话 marker `[FocusLink:tomatodo:session:<id>]`、桥身份校验及服务级锁。一次会话对应一条番茄记录；时长按 `tomatodoRecordMinutes(activeElapsedMs)` 取整，投影结束时间由开始时间加取整后的有效时长计算，保持 FocusLink 原始暂停与自然跨度不变。
+
+durable 投递项从仅会话 ID 扩展为带会话版本、payload 摘要、批准范围、原因、lease、阶段回执与下次重试时间的结构；历史 ID 列表兼容读取为“等待同步确认”，不能据此补造批准。人工同步、CLI 与后台重试共用此投递账本，避免独立上传队列互相覆盖。
+
+修改发生在排队时，旧计划失效；发生在已发出的上传期间，保留旧回执所属版本，新版本保持未上传，旧回执不能清除新 pending。未经新内容授权不补传更改后的正文；外部已接收的旧内容不能假装撤回。标题、时间和时长更新须先验证桥实际支持的字段；不支持就返回 `UPDATE_UNSUPPORTED`，不能靠删除重建掩盖。
+
+结果分别返回 `localCommitted`、`focuslinkCloudState`、`tomatodoLocalWritten`、`uploadConfirmed`、`phoneDeliveryState` 与 `remoteReadbackSupported`；未知手机可见性返回 `unknown`，不以 `isSynced` 推断。若当前 durable 数据不能区分原因，继续显示“等待同步确认”。没有远端删除能力时 `remoteDeleteSupported=false`，清理始终标记 `local-record-only`。
+
+投递策略以 `FL-SYNC-024` 的较新证据为准：逐条串行，初始间隔不少于 `30 秒`，该值取自该故障条目的历史实证；可根据后续真实验收调整，不能声称此间隔保证送达。不得只依据旧 `FL-SYNC-009` 的批次建议并行上传。超过历史记录窗口的项停止自动重试并解释原因，不修改日期换取成功。
+
+客户端已运行但无可信桥时返回 `restart-required`，不终止用户进程。用户显式同步并允许启动时才使用现有受控启动路径；后台重试绝不启动番茄。必须先通过标题与所需 `electronAPI` 方法校验，手机直连能力缺失与桥身份失败分别报告。
+
+**本地权限与未来云端衔接**
+
+接口仅绑定回环；本地自动化凭据与云端 device/OAuth token 分离，按 `focus:read`、`focus:control`、`records:write`、`tomatodo:write` 授权并可撤销。安装时提供当前用户可用的受保护发现配置，CLI 自动解析，避免向 AI 对话或命令行参数粘贴密钥；旧 MCP 凭据按兼容路径保留，迁移不静默轮换。
+
+HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源网页调用、不启用通配 CORS；发现配置及 token 文件需验证当前用户与文件身份。只读 token 不得控制计时、补录或同步番茄。诊断与审计不保存原始正文或凭据。
+
+本地稳定后扩展既有 `mcp/foxlink_mcp` 作为薄适配层，不另建业务实现；新工具可使用 FocusLink 正式命名，保留旧 Foxlink 别名。后续云端 MCP 继续访问现有 Account DO 权威合同，不直接暴露本机端口或另外建设身份源。
+
+云端读取标明最后确认时间；云端专注写能力单独设计 scope 与 CAS。需要番茄桌面桥的远程操作以绑定记录版本的 durable intent 等待获授权的 Windows 消费；电脑离线时显示待执行，电脑关机不代表番茄已同步。不得沿用本机隧道而声称离线也可完成本机操作。
+
+**实施顺序与验收门槛**
+
+先实现共享命令合同、并发调度、版本和提交事件，将人工计时/历史操作与云端导入接入；再开放读取、历史补录与 correction；随后接 CLI、番茄投递与操作查询；最后完成安装版的开箱接入和人工/AI 同时使用的真实验收。本地验收完成后再排云端 MCP 写能力，不与首轮混交付。
+
+拟新增 `shared/automation/` 合同和 `electron/automation/` 业务服务；扩展既有 API、IPC、控制器、数据库迁移、V2 Outbox、番茄服务及 CLI。renderer 仅消费提交事件和展示冲突。旧运维写脚本改为调用同一入口，禁止保留绕过服务的生产写路径。实现文件名在开发时确定，目录仍遵守现有责任边界。
+
+以下性能均为设计目标，尚未实测：同机应用已运行、历史数据本机就绪、无外部网络等待时，HTTP 读取 p95 不超过 `200 毫秒`，本地补录/编辑耐久回执 p95 不超过 `300 毫秒`，事务提交到已打开相关界面呈现 p95 不超过 `500 毫秒`；每类至少采样 `30 次`，以单调时钟计时并按 nearest-rank 计算 p95。CLI 从进程启动到 JSON 读结果 p95 不超过 `1000 毫秒`，单独计入进程启动开销。外部上传返回耐久操作身份，后续状态轮询不阻塞界面；不能把 accepted 计入上传完成延迟。
+
+验收必须包括：
+
+- 同一版本的人工/AI 并发修改与暂停/继续/结束；不同会话的独立操作；旧会话命令到达新会话；多显示面同一版本收敛；未保存表单不丢输入。
+- 同 ID 同文重放、同 ID 异文拒绝、请求丢失、事务边界崩溃、重启查询、幂等保留期后的拒重，以及 API/IPC/快捷键/后台导入无法绕开版本闸门。
+- 无暂停补录、多段暂停时间线、时间矛盾、跨日/时区、同名任务与重叠记录；correction、三时间、汇总和分页与人工界面使用相同结果。
+- 番茄未运行/无桥/身份不符、未批准、超窗、节流、旧回执、新版本修改、重复 marker 与更新字段能力；手机可见性另行提供真实证据。
+- 普通网页、只读 token、非法字段、错误账号代际与过期计划拒绝；端口被占、应用退出时给出可操作错误，不连接到身份不符的本地服务。
+
+本轮是文档方案，不升产品版本、不运行真实写入或安装。功能实现进入候选后按 `TEST_AND_RELEASE.md` 执行完整源码、真实番茄临时数据、构建、安装回读和发布记录门禁；设备范围在实施前按当轮有效用户指令重新核对。本地与人工共用、冲突拒绝、显示收敛和可恢复重试全部通过后，才算本地能力交付。
+
 ## 当前三端同步修复需求（2026-07-22）
 
 - 修复手机与平板在已配置连接后仍报告“同步中断 / 重试失败”的问题；必须分别验证实时控制长轮询与已结束账本同步，不能用其中一条链路成功代替另一条。
