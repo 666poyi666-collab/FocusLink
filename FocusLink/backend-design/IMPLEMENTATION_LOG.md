@@ -17,12 +17,13 @@
 | ⑤ | 小米 `192.168.1.5:5555` 已装 `1.9.6 / 1372` | `adb install -r` + `dumpsys` | 实测 |
 | ⑥ | `.cmd` 用 LF 时 cmd.exe 把 `rem` 注释行当命令执行；改 CRLF 后输出干净 | 终端输出对比 | 实测 |
 | ⑦ | 本机 `electron.exe <script>` 连最小探针都不执行（脚本内 `writeFileSync` 未落盘），运维脚本无法在此环境运行验证 | 探针 `.tmp/probe2.cjs` 无输出 | 实测 |
+| ⑨ | 真实窗口装探针后由 API 改一条记录：渲染层收到 `records:changed`，count=1，payload 含 `recordVersion=1`、`changeSeq=1`、`domain=automation` | CDP `Runtime.evaluate` + CLI 输出 | 实测 |
 | ⑧ | 源码门禁：format / typecheck / lint 通过，`npm test` 177 文件 / 1548 用例全绿 | 命令输出 | 实测 |
 
 **问题**
 
 P1 运维脚本仅代码级验证 — Electron 脚本在本机不执行，只能靠类型检查与代码评审 — 事实⑦。
-P1 renderer 刷新未肉眼演练 — 事件链路有单测与类型背书，缺真实窗口观察 — 事实①之前的接线。
+P2 renderer 视觉刷新未截图对比 — 事件已在真实窗口收到（事实⑨），但没截取「改前/改后」统计画面。
 P2 安装器仍要求 ASCII 路径 — 打包侧已自动化，安装侧未修 — 事实③。
 
 **处置**
@@ -36,7 +37,7 @@ P2 安装器仍要求 ASCII 路径 — 打包侧已自动化，安装侧未修 �
 **门禁**
 
 - 源码全绿（⑧）；Windows / 小米同版已装（④⑤）；任意目录 CLI 可用（①②）。
-- 遗留：运维脚本真实运行、renderer 肉眼刷新、安装器中文路径（P1/P2）。
+- 遗留：运维脚本真实运行（P1）、安装器中文路径（P2）；renderer 事件链路已在真实窗口验证（⑨）。
 
 ## 2026-11-02 · `FL-AUTO-20261102-HUMAN-AI-CONSISTENCY-FIX`：人工写入纳入统一版本、记录变更通知界面（v1.9.4 已装）
 

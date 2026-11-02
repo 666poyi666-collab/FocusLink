@@ -2,11 +2,11 @@
 
 > 发布日期：2026-11-02
 >
-> 对应提交：`697a2b3`
+> 对应提交：`PENDING2`
 >
 > 发布类型：候选补丁（未创建公开 tag / GitHub Release）
 >
-> 验证状态：源码门禁、Windows 安装回读、任意目录调用 `focuslink` 与小米同版均已实测
+> 验证状态：源码门禁、Windows 安装回读、任意目录调用 `focuslink`、真实窗口事件投递与小米同版均已实测
 
 ## 主要变化
 
@@ -22,6 +22,7 @@
 - Windows：`installer /S` 退出 0，回读 `DisplayVersion=1.9.6`、已装 EXE 文件版本 `1.9.6`；重启后 `smoke:window-visible` 通过（主窗口 handle 664988）。
 - 任意目录调用：在 `C:\Windows\Temp` 执行 `focuslink doctor --json` 退出 0，返回 `version=1.9.6`、`ok=true`；`focuslink status --json` 正常返回。
 - 小米：`adb install -r` 成功，回读 `versionName=1.9.6` / `versionCode=1372`。
+- 真实窗口事件：给运行中的主窗口装 CDP 探针后，由 API 修改一条记录，渲染层收到 `records:changed`（count=1，payload 含 `recordVersion`/`changeSeq`/`domain`）。
 - 华为按 2026-10-29 指令不在线，未安装。
 
 ## 升级提示
@@ -32,7 +33,7 @@
 ## 已知限制
 
 - **运维脚本运行仍未能验证**：本机自动化环境里 `electron.exe <script>` 连最小探针都不执行（已用独立探针确认是环境限制），脚本改动只有代码与类型检查背书，需在真实终端跑一次 `npm run tomatodo:check -- --json-out check.json` 复核。
-- **renderer 刷新仍未肉眼演练**：事件链路已接好并有单测覆盖契约层，但没有在真实窗口走「改学科 → 看统计是否即时刷新」。
+- **renderer 视觉刷新未截图对比**：事件已在真实窗口验证到达，但没有截取改前/改后的统计画面。
 - 安装器仍需从 ASCII 路径运行；中文路径下运行安装器会以退出码 2 结束的缺陷未在源码层修复（打包侧已自动化）。
 - `focuslinkCloudState` 仍返回 `unknown`（未接 V2 Outbox 投影）。
 
