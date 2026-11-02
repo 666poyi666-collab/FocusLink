@@ -31,7 +31,12 @@ describe('desktop build hygiene', () => {
       'node scripts/build/clean-desktop-build.mjs',
     );
     expect(packageJson.scripts?.build).toBe(
-      'npm run gen-version && npm run clean:desktop-build && tsc --noEmit && npm run typecheck:cloudflare && vite build',
+      'npm run gen-version && npm run clean:desktop-build && tsc --noEmit && npm run typecheck:cloudflare && vite build && node scripts/build/bundle-cli.mjs',
     );
+    // 清理必须在 gen-version 之后、Vite 之前；CLI 打包必须在 Vite 之后（它读 dist-cli 之外无依赖）。
+    const build = packageJson.scripts?.build ?? '';
+    expect(build.indexOf('clean:desktop-build')).toBeGreaterThan(build.indexOf('gen-version'));
+    expect(build.indexOf('clean:desktop-build')).toBeLessThan(build.indexOf('vite build'));
+    expect(build.indexOf('bundle-cli')).toBeGreaterThan(build.indexOf('vite build'));
   });
 });

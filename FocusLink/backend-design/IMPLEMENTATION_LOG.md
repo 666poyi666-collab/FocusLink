@@ -1,5 +1,42 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-AUTO-20261102-DETAIL-DRAFT`：详情随记录变更刷新、未保存草稿不被覆盖（v1.9.9 已装）
+
+**结论**
+
+历史账本新增独立的记录变更令牌：记录被人工保存、AI 改或云端导入后，展开的详情与番茄控件会重新拉取；番茄标题输入框的未提交内容改存到按会话的模块级草稿缓存，控件重挂载也不会被清空。真实窗口 DOM 验收通过。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `records:changed` 现在驱动 `recordsRevision`，并进入 analytics、详情与番茄状态三个 effect 的依赖 | `FocusLink/src/features/history/HistoryPanel.tsx:232`、`FocusLink/src/features/history/SessionLedger.tsx:251` | 实测 |
+| ② | 真实窗口验收：输入 `草稿-验收-勿删` 不提交 → API 改标题 → `bodyHasTitle=true` 且 `input="草稿-验收-勿删"` | CDP `Runtime.evaluate` + `focuslink records update` | 实测 |
+| ③ | 首版只加 `dirty` 标记仍失败（input 被重置为 `学习`）：控件被重挂载，`useState` 初始化把草稿覆盖掉 | v1.9.8 实测输出 | 实测 |
+| ④ | 改为按会话暂存 `pendingRecordNameDrafts`，重挂载时从缓存初始化，验收转为通过 | `FocusLink/src/features/history/SessionLedger.tsx:58` | 实测 |
+| ⑤ | 刷新时不再把番茄状态置空，避免输入框卸载 | `FocusLink/src/features/history/SessionLedger.tsx:277` | 实测 |
+| ⑥ | Windows 1.9.9 安装退出 0，`DisplayVersion=1.9.9`、EXE `1.9.9`，`smoke:window-visible` 通过（handle 2691284） | 注册表 + 文件版本 + 冒烟 | 实测 |
+| ⑦ | 小米已装 `1.9.9 / 1375` | `adb install -r` + `dumpsys` | 实测 |
+| ⑧ | 源码门禁：format / typecheck / lint 通过，`npm test` 177 文件 / 1548 用例全绿 | 命令输出 | 实测 |
+
+**问题**
+
+P1 运维脚本运行仍未验证 — 本机 Electron 脚本不执行，只能在真实终端复核 — `FL-AUTO-20261102-CLI-PACKAGING` 遗留。
+P2 安装器仍要求 ASCII 路径 — 打包侧自动化，安装侧未修 — 同上。
+P2 草稿缓存无上限 — 极端情况下大量会话留草稿会占内存，当前按会话一条、保存即清 — 事实④。
+
+**处置**
+
+- `HistoryPanel`：新增 `recordsRevision` 状态与 `records:changed` 订阅，令牌传入账本。
+- `SessionLedger`：新增 `recordRevision` prop 并进入详情/番茄 effect 依赖；番茄状态刷新改为「同会话保留」。
+- `TomatodoSessionField`：草稿改存 `pendingRecordNameDrafts`（按会话），`dirty` 由缓存存在性初始化；`onChange` 即置脏；保存成功与 Esc 清除缓存。
+- 验收脚本：CDP 注入真实输入（`Input.insertText`）+ CLI 改记录，读取 `document.body.innerText` 与输入框 `value` 比对；验收后把测试改写的标题恢复为 `null`。
+
+**门禁**
+
+- 源码全绿（⑧）；Windows / 小米同版已装（⑥⑦）；真实窗口 DOM 双断言通过（②）。
+- 遗留：运维脚本真实运行、安装器中文路径（P1/P2）。
+
 ## 2026-11-02 · `FL-AUTO-20261102-V196-ACCEPTANCE`：内置 CLI 已复核，已选详情与未保存草稿仍需行为验收（v1.9.6）
 
 **结论**

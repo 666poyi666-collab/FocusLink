@@ -178,6 +178,9 @@ export function HistoryPanel() {
   // 监听真实数据（若有）
   /* 关联任务后要重新拉取 analytics；令牌必须声明在下面的 effect 之前。 */
   const [analyticsReloadToken, setAnalyticsReloadToken] = useState(0);
+  /* 账本条目被人工、AI 或云端导入改动时递增：详情与番茄控件要跟着重取，
+     只重取统计会让展开的详情继续显示旧值。 */
+  const [recordsRevision, setRecordsRevision] = useState(0);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [heatmapDaily, setHeatmapDaily] = useState<SessionAnalyticsDaily[]>([]);
   const [analytics, setAnalytics] = useState<SessionAnalyticsResult | null>(null);
@@ -226,7 +229,16 @@ export function HistoryPanel() {
       cancelled = true;
       unsub?.();
     };
-  }, [range, analyticsReloadToken]);
+  }, [range, analyticsReloadToken, recordsRevision]);
+
+  /* 记录被改动（人工保存、AI 补录/修正、云端导入）后，统计与展开的详情都要重取。
+     计时状态变化不推进这个令牌：每秒累计不是记录变更。 */
+  useEffect(() => {
+    const off = window.focuslink?.on?.('records:changed', () => {
+      setRecordsRevision((value) => value + 1);
+    });
+    return () => off?.();
+  }, []);
 
   /* 分类画卷：只在真的选了分类时才发第二个请求（全部分类时复用上面那份，避免多一次 IPC）。 */
   useEffect(() => {
@@ -831,6 +843,7 @@ export function HistoryPanel() {
           onLink={handleLedgerLink}
           onDeleted={handleLedgerDeleted}
           reloadToken={analyticsReloadToken}
+          recordRevision={recordsRevision}
           notify={showToast}
           range={range}
           clippedActiveBySession={clippedActiveBySession}

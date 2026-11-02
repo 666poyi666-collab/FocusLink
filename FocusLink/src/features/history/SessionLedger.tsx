@@ -14,6 +14,8 @@ interface Props {
   /** 删除成功后由页面层刷新账本读数并清理选中态 */
   onDeleted: (sessionId: string) => void;
   reloadToken: number;
+  /** 记录本身被改动时递增（人工保存 / AI 补录 / 云端导入）；详情与番茄控件据此重取。 */
+  recordRevision: number;
   notify: (message: string) => void;
   filterLabel?: string;
   onResetFilter: () => void;
@@ -53,6 +55,11 @@ const TOMATODO_STATE_LABELS: Record<TomatodoSyncStatus['state'], string> = {
   'cloud-synced': '上传已确认',
 };
 
+/* 未提交的番茄标题草稿，按会话 id 暂存。
+   记录变更会让详情与控件重取，控件可能被重挂载；草稿放在模块级缓存里才不会被清掉。
+   保存成功、按 Esc 或明确清空时才移除。 */
+const pendingRecordNameDrafts = new Map<string, string>();
+
 function TomatodoSessionField({
   sessionId,
   status,
@@ -66,11 +73,26 @@ function TomatodoSessionField({
   onSaved: () => void;
   notify: (message: string) => void;
 }) {
-  const [draft, setDraft] = useState(status.recordName);
+  const [draft, setDraftValue] = useState(
+    () => pendingRecordNameDrafts.get(sessionId) ?? status.recordName,
+  );
+  /* 用户没动过输入框时跟随外部值；一旦开始输入就不再被刷新覆盖，
+     否则 AI 改同一条记录会把用户正在敲的标题清掉。 */
+  const [dirty, setDirty] = useState(() => pendingRecordNameDrafts.has(sessionId));
   const [saving, setSaving] = useState(false);
+  const setDraft = (value: string) => {
+    pendingRecordNameDrafts.set(sessionId, value);
+    setDraftValue(value);
+    setDirty(true);
+  };
+  const clearDraft = () => {
+    pendingRecordNameDrafts.delete(sessionId);
+    setDirty(false);
+  };
   useEffect(() => {
-    setDraft(status.recordName);
-  }, [status.recordName]);
+    if (dirty) return;
+    setDraftValue(status.recordName);
+  }, [status.recordName, dirty]);
   const commit = async () => {
     const next = draft.trim();
     if (saving || next === status.recordName.trim()) return;
@@ -79,10 +101,12 @@ function TomatodoSessionField({
       const result = await window.focuslink.tomatodo.setSessionRecordName(sessionId, next || null);
       if (result.ok) {
         notify('番茄标题已保存');
+        clearDraft();
       } else {
         notify(
           `番茄标题已保存在本机，但番茄 To-do 记录未更新确认（${result.error ?? '未知原因'}）`,
         );
+        clearDraft();
       }
       onSaved();
     } catch (cause) {
@@ -119,7 +143,12 @@ function TomatodoSessionField({
           aria-label="番茄 Todo 记录标题"
           placeholder={status.subject}
           className="w-[11rem] rounded-md border border-border/50 bg-bg-card/50 px-1.5 py-0.5 text-[10.5px] text-fg placeholder:text-fg-subtle focus:border-accent/50 focus:outline-none disabled:opacity-40"
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            // 真实输入才算脏：程序化聚焦未必触发 onFocus，不能只靠它。
+            setDirty(true);
+          }}
+          onFocus={() => setDirty(true)}
           onBlur={() => {
             void commit();
           }}
@@ -128,7 +157,10 @@ function TomatodoSessionField({
               event.preventDefault();
               void commit();
             }
-            if (event.key === 'Escape') setDraft(status.recordName);
+            if (event.key === 'Escape') {
+              clearDraft();
+              setDraftValue(status.recordName);
+            }
           }}
         />
         <span className="text-[10px] text-fg-subtle">
@@ -163,6 +195,7 @@ function SessionLedgerImpl({
   onLink,
   onDeleted,
   reloadToken,
+  recordRevision,
   notify,
   filterLabel,
   onResetFilter,
@@ -215,14 +248,20 @@ function SessionLedgerImpl({
     return () => {
       cancelled = true;
     };
-  }, [selectedSessionId, reloadToken, retry]);
+  }, [selectedSessionId, reloadToken, recordRevision, retry]);
 
   /* 番茄记录名与分类来自主进程的番茄状态快照；番茄通道未启用时保持 null，
      会话区就不会出现番茄控件。 */
   useEffect(() => {
     let cancelled = false;
-    setTomatodoStatus(null);
-    if (!selectedSessionId) return;
+    if (!selectedSessionId) {
+      setTomatodoStatus(null);
+      return;
+    }
+    /* 刷新时保留上一条同会话的状态：置空会卸载标题输入框，正在输入的草稿随之消失。 */
+    setTomatodoStatus((current) =>
+      current && current.sessionId === selectedSessionId ? current : null,
+    );
     void window.focuslink.tomatodo
       .status(selectedSessionId)
       .then((status) => {
@@ -235,7 +274,7 @@ function SessionLedgerImpl({
     return () => {
       cancelled = true;
     };
-  }, [selectedSessionId, reloadToken, tomatodoReload]);
+  }, [selectedSessionId, reloadToken, recordRevision, tomatodoReload]);
 
   const current = detail?.session.id === selected?.id ? detail : null;
   const rows = current
