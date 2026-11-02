@@ -1,5 +1,41 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-RELEASE-20261102-1101`：1.10.1 番茄同步修复候选，Windows + 小米同版回读
+
+**结论**
+
+1.10.1 从干净提交 `cf1b68b` 构建，包内提交一致且无 `-dirty`；Windows 覆盖安装、可见性与小米同版安装均已实测回读。按 2026-10-29 指令本轮设备门禁为 Windows + 小米，华为未在线。状态：已完成。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 安装版包内 `APP_COMMIT=cf1b68b`、版本 `1.10.1`，全部 `dist-electron` 文件 `-dirty` 0 次 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-pYTTyYrD.js:987` | 实测 |
+| ② | `verify:packaged` 退出 0，便携版回读 `version=1.10.1`、`commit=cf1b68b` | 命令输出 | 实测 |
+| ③ | `installer /S` 退出 0；注册表 `DisplayVersion=1.10.1`，已装 EXE 文件版本 `1.10.1` | 注册表与文件版本回读 | 实测 |
+| ④ | 脚本化拉起与重启后可见性冒烟均通过（handle 599666 / 796258） | 命令输出 | 实测 |
+| ⑤ | 小米 `adb install -r` 退出 0，回读 `1.10.1` / `1377`，`firstInstallTime` 保留 | `adb dumpsys package app.focuslink.mobile` | 实测 |
+| ⑥ | Android 单测 41 个用例 0 失败，配置测试断言 `1.10.1` | `FocusLink/android/app/build/test-results/testDebugUnitTest/*.xml` | 实测 |
+| ⑦ | 源码门禁 format / typecheck / lint 退出 0；`npm test` 177 文件 / 1552 用例；`npm run dist` 成功 | 命令输出 | 实测 |
+| ⑧ | `release:verify` 21 项通过；四文件集齐，双资产 SHA256 与文件复核一致 | 命令输出 | 实测 |
+| ⑨ | 华为平板未出现在 `adb devices -l`；2026-10-29 指令本轮只要求 Windows + 小米 | `FocusLink/backend-design/TEST_AND_RELEASE.md:103` | 证据记录 |
+| ⑩ | 既有环境限制不变：本机 Electron 不执行运维脚本，安装器安装侧仍要求 ASCII 路径 | `release-v1101/RELEASE_NOTES.md` | 证据记录 |
+
+**问题**
+
+P0 无 — 两处修复随候选生效，未发现新增故障 — ①②⑤。
+
+P1 无 — 批准留痕与桥启动缺陷已随版本修复并装机 — ③⑤。
+
+P2 运维脚本与安装器路径限制仍在 — 不影响本候选的安装与同步链路 — ⑩。
+
+**改动**
+
+- `release-v1101/RELEASE_NOTES.md`、`release-v1101/SHA256SUMS.txt`：候选记录与双资产真实哈希。
+- `FocusLink/shared/version.generated.ts`：构建生成值更新为 `cf1b68b`。
+- 版本点同提交升级：`package.json`、`package-lock.json`、`shared/version.ts`、`electron-builder.yml`、`android/app/build.gradle`（1377）、`FocusLinkConfigTest.java`、`README.md`、`CHANGELOG.md`。
+- 删除 `release-v196/`，本地保留 1.9.9 / 1.10.0 / 1.10.1 三个发布目录。
+
 ## 2026-11-02 · `FL-SYNC-20261102-APPROVAL-PERSIST`：批准同步不写回学科/标题，桥启动继承 ELECTRON_RUN_AS_NODE
 
 **结论**
