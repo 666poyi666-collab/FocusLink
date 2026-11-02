@@ -197,6 +197,18 @@ export type AutomationCommand =
     }
   | { type: 'tomatodo.sync'; expiresAt: number; planId: string; sessionId: string };
 
+/** 记录变更来源。人工、云端导入、API 与删除共用同一份版本与提交事件。 */
+export type AutomationRecordChangeDomain = 'human' | 'automation' | 'import' | 'delete';
+
+export interface AutomationRecordChangeEvent {
+  sessionId: string;
+  domain: AutomationRecordChangeDomain;
+  sourceClient: string;
+  recordVersion: number;
+  changeSeq: number;
+  observedAt: number;
+}
+
 export interface AutomationCommandEnvelope {
   operationId: string;
   /** 审计标签，不是权限证明。 */

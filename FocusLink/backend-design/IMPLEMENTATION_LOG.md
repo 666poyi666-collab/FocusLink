@@ -1,5 +1,46 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-AUTO-20261102-HUMAN-AI-CONSISTENCY-FIX`：人工写入纳入统一版本、记录变更通知界面（v1.9.4 已装）
+
+**结论**
+
+人工、云端导入、API 三条写路径现在共用同一个记录变更入口：推进 `recordVersion`、写提交事件、广播到 renderer。AI 拿旧版本改人工刚保存的字段会被拒绝；打开中的历史与统计在收到变更后重取。旧运维脚本的代理依赖改成按需初始化。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 人工学科/标题、任务关联、片段改名、合并、云端导入、删除统一走 `bumpRecordVersion` + 提交事件 | `FocusLink/electron/automation/recordVersioning.ts:1`、`FocusLink/electron/db/index.ts:657`、`FocusLink/electron/timer/manager.ts:483` | 实测 |
+| ② | 单测：人工改后 AI 持旧版本写入返回 `VERSION_CONFLICT`，`current.recordVersion=2`，学科仍是人工保存的「数学」 | `FocusLink/tests/automationHumanConsistency.test.ts:139` | 实测 |
+| ③ | 单测：事务回滚后版本不推进；不同连接 scope 版本互相隔离 | `FocusLink/tests/automationHumanConsistency.test.ts:214` | 实测 |
+| ④ | 源码门禁：format / typecheck / lint 通过，`npm test` 177 文件 / 1548 用例全绿 | 命令输出 | 实测 |
+| ⑤ | Windows 1.9.4 静默安装退出 0，回读 `DisplayVersion=1.9.4`、`FocusLink.exe` 文件版本 `1.9.4`；重启后 `smoke:window-visible` 通过（handle 1648136） | 注册表 + 文件版本 + 冒烟输出 | 实测 |
+| ⑥ | 小米 `192.168.1.5:5555` 已装 `versionName=1.9.4` / `versionCode=1370` | `adb install -r` + `dumpsys` | 实测 |
+| ⑦ | 安装版 `focuslink doctor` 免配置返回 `version=1.9.4`、`ok=true`；`records list` 读到当天 1 条、96.9 分钟 | CLI 输出 | 实测 |
+| ⑧ | 旧运维脚本改为只在实时读取前初始化代理；本机以非控制台方式启动 Electron 时脚本无 stdout 也无日志，未能取得运行证据 | `FocusLink/scripts/maintenance/tomatodo-approval-sync.ts:424` | 实测 |
+
+**问题**
+
+P1 运维脚本运行验证受限 — 本机自动化环境里 Electron 子进程既不输出也不落日志，脚本改动只有代码与类型检查背书 — 事实⑧。
+P1 renderer 联动未做肉眼演练 — 事件已接到历史统计的订阅点并类型通过，但没有在真实窗口点一次「改学科 → 看统计是否刷新」 — 事实①。
+P2 安装器仍要求 ASCII 路径 — 本轮沿用 `C:\fl-release-194` 输出与安装，未从源码层修复 — 事实⑤。
+
+**处置**
+
+- 新增 `electron/automation/recordVersioning.ts`：`bumpRecordVersion`（事务内推进版本 + 写事件）、`noteRecordMutated`（自开事务 + 提交后广播）、`onRecordMutated` 订阅与 scope 注入。
+- `AutomationService` 改为复用同一实现，事务内只写库、事务提交后才广播（回滚不会发通知）。
+- 人工路径接入：`db/index.ts` 的学科/标题 setter（含片段级折算到会话）、`TimerManager` 的任务关联/清空/改名/合并、`insertDeviceSyncBundleIfMissing`（云端导入）、`deleteSession`（删除）。
+- 事件链路：`shared/automation/contract.ts` 新增 `AutomationRecordChangeEvent`，`shared/ipc/api.ts` 增加 `records:changed`，`main.ts` 用 `onRecordMutated` 广播到所有窗口，`HistoryPanel` 三处订阅改为同时监听计时状态与记录变更。
+- 运维脚本：`installDeviceSyncProxy()` 从 `main()` 顶部移到实时读取前，失败只降级；退出改 `app.quit()` + 5 秒兜底。
+- 测试：新增 `tests/automationHumanConsistency.test.ts`（6 条）。
+
+**门禁**
+
+- 源码：format / typecheck / lint / `npm test` 全绿（④）。
+- 设备：Windows 1.9.4 已装并回读、重启后主窗口可见（⑤）；小米 1.9.4 / 1370 已装并回读（⑥）。
+- 开箱：安装版 CLI 免配置可用（⑦）。
+- 遗留：运维脚本的真实运行输出、renderer 刷新的肉眼验收（P1）留到下一轮在真实终端与真实窗口里补。
+
 ## 2026-11-02 08:31（Asia/Shanghai）· `FL-AUTO-20261102-HUMAN-AI-CONSISTENCY`：人工历史修改未推进自动化版本，提交事件未接 renderer（v1.9.3 核对，待修）
 
 **结论**

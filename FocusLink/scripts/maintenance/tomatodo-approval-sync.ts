@@ -421,18 +421,54 @@ async function runWrite(opts: CliOptions): Promise<number> {
   return result.ok ? 0 : 1;
 }
 
+let proxyPrep: Promise<void> | null = null;
+
+/**
+ * 设备同步代理只在**真的要访问同步域名**前装一次。
+ *
+ * 旧实现把 `installDeviceSyncProxy()` 放在 `main()` 最前面，于是：
+ * - 番茄写入（本地库 + 回环 CDP 桥）被一次与它无关的代理探测挡在前面；
+ * - 代理探测依赖 `session.defaultSession`，该路径失败时整条命令都跑不到写入。
+ * 现在按需初始化，且失败只降级为直连（见 FL-SYNC-022 的既有口径）。
+ */
+async function ensureDeviceSyncProxy(): Promise<void> {
+  if (proxyPrep) return proxyPrep;
+  proxyPrep = (async () => {
+    try {
+      const state = await installDeviceSyncProxy();
+      logger.info('maintenance', 'device sync proxy state', { ...state });
+    } catch (error) {
+      logger.warn('maintenance', 'device sync proxy init failed; continuing without it', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+  return proxyPrep;
+}
+
 async function main(): Promise<number> {
   const opts = parseArgs(process.argv.slice(2));
   // 记录日志：代理解析、凭据失败等诊断要落进 FocusLink 的日志文件，而不是只出现在终端。
   logger.init();
   initDatabase();
-  // 代理跟随：Clash 等 fake-ip 环境下直连同步域名必失败（见 FL-SYNC-022）。
-  await installDeviceSyncProxy();
   if (opts.mode === 'write') return runWrite(opts);
   const { rows, activeRow, dbPath } = collectRows(opts.hours);
-  const live = await readLiveFocusSnapshot();
+  let live: LiveFocusView | null = null;
+  let liveError: string | null = null;
+  try {
+    // 只有这一步会出网，因此只有这里需要代理。
+    await ensureDeviceSyncProxy();
+    live = await readLiveFocusSnapshot();
+  } catch (error) {
+    liveError = error instanceof Error ? error.message : String(error);
+    logger.warn('maintenance', 'live focus read failed; check continues without it', {
+      error: liveError,
+    });
+  }
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify({ dbPath, live, activeRow, rows }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify({ dbPath, live, liveError, activeRow, rows }, null, 2)}\n`,
+    );
   } else {
     printCheck(opts.hours, dbPath, rows, activeRow, live);
   }
@@ -448,5 +484,10 @@ void app.whenReady().then(async () => {
       `${error instanceof Error ? error.stack || error.message : String(error)}\n`,
     );
   }
-  app.exit(code);
+  // 走正常退出流程而不是 app.exit()：后者立即终止，quit 钩子与 stdio 都来不及跑。
+  // 兜底：5 秒没退干净就强制退出，避免本机已运行的实例把它挂住。
+  process.exitCode = code;
+  const watchdog = setTimeout(() => app.exit(code), 5_000);
+  watchdog.unref();
+  app.quit();
 });

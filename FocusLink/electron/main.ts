@@ -86,6 +86,7 @@ import {
   runAutomaticDeviceSync,
 } from './sync/deviceSyncService.js';
 import { AutomationService } from './automation/service.js';
+import { configureRecordVersioning, onRecordMutated } from './automation/recordVersioning.js';
 import { installDeviceSyncProxy } from './sync/deviceSyncProxy.js';
 import { startFoxlinkBusinessApi, type FoxlinkBusinessApi } from './mcp/businessApi.js';
 import { migrateLegacyLoopbackAccountConnection } from './sync/deviceSyncAccountService.js';
@@ -125,6 +126,7 @@ let runtimeUiInitialized = false;
 let snapshotUnsubscribe: (() => void) | null = null;
 let foxlinkBusinessApi: FoxlinkBusinessApi | null = null;
 let automationService: AutomationService | null = null;
+let recordChangeBridgeInstalled = false;
 
 /**
  * 本地自动化业务服务：界面与 HTTP/CLI 共用同一入口。
@@ -179,6 +181,19 @@ function startAutomationService(controller: FocusTimerController): AutomationSer
     appVersion: () => APP_VERSION,
   });
   service.start();
+  // 人工写入、云端导入与 API 写入共用同一份版本与提交事件；
+  // 主进程在这里把变更广播给所有窗口，打开中的历史与统计据此重取。
+  configureRecordVersioning({
+    scope: () => getDeviceSyncRuntimeConnection()?.scope ?? 'local',
+  });
+  if (!recordChangeBridgeInstalled) {
+    recordChangeBridgeInstalled = true;
+    onRecordMutated((change) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('records:changed', change);
+      }
+    });
+  }
   return service;
 }
 

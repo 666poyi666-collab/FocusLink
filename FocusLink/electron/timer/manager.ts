@@ -31,7 +31,9 @@ import {
   reassignPausesToSegment,
   getMeta,
   setMeta,
+  getDb,
 } from '../db/index.js';
+import { noteRecordMutated } from '../automation/recordVersioning.js';
 import { transition, getToggleEvent } from './stateMachine.js';
 import { FINISHED_PRESENTATION_HOLD_MS } from '@shared/focus/bandMath';
 import type {
@@ -479,6 +481,7 @@ export class TimerManager {
     if (this.currentSegment?.id === segmentId) {
       this.currentSegment = seg;
     }
+    this.noteHumanRecordChange(seg.sessionId, 'ipc:link-segment-task');
     logger.info('timer', 'linked task to segment', { segmentId, taskId, taskSource });
     this.emit();
   }
@@ -495,6 +498,7 @@ export class TimerManager {
     if (this.currentSegment?.id === segmentId) {
       this.currentSegment = seg;
     }
+    this.noteHumanRecordChange(seg.sessionId, 'ipc:clear-segment-task');
     logger.info('timer', 'cleared segment task link', { segmentId });
     this.emit();
   }
@@ -521,6 +525,7 @@ export class TimerManager {
       this.currentSegment.updatedAt = Date.now();
       updateSegment(this.currentSegment);
     }
+    this.noteHumanRecordChange(sessionId, 'ipc:link-session-task');
     logger.info('timer', 'linked task to session', { sessionId, taskId, taskSource });
     this.emit();
   }
@@ -535,6 +540,7 @@ export class TimerManager {
     s.defaultTaskTitle = null;
     s.updatedAt = Date.now();
     updateSession(s);
+    this.noteHumanRecordChange(sessionId, 'ipc:clear-session-task');
     logger.info('timer', 'cleared session default task', { sessionId });
     this.emit();
   }
@@ -591,7 +597,23 @@ export class TimerManager {
     if (this.currentSegment?.id === segmentId) {
       this.currentSegment = seg;
     }
+    this.noteHumanRecordChange(seg.sessionId, 'ipc:set-segment-title');
     this.emit();
+  }
+
+  /**
+   * 人工改了账本字段就推进记录版本并广播。
+   * 计时内部的 settle / stop 不调用它：每秒累计不是版本变更。
+   */
+  private noteHumanRecordChange(sessionId: string, sourceClient: string): void {
+    try {
+      noteRecordMutated(getDb(), { sessionId, domain: 'human', sourceClient });
+    } catch (error) {
+      logger.warn('timer', 'failed to record human ledger change', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** 合并多个 segment 为一个（按时间顺序拼接，时长相加） */
@@ -636,6 +658,7 @@ export class TimerManager {
     for (let i = 1; i < segs.length; i++) {
       deleteSegment(segs[i].id);
     }
+    this.noteHumanRecordChange(first.sessionId, 'ipc:merge-segments');
     logger.info('timer', 'merged segments', {
       count: segs.length,
       into: first.id,

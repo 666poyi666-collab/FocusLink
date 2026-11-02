@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { logger } from '../logger.js';
 import { SCHEMA_SQL } from './schema.js';
+import { noteRecordMutated } from '../automation/recordVersioning.js';
 import { mapPauseRow, mapSegmentRow, mapSessionRow } from './rows.js';
 import type { PauseRow, SegmentRow, SessionRow } from './rows.js';
 import type {
@@ -434,6 +435,12 @@ export function insertDeviceSyncBundleIfMissing(bundle: DeviceSyncSessionBundle)
     for (const pause of bundle.pauses) insertPauseStatement.run(pause);
   });
   insert();
+  // 云端导入也是账本变更：推进版本并写提交事件，否则 AI 仍会拿旧版本覆盖。
+  noteRecordMutated(database, {
+    sessionId: bundle.session.id,
+    domain: 'import',
+    sourceClient: 'sync:device-v2',
+  });
   return true;
 }
 
@@ -484,6 +491,7 @@ export function deleteSession(id: string): void {
     db.prepare('DELETE FROM focus_sessions WHERE id = ?').run(id);
   });
   tx();
+  noteRecordMutated(db, { sessionId: id, domain: 'delete', sourceClient: 'ipc:delete-session' });
 }
 
 // ============ Segment ============
@@ -604,11 +612,22 @@ export function setSegmentCloudFocusId(segmentId: string, cloudFocusId: string |
 /** 设置 segment 的番茄 Todo 学科分类（手动选择） */
 export function setSegmentTomatodoSubject(segmentId: string, subject: string | null): void {
   const db = getDb();
+  const sessionId = sessionIdOfSegment(db, segmentId);
   db.prepare('UPDATE focus_segments SET tomatodo_subject = ?, updated_at = ? WHERE id = ?').run(
     subject,
     Date.now(),
     segmentId,
   );
+  if (sessionId) {
+    noteRecordMutated(db, { sessionId, domain: 'human', sourceClient: 'ipc:segment-subject' });
+  }
+}
+
+/** 片段属于哪个会话；用于把片段级人工写入折算到会话记录版本。 */
+function sessionIdOfSegment(db: Database.Database, segmentId: string): string | null {
+  const row = db.prepare('SELECT session_id FROM focus_segments WHERE id = ?').get(segmentId) as
+    { session_id: string } | undefined;
+  return row?.session_id ?? null;
 }
 
 export function setSegmentsTomatodoSubject(segmentIds: string[], subject: string | null): number {
@@ -620,12 +639,19 @@ export function setSegmentsTomatodoSubject(segmentIds: string[], subject: string
   );
   const tx = db.transaction((ids: string[]) => {
     let updated = 0;
+    const touched = new Set<string>();
     for (const segmentId of ids) {
       updated += Number(stmt.run(subject, now, segmentId).changes ?? 0);
+      const sessionId = sessionIdOfSegment(db, segmentId);
+      if (sessionId) touched.add(sessionId);
     }
-    return updated;
+    return { updated, touched: [...touched] };
   });
-  return tx(segmentIds);
+  const result = tx(segmentIds);
+  for (const sessionId of result.touched) {
+    noteRecordMutated(db, { sessionId, domain: 'human', sourceClient: 'ipc:segments-subject' });
+  }
+  return result.updated;
 }
 
 /**
@@ -634,22 +660,36 @@ export function setSegmentsTomatodoSubject(segmentIds: string[], subject: string
  */
 export function setSegmentTomatodoRecordName(segmentId: string, recordName: string | null): void {
   const db = getDb();
+  const sessionId = sessionIdOfSegment(db, segmentId);
   db.prepare('UPDATE focus_segments SET tomatodo_record_name = ?, updated_at = ? WHERE id = ?').run(
     recordName,
     Date.now(),
     segmentId,
   );
+  if (sessionId) {
+    noteRecordMutated(db, {
+      sessionId,
+      domain: 'human',
+      sourceClient: 'ipc:segment-record-name',
+    });
+  }
 }
 
 /**
  * 设置会话的番茄 Todo 学科分类（手动选择）。
  * 记录粒度是会话，所以学科与标题都挂在 focus_sessions 上，不再写片段列。
+ *
+ * 人工写入必须与 API 写入产生同一个后果：推进 recordVersion 并写提交事件，
+ * 否则 AI 拿着旧版本还能覆盖用户刚改的字段（`FL-AUTO-20261102-HUMAN-AI-CONSISTENCY`）。
  */
 export function setSessionTomatodoSubject(sessionId: string, subject: string | null): number {
   const db = getDb();
   const result = db
     .prepare('UPDATE focus_sessions SET tomatodo_subject = ?, updated_at = ? WHERE id = ?')
     .run(subject, Date.now(), sessionId);
+  if (Number(result.changes ?? 0) > 0) {
+    noteRecordMutated(db, { sessionId, domain: 'human', sourceClient: 'ipc:tomatodo-subject' });
+  }
   return Number(result.changes ?? 0);
 }
 
@@ -659,6 +699,9 @@ export function setSessionTomatodoRecordName(sessionId: string, recordName: stri
   const result = db
     .prepare('UPDATE focus_sessions SET tomatodo_record_name = ?, updated_at = ? WHERE id = ?')
     .run(recordName, Date.now(), sessionId);
+  if (Number(result.changes ?? 0) > 0) {
+    noteRecordMutated(db, { sessionId, domain: 'human', sourceClient: 'ipc:tomatodo-record-name' });
+  }
   return Number(result.changes ?? 0);
 }
 

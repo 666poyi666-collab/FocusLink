@@ -77,6 +77,11 @@ import {
   setSessionStatusRows,
   updateSessionMetadataRows,
 } from './recordRepository.js';
+import {
+  bumpRecordVersion,
+  publishRecordMutation,
+  type RecordMutationDomain,
+} from './recordVersioning.js';
 import { AutomationStore, type CorrectionRow, type OperationRecord } from './store.js';
 import { TOMATODO_DOMAIN, runExclusive, sessionDomain } from './scheduler.js';
 
@@ -260,23 +265,37 @@ export class AutomationService {
     this.store.writeMeta(CONTROL_REVISION_KEY, String(this.controlRevision));
   }
 
-  private appendChange(
-    domain: string,
-    entityType: string,
-    entityId: string,
-    version: number,
-  ): number {
-    const seq = this.store.appendChange({
-      scope: this.scope(),
-      domain,
-      entityType,
-      entityId,
-      entityVersion: version,
-      now: this.now(),
-    });
-    this.store.pruneChanges(this.scope(), this.store.changeRetention());
-    this.wakeAll();
-    return seq;
+  /**
+   * 事务内推进版本并写提交事件。通知统一放在事务提交后发，
+   * 避免回滚了却已经通知界面。人工写入与云端导入复用同一实现
+   * （`recordVersioning.bumpRecordVersion`）。
+   */
+  private bumpEntity(
+    sessionId: string,
+    domain: RecordMutationDomain,
+    now: number,
+    scope: string,
+  ): { recordVersion: number; changeSeq: number } {
+    return bumpRecordVersion(this.options.database, { sessionId, domain, scope, now });
+  }
+
+  private publishMutation(
+    sessionId: string,
+    domain: RecordMutationDomain,
+    now: number,
+    bump: { recordVersion: number; changeSeq: number },
+  ): void {
+    publishRecordMutation(
+      {
+        sessionId,
+        domain,
+        sourceClient: 'automation-api',
+        recordVersion: bump.recordVersion,
+        changeSeq: bump.changeSeq,
+        observedAt: now,
+      },
+      () => this.wakeAll(),
+    );
   }
 
   private wakeAll(): void {
@@ -976,14 +995,15 @@ export class AutomationService {
         if (targetId && command.type === 'focus.abort') {
           setSessionStatusRows(this.options.database, targetId, 'aborted', now);
         }
-        const recordVersion = targetId
-          ? this.store.bumpVersion(scope, SESSION_ENTITY, targetId, now)
-          : 0;
-        const changeSeq = targetId
-          ? this.appendChange('timer', SESSION_ENTITY, targetId, recordVersion)
-          : null;
-        return { recordVersion, changeSeq };
+        if (!targetId) return { recordVersion: 0, changeSeq: null as number | null };
+        return this.bumpEntity(targetId, 'automation', now, scope);
       });
+      if (targetId && outcome.changeSeq !== null) {
+        this.publishMutation(targetId, 'automation', now, {
+          recordVersion: outcome.recordVersion,
+          changeSeq: outcome.changeSeq,
+        });
+      }
       const result: AutomationCommandResult = {
         protocolVersion: AUTOMATION_PROTOCOL_VERSION,
         status: 'applied',
@@ -1054,7 +1074,7 @@ export class AutomationService {
           }
           return {
             recordVersion: this.store.readVersion(scope, SESSION_ENTITY, sessionId),
-            seq: null,
+            changeSeq: null,
           };
         }
         const overlapping = listSessionSpans(
@@ -1118,10 +1138,14 @@ export class AutomationService {
           updatedAt: now,
         }));
         insertRecordRows(this.options.database, { session, segments, pauses });
-        const recordVersion = this.store.bumpVersion(scope, SESSION_ENTITY, sessionId, now);
-        const seq = this.appendChange('records', SESSION_ENTITY, sessionId, recordVersion);
-        return { recordVersion, seq };
+        return this.bumpEntity(sessionId, 'automation', now, scope);
       });
+      if (outcome.changeSeq !== null) {
+        this.publishMutation(sessionId, 'automation', now, {
+          recordVersion: outcome.recordVersion,
+          changeSeq: outcome.changeSeq,
+        });
+      }
 
       const result: AutomationCommandResult = {
         protocolVersion: AUTOMATION_PROTOCOL_VERSION,
@@ -1131,7 +1155,7 @@ export class AutomationService {
         targetId: sessionId,
         recordVersion: outcome.recordVersion,
         controlVersion: this.currentControlVersion(),
-        changeSeq: outcome.seq,
+        changeSeq: outcome.changeSeq,
         data: this.readRecord(sessionId),
         error: null,
       };
@@ -1286,10 +1310,9 @@ export class AutomationService {
           };
           this.store.appendCorrection(correction);
         }
-        const recordVersion = this.store.bumpVersion(scope, SESSION_ENTITY, sessionId, now);
-        const seq = this.appendChange('records', SESSION_ENTITY, sessionId, recordVersion);
-        return { recordVersion, seq };
+        return this.bumpEntity(sessionId, 'automation', now, scope);
       });
+      this.publishMutation(sessionId, 'automation', now, outcome);
 
       const result: AutomationCommandResult = {
         protocolVersion: AUTOMATION_PROTOCOL_VERSION,
@@ -1299,7 +1322,7 @@ export class AutomationService {
         targetId: sessionId,
         recordVersion: outcome.recordVersion,
         controlVersion: this.currentControlVersion(),
-        changeSeq: outcome.seq,
+        changeSeq: outcome.changeSeq,
         data: this.readRecord(sessionId),
         error: null,
       };

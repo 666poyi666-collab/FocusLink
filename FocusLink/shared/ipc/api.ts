@@ -1,3 +1,4 @@
+import type { AutomationRecordChangeEvent } from '../automation/contract';
 import type {
   AppSettings,
   FocusSegment,
@@ -446,6 +447,8 @@ export interface FocusLinkEventMap {
   'tasks:changed': [workspace: TaskWorkspaceRefreshData];
   'settings:domain-changed': [domains: SettingsDomain[]];
   'mini:dock-transition': [transition: MiniDockTransition];
+  /** 账本记录被人工、云端导入或 API 修改；打开中的历史与统计据此重取。 */
+  'records:changed': [change: AutomationRecordChangeEvent];
 }
 
 /**

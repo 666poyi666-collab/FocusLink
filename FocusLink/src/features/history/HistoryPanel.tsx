@@ -77,6 +77,20 @@ function applyStatsAppearance(root: HTMLElement, attributes: Record<string, stri
 /* HistoryInsights 的 onSelectRange 目前没有任何消费方：用模块级常量避免每次 render 换身份。 */
 const NO_SELECT_RANGE = () => undefined;
 
+/**
+ * 历史与统计的重取条件：计时状态变化，或任何一方改了账本记录。
+ * AI 补录/修正不会改变计时状态，只听 timer:state-changed 会一直显示旧值。
+ */
+function onHistoryRefresh(reload: () => void): () => void {
+  const offs = [
+    window.focuslink?.on?.('timer:state-changed', () => reload()),
+    window.focuslink?.on?.('records:changed', () => reload()),
+  ].filter((off): off is () => void => typeof off === 'function');
+  return () => {
+    for (const off of offs) off();
+  };
+}
+
 export function HistoryPanel() {
   const columns = useWorkspaceColumns('focuslink.stats.columns', { left: 168, right: 300 });
   const [ledgerOpen, setLedgerOpen] = useState(false);
@@ -204,7 +218,7 @@ export function HistoryPanel() {
 
     void loadAnalytics();
 
-    const unsub = window.focuslink?.on?.('timer:state-changed', () => {
+    const unsub = onHistoryRefresh(() => {
       void loadAnalytics();
     });
 
@@ -243,7 +257,7 @@ export function HistoryPanel() {
     };
 
     void loadScoped();
-    const unsub = window.focuslink?.on?.('timer:state-changed', () => {
+    const unsub = onHistoryRefresh(() => {
       void loadScoped();
     });
     return () => {
@@ -321,7 +335,7 @@ export function HistoryPanel() {
     };
 
     void loadSidebar();
-    const unsub = window.focuslink?.on?.('timer:state-changed', () => {
+    const unsub = onHistoryRefresh(() => {
       void loadSidebar();
     });
     return () => {
