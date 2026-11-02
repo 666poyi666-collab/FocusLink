@@ -15,6 +15,10 @@ describe('Foxlink independent MCP contract', () => {
     expect(api).toContain('/v1/status');
     expect(api).toContain('/v1/health');
     expect(api).toContain('/v1/capabilities');
+    // 2026-11-03：外部助手只能读 /v1 时被迫点界面，因此补上会话字段写入口。
+    expect(api).toContain("'/v1/tasks'");
+    expect(api).toContain("'/v1/sessions/batch-update'");
+    expect(api).toContain('records.update');
     expect(api).not.toContain('PersonalMcpGateway');
   });
 

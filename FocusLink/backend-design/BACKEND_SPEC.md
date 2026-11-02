@@ -186,6 +186,26 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 - 凭据：`business-api-tokens.json` 提供具名 token 与 `focus:read|focus:control|records:write|tomatodo:write`；旧 `business-api-token` 按兼容路径保留并默认拥有四个 scope，不静默轮换。发现配置 `automation-discovery.json` 只写端口与凭据文件位置，CLI 自行读取，密钥不出现在命令行。
 - 未开放：删除、任意 SQL、通用脚本执行、批量扫描历史后上传、远端番茄记录删除与回读；`records.update` 拒绝对进行中的会话做时间覆盖。
 
+### `/v1` 写接口（v1.10.2，外部助手免点界面）
+
+只读的 `/v1` 此前没有会话字段写入口，外部助手要改标题、归类或关联任务只能点界面。v1.10.2 起在同一个回环端口补上写入口；它们只做输入翻译，最终调用既有的 `records.update` / `records.create` 命令，因此版本冲突、幂等回执、修正审计与界面刷新复用同一条管线，没有第二条写库路径。
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| PATCH | `/v1/sessions/:id` | 改标题、备注、学科、番茄记录名、任务关联、无暂停会话的整场分钟数 |
+| POST / DELETE | `/v1/sessions/:id/task` | 关联 / 取消关联任务（等价于 `defaultTask`） |
+| GET | `/v1/tasks?q=&projectId=&status=&limit=` | 查本机任务缓存与所属清单名 |
+| POST | `/v1/sessions` | 补录一次已结束专注（单段 focus） |
+| POST | `/v1/sessions/batch-update` | 多条会话同一补丁；`atomic=true` 只在首个失败处停止 |
+
+写入口要求 `records:write` scope（`business-api-tokens.json` 的 `local-default` 已含四个 scope）。请求可选 `expectedRecordVersion`（整数）或 `expectedUpdatedAt`，不一致分别返回 `409 VERSION_CONFLICT` / `409 STALE_UPDATED_AT`；`operationId` 或 `Idempotency-Key` 头用于幂等重放，请求体里的 `operationId` 优先。
+
+字段语义：`title` 是会话标题；`tomatodoRecordName` 是番茄记录名（界面里的「番茄标题」）；`tomatodoSubject` 只能是七个学科之一或 `null`；`minutes` 只在会话没有暂停时接受，有暂停必须用 `/automation/v1/commands` 的 `records.update` + 完整 `timeline`，否则会把暂停算进有效时长（FL-SYNC-020 口径）。
+
+返回体是紧凑会话摘要：`id / title / note / status / startedAt / endedAt / activeMinutes / defaultTask / tomatodoSubject / tomatodoRecordName / updatedAt / recordVersion`；`GET /v1/tasks` 返回 `id / externalId / title / projectId / projectName / status / source / tags / dueDate`。
+
+批量入口不是数据库事务：逐条执行并逐条返回结果；`atomic=true` 只是遇到首个失败就停下，已成功的条目保留。当前没有多记录事务，需要全部成功时按单条命令调用并自行回滚。
+
 ## 当前三端同步修复需求（2026-07-22）
 
 - 修复手机与平板在已配置连接后仍报告“同步中断 / 重试失败”的问题；必须分别验证实时控制长轮询与已结束账本同步，不能用其中一条链路成功代替另一条。
