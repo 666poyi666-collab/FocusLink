@@ -1,5 +1,36 @@
 # FocusLink Windows 安装器错误索引
 
+## FL-INSTALL-019：release:verify 通过，但已安装包的构建提交仍带 -dirty
+
+**结论**
+
+发布记录格式通过与产物可追溯到干净源码提交是不同门禁；包内 dirty 标识必须通过正确构建流程消除。状态：阻塞，v1.9.9 的具体证据见实施日志 FL-RELEASE-20261102-DIRTY-BUILD。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 生成器使用当前 HEAD，并在工作区存在变更时追加 -dirty | `FocusLink/scripts/build/gen-version.js:18`、`FocusLink/scripts/build/gen-version.js:49` | 证据记录 |
+| ② | 构建规范要求干净提交，且生成文件与包内元数据不得含 -dirty | `FocusLink/backend-design/TEST_AND_RELEASE.md:424` | 证据记录 |
+| ③ | 发布记录校验的读取集合不含已安装包或发布产物内嵌提交；记录中的对应提交只通过格式检查 | `FocusLink/scripts/release/verify-release-record.mjs:129`、`FocusLink/scripts/release/verify-release-record.mjs:167` | 证据记录 |
+
+**问题**
+
+P0 不据此推断数据损坏 — 构建追溯失败与运行功能故障分开判断 — 证据①②。
+
+P1 无法按规范确认构建来源 — 后补源码提交不能改变已经生成的二进制元数据 — 证据①②。
+
+P2 校验绿灯范围易误读 — 记录校验不能替代对产物的提交、启动和哈希检查 — 证据③。
+
+**改动**
+
+`FocusLink/backend-design/INSTALLER_TROUBLESHOOTING.md`：追加本条诊断；不修改已安装应用或发布资产。
+
+- 先分别读取当前源码提交、生成文件、实际安装包/便携版内嵌提交和 Release notes；记录时间与构建来源，不把当前 HEAD 自动当成旧包来源。
+- 保持对 release EXE 的 Git 排除规则，只读提取本机 app.asar 或在隔离启动中读取元数据；不得借诊断触发全仓 LFS diff，也不得在仓库根提取覆盖 package.json。
+- 已装包带 dirty 时保留原值与原始验收记录。完成源码提交后，在干净工作区生成下一实际分发候选，按测试发布规范验证启动、设备安装与版本回读，再重算 SHA256。
+- 门禁需核对真实包内提交与构建所用干净源码提交，记录提交与源码提交保持正确祖先关系；禁止手改 APP_COMMIT、移除 dirty 后缀或只调整说明宣称通过。
+
 ## FL-INSTALL-018：Windows 清理测试创建的 junction 未被 Node 识别为链接
 
 ### 现象与边界（2026-10-27）

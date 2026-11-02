@@ -1,5 +1,37 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-RELEASE-20261102-DIRTY-BUILD`：v1.9.9 功能验收与干净构建门禁分开判定
+
+**结论**
+
+详情刷新与草稿保留已有当前实现和真实 DOM 验收记录，本轮安装 CLI 也读取成功；已安装包仍含 dirty 提交标识，未满足干净源码构建要求。状态：阻塞（构建追溯门禁，不代表本轮发现功能损坏）。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 本轮在 C:\Windows\Temp 执行 focuslink doctor --json，退出码为 0，返回 version=1.9.9、ok=true | `FocusLink/scripts/cli/focuslink-installed.ts:10` | 实测 |
+| ② | 候选说明记录真实窗口同时显示 API 改后的标题，并保留未提交输入；本轮读到 recordRevision 与按会话草稿缓存的对应实现，未复跑 DOM 写入 | `release-v199/RELEASE_NOTES.md:23`、`FocusLink/src/features/history/SessionLedger.tsx:61`、`FocusLink/src/features/history/SessionLedger.tsx:251` | 证据记录 |
+| ③ | 本轮只读提取已安装 app.asar 的主进程 bundle，命中 0768633-dirty；生成的版本文件与候选说明也保留同一值 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-7sfm7XNo.js:987`、`FocusLink/shared/version.generated.ts:2` | 实测 |
+| ④ | 正式构建要求先提交源码，在干净提交上测试和打包，生成文件与包内元数据均不得含 -dirty | `FocusLink/backend-design/TEST_AND_RELEASE.md:424` | 证据记录 |
+| ⑤ | 本轮 release:verify 退出码为 0，现有 21 项记录检查全部通过 | `FocusLink/scripts/release/verify-release-record.mjs:220` | 实测 |
+| ⑥ | 校验器读取版本源、文档和发布目录条目；对应提交只校验哈希格式，未读取或比对包内构建提交 | `FocusLink/scripts/release/verify-release-record.mjs:129`、`FocusLink/scripts/release/verify-release-record.mjs:167` | 证据记录 |
+
+**问题**
+
+P0 无本轮新增功能损坏证据 — 本轮仅执行 doctor、发布记录校验和包内容读取，既有 DOM 验收保留为记录 — 证据①②。
+
+P1 干净构建门禁未满足 — 在说明中标注源码提交不能使既有 dirty 产物变成该提交生成的干净产物，候选不能按全部门禁完成归档 — 证据③④。
+
+P2 发布记录校验覆盖不足 — 记录绿灯不能证明包内提交与构建源码一致 — 证据⑤⑥。
+
+**改动**
+
+- `FocusLink/backend-design/IMPLEMENTATION_LOG.md`：追加当前安装包元数据和门禁判定，保留功能、安装与 DOM 历史证据。
+- `FocusLink/backend-design/INSTALLER_TROUBLESHOOTING.md`：新增 FL-INSTALL-019，固定 dirty 产物的诊断与收口条件。
+- 根因：产品源码尚未提交时执行构建，版本生成器正确标记当时 HEAD 与 dirty 状态；后补提交和说明未重建已分发产物，现有记录校验器又未覆盖包内元数据。
+- 收口需从干净源码提交生成候选，确认实际包内提交、启动与安装回读，并重算哈希；后续实际分发按有效版本规则递增。不得手改生成文件、删除 dirty 后缀或只改说明换取通过。
+
 ## 2026-11-02 · `FL-AUTO-20261102-DETAIL-DRAFT`：详情随记录变更刷新、未保存草稿不被覆盖（v1.9.9 已装）
 
 **结论**
