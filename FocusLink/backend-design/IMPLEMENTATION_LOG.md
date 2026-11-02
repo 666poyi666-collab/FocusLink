@@ -1,5 +1,43 @@
 # FocusLink 实施日志
 
+## 2026-11-03 · `FL-API-20261103-SESSION-WRITE`：本地 `/v1` 补上会话写入口与任务查询（1.10.2）
+
+**结论**
+
+外部助手只能读 `/v1`，改标题、归类、关联任务被迫点界面；1.10.2 在同一个回环端口新增会话字段写、任务关联/取消、任务查询、补录与批量入口，全部翻译成既有 `records.update` / `records.create` 命令，没有第二条写库路径。已装机并完成真实回环验证。状态：已完成。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 新路由：`GET /v1/tasks`、`POST /v1/sessions/batch-update`、`POST/DELETE /v1/sessions/:id/task`、`PATCH /v1/sessions/:id`、`POST /v1/sessions`，写操作统一调用 `service.execute` | `FocusLink/electron/mcp/businessApi.ts:520`、`FocusLink/electron/mcp/businessApi.ts:547`、`FocusLink/electron/mcp/businessApi.ts:622` | 实测 |
+| ② | 自动化命令本身已支持 title/note/tomatodoSubject/tomatodoRecordName/defaultTask/timeline 字段补丁与 `VERSION_CONFLICT` | `FocusLink/electron/automation/service.ts:1195` | 证据记录 |
+| ③ | 翻译层 11 个用例覆盖清空语义、任务解析、`minutes` 时间线、有暂停拒绝与补录校验 | `FocusLink/tests/sessionWritePayload.test.ts` | 实测 |
+| ④ | `npm test` 178 文件 / 1563 用例全绿；format / typecheck / lint 退出 0；`npm run dist` 成功 | 命令输出 | 实测 |
+| ⑤ | 安装版 asar 内 `APP_COMMIT=cc8cc09`、版本 `1.10.2`，`dist-electron` 全部文件 `-dirty` 0 次 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-BtNfTe0q.js:987` | 实测 |
+| ⑥ | 真实回环：`GET /v1/tasks?q=第二章` 返回 5 条（含「第二章第六节」）；陈旧版本 PATCH 返回 409 且会话 `title` 与 `updatedAt` 未变 | 本机 `127.0.0.1:18770` 请求 | 实测 |
+| ⑦ | `installer /S` 退出 0，注册表 `DisplayVersion=1.10.2`、EXE 文件版本 `1.10.2`；可见性通过（handle 796266） | 注册表、文件版本与冒烟输出 | 实测 |
+| ⑧ | 小米 `install -r` 退出 0，回读 `1.10.2` / `1378`，单测 41/0，`firstInstallTime` 保留 | `adb dumpsys package app.focuslink.mobile` | 实测 |
+| ⑨ | 华为平板未在线；`release:verify` 21 项通过，四文件与双资产哈希一致 | 命令输出与 `release-v1102` | 实测 |
+
+**问题**
+
+P0 无 — 新接口复用既有命令管线，未发现数据或界面回归 — ③⑥。
+
+P1 无 — 外部助手不再需要点界面即可改标题、归类与关联任务 — ⑥。
+
+P2 批量入口不是数据库事务 — `atomic` 只保证首个失败即停，已成功条目保留 — ⑥。
+
+P2 `minutes` 只支持无暂停会话 — 有暂停的修正必须用 `/automation/v1` 的完整 `timeline` — ③。
+
+**改动**
+
+- `FocusLink/electron/mcp/sessionWritePayload.ts`：新增 `/v1` 输入翻译层与稳定错误码。
+- `FocusLink/electron/mcp/businessApi.ts`：新增五组路由并更新 `/v1/capabilities`。
+- `FocusLink/tests/sessionWritePayload.test.ts`、`FocusLink/tests/foxlinkMcpContract.test.ts`：新增 11 个用例与 3 条合同断言。
+- `FocusLink/backend-design/BACKEND_SPEC.md`：记录端点、字段语义、冲突与批量边界。
+- 版本点同步 `1.10.2` / `1378`；`release-v1102/` 四文件；删除 `release-v199/`，本地保留 1.10.0 / 1.10.1 / 1.10.2。
+
 ## 2026-11-02 · `FL-RELEASE-20261102-1101`：1.10.1 番茄同步修复候选，Windows + 小米同版回读
 
 **结论**
