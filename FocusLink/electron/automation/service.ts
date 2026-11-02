@@ -174,6 +174,16 @@ function toRecordName(value: string | null | undefined): string | null {
   return normalizeTomatodoRecordName(value) ?? null;
 }
 
+/**
+ * 幂等摘要只看业务正文。expiresAt 是传输层新鲜度闸门，
+ * 若把它算进摘要，CLI 用同一 operationId 重试就会因时间推进被判成「同 ID 异文」。
+ */
+function hashableCommand(command: AutomationCommand): unknown {
+  const { expiresAt: _expiresAt, ...rest } = command as AutomationCommand & { expiresAt: number };
+  void _expiresAt;
+  return rest;
+}
+
 function digest(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -726,7 +736,7 @@ export class AutomationService {
       throw commandFailure('SCOPE_DENIED', `${required} scope is required`);
     }
     const requestHash = digest(
-      canonicalJson({ type: envelope.command.type, command: envelope.command }),
+      canonicalJson({ type: envelope.command.type, command: hashableCommand(envelope.command) }),
     );
     const scope = this.scope();
     // 先清理过期回执正文与过期计划：旧 operationId 只能得到 OPERATION_EXPIRED，

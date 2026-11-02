@@ -269,6 +269,21 @@ describe('automation timer control', () => {
     expect(replay.targetId).toBe('live-session-1');
   });
 
+  it('replays the same business payload even when the expiry moved forward', async () => {
+    const command = envelope(
+      { type: 'focus.start', expectedControlVersion: 'idle:0:0', expectedState: 'idle' },
+      'op-start-0007',
+    );
+    const first = await service.execute(command, ALL_SCOPES);
+    expect(first.status).toBe('applied');
+    clock += 30_000;
+    const replay = await service.execute(
+      { ...command, command: { ...command.command, expiresAt: clock + MINUTE } },
+      ALL_SCOPES,
+    );
+    expect(replay.status).toBe('duplicate');
+  });
+
   it('refuses to reuse one operationId with a different payload', async () => {
     await service.execute(
       envelope(
