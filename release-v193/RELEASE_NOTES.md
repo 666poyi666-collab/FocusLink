@@ -6,7 +6,7 @@
 >
 > 发布类型：候选补丁（未创建公开 tag / GitHub Release）
 >
-> 验证状态：源码门禁与便携版启动自检通过；小米真机已装同版；**Windows 覆盖安装未完成**（本机 1.9.2 实例以高完整性级别运行，中等完整性进程无法结束它，安装器无法替换被占用的 EXE）
+> 验证状态：已通过（Windows 覆盖安装与小米真机同版均已实测回读）
 
 ## 主要变化
 
@@ -21,21 +21,24 @@
 
 - 源码：`format:check` / `typecheck` / `lint` 通过；`npm test` 176 文件 / 1542 用例全绿；`npm run build` 成功。
 - 产物：`verify:packaged` 便携版 PASS（version=1.9.3、commit=6a2c13a、页面就绪 7281ms、实例已回收）。
-- 接口实测：隔离 profile 启动打包产物后，`doctor` / `status` / `records create` / `records list` / `tomatodo preview` / `focus start·pause·resume·finish` 全部 applied；缺口修正返回 `TIMELINE_GAP`，同 operationId 重放返回 `duplicate`。
-- 设备矩阵：小米 `192.168.1.5:5555` 已装 `1.9.3 / 1369`；Windows 未安装；华为按 2026-10-29 指令不在线。
+- 接口实测：打包装置端到端跑通 `doctor` / `status` / `records create·list` / `tomatodo preview` / `focus start·pause·resume·finish`；缺口修正返回 `TIMELINE_GAP`，同 operationId 重放返回 `duplicate`。
+- Windows：`installer /S` 退出 0；回读卸载注册表 `DisplayVersion=1.9.3`、已装 `FocusLink.exe` 文件版本 `1.9.3`；重启后 `smoke:window-visible` 通过（主窗口 `FocusLink` 可见，handle 74384812）。
+- 开箱可用：全新安装后无需任何环境变量，`focuslink doctor` 直接返回 `ok`，凭据与发现配置自动落在 `%APPDATA%\focuslink\automation`。
+- 设备矩阵：Windows 1.9.3、小米 `192.168.1.5:5555` `1.9.3 / 1369` 同版；华为按 2026-10-29 指令不在线。
 
 ## 升级提示
 
-- Windows 必须先在托盘退出正在运行的 FocusLink，再用安装器静默覆盖，并回读卸载注册表与已安装 EXE 版本后重启应用。
+- Windows 必须先在托盘退出正在运行的 FocusLink，再从**纯 ASCII 路径**运行安装器（见下方已知限制），安装后回读注册表与 EXE 版本并重启。
 - Android 使用同一 APK 执行 `adb install -r`，保留应用数据并回读 `versionName/versionCode`。
 - 首次启动会在 `%APPDATA%\focuslink\automation` 生成凭据与发现配置；旧 ProgramData 凭据与环境变量仍按原优先级生效，不会被静默轮换。
 
 ## 已知限制
 
+- **中文路径下安装器必失败**：安装器位于含中文的目录时 NSIS 直接以退出码 2 结束（`Error writing temporary file`）。本次改为从 `C:\fl-release-193` 运行；产物文件本身相同。该问题未在源码层修复。
 - 安装包尚未内置 `focuslink` 可执行入口，CLI 目前需从源码目录（`npm run focuslink -- …`）运行；HTTP 接口不受影响。
+- 旧版卸载器静默运行返回 0 但不会真正清理，升级时表现为 `installer /S` 退出 2；本次先完成卸载再安装。
 - `focuslinkCloudState` 尚未接入 V2 Outbox 投影，当前如实返回 `unknown`。
 - 删除、任意 SQL、脚本执行、番茄远端删除与回读均未开放。
-- 仓库位于中文路径时 `electron-builder` 会失败（NSIS 报 `Error writing temporary file`），本次改用 `C:\fl-release-193` 输出后再复制回发布目录；该问题未在源码层修复。
 
 ## 下载与校验
 

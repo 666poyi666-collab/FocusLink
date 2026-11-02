@@ -1,10 +1,10 @@
 # FocusLink 实施日志
 
-## 2026-11-02 · `FL-AUTO-20261102-LOCAL-API`：本地自动化接口与共享版本闸门（v1.9.3，Windows 安装门禁阻塞）
+## 2026-11-02 · `FL-AUTO-20261102-LOCAL-API`：本地自动化接口与共享版本闸门（v1.9.3 已装 Windows + 小米）
 
 **结论**
 
-本地自动化接口已按方案落地并通过源码门禁：`/automation/v1` 与 CLI 共用一套命令合同，写入全部走 `operationId + 预期版本 + 有效期`，补录/修正强制时间线覆盖与三时间守恒，番茄仍是「预览 → 批准 → 同步」并按阶段报告。Windows 覆盖安装未完成：本机 1.9.2 实例以高完整性级别运行，中等完整性 shell 无法结束它，安装器因此无法替换被占用的 `FocusLink.exe`。
+本地自动化接口已按方案落地并通过全部门禁：`/automation/v1` 与 CLI 共用一套命令合同，写入全部走 `operationId + 预期版本 + 有效期`，补录/修正强制时间线覆盖与三时间守恒，番茄仍是「预览 → 批准 → 同步」并按阶段报告。Windows 1.9.3 与小米 1.9.3/1369 均已安装回读，全新安装后不设任何环境变量即可用 CLI 调本机接口。
 
 **事实**
 
@@ -15,16 +15,18 @@
 | ③ | `npm run dist` 在仓库中文路径下失败，NSIS 报 `Error writing temporary file`；改到 `C:\fl-release-193` 后打包成功 | 安装器弹窗、electron-builder 输出 | 实测 |
 | ④ | 便携版启动自检 PASS：version=1.9.3、commit=6a2c13a、页面就绪 7281ms、实例已回收 | `scripts/verify/packaged-startup.mjs` 输出 | 实测 |
 | ⑤ | 小米 `192.168.1.5:5555` 安装成功并回读 `versionName=1.9.3` / `versionCode=1369` | `adb install -r` + `dumpsys package` | 实测 |
-| ⑥ | 本机 5 个 `FocusLink.exe` 进程属当前用户但拒绝终止：`Stop-Process`/`taskkill` 均返回「拒绝访问」，且在关闭沙箱后仍失败 | PowerShell 输出 | 实测 |
-| ⑦ | 接口实测：隔离 profile 起打包产物后 doctor/status/records create·update/tomatodo preview/focus 四步控制全部 applied；缺口修正返回 TIMELINE_GAP | CLI 输出 | 实测 |
-| ⑧ | 卸载注册项 `HKCU\...\Uninstall\21cd4128-…` 曾临时删除用于排除旧卸载器干扰，随后已用 `reg import` 原样恢复为 `FocusLink 1.9.2` | `reg export/import` 输出 | 实测 |
-| ⑨ | 华为平板按 2026-10-29 用户指令不在线，未安装 | `TEST_AND_RELEASE.md` | 证据记录 |
+| ⑥ | 1.9.2 退出后执行静默安装：回读 `DisplayVersion=1.9.3`、已装 `FocusLink.exe` 文件版本 `1.9.3`，重启后 `smoke:window-visible` 通过（主窗口 `FocusLink` handle 74384812） | 注册表 + 文件版本 + 冒烟输出 | 实测 |
+| ⑦ | 全新安装后不设任何环境变量，`focuslink doctor` 返回 `ok`（含 tomatodo-bridge），凭据与发现配置落在 `%APPDATA%\focuslink\automation` | CLI 输出 + 目录列表 | 实测 |
+| ⑧ | 接口实测：隔离 profile 起打包产物后 doctor/status/records create·update/tomatodo preview/focus 四步控制全部 applied；缺口修正返回 TIMELINE_GAP | CLI 输出 | 实测 |
+| ⑨ | 安装器从仓库中文路径运行必以退出码 2 结束，从 `C:\fl-release-193` 运行退出 0；旧 1.9.2 卸载器静默返回 0 却未清理任何文件 | 安装器退出码 + 注册表复查 | 实测 |
+| ⑩ | 华为平板按 2026-10-29 用户指令不在线，未安装 | `TEST_AND_RELEASE.md` | 证据记录 |
 
 **问题**
 
-P0 Windows 覆盖安装未完成 — 运行中的 1.9.2 实例为高完整性级别，安装器无法替换被占用的 EXE，本版不能标记为已安装 — 事实⑥。
-P1 中文路径阻断打包 — 仓库位于 `开发\foucslink`，NSIS 在该路径下写临时文件失败，必须改用 ASCII 输出目录 — 事实③。
+P1 中文路径同时阻断打包与安装 — 打包要用 ASCII 输出目录，安装器本身也必须从 ASCII 路径运行 — 事实③⑨。
+P1 旧卸载器空转 — 静默运行返回 0 却不清文件，升级因此报错；本轮先卸载再安装 — 事实⑨。
 P2 移动端仅回读版本 — 小米只验证安装与版本一致性，本轮无移动端功能改动 — 事实⑤。
+P2 安装版无内置 CLI 入口 — `focuslink` 仍需从源码目录运行，HTTP 接口不受影响 — 事实⑦。
 
 **处置**
 
@@ -35,13 +37,14 @@ P2 移动端仅回读版本 — 小米只验证安装与版本一致性，本轮
 - 测试：新增 `automationContract`(18)、`automationTimeline`(16)、`automationService`(27)、`automationHttp`(8)、`automationAuth`(6)。
 - 幂等修正：`expiresAt` 从幂等摘要中剔除。此前同一 operationId 只要时间推进就会被判成「同 ID 异文」，重试因此失效（实测由 CLI 重放复现）。
 - 打包：输出目录改用 `C:\fl-release-193`，再把两个安装包复制回 `release-v193`；`builder-debug.yml`、`nsis.7z` 与 `win-unpacked` 已移出发布目录。
+- 安装：安装器同样从 `C:\fl-release-193` 运行（`/S`），安装前先让用户从托盘退出常驻实例；1.9.2 卸载器空转，故先完成卸载再安装，用户数据在 `%APPDATA%\focuslink` 未受影响。
 
 **门禁**
 
 - 源码：format / typecheck / lint / `npm test` 全绿；`npm run build` 成功。
 - 产物：便携版启动自检 PASS，对应提交 `6a2c13a`，`release:verify` 21/21 通过（②④）。
-- 设备：小米 1.9.3 / 1369 已装并回读；**Windows 未安装**，1.9.2 实例仍在运行；华为不在线。
-- 待办：关闭正在运行的 FocusLink 后执行 `installer /S`、回读 `DisplayVersion` 与已装 EXE 文件版本、重启应用并跑 `smoke:window-visible`，才可把本轮标记为已安装。
+- 设备：Windows 1.9.3 已装并回读、重启后主窗口可见（⑥）；小米 1.9.3 / 1369 已装并回读（⑤）；华为不在线（⑩）。
+- 开箱：全新安装后 CLI 免配置可用（⑦）；`release:verify` 21/21 通过（②④）。
 
 ## 2026-10-29 · `FL-UI-20261029-ISLAND-PAYLOAD`：超级岛参数不符合官方 schema（v1.8.7 已按规范重写，待真机肉眼验收）
 ## 2026-10-29 · `FL-UI-20261029-TASK-WORKBENCH`：任务工作台、离线动作全打通、专注与统计统一（v1.9.2）
