@@ -28,6 +28,8 @@ P1 无 — 干净构建门禁已由包内提交实测覆盖，v1.9.9 的 dirty �
 
 P2 中文仓库路径下 Android 单测裸命令失败 — 测试 argfile 编码不一致需进程级 `JAVA_TOOL_OPTIONS=-Dfile.encoding=GBK`，属环境绕行而非产品缺陷 — 证据⑥。
 
+P2 Android 构建首次可能因 AAPT2 daemon `CreateProcess error=740`（需要提升）失败 — `android\gradlew.bat -p android --stop` 后原命令重跑即成功，属本机环境 — 证据⑥。
+
 **改动**
 
 - `release-v1100/RELEASE_NOTES.md`、`release-v1100/SHA256SUMS.txt`：候选补丁记录与双资产真实哈希。
