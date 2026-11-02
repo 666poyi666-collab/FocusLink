@@ -1,5 +1,46 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-AUTO-20261102-LOCAL-API`：本地自动化接口与共享版本闸门（v1.9.3，Windows 安装门禁阻塞）
+
+**结论**
+
+本地自动化接口已按方案落地并通过源码门禁：`/automation/v1` 与 CLI 共用一套命令合同，写入全部走 `operationId + 预期版本 + 有效期`，补录/修正强制时间线覆盖与三时间守恒，番茄仍是「预览 → 批准 → 同步」并按阶段报告。Windows 覆盖安装未完成：本机 1.9.2 实例以高完整性级别运行，中等完整性 shell 无法结束它，安装器因此无法替换被占用的 `FocusLink.exe`。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 合同、服务、路由、CLI 与凭据签发均已实装，端口仍为 18770 | `FocusLink/shared/automation/contract.ts:1`、`FocusLink/electron/automation/service.ts:1` | 实测 |
+| ② | 源码门禁：format:check / typecheck / lint 通过；`npm test` 176 文件 / 1541 用例全绿 | 命令输出 | 实测 |
+| ③ | `npm run dist` 在仓库中文路径下失败，NSIS 报 `Error writing temporary file`；改到 `C:\fl-release-193` 后打包成功 | 安装器弹窗、electron-builder 输出 | 实测 |
+| ④ | 便携版启动自检 PASS：version=1.9.3、commit=593e527、页面就绪 7805ms、实例已回收 | `scripts/verify/packaged-startup.mjs` 输出 | 实测 |
+| ⑤ | 小米 `192.168.1.5:5555` 安装成功并回读 `versionName=1.9.3` / `versionCode=1369` | `adb install -r` + `dumpsys package` | 实测 |
+| ⑥ | 本机 5 个 `FocusLink.exe` 进程属当前用户但拒绝终止：`Stop-Process`/`taskkill` 均返回「拒绝访问」，且在关闭沙箱后仍失败 | PowerShell 输出 | 实测 |
+| ⑦ | 卸载注册项 `HKCU\...\Uninstall\21cd4128-…` 曾临时删除用于排除旧卸载器干扰，随后已用 `reg import` 原样恢复为 `FocusLink 1.9.2` | `reg export/import` 输出 | 实测 |
+| ⑧ | 华为平板按 2026-10-29 用户指令不在线，未安装 | `TEST_AND_RELEASE.md` | 证据记录 |
+
+**问题**
+
+P0 Windows 覆盖安装未完成 — 运行中的 1.9.2 实例为高完整性级别，安装器无法替换被占用的 EXE，本版不能标记为已安装 — 事实⑥。
+P1 中文路径阻断打包 — 仓库位于 `开发\foucslink`，NSIS 在该路径下写临时文件失败，必须改用 ASCII 输出目录 — 事实③。
+P2 移动端仅回读版本 — 小米只验证安装与版本一致性，本轮无移动端功能改动 — 事实⑤。
+
+**处置**
+
+- 合同与服务：新增 `shared/automation/`（`contract.ts`、`timeline.ts`）、`electron/automation/`（`service.ts`、`store.ts`、`recordRepository.ts`、`scheduler.ts`、`auth.ts`、`http.ts`），并抽出 `electron/db/rows.ts` 以复用行映射。
+- 接入点：`electron/mcp/businessApi.ts` 挂 `/automation/v1` 与 Host 校验，`electron/main.ts` 构造服务并传入用户目录，`electron/timer/focusTimerController.ts` 新增 `abortActive()`。
+- CLI：`scripts/cli/focuslink-cli.ts` 增加 `status/focus/records/tomatodo/operations/schema/doctor`，连接信息从发现配置解析，密钥不进命令行。
+- 凭据：无既有凭据时在 `%APPDATA%\focuslink\automation` 首次签发 full / readonly 两条 token；旧的 ProgramData 凭据与环境变量按原优先级兼容。
+- 测试：新增 `automationContract`(18)、`automationTimeline`(16)、`automationService`(26)、`automationHttp`(8)、`automationAuth`(6)。
+- 打包：输出目录改用 `C:\fl-release-193`，再把两个安装包复制回 `release-v193`；`builder-debug.yml`、`nsis.7z` 与 `win-unpacked` 已移出发布目录。
+
+**门禁**
+
+- 源码：format / typecheck / lint / `npm test` 全绿；`npm run build` 成功。
+- 产物：便携版启动自检 PASS（①②④）。
+- 设备：小米 1.9.3 / 1369 已装并回读；**Windows 未安装**，1.9.2 实例仍在运行；华为不在线。
+- 待办：关闭正在运行的 FocusLink 后执行 `installer /S`、回读 `DisplayVersion` 与已装 EXE 文件版本、重启应用并跑 `smoke:window-visible`，才可把本轮标记为已安装。
+
 ## 2026-10-29 · `FL-UI-20261029-ISLAND-PAYLOAD`：超级岛参数不符合官方 schema（v1.8.7 已按规范重写，待真机肉眼验收）
 ## 2026-10-29 · `FL-UI-20261029-TASK-WORKBENCH`：任务工作台、离线动作全打通、专注与统计统一（v1.9.2）
 
