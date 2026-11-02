@@ -827,9 +827,9 @@ export function registerIpc(
   ipcMain.handle('tomatodo:sync-segment', (_e, segmentId: string) =>
     syncSegmentToTomatodo(segmentId),
   );
-  /** 手动同步整个会话到番茄 Todo */
+  /** 手动同步整个会话到番茄 Todo（用户批准：写入成功后把学科/标题固化到会话） */
   ipcMain.handle('tomatodo:sync-session', (_e, sessionId: string) =>
-    syncSessionToTomatodo(sessionId),
+    syncSessionToTomatodo(sessionId, { recordApproval: true }),
   );
   /** 查询某会话的番茄 Todo 同步状态（供 UI 展示）。一次专注 = 一条记录。 */
   ipcMain.handle('tomatodo:status', (_e, sessionId: string) => getTomatodoSyncStatus(sessionId));

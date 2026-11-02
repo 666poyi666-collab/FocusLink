@@ -578,6 +578,39 @@ describe('tomatodo sync service bridge safety and state', () => {
     expect(durableSessionIds()).toEqual([]);
   });
 
+  it('records the approval on the session after a user-approved sync', async () => {
+    harness.segments = [makeSegment({ title: '数学错题回顾' })];
+    harness.sessions[0].tomatodoSubject = null;
+    harness.sessions[0].tomatodoRecordName = '数学错题回顾';
+    harness.writeBridge.mockResolvedValue(confirmedBridge());
+
+    await syncSessionToTomatodo('session-1', { recordApproval: true });
+
+    // 批准事实必须在会话上留痕，否则下一次状态读取会把它重新算成「从未批准」。
+    expect(firstSession().tomatodoSubject).toBe('数学');
+    expect(firstSession().tomatodoRecordName).toBe('数学错题回顾');
+  });
+
+  it('does not mark a background sync as approved without the explicit option', async () => {
+    harness.segments = [makeSegment({ title: '数学错题回顾' })];
+    harness.writeBridge.mockResolvedValue(confirmedBridge());
+
+    await syncSessionToTomatodo('session-1');
+
+    expect(firstSession().tomatodoSubject).toBeNull();
+    expect(firstSession().tomatodoRecordName).toBeNull();
+  });
+
+  it('does not record an approval when the record could not be written', async () => {
+    harness.writeBridge.mockResolvedValue(unavailableBridge());
+
+    const result = await syncSessionToTomatodo('session-1', { recordApproval: true });
+
+    expect(result.failed).toBe(1);
+    expect(firstSession().tomatodoSubject).toBeNull();
+    expect(firstSession().tomatodoRecordName).toBeNull();
+  });
+
   it('keeps a durable pending marker when cloud upload succeeds but phone delivery is unavailable', async () => {
     harness.writeBridge.mockResolvedValue({
       ...confirmedBridge(),

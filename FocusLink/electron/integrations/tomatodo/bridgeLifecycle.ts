@@ -41,6 +41,21 @@ function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
   return key ? env[key] : undefined;
 }
 
+/**
+ * 子进程环境必须去掉 `ELECTRON_RUN_AS_NODE`。
+ *
+ * 本机开发/自动化 shell 常把 `ELECTRON_RUN_AS_NODE=1` 导给整棵进程树；番茄 To-do 也是 Electron
+ * 应用，继承后以纯 Node 模式启动，会直接拒绝 `--remote-debugging-port`（exit 9，`bad option`），
+ * 同步桥永远连不上（FL-SYNC-027）。只清理传给子进程的那份环境，不改调用方自己的进程环境。
+ */
+export function sanitizeTomatodoLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env };
+  for (const key of Object.keys(next)) {
+    if (key.toLowerCase() === 'electron_run_as_node') delete next[key];
+  }
+  return next;
+}
+
 /** Standard per-machine and per-user installation locations used by TomaToDo on Windows. */
 export function getStandardTomatodoExecutableCandidates(
   dependencies: Pick<TomatodoBridgeLifecycleDependencies, 'env' | 'homedir' | 'platform'> = {},
@@ -176,7 +191,12 @@ async function ensureTomatodoBridgeImpl(
     const child = resolved.spawnProcess(
       executablePath,
       ['--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1'],
-      { detached: true, stdio: 'ignore', windowsHide: true },
+      {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: sanitizeTomatodoLaunchEnv(resolved.env),
+      },
     );
     child.once('error', (error) => {
       launchError = error.message;

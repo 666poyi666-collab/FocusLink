@@ -1,5 +1,43 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-SYNC-20261102-APPROVAL-PERSIST`：批准同步不写回学科/标题，桥启动继承 ELECTRON_RUN_AS_NODE
+
+**结论**
+
+外部番茄同步会话暴露两处 PC 端缺陷：自动化 `tomatodo.sync` 写入成功后不在会话上留批准痕，同一场专注会被重新判成「从未批准」；同步桥拉起番茄时把 `ELECTRON_RUN_AS_NODE` 传给子进程，从带该变量的 shell 启动必然 `bad option` 退出。两处已在源码修复并加用例；按 2026-10-13「番茄同步改动 PC-only」指令，未升版本、未打包、未做设备门禁。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 会话 `077387d5-…` 经 `/automation/v1` 的 `tomatodo.sync` 返回 `applied`，番茄记录 643「数学」97 分钟且 `isSynced=1`，但会话两个番茄字段仍为空 | `%APPDATA%/FocusLink/focuslink.db` 只读查询 | 实测 |
+| ② | 同日另一场 `ce0740f8-…` 先经手动设学科再同步，字段为「数学 / 数学」 | 同上 | 实测 |
+| ③ | 自动化服务只在内存里取 `session.tomatodoSubject ?? status.subject` 参与计划摘要，成功后没有写回 | `FocusLink/electron/automation/service.ts:1362` | 证据记录 |
+| ④ | 只有手动设置学科/标题的路径会持久化这两个字段 | `FocusLink/electron/sync/tomatodoSyncService.ts:657` | 证据记录 |
+| ⑤ | 外部会话实测 `TomaToDo.exe --remote-debugging-port=0` 退出 9（`bad option`），清掉 `ELECTRON_RUN_AS_NODE` 后同参数可启动 | 会话包 `session.v4.jsonl`（大肥鱼，2026-11-02） | 证据记录 |
+| ⑥ | 桥的 `spawn` 未传 `env`，子进程继承整棵进程树的环境 | `FocusLink/electron/integrations/tomatodo/bridgeLifecycle.ts:191` | 证据记录 |
+| ⑦ | 新增 4 个用例：批准写回、后台不写回、写入失败不写回、spawn 环境剔除变量 | `FocusLink/tests/tomatodoSyncService.test.ts`、`FocusLink/tests/tomatodoBridgeLifecycle.test.ts` | 实测 |
+| ⑧ | `npm test` 177 文件 / 1552 用例全绿；format / typecheck / lint 退出 0；`npm run build` 成功 | 命令输出 | 实测 |
+| ⑨ | 已同步两条记录为 04:59:57→06:36:57 与 08:39:48→09:48:48，互不重叠且各一条 | `%APPDATA%/tomatodo/tomatodo_db.json` 只读查询 | 实测 |
+
+**问题**
+
+P0 无 — 番茄记录本身写对，缺的是批准留痕与启动环境 — ①②。
+
+P1 批准不留痕 — 同一会话会被 `needsApproval` 重新算成待批准并可能重复同步 — ①③④。
+
+P1 子进程继承 `ELECTRON_RUN_AS_NODE` — 从开发/自动化 shell 启动番茄时同步桥必然连不上 — ⑤⑥。
+
+P2 番茄终点早于实际结束 — 番茄只存整数分钟，暂停造成的终点前移是 FL-SYNC-020 既定口径，不是重复记录 — ⑨。
+
+**改动**
+
+- `FocusLink/electron/sync/tomatodoSyncService.ts`：`syncSessionToTomatodo` 增 `recordApproval`，写入成功后写回学科与自定义标题。
+- `FocusLink/electron/main.ts` 的自动化端口与 `FocusLink/electron/ipc.ts` 的 `tomatodo:sync-session` 改为批准路径。
+- `FocusLink/electron/integrations/tomatodo/bridgeLifecycle.ts`：拉起番茄前剔除子进程环境里的 `ELECTRON_RUN_AS_NODE`。
+- 用例与文档：两个测试文件新增 4 个用例；`SYNC_TROUBLESHOOTING.md` 增 FL-SYNC-026 / FL-SYNC-027。
+- 未升版本、未打包、未跑设备门禁，装机的 1.10.0 仍是旧行为（见发布说明的开放决策）。
+
 ## 2026-11-02 · `FL-RELEASE-20261102-CLEAN-REBUILD`：1.10.0 从干净提交重建，包内提交与安装矩阵已回读
 
 **结论**

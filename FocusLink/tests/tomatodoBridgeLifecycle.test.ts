@@ -96,9 +96,53 @@ describe('TomaToDo bridge lifecycle', () => {
     expect(spawnProcess).toHaveBeenCalledWith(
       installedPath(),
       ['--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1'],
-      { detached: true, stdio: 'ignore', windowsHide: true },
+      {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: {
+          ProgramFiles: 'C:\\Program Files',
+          LOCALAPPDATA: 'C:\\Users\\test\\AppData\\Local',
+        },
+      },
     );
     expect(child.unref).toHaveBeenCalledTimes(1);
+  });
+
+  it('strips ELECTRON_RUN_AS_NODE from the launched child environment', async () => {
+    const probeBridge = vi
+      .fn()
+      .mockResolvedValueOnce({
+        connected: false,
+        pageDiscovered: false,
+        error: 'tomatodo_bridge_unavailable',
+      })
+      .mockResolvedValue({ connected: true, pageDiscovered: true });
+    const child = { once: vi.fn(), unref: vi.fn() };
+    let launchOptions: { env?: NodeJS.ProcessEnv } | undefined;
+    const spawnProcess = vi.fn();
+    spawnProcess.mockImplementation((...callArgs: unknown[]) => {
+      launchOptions = callArgs[2] as { env?: NodeJS.ProcessEnv } | undefined;
+      return child;
+    });
+
+    await ensureTomatodoBridge({
+      timeoutMs: 1_000,
+      pollIntervalMs: 50,
+      dependencies: dependencies({
+        probeBridge,
+        spawnProcess,
+        env: {
+          ProgramFiles: 'C:\\Program Files',
+          LOCALAPPDATA: 'C:\\Users\\test\\AppData\\Local',
+          ELECTRON_RUN_AS_NODE: '1',
+        },
+      }),
+    });
+
+    const keys = Object.keys(launchOptions?.env ?? {}).map((key) => key.toLowerCase());
+    expect(keys).not.toContain('electron_run_as_node');
+    expect(launchOptions?.env?.ProgramFiles).toBe('C:\\Program Files');
   });
 
   it('requires a user-controlled restart when TomaToDo is already running without a bridge', async () => {

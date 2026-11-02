@@ -79,6 +79,16 @@ export interface TomatodoSyncSegmentResult {
   error?: string;
 }
 
+/** 控制「这次写入是否代表用户批准」；只有人工触发路径可以开启。 */
+export interface TomatodoSyncOptions {
+  /**
+   * 批准留痕：记录写入成功时把学科与自定义标题固化到 `focus_sessions`。
+   * 必须只用于人工批准路径（界面「立即上传」、自动化 `tomatodo.sync`、批准工具）；
+   * 后台自动同步与云端投递意图不得开启，否则未经批准的会话会被标成已批准（FL-SYNC-023）。
+   */
+  recordApproval?: boolean;
+}
+
 export interface TomatodoSyncSessionResult {
   sessionId: string;
   ok: boolean;
@@ -462,6 +472,7 @@ export function syncSegmentToTomatodo(segmentId: string): Promise<TomatodoSyncSe
  */
 async function syncSessionToTomatodoUnlocked(
   sessionId: string,
+  options: TomatodoSyncOptions = {},
 ): Promise<TomatodoSyncSessionResult> {
   const config = getTomatodoConfig();
   if (!config) {
@@ -479,6 +490,19 @@ async function syncSessionToTomatodoUnlocked(
 
   const dbPath = resolveTomatodoDbPath(config.dbPath);
   const { result, recordFound } = await writeSessionRecordUnlocked(sessionId);
+
+  // 批准事实必须落在会话上：否则下一次预览/状态读取会把这条记录重新判成「从未批准」，
+  // 同一个会话会被再次同步（FL-SYNC-026）。先写回再算状态，保证回执里的学科与库里一致。
+  if (options.recordApproval && result.localWritten) {
+    const approved = getTomatodoSyncStatus(sessionId);
+    setSessionTomatodoSubject(sessionId, approved.subject);
+    setSessionTomatodoRecordName(sessionId, approved.customRecordName);
+    logger.info('tomatodoSync', 'approval recorded on session', {
+      sessionId,
+      subject: approved.subject,
+      customRecordName: approved.customRecordName,
+    });
+  }
 
   const synced = result.synced ? 1 : 0;
   const skipped = result.ok && result.skipped ? 1 : 0;
@@ -509,8 +533,11 @@ async function syncSessionToTomatodoUnlocked(
   };
 }
 
-export function syncSessionToTomatodo(sessionId: string): Promise<TomatodoSyncSessionResult> {
-  return withTomatodoOperationLock(() => syncSessionToTomatodoUnlocked(sessionId));
+export function syncSessionToTomatodo(
+  sessionId: string,
+  options: TomatodoSyncOptions = {},
+): Promise<TomatodoSyncSessionResult> {
+  return withTomatodoOperationLock(() => syncSessionToTomatodoUnlocked(sessionId, options));
 }
 
 export interface TomatodoSubjectSetResult {

@@ -809,3 +809,54 @@ P2 验收范围需明确 — 服务级 fixture 不能代替人工按钮、主窗
 - 验收应保持同一详情展开，外部修改它的标题/学科/时间线，再读取实际 DOM、详情查询次数及版本；不能靠切换记录、重新打开页面或只打印 records:changed 通过。
 - 再输入未保存的自定义标题并触发外部更新，确认草稿与焦点保留、冲突可见。SessionLedger 当前会在重取时清空 tomatodoStatus，控件又按该状态条件挂载；由此推断有重建编辑器丢草稿风险，尚无本轮真实 UI 复现。
 - 当前证据和限制记录在实施日志 FL-AUTO-20261102-V196-ACCEPTANCE；修复详情刷新时必须一并验证 dirty 字段保护，不能只增加 reloadToken。
+
+## FL-SYNC-026：批准同步成功后 `tomatodo_subject` / `tomatodo_record_name` 仍是空的
+
+### 含义
+
+用户（或自动化、其他助手）通过 `/automation/v1` 的 `tomatodo.sync` 或界面「立即上传」完成一次批准同步：番茄记录名字、时长、时间段都对，本机 `PCRecord.isSynced=1`，但 `focus_sessions.tomatodo_subject` / `tomatodo_record_name` 仍为 NULL。后果是 `needsApproval` 永远把这场算成「从未批准」，同一个会话可能被再次同步；历史页与自动化状态也无法区分「用户批准过」和「自动猜的学科」。
+
+### 根因（2026-11-02 修复）
+
+`electron/automation/service.ts:1362` 只在内存里取 `session.tomatodoSubject ?? status.subject` 参与计划摘要校验，`runTomatodoSync` 成功后没有把学科与标题写回会话；只有手动设置学科/标题（`setTomatodoSubjectForSession` / `setTomatodoRecordNameForSession`）会持久化。界面 IPC `tomatodo:sync-session` 与自动化端口走的是同一条无写回路径。
+
+### 处理步骤
+
+1. 同一会话对照三处事实：`focus_sessions` 两个字段、`tomatodo_db.json` 里 marker 记录的 `name`、`isSynced`。
+2. 字段为空但记录已存在且 `isSynced=1`，说明记录写对了、批准留痕丢了；**不要**为了状态好看再同步一遍，那会多写一条记录（FL-SYNC-024 节流下还可能挤掉别的记录）。
+3. 修复后批准路径（界面「立即上传」、自动化 `tomatodo.sync`、`npm run tomatodo:approve`）在写入成功时自动写回；后台自动同步与云端投递意图保持不写。
+
+### 验证
+
+`tests/tomatodoSyncService.test.ts` 锁住三件事：批准路径写回学科/标题、后台同步不写回、写入失败不写回；`npm test` 177 文件 / 1552 用例全绿。
+
+### 边界
+
+- 写回只在 `localWritten=true` 时发生；桥不可用或会话没有可计入片段时不标记批准。
+- 自定义标题为空时 `tomatodo_record_name` 保持 NULL，记录名回落到学科名（既有口径，FL-SYNC-018）。
+
+## FL-SYNC-027：从带 `ELECTRON_RUN_AS_NODE` 的环境启动番茄 To-do，同步桥永远连不上
+
+### 含义
+
+在开发/自动化 shell 里跑 `npm run tomatodo:approve -- --launch`，或任何会触发 `ensureTomatodoBridge` 的路径时，番茄 To-do 启动后立刻退出、桥探测超时；同一条命令前加 `Remove-Item Env:ELECTRON_RUN_AS_NODE` 就正常。典型报错是 `TomaToDo.exe: bad option: --remote-debugging-port=0` 与退出码 9。
+
+### 根因（2026-11-02 修复）
+
+宿主 shell 会把 `ELECTRON_RUN_AS_NODE=1` 导给整棵进程树。番茄 To-do 也是 Electron 应用，继承后以纯 Node 模式启动，不认 Chromium 开关，直接 `bad option` 退出；而 `bridgeLifecycle` 的 `spawn` 没有传 `env`，把这个变量原样交给子进程（`electron/integrations/tomatodo/bridgeLifecycle.ts:191`）。`stdio:'ignore'` 让 stderr 不可见，现场只剩「桥不可用」。
+
+### 处理步骤
+
+1. 先复现：带该变量执行 `TomaToDo.exe --remote-debugging-port=0` 退出 9，清掉后同参数能起。
+2. 检查 FocusLink 进程自己的环境里是否有 `ELECTRON_RUN_AS_NODE`；它来自启动 FocusLink 的 shell，不是应用设置。
+3. 修复后在拉起子进程前剔除该变量（大小写不敏感），不改调用方进程环境；不要把 `--no-sandbox` 之类开关当成修复。
+4. 番茄已在运行但没有桥时仍返回 `restart-required`，不得杀进程（FL-SYNC-019）。
+
+### 验证
+
+`tests/tomatodoBridgeLifecycle.test.ts` 的「strips ELECTRON_RUN_AS_NODE from the launched child environment」断言 spawn 收到的 `env` 不含该键，其余变量原样保留。
+
+### 边界
+
+- 只处理 `ELECTRON_RUN_AS_NODE`；其他 Electron 变量没有证据，不做改动。
+- 番茄被用户以普通方式（无调试端口）启动时仍然只能 `restart-required`，需要用户先退出再让 FocusLink 拉起。

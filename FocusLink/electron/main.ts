@@ -164,7 +164,7 @@ function startAutomationService(controller: FocusTimerController): AutomationSer
         };
       },
       sync: async (sessionId) => {
-        const result = await syncSessionToTomatodo(sessionId);
+        const result = await syncSessionToTomatodo(sessionId, { recordApproval: true });
         return {
           ok: result.ok,
           synced: result.synced,
