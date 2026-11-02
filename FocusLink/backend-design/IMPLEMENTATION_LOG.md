@@ -1,5 +1,38 @@
 # FocusLink 实施日志
 
+## 2026-11-02 08:31（Asia/Shanghai）· `FL-AUTO-20261102-HUMAN-AI-CONSISTENCY`：人工历史修改未推进自动化版本，提交事件未接 renderer（v1.9.3 核对，待修）
+
+**结论**
+
+本机接口已连通，但人工历史修改尚未参与自动化记录版本，记录提交事件也未接通 renderer；原需求中的人工与 AI 数据、显示一致性仍未闭环。状态：进行中。本轮仅核对与隔离诊断，未修改产品源码。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 子进程移除全部 `FOCUSLINK_*` / `FOXLINK_*` 环境变量后，从源码入口执行 `doctor --json`，退出码为 0，返回 version=1.9.3、ok=true，ledger/timer/tomatodo-bridge 检查均为 ok | `FocusLink/scripts/cli/focuslink-cli.mjs:9`、`FocusLink/scripts/cli/focuslink-cli.ts:322` | 实测 |
+| ② | 人工学科 IPC 调既有番茄服务，最终 setter 只更新 `focus_sessions.tomatodo_subject/updated_at`；未调用自动化实体版本或提交事件写入 | `FocusLink/electron/ipc.ts:843`、`FocusLink/electron/sync/tomatodoSyncService.ts:630`、`FocusLink/electron/db/index.ts:648` | 证据记录 |
+| ③ | 隔离内存 SQLite 中，以该 setter 的同形 SQL 保存“数学”后，记录版本与 changeSeq 均未推进；持旧版本的 `records.update` 返回 applied/error=null，并将学科覆盖为“英语” | `FocusLink/tests/fixtures/automationDatabase.ts:11`、`FocusLink/electron/db/index.ts:651`、`FocusLink/electron/automation/service.ts:1162` | 实测 |
+| ④ | 自动化提交仅唤醒服务事件等待者；主进程服务构造未桥接记录提交通知，历史统计仍订阅 timer:state-changed | `FocusLink/electron/automation/service.ts:263`、`FocusLink/electron/main.ts:135`、`FocusLink/src/features/history/HistoryPanel.tsx:207` | 证据记录 |
+| ⑤ | 现有 CLI 启动器从源码工作区定位 node_modules/tsx；安装配置未交付该命令入口 | `FocusLink/scripts/cli/focuslink-cli.mjs:8`、`FocusLink/electron-builder.yml:13` | 证据记录 |
+
+**问题**
+
+P0 无新增真实用户数据损坏证据 — 覆盖复现只发生在内存夹具中，未执行真实专注或番茄写入 — 证据③。
+
+P1 人工记录版本缺失 — AI 的旧版本修改可覆盖人工已保存的同字段，计时域串行不能保护这条历史修改路径 — 证据②③。
+
+P1 renderer 提交通知未接线 — 无计时状态变化的补录或编辑可能留在旧画面，尚未进行真实窗口联动验收 — 证据④。
+
+P2 安装 CLI 入口缺失 — 免环境变量配置成立，但其他项目仍不能仅凭安装版从任意目录调用命令 — 证据①⑤。
+
+**改动**
+
+- `FocusLink/backend-design/IMPLEMENTATION_LOG.md`：追加当前核对、隔离复现与根因；已有安装和全量测试记录保留为历史。
+- `FocusLink/backend-design/SYNC_TROUBLESHOOTING.md`：新增 `FL-SYNC-037`，固定诊断顺序与验收边界。
+- 诊断使用 Node v24.19.0 与真实内存 SQLite，模拟人工 setter 的 SQL 路径；它不是实际按钮并发演练，也不替代 Node 22 发布门禁、真实 UI、手机或第三方投递验收。
+- 下一轮优先将人工历史写入、云端导入与 API 纳入统一版本和提交事件，再补 renderer 消费、未保存输入保护及安装 CLI；中文路径与卸载器继续按原记录追踪。
+
 ## 2026-11-02 · `FL-AUTO-20261102-LOCAL-API`：本地自动化接口与共享版本闸门（v1.9.3 已装 Windows + 小米）
 
 **结论**

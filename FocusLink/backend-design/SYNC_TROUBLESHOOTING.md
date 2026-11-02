@@ -768,3 +768,36 @@ durable 队列 `tomatodo.pendingSegmentIdsV060` 仍是扁平 `string[]`，记录
 ### 当前边界
 
 本轮源码支持本机新建任务与待确认任务的本机专注；待确认任务的完成、移动和清单管理仍需云端确认，尚未实现完整离线任务编辑。2026-10-27 后续无线 ADB 连接超时且设备列表为空，原生系统表面与新版安装尚未通过；用户明确本轮仅验收 Windows＋小米，华为暂不安装。
+
+## FL-SYNC-037：人工保存后 AI 旧版本仍能覆盖，或 AI 修改后历史界面未刷新
+
+**结论**
+
+本地 API 成功与人工、AI、renderer 一致性是不同验收项；必须检查每条写路径是否推进同一实体版本并发布提交事件。状态：进行中，v1.9.3 源码存在接线缺口。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 人工保存学科最终只执行业务表 UPDATE；自动化版本读取独立的 automation_entity_versions | `FocusLink/electron/db/index.ts:648`、`FocusLink/electron/automation/store.ts:302` | 证据记录 |
+| ② | 自动化 records.update 只比较上述版本，不比较人工保存前后的业务字段 | `FocusLink/electron/automation/service.ts:1162` | 证据记录 |
+| ③ | 记录提交事件唤醒 API 长轮询等待者，历史统计的现有自动重取触发器仍是计时状态变化 | `FocusLink/electron/automation/service.ts:282`、`FocusLink/src/features/history/HistoryPanel.tsx:207` | 证据记录 |
+
+**问题**
+
+P0 无本条新增用户数据损坏证据 — 当前覆盖复现使用隔离内存库，真实窗口未演练 — 证据①②。
+
+P1 同字段覆盖缺少冲突拒绝 — 只在 API 内做 CAS 不能保护绕过版本的人工写路径 — 证据①②。
+
+P1 显示可能滞后 — 不能以 HTTP 变化流可读代替 renderer 已接收通知 — 证据③。
+
+P2 验收范围需明确 — 服务级 fixture 不能代替人工按钮、主窗、小窗与历史统计联动 — 证据③。
+
+**改动**
+
+`FocusLink/backend-design/SYNC_TROUBLESHOOTING.md`：追加可复用诊断与验收要求；本条不修改运行时实现。
+
+- 先列出人工 IPC、快捷键、旧脚本、云端导入和 API 的最终写函数；核对是否在业务表、实体版本、Outbox 与提交事件的共同事务中执行。
+- 用隔离 SQLite 先读版本，再经人工路径保存同字段，随后提交旧版本 API patch；应返回 VERSION_CONFLICT，人工字段保持不变。原始隔离复现及运行时边界见实施日志 `FL-AUTO-20261102-HUMAN-AI-CONSISTENCY`。
+- 检查主进程到 renderer 的提交广播、共享 IPC 类型、历史/统计订阅与旧响应淘汰；不能通过伪造 timer:state-changed 或全量轮询掩盖事件缺失。
+- 修复后再用隔离应用实例演练人工和 AI 交错修改、计时并发、重启重试与未保存输入保护，分别记录数据库结果和实际显示结果，不接触用户真实会话。
