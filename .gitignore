@@ -6,6 +6,7 @@
 /FocusLink/dist/
 /FocusLink/dist-electron/
 /FocusLink/dist-selftest/
+/FocusLink/dist-cli/
 /FocusLink/dist-mobile/
 /FocusLink/dist-cloud/
 /FocusLink/.tmp/

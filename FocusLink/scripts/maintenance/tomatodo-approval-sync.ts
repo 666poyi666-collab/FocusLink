@@ -20,6 +20,7 @@
  * - 无法独立回读云端，`cloudSyncUploadRecord` 成功只代表「上传已确认」。
  */
 import './pinAppUserData';
+import { writeFileSync } from 'node:fs';
 import { app } from 'electron';
 import {
   getActiveSession,
@@ -64,6 +65,8 @@ interface CliOptions {
   launch: boolean;
   dryRun: boolean;
   json: boolean;
+  /** 机器可读输出落到文件；stdout 在 GUI 子系统下不可靠（见 FL-SYNC-038）。 */
+  jsonOut: string | null;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -77,6 +80,7 @@ function parseArgs(argv: string[]): CliOptions {
     launch: false,
     dryRun: false,
     json: false,
+    jsonOut: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -107,6 +111,10 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case '--launch':
         opts.launch = true;
+        break;
+      case '--json-out':
+        opts.jsonOut = next();
+        opts.json = true;
         break;
       case '--dry-run':
         opts.dryRun = true;
@@ -466,9 +474,12 @@ async function main(): Promise<number> {
     });
   }
   if (opts.json) {
-    process.stdout.write(
-      `${JSON.stringify({ dbPath, live, liveError, activeRow, rows }, null, 2)}\n`,
-    );
+    const payload = JSON.stringify({ dbPath, live, liveError, activeRow, rows }, null, 2);
+    process.stdout.write(`${payload}\n`);
+    if (opts.jsonOut) {
+      // GUI 子系统的 stdout 在被重定向时不可靠；运维与自动化一律读这个文件。
+      writeFileSync(opts.jsonOut, `${payload}\n`, 'utf8');
+    }
   } else {
     printCheck(opts.hours, dbPath, rows, activeRow, live);
   }

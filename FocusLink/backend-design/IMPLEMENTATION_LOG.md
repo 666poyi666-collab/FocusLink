@@ -1,5 +1,43 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-AUTO-20261102-CLI-PACKAGING`：安装版内置 focuslink、打包脱离中文路径（v1.9.6 已装）
+
+**结论**
+
+安装包现在自带 `focuslink` 命令，装完即可在任意目录调用；`npm run dist` 不再要求仓库位于 ASCII 路径；运维脚本新增 `--json-out` 把结果落盘。renderer 刷新与运维脚本的**运行**仍未取得肉眼/终端证据，如实留在遗留。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `C:\Windows\Temp` 下执行 `focuslink doctor --json` 退出 0，返回 `version=1.9.6`、`ok=true` | 命令输出 | 实测 |
+| ② | 安装目录含 `focuslink.cjs`(52.2 kB)、`focuslink.cmd`、`focuslink.ps1`；别名由应用写入 `%LOCALAPPDATA%\Microsoft\WindowsApps\focuslink.cmd` | 目录列表 + 文件内容 | 实测 |
+| ③ | `node scripts/build/package-release.mjs` 在 `%TEMP%\focuslink-build-1.9.6` 构建并自动复制两个安装包到 `release-v196` | 构建输出 | 实测 |
+| ④ | Windows 1.9.6 安装退出 0，`DisplayVersion=1.9.6`、EXE 文件版本 `1.9.6`，`smoke:window-visible` 通过（handle 664988） | 注册表 + 文件版本 + 冒烟 | 实测 |
+| ⑤ | 小米 `192.168.1.5:5555` 已装 `1.9.6 / 1372` | `adb install -r` + `dumpsys` | 实测 |
+| ⑥ | `.cmd` 用 LF 时 cmd.exe 把 `rem` 注释行当命令执行；改 CRLF 后输出干净 | 终端输出对比 | 实测 |
+| ⑦ | 本机 `electron.exe <script>` 连最小探针都不执行（脚本内 `writeFileSync` 未落盘），运维脚本无法在此环境运行验证 | 探针 `.tmp/probe2.cjs` 无输出 | 实测 |
+| ⑧ | 源码门禁：format / typecheck / lint 通过，`npm test` 177 文件 / 1548 用例全绿 | 命令输出 | 实测 |
+
+**问题**
+
+P1 运维脚本仅代码级验证 — Electron 脚本在本机不执行，只能靠类型检查与代码评审 — 事实⑦。
+P1 renderer 刷新未肉眼演练 — 事件链路有单测与类型背书，缺真实窗口观察 — 事实①之前的接线。
+P2 安装器仍要求 ASCII 路径 — 打包侧已自动化，安装侧未修 — 事实③。
+
+**处置**
+
+- `scripts/build/bundle-cli.mjs`：esbuild 打包 `focuslink-installed.ts` → `dist-cli/focuslink.cjs`，并生成 CRLF 的 `.cmd` / `.ps1` 转发层；`build` 脚本串上该步骤，`electron-builder.yml` 用 `extraFiles` 放进安装根目录。
+- `electron/automation/cliAlias.ts` + `main.ts`：启动时把别名写进 `WindowsApps`（幂等、失败只告警）；`build/installer.nsh` 的 `customUnInstall` 删除别名。
+- `scripts/build/package-release.mjs`：ASCII 暂存目录构建 + 复制回 `release-v<xxx>`；`dist` / `dist:win` 改走它。
+- `scripts/maintenance/tomatodo-approval-sync.ts`：新增 `--json-out`；代理初始化按需、失败降级；退出走 `app.quit()` + 5 秒兜底。
+- `scripts/cli/focuslink-cli.ts`：自运行块对 CJS 打包安全（`import.meta` 缺失时不触发）。
+
+**门禁**
+
+- 源码全绿（⑧）；Windows / 小米同版已装（④⑤）；任意目录 CLI 可用（①②）。
+- 遗留：运维脚本真实运行、renderer 肉眼刷新、安装器中文路径（P1/P2）。
+
 ## 2026-11-02 · `FL-AUTO-20261102-HUMAN-AI-CONSISTENCY-FIX`：人工写入纳入统一版本、记录变更通知界面（v1.9.4 已装）
 
 **结论**

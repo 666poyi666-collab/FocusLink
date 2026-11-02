@@ -1080,8 +1080,19 @@ function helpText() {
         5 找不到目标，6 本机接口不可用或可重试失败，7 需要重新取快照。`;
 }
 
+// 同一份源码有两种运行方式：源码目录经 tsx 直跑（ESM，`import.meta.url` 可用），
+// 安装包内经 esbuild 打成 CJS（`import.meta` 不存在）。这里必须两条都安全：
+// 打成 CJS 时 self-run 不触发，由 focuslink-installed.ts 显式调用。
+const selfHref = (() => {
+  try {
+    return (import.meta as { url?: string }).url ?? '';
+  } catch {
+    return '';
+  }
+})();
+
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : '';
-if (invokedPath === import.meta.url) {
+if (selfHref && invokedPath === selfHref) {
   void runFocusLinkCli(process.argv.slice(2), process.env, {
     stdout: (value) => process.stdout.write(`${value}\n`),
     stderr: (value) => process.stderr.write(`${value}\n`),
@@ -1090,4 +1101,10 @@ if (invokedPath === import.meta.url) {
   });
 }
 
-export const focusLinkCliModulePath = fileURLToPath(import.meta.url);
+export const focusLinkCliModulePath = (() => {
+  try {
+    return selfHref ? fileURLToPath(selfHref) : '';
+  } catch {
+    return '';
+  }
+})();

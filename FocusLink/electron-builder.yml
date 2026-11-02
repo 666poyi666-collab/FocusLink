@@ -8,7 +8,7 @@ directories:
   # 以及仓库「只保留最新三个 release-v*」的约定都不一致。
   # 因此这里与 shared/version.ts 的 APP_RELEASE_DIR 一样是**手工同步点**：
   # 升版本时必须同时改这两处，并确认 `npm run dist:win` 的 appOutDir 落在正确目录。
-  output: ../release-v194
+  output: ../release-v196
   buildResources: build
 files:
   - dist/**/*
@@ -72,6 +72,11 @@ asarUnpack:
 extraResources:
   - from: build/
     to: build/
+    filter: ["**/*"]
+# 安装包内置 CLI：focuslink.cjs + focuslink.cmd/ps1 放在安装根目录（与 FocusLink.exe 同级）。
+extraFiles:
+  - from: dist-cli/
+    to: .
     filter: ["**/*"]
 publish: null
 # v1.6.7 包体瘦身（四）：只保留中英文 locale。

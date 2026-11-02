@@ -87,6 +87,7 @@ import {
 } from './sync/deviceSyncService.js';
 import { AutomationService } from './automation/service.js';
 import { configureRecordVersioning, onRecordMutated } from './automation/recordVersioning.js';
+import { ensureCliAlias } from './automation/cliAlias.js';
 import { installDeviceSyncProxy } from './sync/deviceSyncProxy.js';
 import { startFoxlinkBusinessApi, type FoxlinkBusinessApi } from './mcp/businessApi.js';
 import { migrateLegacyLoopbackAccountConnection } from './sync/deviceSyncAccountService.js';
@@ -1475,6 +1476,8 @@ app.whenReady().then(async () => {
   timer = new FocusTimerController(localTimer);
   timer.setSegmentBehavior(settings.segmentBehavior);
   automationService = startAutomationService(timer);
+  // 安装版自带 focuslink 命令：写一层转发别名，装完即可在任意目录使用。
+  ensureCliAlias(path.dirname(app.getPath('exe')));
   foxlinkBusinessApi = startFoxlinkBusinessApi(timer, automationService, {
     automationDirectory: path.join(app.getPath('userData'), 'automation'),
   });

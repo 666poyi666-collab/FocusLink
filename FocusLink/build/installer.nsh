@@ -5,6 +5,14 @@
 ; current user's instances to exit, then force-close that user's remaining
 ; Electron children. This also covers the inner process of a portable build.
 
+; v1.9.5：安装版自带 `focuslink` 命令。别名由应用启动时写进
+; %LOCALAPPDATA%\Microsoft\WindowsApps（当前用户 PATH 默认包含该目录），
+; 这里只负责卸载时把别名清掉，绝不改用户 PATH。
+!macro customUnInstall
+  DetailPrint `Removing focuslink command alias...`
+  Delete "$LOCALAPPDATA\Microsoft\WindowsApps\focuslink.cmd"
+!macroend
+
 !macro closeCurrentUserFocusLink
   DetailPrint `Closing current-user "${PRODUCT_NAME}" processes...`
   ; The old uninstaller can run elevated and may not match TASKKILL's textual

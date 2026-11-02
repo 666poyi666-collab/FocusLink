@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.9.6 - 2026-11-02（安装包自带 focuslink 命令，打包不再怕中文路径）
+
+- **装完即可用 `focuslink`**：安装包内置 CLI 与 `focuslink.cmd` 转发层，应用首次启动会把别名写进当前用户的 `WindowsApps`（默认就在 PATH 上），任意目录直接敲 `focuslink doctor`、`focuslink status`、`focuslink records list` 都能用；卸载会清掉别名，不改用户 PATH。
+- **中文路径不再阻断打包**：`npm run dist` 改为先在纯 ASCII 暂存目录构建、再把安装包复制回 `release-v<xxx>`，仓库放在含中文的路径下也能一次打包成功。
+- **运维脚本输出可落盘**：`tomatodo:check` 支持 `--json-out <file>`，GUI 子系统的 stdout 不可靠时读文件即可。
+- 修复 v1.9.5 的 shim 换行缺陷：`.cmd` 必须 CRLF，否则 cmd.exe 会把注释行当命令执行。
+
 ## v1.9.4 - 2026-11-02（人工与 AI 写入统一版本，历史页实时刷新）
 
 - **人工修改也推进记录版本**：在界面上改学科、标题、任务关联、合并片段，都会和接口写入一样推进 `recordVersion` 并写提交事件。AI 拿着旧版本再改会被拒绝，不会再覆盖你刚保存的内容。
