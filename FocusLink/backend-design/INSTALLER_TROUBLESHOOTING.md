@@ -31,6 +31,15 @@ P2 校验绿灯范围易误读 — 记录校验不能替代对产物的提交、
 - 已装包带 dirty 时保留原值与原始验收记录。完成源码提交后，在干净工作区生成下一实际分发候选，按测试发布规范验证启动、设备安装与版本回读，再重算 SHA256。
 - 门禁需核对真实包内提交与构建所用干净源码提交，记录提交与源码提交保持正确祖先关系；禁止手改 APP_COMMIT、移除 dirty 后缀或只调整说明宣称通过。
 
+**收口（2026-11-02，v1.10.0）**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 新候选从干净提交 `07cf5a7` 构建，安装版包内 `APP_COMMIT=07cf5a7`，`-dirty` 出现 0 次 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-WezFA_U8.js:987` | 实测 |
+| ② | `verify:packaged`、`installer /S` 安装回读与 `smoke:window-visible` 全部通过；小米同版 1.10.0 / 1376 | `release-v1100/RELEASE_NOTES.md:24`、`release-v1100/RELEASE_NOTES.md:25` | 实测 |
+
+状态：已收口。v1.9.9 的 dirty 产物与原始验收记录保留为历史。记录校验脚本仍不读取二进制，新增门禁按「包内提交实测 + 对应提交必须是记录提交的祖先」执行，未改校验脚本。
+
 ## FL-INSTALL-018：Windows 清理测试创建的 junction 未被 Node 识别为链接
 
 ### 现象与边界（2026-10-27）

@@ -1,5 +1,42 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-RELEASE-20261102-CLEAN-REBUILD`：1.10.0 从干净提交重建，包内提交与安装矩阵已回读
+
+**结论**
+
+v1.9.9 的构建来源缺陷已由新补丁版本收口：1.10.0 从干净提交 `07cf5a7` 构建，安装版包内 `APP_COMMIT=07cf5a7` 且不含 `-dirty`，Windows 覆盖安装、可见性回读与小米同版安装均已实测。状态：已完成。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 安装版 `app.asar` 内 `APP_COMMIT` 为 `07cf5a7`，同一文件 `-dirty` 出现 0 次 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-WezFA_U8.js:987` | 实测 |
+| ② | `npm run verify:packaged` 退出 0，便携版回读 `version=1.10.0`、`commit=07cf5a7` | 命令输出 | 实测 |
+| ③ | `installer /S` 退出 0，注册表 `DisplayVersion=1.10.0`，已装 EXE 文件版本 `1.10.0` | 注册表与文件版本回读 | 实测 |
+| ④ | `smoke:window-visible:launch` 通过（pid 46708 / handle 468540），重启后 `smoke:window-visible` 通过（pid 78224 / handle 403076） | 命令输出 | 实测 |
+| ⑤ | 小米 `adb install -r` 退出 0，回读 `versionName=1.10.0` / `versionCode=1376`，`firstInstallTime` 保留 2026-09-10 | `adb dumpsys package app.focuslink.mobile` | 实测 |
+| ⑥ | Android 单测 41 个用例 0 失败，`FocusLinkConfigTest` 断言 `1.10.0` 通过 | `FocusLink/android/app/build/test-results/testDebugUnitTest/*.xml` | 实测 |
+| ⑦ | `format:check` / `typecheck` / `lint` 退出码 0；`npm test` 177 文件 / 1548 用例全绿 | 命令输出 | 实测 |
+| ⑧ | 打包前后 `.git/lfs/tmp` 均为空 | `.git/lfs/tmp` 目录读取 | 实测 |
+| ⑨ | 华为平板未出现在 `adb devices -l`；2026-10-29 指令本轮只要求 Windows + 小米同版 | `FocusLink/backend-design/TEST_AND_RELEASE.md:103` | 证据记录 |
+
+**问题**
+
+P0 无本轮新增功能或数据故障 — 本轮只重建候选并做安装回读 — 证据①②③⑤。
+
+P1 无 — 干净构建门禁已由包内提交实测覆盖，v1.9.9 的 dirty 产物只保留为历史 — 证据①。
+
+P2 中文仓库路径下 Android 单测裸命令失败 — 测试 argfile 编码不一致需进程级 `JAVA_TOOL_OPTIONS=-Dfile.encoding=GBK`，属环境绕行而非产品缺陷 — 证据⑥。
+
+**改动**
+
+- `release-v1100/RELEASE_NOTES.md`、`release-v1100/SHA256SUMS.txt`：候选补丁记录与双资产真实哈希。
+- `FocusLink/shared/version.generated.ts`：构建生成值更新为 `07cf5a7`。
+- `FocusLink/frontend-design/README.md`、`FocusLink/backend-design/README.md`：设计基线升到 v1.10。
+- 删除 `release-v193/`，本地只保留最新三个发布目录（1.9.6 / 1.9.9 / 1.10.0）。
+- `FocusLink/backend-design/INSTALLER_TROUBLESHOOTING.md`：FL-INSTALL-019 追加收口证据。
+- 待定：是否把 Android 单测的编码绕行固化进 gradle 配置；当前只写入发布说明与本节日志。
+
 ## 2026-11-02 · `FL-RELEASE-20261102-DIRTY-BUILD`：v1.9.9 功能验收与干净构建门禁分开判定
 
 **结论**
