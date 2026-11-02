@@ -1,5 +1,38 @@
 # FocusLink 实施日志
 
+## 2026-11-02 · `FL-AUTO-20261102-V196-ACCEPTANCE`：内置 CLI 已复核，已选详情与未保存草稿仍需行为验收（v1.9.6）
+
+**结论**
+
+安装版 CLI 已实测可用，统一记录版本与 renderer 广播已有实现；原始需求中的当前详情更新、未保存输入保护仍缺行为验收，并发现相应源码风险。状态：进行中。本轮只读核对，不修改产品代码或用户数据。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 本轮在 `C:\Windows\Temp` 直接执行 focuslink doctor --json，退出码为 0，返回 version=1.9.6、ok=true；命令解析到用户 WindowsApps 中的 focuslink.cmd | `FocusLink/electron/automation/cliAlias.ts:46`、`FocusLink/scripts/cli/focuslink-installed.ts:10` | 实测 |
+| ② | 当前代码包含统一记录版本推进、提交事件及广播实现；历史统计订阅 records:changed | `FocusLink/electron/automation/recordVersioning.ts:65`、`FocusLink/electron/main.ts:194`、`FocusLink/src/features/history/HistoryPanel.tsx:84` | 证据记录 |
+| ③ | 历史页的记录事件回调只重取统计；传给 SessionLedger 的 reloadToken 仍取 analyticsReloadToken，事件回调未推进该值 | `FocusLink/src/features/history/HistoryPanel.tsx:221`、`FocusLink/src/features/history/HistoryPanel.tsx:260`、`FocusLink/src/features/history/HistoryPanel.tsx:833` | 证据记录 |
+| ④ | 账本详情与番茄状态的重取依赖已选会话 ID、reloadToken 及本机重试/保存计数，不依赖记录版本；标题草稿保存在编辑器本地 state，状态重取先设 null，番茄控件按状态条件挂载 | `FocusLink/src/features/history/SessionLedger.tsx:69`、`FocusLink/src/features/history/SessionLedger.tsx:218`、`FocusLink/src/features/history/SessionLedger.tsx:224`、`FocusLink/src/features/history/SessionLedger.tsx:468` | 证据记录 |
+| ⑤ | 外部修改同一已选会话时详情可能保留旧值；真正触发详情重取后，编辑器卸载/重挂也可能丢失未提交标题。两项均为源码推断，本轮未执行真实窗口演练 | `FocusLink/src/features/history/HistoryPanel.tsx:833`、`FocusLink/src/features/history/SessionLedger.tsx:218`、`FocusLink/src/features/history/SessionLedger.tsx:468` | 推断 |
+| ⑥ | 当前候选说明已列出运维脚本未取得运行证据、安装器仍需 ASCII 路径，以及 focuslinkCloudState 为 unknown | `release-v196/RELEASE_NOTES.md:35` | 证据记录 |
+
+**问题**
+
+P0 无本轮用户数据损坏证据 — 本轮仅执行 CLI doctor 和源码读取，没有真实写入或重启应用 — 证据①⑤。
+
+P1 同一已选详情可能陈旧 — 只证明事件到达或统计重取，无法证明当前详情与番茄字段同步更新 — 证据③④⑤。
+
+P1 未保存草稿保护待验证 — 修复详情重取时必须保护 dirty 字段，不能通过重建编辑器覆盖用户输入 — 证据④⑤。
+
+P2 运维与安装限制仍在 — 文件输出需真实运行回读，中文路径构建自动化不等于中文路径安装已修复 — 证据⑥。
+
+**改动**
+
+- `FocusLink/backend-design/IMPLEMENTATION_LOG.md`：追加当前版本核对，区分已验证 CLI、已接线能力与尚未验证的行为风险。
+- `FocusLink/backend-design/SYNC_TROUBLESHOOTING.md`：在 FL-SYNC-037 补充当前详情和草稿保护的复核步骤。
+- 本轮不重跑全量源码、安装与第三方写入门禁；既有版本的测试和安装记录保持历史属性。截图不是唯一判据，应直接验证目标记录的 DOM/显示值、提交版本以及未保存输入。
+
 ## 2026-11-02 · `FL-AUTO-20261102-CLI-PACKAGING`：安装版内置 focuslink、打包脱离中文路径（v1.9.6 已装）
 
 **结论**
