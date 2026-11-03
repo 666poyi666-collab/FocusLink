@@ -1,5 +1,40 @@
 # FocusLink 实施日志
 
+## 2026-11-03 · `FL-OPS-20261103-TOMATODO-SCRIPT-GPU`：番茄运维脚本在 GPU 受限环境启动即 FATAL（1.10.4）
+
+**结论**
+
+`npm run tomatodo:check` / `tomatodo:approve` 在本机一启动就 `GPU process launch failed: error_code=18` → `GPU process isn't usable. Goodbye.`，业务代码一行未执行。入口已改为 `disableHardwareAcceleration()` + `in-process-gpu`，并在参数解析中放行 Chromium 开关；实测 check 退出 0 并列出 4 场已上传。状态：已完成。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 修复前 `npm run tomatodo:check` 退出 `-2147483645`，stderr 只有 GPU FATAL，没有业务输出 | 命令输出（2026-11-03 08:41） | 实测 |
+| ② | 仅 `disableHardwareAcceleration()` 仍崩；追加 `in-process-gpu` 后同一命令退出 0 | `FocusLink/scripts/maintenance/tomatodo-approval-sync.ts:30` | 实测 |
+| ③ | 参数解析放行 `--disable-*` / `--no-*`，不再当未知业务参数拒绝 | `FocusLink/scripts/maintenance/tomatodo-approval-sync.ts:135` | 实测 |
+| ④ | 修复后 check 输出「待批准 0 场 / 已上传 4 场」，记录 646 / 647 / 649 / 648 | 命令输出 | 实测 |
+| ⑤ | 入口静态测试 2 条；`npm test` 180 文件 / 1574 用例全绿；format / typecheck / lint 退出 0 | 命令输出 | 实测 |
+| ⑥ | 安装版 asar 内 `APP_COMMIT=085c8f9`、版本 `1.10.4`，`-dirty` 0 次；`verify:packaged` 退出 0 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-B42USaT4.js:987` | 实测 |
+| ⑦ | `installer /S` 退出 0，注册表 `DisplayVersion=1.10.4`、EXE 文件版本 `1.10.4`；可见性通过（handle 3483802） | 注册表、文件版本与冒烟输出 | 实测 |
+| ⑧ | 小米 `192.168.1.5:5555` 重连后安装 `1.10.4` / `1380`，单测 41/0；同期 `.4` offline 未连接未安装 | `adb dumpsys` | 实测 |
+| ⑨ | `release:verify` 21 项通过；四文件与双哈希一致；华为未在线 | 命令输出与 `release-v1104` | 实测 |
+| ⑩ | 其余打包 Electron 运维脚本（如 `tomatodo-cloud-real-smoke`）未在本轮逐一复验同一 GPU 开关 | `FocusLink/dist-selftest` 产物列表 | 证据记录 |
+
+**问题**
+
+P0 无 — 崩溃发生在启动阶段，未写 SQLite 或番茄库 — ①。
+
+P1 已修 — 运维脚本可正常运行并完成核对 — ②④。
+
+P2 其他 Electron 脚本未逐一验证 — 同一 GPU 环境可能仍会 FATAL，需要时按同一方式处理 — ⑩。
+
+**改动**
+
+- `FocusLink/scripts/maintenance/tomatodo-approval-sync.ts`：启动即关硬件加速并把 GPU 放进浏览器进程；参数解析放行 Chromium 开关。
+- `FocusLink/tests/maintenanceTomatodoEntry.test.ts`：2 条入口静态测试。
+- 版本点同步 `1.10.4` / `1380`；`release-v1104/` 四文件；删除 `release-v1101/`，本地保留 1.10.2 / 1.10.3 / 1.10.4。
+
 ## 2026-11-03 · `FL-API-20261103-CAS-REPLAY-FIX`：`/v1` 执行 If-Match，重放返回原确认（1.10.3）
 
 **结论**
