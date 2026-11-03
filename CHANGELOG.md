@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.10.4 - 2026-11-03（番茄运维脚本在 GPU 受限机器上不再崩溃）
+
+- **`tomatodo:check` / `tomatodo:approve` 能跑了**：入口在 app ready 之前关闭硬件加速并把 GPU 放进浏览器进程，避开 `GPU process launch failed: error_code=18` 导致的 Chromium FATAL（此前业务代码一行都执行不到）。
+- **命令行可自救**：参数解析忽略 Chromium 的 `--disable-*` / `--no-*` 开关，不再当成未知业务参数拒绝。
+- 只影响本机运维脚本；桌面应用、同步协议、番茄同步与移动端不变。
+
 ## v1.10.3 - 2026-11-03（/v1 写接口修复 If-Match 与幂等重放）
 
 - **If-Match 真正生效**：`PATCH /v1/sessions/:id` 与任务关联接口现在读取 `If-Match` 请求头（支持 `"3"`、`W/"3"`），陈旧版本返回 409，与正文版本不一致返回 400；此前只检查正文版本，带上请求头也挡不住旧写。

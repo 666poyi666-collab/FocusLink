@@ -22,6 +22,13 @@
 import './pinAppUserData';
 import { writeFileSync } from 'node:fs';
 import { app } from 'electron';
+
+// 2026-11-03 实测：本机 GPU 进程在受限环境起不来（`GPU process launch failed: error_code=18`），
+// Chromium 直接 FATAL 退出，业务代码一行都跑不到。运维脚本没有窗口，不需要硬件加速；
+// 仅 `disableHardwareAcceleration()` 仍会为软件合成拉起 GPU 子进程，必须同时把 GPU 放进
+// 浏览器进程（`in-process-gpu`），否则同一 FATAL 依旧。两者都必须在 app ready 之前生效。
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('in-process-gpu');
 import {
   getActiveSession,
   initDatabase,
@@ -123,6 +130,11 @@ function parseArgs(argv: string[]): CliOptions {
         opts.json = true;
         break;
       default:
+        // Chromium 自己的开关（`--disable-gpu`、`--no-sandbox` 等）由 Electron 解析，
+        // 不是业务参数；否则 GPU 故障时连命令行传开关自救都做不到。
+        if (arg.startsWith('--disable-') || arg.startsWith('--no-')) {
+          break;
+        }
         throw new Error(`未知参数：${arg}`);
     }
   }
