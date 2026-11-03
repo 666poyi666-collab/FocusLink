@@ -18,7 +18,14 @@ describe('Foxlink independent MCP contract', () => {
     // 2026-11-03：外部助手只能读 /v1 时被迫点界面，因此补上会话字段写入口。
     expect(api).toContain("'/v1/tasks'");
     expect(api).toContain("'/v1/sessions/batch-update'");
-    expect(api).toContain('records.update');
+    // FL-SYNC-038：请求头前置条件与重放顺序在可注入的路由级服务里。
+    const patchService = fs.readFileSync(
+      path.join(root, 'electron/mcp/sessionPatchService.ts'),
+      'utf8',
+    );
+    expect(patchService).toContain("type: 'records.update'");
+    expect(api).toContain("request.headers['if-match']");
+    expect(patchService).not.toContain('PersonalMcpGateway');
     expect(api).not.toContain('PersonalMcpGateway');
   });
 

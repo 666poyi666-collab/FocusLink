@@ -45,6 +45,37 @@ function has(payload: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(payload, key);
 }
 
+/**
+ * 解析 `If-Match` 请求头里的 recordVersion。
+ *
+ * 支持 `3`、`"3"`、`W/"3"`；`*` 与非整数一律拒绝 —— 本接口不接受「任意当前版本」。
+ * 返回 null 表示没有该请求头。
+ */
+export function parseIfMatchHeader(value: string | string[] | undefined): number | null {
+  if (value === undefined) return null;
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new SessionWriteError(
+      400,
+      'INVALID_ARGUMENT',
+      'If-Match must be a recordVersion integer',
+    );
+  }
+  let text = raw.trim();
+  if (/^W\//i.test(text)) text = text.slice(2).trim();
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    text = text.slice(1, -1).trim();
+  }
+  if (!/^\d+$/.test(text)) {
+    throw new SessionWriteError(
+      400,
+      'INVALID_ARGUMENT',
+      'If-Match must be a recordVersion integer',
+    );
+  }
+  return Number(text);
+}
+
 function nullableString(value: unknown, name: string): string | null {
   if (value === null) return null;
   if (typeof value !== 'string') {

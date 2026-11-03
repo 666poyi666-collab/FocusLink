@@ -198,15 +198,17 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 | POST | `/v1/sessions` | 补录一次已结束专注（单段 focus） |
 | POST | `/v1/sessions/batch-update` | 多条会话同一补丁；`atomic=true` 只在首个失败处停止 |
 
-写入口要求 `records:write` scope（`business-api-tokens.json` 的 `local-default` 已含四个 scope）。请求可选 `expectedRecordVersion`（整数）或 `expectedUpdatedAt`，不一致分别返回 `409 VERSION_CONFLICT` / `409 STALE_UPDATED_AT`；`operationId` 或 `Idempotency-Key` 头用于幂等重放，请求体里的 `operationId` 优先。
+写入口要求 `records:write` scope（`business-api-tokens.json` 的 `local-default` 已含四个 scope）。前置条件支持 `If-Match: <recordVersion>`（接受 `"3"`、`W/"3"`，不接受 `*`）、正文 `expectedRecordVersion` 或 `expectedUpdatedAt`；请求头与正文同时出现且不一致返回 `400 INVALID_ARGUMENT`，与当前版本不一致返回 `409 VERSION_CONFLICT`，`expectedUpdatedAt` 不一致返回 `409 STALE_UPDATED_AT`。`operationId` 或 `Idempotency-Key` 头用于幂等重放，请求体里的 `operationId` 优先。
+
+幂等语义：同一个 `operationId` + 同一请求正文先查已确认回执，命中直接返回原确认并带 `duplicate: true`，不重新做版本校验、不再写库；同 ID 换正文返回 `422 OPERATION_ID_REUSED`。因此「首次成功、版本推进后原样重放」必须返回首次结果（v1.10.3 起，FL-SYNC-038）。
 
 字段语义：`title` 是会话标题；`tomatodoRecordName` 是番茄记录名（界面里的「番茄标题」）；`tomatodoSubject` 只能是七个学科之一或 `null`；`minutes` 只在会话没有暂停时接受，有暂停必须用 `/automation/v1/commands` 的 `records.update` + 完整 `timeline`，否则会把暂停算进有效时长（FL-SYNC-020 口径）。
 
 返回体是紧凑会话摘要：`id / title / note / status / startedAt / endedAt / activeMinutes / defaultTask / tomatodoSubject / tomatodoRecordName / updatedAt / recordVersion`；`GET /v1/tasks` 返回 `id / externalId / title / projectId / projectName / status / source / tags / dueDate`。
 
-批量入口不是数据库事务：逐条执行并逐条返回结果；`atomic=true` 只是遇到首个失败就停下，已成功的条目保留。当前没有多记录事务；需要全有全无时不能使用该入口，逐条补偿也不等价于数据库回滚。
+批量入口不是数据库事务：逐条执行并逐条返回结果，响应固定 `atomic: false`。`atomic: true` 会在写入前被拒绝（`422 ATOMIC_NOT_SUPPORTED`），不会先写一部分再解释；`If-Match` 也不接受批量请求，需要条件写时逐条调用。需要全有全无时当前没有入口，逐条补偿不等价于数据库回滚。
 
-2026-11-03 隔离路由验收发现的当前限制（FL-SYNC-038）：`If-Match` 请求头尚未读取；显式正文版本可拒绝旧写，但成功请求的相同 operationId 重放会被版本预检查拒绝；省略版本重放则会因封装层重填当前版本而改变命令摘要。以上修复前，不得把该入口描述为已经满足请求头 CAS 与可靠幂等重放；自动化调用应优先使用原 `/automation/v1/commands` 的显式版本及稳定命令身份，仍需按相应合同核对实际结果。
+2026-11-03 的隔离路由验收曾在 v1.10.2 发现 `If-Match` 未读取与成功请求重放冲突（FL-SYNC-038）；v1.10.3 已改为「重放判定先于 CAS」并补 9 个路由级用例，装机版另以陈旧 `If-Match` 只读验证返回 409。
 
 ## 当前三端同步修复需求（2026-07-22）
 

@@ -31,11 +31,8 @@ import type {
   AutomationCommandResult,
   AutomationScope,
 } from '@shared/automation/contract';
-import {
-  buildSessionCreateInput,
-  buildSessionPatch,
-  SessionWriteError,
-} from './sessionWritePayload.js';
+import { buildSessionCreateInput, SessionWriteError } from './sessionWritePayload.js';
+import { applySessionPatchWithDeps } from './sessionPatchService.js';
 
 const HOST = '127.0.0.1';
 const PORT = AUTOMATION_LISTEN_PORT;
@@ -343,73 +340,70 @@ export function startFoxlinkBusinessApi(
     } as unknown as Json;
   };
 
+  const readIdempotentResponse = (
+    key: string,
+  ): { request_hash: string; response_json: string } | undefined =>
+    getDb()
+      .prepare(
+        'SELECT request_hash,response_json FROM foxlink_api_idempotency WHERE idempotency_key=?',
+      )
+      .get(key) as { request_hash: string; response_json: string } | undefined;
+
+  const writeIdempotentResponse = (
+    key: string,
+    operation: string,
+    requestHash: string,
+    responseJson: string,
+  ): void => {
+    getDb()
+      .prepare(
+        'INSERT OR REPLACE INTO foxlink_api_idempotency(idempotency_key,operation,request_hash,response_json,created_at) VALUES (?,?,?,?,?)',
+      )
+      .run(key, operation, requestHash, responseJson, Date.now());
+  };
+
   const applySessionPatch = async (
     sessionId: string,
     payload: Record<string, Json>,
     scopes: readonly AutomationScope[],
     operationId: string,
+    ifMatchHeader: string | string[] | undefined,
   ): Promise<Json> => {
-    ensureWriteScope(scopes);
     const service = requireAutomation();
-    const session = getSession(sessionId);
-    if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session was not found');
-    const view = service.readRecord(sessionId);
-    const expectedVersionRaw = payload['expectedRecordVersion'];
-    if (expectedVersionRaw !== undefined && expectedVersionRaw !== null) {
-      const expected = Number(expectedVersionRaw);
-      if (!Number.isInteger(expected) || expected !== view.recordVersion) {
-        throw new ApiError(409, 'VERSION_CONFLICT', 'Record version changed', {
-          expectedRecordVersion: Number.isFinite(expected) ? expected : null,
-          recordVersion: view.recordVersion,
-        } as unknown as Json);
-      }
-    }
-    const expectedUpdatedAtRaw = payload['expectedUpdatedAt'];
-    if (expectedUpdatedAtRaw !== undefined && expectedUpdatedAtRaw !== null) {
-      const expectedUpdatedAt = Number(expectedUpdatedAtRaw);
-      if (!Number.isFinite(expectedUpdatedAt) || expectedUpdatedAt !== session.updatedAt) {
-        throw new ApiError(409, 'STALE_UPDATED_AT', 'Session changed since expectedUpdatedAt', {
-          expectedUpdatedAt: Number.isFinite(expectedUpdatedAt) ? expectedUpdatedAt : null,
-          updatedAt: session.updatedAt,
-        } as unknown as Json);
-      }
-    }
-    let patch;
     try {
-      patch = buildSessionPatch(payload, {
-        session: {
-          id: session.id,
-          startedAt: session.startedAt,
-          endedAt: session.endedAt,
-          pauseElapsedMs: session.pauseElapsedMs,
-          defaultTaskId: session.defaultTaskId,
-          defaultTaskSource: session.defaultTaskSource,
-          defaultTaskTitle: session.defaultTaskTitle,
+      const summary = await applySessionPatchWithDeps(
+        {
+          executeCommand: (command, commandScopes, id) =>
+            executeAutomation(command, commandScopes, id),
+          readRecord: (id) => ({ recordVersion: service.readRecord(id).recordVersion }),
+          getSession: (id) => getSession(id),
+          findTask: (taskId) => {
+            const cached = findTaskCache(taskId);
+            return cached ? { id: cached.id, title: cached.title, source: cached.source } : null;
+          },
+          readIdempotent: readIdempotentResponse,
+          writeIdempotent: writeIdempotentResponse,
+          hashRequest: (value) =>
+            crypto
+              .createHash('sha256')
+              .update(canonicalJson(value as Json))
+              .digest('hex'),
+          summarize: (id, recordVersion) =>
+            sessionSummary(id, recordVersion) as unknown as Record<string, unknown>,
         },
-        findTask: (taskId) => {
-          const cached = findTaskCache(taskId);
-          return cached ? { id: cached.id, title: cached.title, source: cached.source } : null;
-        },
-      });
+        sessionId,
+        payload,
+        scopes,
+        operationId,
+        ifMatchHeader,
+      );
+      return summary as unknown as Json;
     } catch (error) {
       if (error instanceof SessionWriteError) {
         throw new ApiError(error.status, error.code, error.message);
       }
       throw error;
     }
-    const result = await executeAutomation(
-      {
-        type: 'records.update',
-        expiresAt: Date.now() + 60_000,
-        sessionId,
-        expectedRecordVersion: view.recordVersion,
-        patch,
-      },
-      scopes,
-      operationId,
-    );
-    settleResult(result);
-    return sessionSummary(sessionId, service.readRecord(sessionId).recordVersion);
   };
 
   const server = http.createServer(async (request, response) => {
@@ -547,6 +541,21 @@ export function startFoxlinkBusinessApi(
       if (request.method === 'POST' && url.pathname === '/v1/sessions/batch-update') {
         ensureWriteScope(credential.scopes);
         const payload = await body(request);
+        if (payload['atomic'] === true) {
+          // 没有多记录事务就不能在写了一半之后才解释「不原子」：直接拒绝，让调用方逐条处理。
+          throw new ApiError(
+            422,
+            'ATOMIC_NOT_SUPPORTED',
+            'atomic batch is not supported; patch sessions one by one and roll back yourself',
+          );
+        }
+        if (request.headers['if-match'] !== undefined) {
+          throw new ApiError(
+            400,
+            'INVALID_ARGUMENT',
+            'If-Match is not supported on batch-update; patch sessions individually',
+          );
+        }
         const ids = payload['ids'];
         if (!Array.isArray(ids) || ids.length === 0 || ids.length > 50) {
           throw new ApiError(400, 'INVALID_ARGUMENT', 'ids must be a non-empty array (max 50)');
@@ -565,6 +574,7 @@ export function startFoxlinkBusinessApi(
               patchPayload as Record<string, Json>,
               credential.scopes,
               `${baseOperationId}-${index}`,
+              undefined,
             );
             results.push({ id: sessionId, ok: true, session: summary } as unknown as Json);
           } catch (error) {
@@ -579,11 +589,10 @@ export function startFoxlinkBusinessApi(
               code: apiError.code,
               message: apiError.message,
             } as unknown as Json);
-            // 不是数据库事务：atomic=true 只保证遇到第一个失败就停止，已成功的条目保留。
-            if (payload['atomic'] === true) break;
           }
         }
         return send(response, 200, {
+          atomic: false,
           applied: results.filter((item) => (item as { ok?: boolean }).ok === true).length,
           failed: results.filter((item) => (item as { ok?: boolean }).ok !== true).length,
           results,
@@ -639,6 +648,7 @@ export function startFoxlinkBusinessApi(
             payload,
             credential.scopes,
             operationIdFor(request, payload),
+            request.headers['if-match'],
           ),
         );
       }
@@ -654,6 +664,7 @@ export function startFoxlinkBusinessApi(
             payload,
             credential.scopes,
             operationIdFor(request, payload),
+            request.headers['if-match'],
           ),
         );
       }

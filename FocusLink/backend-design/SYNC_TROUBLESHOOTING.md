@@ -895,3 +895,16 @@ P2 部分成功无法回滚 — 遇错即停不能承诺原子批量 — 证据�
 - 修复时先按稳定原请求身份核对已确认操作及正文摘要，只有新操作才做当前状态 CAS；不得通过自动更换版本或 operationId 来掩盖冲突，也不能忽略同 ID 异文。
 - 批量需要明确每条记录的预期版本和稳定操作身份；若不提供真正的事务原子性，应改用明确的遇错停止选项，或在写入前拒绝 atomic=true，不能写一部分后才解释不原子。
 - 全有全无验收必须故意使中间条目失败，并确认所有目标记录、版本、审计、队列与提交事件都没有部分生效；逐条人工补偿不得计作事务通过。
+
+**收口（2026-11-03，v1.10.3）**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `If-Match` 已进入写入口：接受 `3` / `"3"` / `W/"3"`，`*` 或头体不一致返回 400，陈旧版本返回 409 | `FocusLink/electron/mcp/sessionWritePayload.ts:48` | 实测 |
+| ② | 重放先于 CAS：同 operationId + 同正文命中回执直接返回原结果并带 `duplicate: true`，不再写库 | `FocusLink/electron/mcp/sessionPatchService.ts:56` | 实测 |
+| ③ | 同 ID 换正文仍返回 422 `OPERATION_ID_REUSED`；无前置条件时用当前版本并通过底层 CAS | 同上 | 实测 |
+| ④ | `atomic=true` 在写入前被拒绝（422 `ATOMIC_NOT_SUPPORTED`），批量响应固定 `atomic: false` | `FocusLink/electron/mcp/businessApi.ts:622` | 实测 |
+| ⑤ | 路由级 9 个用例覆盖陈旧头、弱 ETag、头体冲突、非整数、同文重放、无版本重放、异文拒绝、无前置条件、陈旧更新时间 | `FocusLink/tests/sessionPatchService.test.ts` | 实测 |
+| ⑥ | `npm test` 179 文件 / 1572 用例全绿；format / typecheck / lint 退出 0；装机版以陈旧 `If-Match` 只读验证返回 409，未写入 | 命令输出与 `127.0.0.1:18770` 请求 | 实测 |
+
+状态：已收口。重放验证使用隔离内存回执表与伪服务，不依赖生产库；装机版只做了陈旧前置条件的只读验证，真实写入仍由用户批准后执行。
