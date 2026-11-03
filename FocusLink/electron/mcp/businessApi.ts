@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import { BrowserWindow } from 'electron';
 import { APP_VERSION } from '@shared/version';
 import { AUTOMATION_API_PREFIX, AUTOMATION_LISTEN_PORT } from '@shared/automation/contract';
 import type { TimerSnapshot, TimerState } from '@shared/types';
@@ -17,6 +18,8 @@ import {
   setMeta,
 } from '../db/index.js';
 import { logger } from '../logger.js';
+import { LocalTaskProvider } from '../tasks/localProvider.js';
+import { queueLocalTaskWorkspace } from '../tasks/workspaceService.js';
 import type { FocusTimerController } from '../timer/focusTimerController.js';
 import {
   authenticateAutomation,
@@ -33,6 +36,7 @@ import type {
 } from '@shared/automation/contract';
 import { buildSessionCreateInput, SessionWriteError } from './sessionWritePayload.js';
 import { applySessionPatchWithDeps } from './sessionPatchService.js';
+import { parseProjectCreate, parseTaskCreate } from './taskWritePayload.js';
 
 const HOST = '127.0.0.1';
 const PORT = AUTOMATION_LISTEN_PORT;
@@ -362,6 +366,57 @@ export function startFoxlinkBusinessApi(
       .run(key, operation, requestHash, responseJson, Date.now());
   };
 
+  const hashPayload = (value: unknown): string =>
+    crypto
+      .createHash('sha256')
+      .update(canonicalJson(value as Json))
+      .digest('hex');
+
+  /** 创建类接口的幂等：同一个 operationId + 同一正文返回首次结果，不同正文拒绝。 */
+  const createIdempotent = (
+    kind: string,
+    operationId: string,
+    payload: Record<string, Json>,
+    create: () => Json,
+  ): Json => {
+    const key = `v1:${kind}:${operationId}`;
+    const requestHash = hashPayload({ kind, payload });
+    const existing = readIdempotentResponse(key);
+    if (existing) {
+      if (existing.request_hash !== requestHash) {
+        throw new ApiError(
+          422,
+          'OPERATION_ID_REUSED',
+          'operationId was reused with a different payload',
+        );
+      }
+      return {
+        ...(JSON.parse(existing.response_json) as Record<string, Json>),
+        duplicate: true,
+      } as Json;
+    }
+    const created = create();
+    writeIdempotentResponse(key, kind, requestHash, JSON.stringify(created));
+    return created;
+  };
+
+  // 与 IPC `tasks:create*` 相同的收尾：排队本机任务工作区快照并通知所有窗口刷新。
+  const commitTaskWorkspace = (): void => {
+    const data = queueLocalTaskWorkspace();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('tasks:changed', data);
+    }
+  };
+
+  const mapTaskWriteError = (error: unknown): never => {
+    if (error instanceof SessionWriteError) {
+      throw new ApiError(error.status, error.code, error.message);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('不存在')) throw new ApiError(404, 'NOT_FOUND', message);
+    throw new ApiError(400, 'INVALID_ARGUMENT', message);
+  };
+
   const applySessionPatch = async (
     sessionId: string,
     payload: Record<string, Json>,
@@ -457,6 +512,9 @@ export function startFoxlinkBusinessApi(
             'unlink-task',
             'create-session',
             'batch-update-sessions',
+            'list-projects',
+            'create-project',
+            'create-task',
           ],
           resources: [
             'foxlink://sessions/recent',
@@ -537,6 +595,77 @@ export function startFoxlinkBusinessApi(
           })),
           count: selected.length,
         } as unknown as Json);
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/projects') {
+        const items = LocalTaskProvider.listProjects().map((project) => ({
+          id: project.id,
+          name: project.name,
+          color: project.color,
+          icon: project.icon ?? null,
+          source: project.source,
+        }));
+        return send(response, 200, { items, count: items.length } as unknown as Json);
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/projects') {
+        ensureWriteScope(credential.scopes);
+        const payload = await body(request);
+        const operationId = operationIdFor(request, payload);
+        const created = createIdempotent('project-create', operationId, payload, () => {
+          let input;
+          try {
+            input = parseProjectCreate(payload);
+          } catch (error) {
+            throw mapTaskWriteError(error);
+          }
+          try {
+            const project = LocalTaskProvider.createProject(input.name, input.color, input.icon);
+            commitTaskWorkspace();
+            return {
+              id: project.id,
+              name: project.name,
+              color: project.color,
+              icon: project.icon ?? null,
+              source: project.source,
+            } as unknown as Json;
+          } catch (error) {
+            throw mapTaskWriteError(error);
+          }
+        });
+        return send(response, 201, created);
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/tasks') {
+        ensureWriteScope(credential.scopes);
+        const payload = await body(request);
+        const operationId = operationIdFor(request, payload);
+        const created = createIdempotent('task-create', operationId, payload, () => {
+          let input;
+          try {
+            input = parseTaskCreate(payload);
+          } catch (error) {
+            throw mapTaskWriteError(error);
+          }
+          try {
+            const task = LocalTaskProvider.create(input.title, input.projectId ?? undefined, {
+              parentId: input.parentId,
+              dueDate: input.dueDate,
+              priority: input.priority,
+            });
+            commitTaskWorkspace();
+            return {
+              id: task.id,
+              title: task.title,
+              projectId: task.projectId,
+              projectName: task.projectId ? getTaskProjectName(task.projectId) : null,
+              status: task.status,
+              parentId: task.parentId ?? null,
+              dueDate: task.dueDate ?? null,
+              priority: task.priority ?? null,
+            } as unknown as Json;
+          } catch (error) {
+            throw mapTaskWriteError(error);
+          }
+        });
+        return send(response, 201, created);
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions/batch-update') {
         ensureWriteScope(credential.scopes);

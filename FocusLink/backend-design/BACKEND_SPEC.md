@@ -195,6 +195,9 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 | PATCH | `/v1/sessions/:id` | 改标题、备注、学科、番茄记录名、任务关联、无暂停会话的整场分钟数 |
 | POST / DELETE | `/v1/sessions/:id/task` | 关联 / 取消关联任务（等价于 `defaultTask`） |
 | GET | `/v1/tasks?q=&projectId=&status=&limit=` | 查本机任务缓存与所属清单名 |
+| GET | `/v1/projects` | 列出本机清单（含收件箱） |
+| POST | `/v1/projects` | 新建本机清单，返回真实 `id` |
+| POST | `/v1/tasks` | 新建本机任务（可指定 `projectId`，省略落收件箱），返回真实 `id` |
 | POST | `/v1/sessions` | 补录一次已结束专注（单段 focus） |
 | POST | `/v1/sessions/batch-update` | 多条会话同一补丁；`atomic=true` 只在首个失败处停止 |
 
@@ -207,6 +210,8 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 返回体是紧凑会话摘要：`id / title / note / status / startedAt / endedAt / activeMinutes / defaultTask / tomatodoSubject / tomatodoRecordName / updatedAt / recordVersion`；`GET /v1/tasks` 返回 `id / externalId / title / projectId / projectName / status / source / tags / dueDate`。
 
 批量入口不是数据库事务：逐条执行并逐条返回结果，响应固定 `atomic: false`。`atomic: true` 会在写入前被拒绝（`422 ATOMIC_NOT_SUPPORTED`），不会先写一部分再解释；`If-Match` 也不接受批量请求，需要条件写时逐条调用。需要全有全无时当前没有入口，逐条补偿不等价于数据库回滚。
+
+清单/任务创建（v1.10.5）：`POST /v1/projects`（`name` 必填，`color`/`icon` 可选）与 `POST /v1/tasks`（`title` 必填，`projectId` 省略时落收件箱）直接复用 `electron/tasks/localProvider.ts` 的 `createProject` / `create`，并在写入后执行与 IPC 相同的任务工作区提交与 `tasks:changed` 广播；响应返回真实 `id`，可直接用于 `POST /v1/sessions/:id/task`。创建类请求同样要求 `records:write`，用 `operationId` / `Idempotency-Key` 做幂等，重放返回首次结果并带 `duplicate: true`。
 
 2026-11-03 的隔离路由验收曾在 v1.10.2 发现 `If-Match` 未读取与成功请求重放冲突（FL-SYNC-038）；v1.10.3 已改为「重放判定先于 CAS」并补 9 个路由级用例，装机版另以陈旧 `If-Match` 只读验证返回 409。
 

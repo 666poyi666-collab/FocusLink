@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.10.5 - 2026-11-04（本地 /v1 支持建清单与建任务）
+
+- **建清单**：新增 `POST /v1/projects`（名称必填、颜色可选）与 `GET /v1/projects`，返回真实 `id`。
+- **建任务**：新增 `POST /v1/tasks`（标题必填，`projectId` 省略时落收件箱），返回 `id`、清单名与状态，可直接用于会话关联。
+- **复用现有任务模型**：写入走 `electron/tasks/localProvider.ts` 的 `createProject` / `create`，并执行与 IPC 相同的任务工作区提交与 `tasks:changed` 广播；创建类请求带 `operationId` 幂等。
+- 仅新增本地 `/v1` 接口；桌面界面、同步协议、番茄同步与移动端不变。
+
 ## v1.10.4 - 2026-11-03（番茄运维脚本在 GPU 受限机器上不再崩溃）
 
 - **`tomatodo:check` / `tomatodo:approve` 能跑了**：入口在 app ready 之前关闭硬件加速并把 GPU 放进浏览器进程，避开 `GPU process launch failed: error_code=18` 导致的 Chromium FATAL（此前业务代码一行都执行不到）。
