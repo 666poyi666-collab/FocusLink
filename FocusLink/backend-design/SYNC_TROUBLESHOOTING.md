@@ -860,3 +860,38 @@ P2 验收范围需明确 — 服务级 fixture 不能代替人工按钮、主窗
 
 - 只处理 `ELECTRON_RUN_AS_NODE`；其他 Electron 变量没有证据，不做改动。
 - 番茄被用户以普通方式（无调试端口）启动时仍然只能 `restart-required`，需要用户先退出再让 FocusLink 拉起。
+
+## FL-SYNC-038：`/v1` 的陈旧 If-Match 仍写入，或同一成功请求重放变成版本/操作身份冲突
+
+**结论**
+
+复用底层 records.update 不自动保证 HTTP 翻译层的前置条件和重放语义正确；必须验证整个请求入口。状态：阻塞，v1.10.2 的隔离复现见实施日志 FL-API-20261103-CAS-REPLAY。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | applySessionPatch 未接收请求头，只在正文中读取可选版本与更新时间 | `FocusLink/electron/mcp/businessApi.ts:346`、`FocusLink/electron/mcp/businessApi.ts:357` | 证据记录 |
+| ② | 版本预检查先于 service.execute；发给底层服务的是新读取到的 view.recordVersion | `FocusLink/electron/mcp/businessApi.ts:360`、`FocusLink/electron/mcp/businessApi.ts:405` | 证据记录 |
+| ③ | 批量逐条调用相同补丁，atomic=true 只在捕获失败后退出循环 | `FocusLink/electron/mcp/businessApi.ts:560`、`FocusLink/electron/mcp/businessApi.ts:583` | 证据记录 |
+
+**问题**
+
+P0 不以生产数据探测 — 覆盖与重放场景应先在隔离库和受控回环端口执行 — 证据①②。
+
+P1 请求头防旧写未执行 — If-Match 与正文版本不是可互相替代的验收证据 — 证据①。
+
+P1 重放确认不稳定 — 预检查和动态补全命令会阻止原身份返回原结果 — 证据②。
+
+P2 部分成功无法回滚 — 遇错即停不能承诺原子批量 — 证据③。
+
+**改动**
+
+`FocusLink/backend-design/SYNC_TROUBLESHOOTING.md`：追加本条诊断与修复验收要求；未改动接口运行时。
+
+- 以生产 HTTP handler 和服务、真实内存 SQLite 做整条路由测试；只替换安全的鉴权夹具、数据库全局入口与动态监听端口，禁止接入用户库或生产端口。
+- 单独测试仅 If-Match 的陈旧/正确值、仅正文版本、两者冲突、缺少前置条件，以及只读凭据；所有被拒请求都需确认正文、版本、审计和 Outbox 不变。
+- 成功一次后以相同正文及 operationId 原样重放，验证返回原确认且不再修改；分别覆盖有/无显式版本、响应丢失、进程重启与同 ID 异文拒绝。
+- 修复时先按稳定原请求身份核对已确认操作及正文摘要，只有新操作才做当前状态 CAS；不得通过自动更换版本或 operationId 来掩盖冲突，也不能忽略同 ID 异文。
+- 批量需要明确每条记录的预期版本和稳定操作身份；若不提供真正的事务原子性，应改用明确的遇错停止选项，或在写入前拒绝 atomic=true，不能写一部分后才解释不原子。
+- 全有全无验收必须故意使中间条目失败，并确认所有目标记录、版本、审计、队列与提交事件都没有部分生效；逐条人工补偿不得计作事务通过。

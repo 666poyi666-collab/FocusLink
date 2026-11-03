@@ -204,7 +204,9 @@ HTTP 严格检查 Host、认证、JSON 字段与大小，不接受任意来源�
 
 返回体是紧凑会话摘要：`id / title / note / status / startedAt / endedAt / activeMinutes / defaultTask / tomatodoSubject / tomatodoRecordName / updatedAt / recordVersion`；`GET /v1/tasks` 返回 `id / externalId / title / projectId / projectName / status / source / tags / dueDate`。
 
-批量入口不是数据库事务：逐条执行并逐条返回结果；`atomic=true` 只是遇到首个失败就停下，已成功的条目保留。当前没有多记录事务，需要全部成功时按单条命令调用并自行回滚。
+批量入口不是数据库事务：逐条执行并逐条返回结果；`atomic=true` 只是遇到首个失败就停下，已成功的条目保留。当前没有多记录事务；需要全有全无时不能使用该入口，逐条补偿也不等价于数据库回滚。
+
+2026-11-03 隔离路由验收发现的当前限制（FL-SYNC-038）：`If-Match` 请求头尚未读取；显式正文版本可拒绝旧写，但成功请求的相同 operationId 重放会被版本预检查拒绝；省略版本重放则会因封装层重填当前版本而改变命令摘要。以上修复前，不得把该入口描述为已经满足请求头 CAS 与可靠幂等重放；自动化调用应优先使用原 `/automation/v1/commands` 的显式版本及稳定命令身份，仍需按相应合同核对实际结果。
 
 ## 当前三端同步修复需求（2026-07-22）
 

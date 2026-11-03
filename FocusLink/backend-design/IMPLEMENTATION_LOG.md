@@ -1,5 +1,42 @@
 # FocusLink 实施日志
 
+## 2026-11-03 · `FL-API-20261103-CAS-REPLAY`：`/v1` 未执行 If-Match 请求头，成功请求重放被路由封装层拒绝（v1.10.2，隔离复现）
+
+**结论**
+
+安装版 1.10.2 可读取且构建提交干净，但新增 `/v1` 写入口的请求头前置条件与幂等重放未满足交付合同。状态：阻塞（写合同验收）。本轮真实会话未改写。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 本轮安装 CLI doctor 返回 version=1.10.2、ok=true；只读遍历已装 dist-electron JS，命中 cc8cc09，dirty 标记统计为 0 处 | `FocusLink/scripts/cli/focuslink-installed.ts:10`、`FocusLink/shared/version.generated.ts:2` | 实测 |
+| ② | 隔离生产路由中，仅携带陈旧 If-Match 请求头的 PATCH 返回 HTTP 200，内存夹具标题确实改变 | `FocusLink/electron/mcp/businessApi.ts:346`、`FocusLink/electron/mcp/businessApi.ts:645` | 实测 |
+| ③ | 显式正文版本、相同 operationId 与相同正文：首次 PATCH 返回 HTTP 200，重放返回 HTTP 409 VERSION_CONFLICT | `FocusLink/electron/mcp/businessApi.ts:357` | 实测 |
+| ④ | 不带正文版本、相同 operationId 与相同正文：首次 PATCH 返回 HTTP 200，重放返回 HTTP 422 OPERATION_ID_REUSED | `FocusLink/electron/mcp/businessApi.ts:400` | 实测 |
+| ⑤ | atomic=true 的隔离批量请求先成功 1 条，再失败 1 条后停止；HTTP 200，首条修改保留，没有回滚 | `FocusLink/electron/mcp/businessApi.ts:560`、`FocusLink/electron/mcp/businessApi.ts:583` | 实测 |
+| ⑥ | 路由只检查正文 expectedRecordVersion/expectedUpdatedAt，之后把本次读取到的当前版本填入 records.update；未读取 If-Match 请求头 | `FocusLink/electron/mcp/businessApi.ts:357`、`FocusLink/electron/mcp/businessApi.ts:405` | 证据记录 |
+| ⑦ | 新增 payload 测试验证纯输入翻译，MCP 合同测试验证源码字符串存在；没有覆盖上述 HTTP 请求头与成功重放组合 | `FocusLink/tests/sessionWritePayload.test.ts:1`、`FocusLink/tests/foxlinkMcpContract.test.ts:15` | 证据记录 |
+
+**问题**
+
+P0 无本轮用户数据损坏证据 — 所有诊断写入限定真实内存 SQLite 夹具，没有向已装进程发送写请求 — 证据②至⑤。
+
+P1 If-Match 前置条件被忽略 — 使用请求头防旧写的调用方实际失去所要求的并发保护 — 证据②⑥。
+
+P1 幂等重放被封装层破坏 — 调用方无法以原操作身份可靠读取已成功请求的确认 — 证据③④⑥。
+
+P2 atomic 名称与保证不一致 — 客户端不能把该选项理解为全有全无或失败可回滚 — 证据⑤。
+
+**改动**
+
+- `FocusLink/backend-design/IMPLEMENTATION_LOG.md`：追加当前版本隔离复现、根因和验收范围；既有装机与测试证据保留。
+- `FocusLink/backend-design/SYNC_TROUBLESHOOTING.md`：新增 FL-SYNC-038，固定请求头、重放和批量语义的诊断步骤。
+- `FocusLink/backend-design/BACKEND_SPEC.md`：明确当前 `/v1` 合同缺口，移除将逐条补偿等同事务回滚的使用建议。
+- 根因：正文旧版本在 service.execute 查询幂等回执前被拒；省略版本时又按新状态重新生成命令，导致原 operationId 对应的命令摘要变化。请求头未进入任何上述判断。
+- 诊断运行于 Node v24.19.0：生产 businessApi 路由与 AutomationService、真实内存 SQLite；仅替换数据库全局入口、凭据夹具、日志与监听端口，使用动态回环端口，不监听生产端口或落盘发现配置。这不是 Node 22 发布门禁，也不是装机版真实写验收。
+- 本轮未修改产品代码；诊断临时脚本与 bundle 在记录结果后清理，复用现有内存库夹具与生产路由可重现上述顺序。
+
 ## 2026-11-03 · `FL-API-20261103-SESSION-WRITE`：本地 `/v1` 补上会话写入口与任务查询（1.10.2）
 
 **结论**
