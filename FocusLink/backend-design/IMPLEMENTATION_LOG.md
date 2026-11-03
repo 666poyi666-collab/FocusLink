@@ -1,5 +1,44 @@
 # FocusLink 实施日志
 
+## 2026-11-03 · `FL-API-20261103-CAS-REPLAY-FIX`：`/v1` 执行 If-Match，重放返回原确认（1.10.3）
+
+**结论**
+
+上一轮隔离验收（`FL-API-20261103-CAS-REPLAY`）指出的两处 P1 已修复：写入口读取 `If-Match` 请求头并按当前版本做 CAS；同一 `operationId` + 同一正文的重放先命中已确认回执，返回首次结果并标 `duplicate`，不再被版本预检查拒绝。`atomic` 批量在写入前直接拒绝。状态：已完成。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `If-Match` 接受 `3` / `"3"` / `W/"3"`；`*`、非整数或与正文版本不一致返回 400，陈旧版本返回 409 | `FocusLink/electron/mcp/sessionWritePayload.ts:54` | 实测 |
+| ② | 重放判定先于 CAS：命中已确认回执直接返回首次结果并带 `duplicate: true`，不再写库 | `FocusLink/electron/mcp/sessionPatchService.ts:61` | 实测 |
+| ③ | `atomic: true` 在写入前返回 `422 ATOMIC_NOT_SUPPORTED`，批量响应固定 `atomic: false` | `FocusLink/electron/mcp/businessApi.ts:548` | 实测 |
+| ④ | 路由级 9 个用例覆盖陈旧头、弱 ETag、头体冲突、非整数、同文重放、无版本重放、异文拒绝、无前置条件与陈旧 `expectedUpdatedAt` | `FocusLink/tests/sessionPatchService.test.ts` | 实测 |
+| ⑤ | `npm test` 179 文件 / 1572 用例全绿；format / typecheck / lint 退出 0；`npm run dist` 成功 | 命令输出 | 实测 |
+| ⑥ | 安装版 asar 内 `APP_COMMIT=1d81a59`、版本 `1.10.3`，`-dirty` 0 次；`verify:packaged` 退出 0 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-CelBHGWH.js:987` | 实测 |
+| ⑦ | 装机版回环：陈旧 `If-Match` → 409、头体不一致 → 400、`atomic:true` → 422；三次被拒后会话标题与 `updatedAt` 未变 | 本机 `127.0.0.1:18770` 请求 | 实测 |
+| ⑧ | `installer /S` 退出 0，注册表 `DisplayVersion=1.10.3`、EXE 文件版本 `1.10.3`；可见性通过（handle 992960） | 注册表、文件版本与冒烟输出 | 实测 |
+| ⑨ | 小米回读 `1.10.3` / `1379`，单测 41/0；`release:verify` 21 项通过；华为未在线 | `adb dumpsys` 与命令输出 | 实测 |
+
+**问题**
+
+P0 无 — 修复只改 `/v1` 封装层，账本写入仍走同一命令管线 — ②⑦。
+
+P1 无 — `If-Match` 与重放已按验收要求执行 — ①④⑦。
+
+P2 批量仍无全有全无 — `atomic=true` 被拒，逐条失败不回滚 — ③。
+
+P2 装机版只验证了被拒路径 — 成功写入与重放由隔离用例覆盖，真实会话未改写 — ④⑦。
+
+**改动**
+
+- `FocusLink/electron/mcp/sessionPatchService.ts`：新增可注入的路由级写服务，重放判定先于 CAS。
+- `FocusLink/electron/mcp/sessionWritePayload.ts`：新增 `If-Match` 解析。
+- `FocusLink/electron/mcp/businessApi.ts`：传入请求头、拒绝 `atomic` 批量、复用回执表。
+- `FocusLink/tests/sessionPatchService.test.ts`：9 个用例；合同测试改查新的服务文件。
+- `FocusLink/backend-design/BACKEND_SPEC.md`、`SYNC_TROUBLESHOOTING.md`：更新合同并按 FL-SYNC-038 收口。
+- 版本点同步 `1.10.3` / `1379`；`release-v1103/` 四文件；删除 `release-v1100/`。
+
 ## 2026-11-03 · `FL-API-20261103-CAS-REPLAY`：`/v1` 未执行 If-Match 请求头，成功请求重放被路由封装层拒绝（v1.10.2，隔离复现）
 
 **结论**
