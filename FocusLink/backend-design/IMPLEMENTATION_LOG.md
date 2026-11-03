@@ -1,5 +1,44 @@
 # FocusLink 实施日志
 
+## 2026-11-04 · `FL-API-20261104-PROJECT-TASK-CREATE`：`/v1` 支持建清单与建任务（1.10.5）
+
+**结论**
+
+外部助手能改会话字段，却建不了清单/任务（本地自动化接口只有 `GET /v1/tasks`），关联任务只能点界面。1.10.5 新增 `GET/POST /v1/projects` 与 `POST /v1/tasks`，复用 `LocalTaskProvider` 与任务工作区提交/广播，创建类请求按 `operationId` 幂等。已装机并用真实进程创建「数心一轮」与「第三节 函数值域」。状态：已完成。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 新增四条路由：`GET /v1/tasks` 之外补 `GET/POST /v1/projects`、`POST /v1/tasks`，写入口要求 `records:write` | `FocusLink/electron/mcp/businessApi.ts:599`、`:609`、`:636` | 实测 |
+| ② | 创建复用 `LocalTaskProvider.createProject` / `create`，并执行与 IPC 相同的 `queueLocalTaskWorkspace` 提交与 `tasks:changed` 广播 | `FocusLink/electron/tasks/localProvider.ts:81`、`:180` | 证据记录 |
+| ③ | 真实回环：创建「数心一轮」`ac575052-92f8-4abd-88a4-f4928df1d163`、任务「第三节 函数值域」`9f9f67e1-c34f-4d3d-b8aa-67af3c0a109a`，均 201；同 `operationId` 重放同 ID 且 `duplicate=true` | 本机 `127.0.0.1:18770` 请求 | 实测 |
+| ④ | 6 个用例覆盖名称/标题必填、颜色可选、`projectId` 省略落收件箱、非整数 priority、负 dueDate 丢弃 | `FocusLink/tests/taskWritePayload.test.ts` | 实测 |
+| ⑤ | `npm test` 181 文件 / 1580 用例全绿；format / typecheck / lint 退出 0；`npm run dist` 成功 | 命令输出 | 实测 |
+| ⑥ | 安装版 asar 内 `APP_COMMIT=f590e4d`、版本 `1.10.5`，`-dirty` 0 次；`verify:packaged` 退出 0 | `%LOCALAPPDATA%/Programs/FocusLink/resources/app.asar!/dist-electron/main-BdSr6gl9.js:987` | 实测 |
+| ⑦ | `installer /S` 退出 0，注册表 `DisplayVersion=1.10.5`、EXE 文件版本 `1.10.5`；可见性通过（handle 992946） | 注册表、文件版本与冒烟输出 | 实测 |
+| ⑧ | 小米 IP 从 `.5` 变为 `.4`（serial `D68P65855TPBHYWS`、`firstInstallTime` 与上版一致，确认同一台），安装 `1.10.5` / `1381`，单测 41/0 | `adb dumpsys` 与设备回读 | 实测 |
+| ⑨ | `release:verify` 21 项通过；四文件与双哈希一致；华为未在线 | 命令输出与 `release-v1105` | 实测 |
+| ⑩ | 清单/任务没有删除接口，`POST /v1/tasks` 也不接受标签、循环等完整任务字段 | `FocusLink/backend-design/BACKEND_SPEC.md` 接口表 | 证据记录 |
+
+**问题**
+
+P0 无 — 新建对象使用与界面相同的 Provider，未发现数据或界面回归 — ②③。
+
+P1 无 — 外部助手可拿到清单/任务真实 ID 并直接关联会话 — ③。
+
+P2 清单/任务无删除接口 — 删除仍需界面操作 — ⑩。
+
+P2 批量会话更新仍无全有全无 — `atomic=true` 被拒，逐条失败不回滚 — ⑩。
+
+**改动**
+
+- `FocusLink/electron/mcp/taskWritePayload.ts`：清单/任务创建参数校验。
+- `FocusLink/electron/mcp/businessApi.ts`：三条新路由、幂等创建、工作区提交与广播。
+- `FocusLink/tests/taskWritePayload.test.ts`：6 个用例。
+- `FocusLink/backend-design/BACKEND_SPEC.md`：接口表与限制更新。
+- 版本点同步 `1.10.5` / `1381`；`release-v1105/` 四文件；删除 `release-v1102/`。
+
 ## 2026-11-03 · `FL-OPS-20261103-TOMATODO-SCRIPT-GPU`：番茄运维脚本在 GPU 受限环境启动即 FATAL（1.10.4）
 
 **结论**
