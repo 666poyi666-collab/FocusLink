@@ -1,6 +1,45 @@
 # FocusLink 实施日志
 
 ## 2026-11-04 · `FL-API-20261104-PROJECT-TASK-CREATE`：`/v1` 支持建清单与建任务（1.10.5）
+## 2026-11-08 · `FL-UI-20261108-TAB-SWITCH`：切页像重新加载、底部配色不跟主题、被提升的子任务并列（v1.10.7）
+
+**结论**
+
+用户反馈「切专注/统计/任务很怪，任务页像重新加载、每切一次都卡」，另有两处观感问题：底部蓝色不跟主题、子任务和父任务并列。真机定位为三条独立原因：切页走 320ms 入场动画且整页卸载重建；交互色写死滴答蓝；任务页在构建森林前把已完成任务整条剔除，子任务因此失去了父节点。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 切页包在 `AnimatePresence mode="wait"` + `key={activeView}` 里，入场 320ms 淡入+位移，且每次切换整页卸载重建 | `src/mobile/MobileApp.tsx:3297-3319` | 实测 |
+| ② | 改前切到任务页后搜索词、展开状态、详情面板全部丢失 | 真机切页回读 | 实测 |
+| ③ | 改后切页耗时 专注 12ms / 统计 8ms / 任务 0ms，搜索词「循环」切走再回仍在 | CDP 采样 | 实测 |
+| ④ | 交互色写死 `--tt-blue: rgb(97 127 222)`，与设置里的主题强调色 `--app-accent` 无关 | `src/mobile/mobile.css:6937` | 实测 |
+| ⑤ | 改后导航激活色与新建按钮均为 `rgb(113,73,188)`，与当前紫色主题一致 | CDP 计算样式 | 实测 |
+| ⑥ | `displayTasks` 先 `.filter(task => !task.isCompleted)` 再建森林，父任务被剔掉后子任务退化成根节点，20 行里 14 行看不出属于谁 | `src/mobile/TickTickTaskPage.tsx:553-560` | 实测 |
+| ⑦ | 改后 4 条父任务抬头 + 14 行 depth=1 缩进，行数不变 | CDP DOM 回读 | 实测 |
+| ⑧ | 小米 1.10.7/1383 安装回读；Windows 1.10.7 覆盖安装与可见性门禁通过 | `adb` + 注册表 + smoke | 实测 |
+
+**问题**
+
+P1 切页整页重建且带 320ms 入场动画 — 每次切任务页都像重新加载，滚动与筛选状态全丢 — 事实①②。
+P1 交互色不跟主题 — 设置里换配色后底部导航与新建按钮仍是固定蓝 — 事实④。
+P1 被提升的子任务与顶层任务并列 — 父任务完成后子任务看不出归属，层级读不出来 — 事实⑥。
+
+**处置**
+
+- `src/mobile/MobileApp.tsx`：去掉 `AnimatePresence`/`motion.div` 的切页动画；任务页用 `taskPageMounted` 常驻、`hidden` 隐藏；切页后 `scrollTo(0,0)`。
+- `src/mobile/mobile.css`：新增 `--tt-accent: rgb(var(--app-accent, 97 127 222))`，22 处交互色由 `--tt-blue` 改为 `--tt-accent`，6 处写死的 `rgba(61,110,232)`/`rgba(97,127,222)` 改为按主题算；低优先级单独保留 `--tt-priority-low`；新增 `.mobile-view-pane[hidden]`、`.tt-ancestor-head`。
+- `src/mobile/TickTickTaskPage.tsx`：`displayTasks` 不再剔除已完成任务（只把窗口内勾选的任务按未完成交给过滤器）；`renderNodes` 为被提升的子任务输出灰色父路径抬头，并保证 `depth >= 1`。
+- 测试：`tests/mobileTaskCompletionFlow.test.ts` 的原位停留断言改为匹配新的 `tasks.map(... isCompleted: false)` 形态。
+
+**门禁**
+
+- `format:check` / `typecheck` / `lint` 全绿；`npm test` 181 文件 / 1580 用例全绿；`dist` + `verify:packaged` 通过（commit=2d95ce9）。
+- Windows 1.10.7 覆盖安装 + `smoke:window-visible`；小米 1.10.7/1383 安装并真机核对切页耗时、搜索保持、配色、层级。
+- 华为平板 adb 停在 `unauthorized`，本轮未安装。
+
+
 ## 2026-11-08 · `FL-UI-20261108-TASK-BLOAT`：任务页去臃肿、底部两条黑条叠盖、导航四项不齐（v1.10.6）
 
 **结论**
