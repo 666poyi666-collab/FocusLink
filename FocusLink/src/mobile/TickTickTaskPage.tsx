@@ -357,18 +357,14 @@ function TaskRow({
           ) : null}
         </button>
         {hasChildren ? <ListTree className="tt-subtasks-icon" aria-hidden="true" /> : null}
-        {completionState ? (
+        {completionState && completionState !== 'synced' ? (
           <span
             className="tt-row-status"
             data-state={completionState}
             title={completionError ?? undefined}
             aria-live="polite"
           >
-            {completionState === 'pending'
-              ? '本机已保存'
-              : completionState === 'synced'
-                ? '已同步'
-                : '同步失败'}
+            {completionState === 'pending' ? '待同步' : '同步失败'}
           </span>
         ) : null}
         {due ? (
@@ -392,33 +388,6 @@ function TaskRow({
           </button>
         ) : (
           <span className="tt-disclosure-space" aria-hidden="true" />
-        )}
-        {selectMode ? (
-          <button
-            type="button"
-            className="tt-row-select"
-            data-selected={selected}
-            aria-pressed={selected}
-            aria-label={selected ? `取消选择 ${node.title}` : `选择 ${node.title}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelect(node);
-            }}
-          >
-            {selected ? '已选' : '选择'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="tt-row-select"
-            aria-label={`选择 ${node.title}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onEnterSelectMode(node);
-            }}
-          >
-            选择
-          </button>
         )}
       </div>
     </li>
@@ -785,6 +754,29 @@ export function TickTickTaskPage({
     [heldCompletions],
   );
 
+  /**
+   * 底部只放一条浮动提示，按优先级选一个显示：撤销 > 批量结果 > 待同步汇总。
+   * v1.10.5 里撤销条与待同步条各自定位、互相叠盖，底部看起来又乱又糊（v1.10.6 修）。
+   */
+  const toast = useMemo(() => {
+    if (undoableIds.length > 0) {
+      const suffix = pendingLocalCount > 0 ? ' · 已存本机' : '';
+      const label =
+        undoableIds.length === 1
+          ? `已完成「${tasks.find((task) => task.id === undoableIds[0])?.title ?? '任务'}」`
+          : `已完成 ${undoableIds.length} 项`;
+      return { kind: 'undo' as const, text: label + suffix };
+    }
+    if (batchNotice) return { kind: 'notice' as const, text: batchNotice };
+    if (pendingLocalCount > 0) {
+      return {
+        kind: 'pending' as const,
+        text: pendingLocalIssue ?? `${pendingLocalCount} 条待同步`,
+      };
+    }
+    return null;
+  }, [batchNotice, pendingLocalCount, pendingLocalIssue, tasks, undoableIds]);
+
   /** 一批连续勾选一起撤销：每一条都明确要求恢复到未完成。 */
   const undoBatch = () => {
     if (!onToggleComplete || undoableIds.length === 0) return;
@@ -1125,27 +1117,26 @@ export function TickTickTaskPage({
         )}
       </div>
 
-      {pendingLocalCount > 0 ? (
-        <p className="tt-pending" role="status">
-          {pendingLocalIssue ?? `${pendingLocalCount} 条已存本机，等待同步`}
-        </p>
-      ) : null}
       {error ? (
         <p className="tt-error" role="alert">
           {error}
         </p>
       ) : null}
 
-      {undoableIds.length > 0 ? (
-        <div className="tt-undo" role="status">
-          <span className="tt-undo-text">
-            {undoableIds.length === 1
-              ? `已完成「${tasks.find((task) => task.id === undoableIds[0])?.title ?? '任务'}」`
-              : `已完成 ${undoableIds.length} 项`}
+      {toast ? (
+        <div
+          className={toast.kind === 'undo' ? 'tt-undo' : 'tt-toast'}
+          data-kind={toast.kind}
+          role="status"
+        >
+          <span className={toast.kind === 'undo' ? 'tt-undo-text' : 'tt-toast-text'}>
+            {toast.text}
           </span>
-          <button type="button" className="tt-undo-action" onClick={undoBatch}>
-            撤销
-          </button>
+          {toast.kind === 'undo' ? (
+            <button type="button" className="tt-undo-action" onClick={undoBatch}>
+              撤销
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -1220,12 +1211,6 @@ export function TickTickTaskPage({
           </div>
         </div>
       ) : null}
-      {batchNotice ? (
-        <p className="tt-batch-notice" role="status">
-          {batchNotice}
-        </p>
-      ) : null}
-
       {!selectMode ? (
         <button type="button" className="tt-fab" aria-label="新建任务" onClick={openComposer}>
           <Plus aria-hidden="true" />

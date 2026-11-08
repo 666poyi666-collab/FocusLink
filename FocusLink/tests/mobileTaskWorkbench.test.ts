@@ -60,11 +60,12 @@ function renderPage(overrides: Partial<PageProps> = {}): string {
 }
 
 describe('task workbench renders without the new callbacks', () => {
-  it('renders the search box and row select control when no batch props are passed', () => {
+  it('renders a compact search box and no per-row select button', () => {
     const html = renderPage();
     expect(html).toContain('aria-label="搜索任务或标签"');
     expect(html).toContain('写周报');
-    expect(html).toContain('aria-label="选择 写周报"');
+    // v1.10.6：每行的「选择」常驻按钮已移除，批量入口只留长按与菜单。
+    expect(html).not.toContain('tt-row-select');
     // 没进入批量模式时不渲染底部操作条。
     expect(html).not.toContain('aria-label="批量操作"');
     // 详情面板未打开时不应提前渲染子任务输入。
@@ -105,11 +106,11 @@ describe('search contract', () => {
 });
 
 describe('batch mode contract', () => {
-  it('opens from the per-row select control and from a long press', () => {
+  it('opens from a long press and the overflow menu, with no per-row button', () => {
     expect(pageSource).toMatch(/const LONG_PRESS_MS = 480;/);
     expect(pageSource).toMatch(/longPressRef\.current = window\.setTimeout\(\(\) => \{/);
     expect(pageSource).toMatch(/onEnterSelectMode\(node\)/);
-    expect(pageSource).toMatch(/className="tt-row-select"/);
+    expect(pageSource).not.toMatch(/tt-row-select/);
     // 批量模式下的复选框本身可点：不能只是装饰。
     expect(pageSource).toMatch(/className="tt-check tt-select-mark"/);
     expect(pageSource).toMatch(/批量选择/);
@@ -146,7 +147,7 @@ describe('batch mode contract', () => {
     const bar = sliceSource(
       pageSource,
       '<div className="tt-batch" role="toolbar"',
-      '{batchNotice ? (',
+      'className="tt-fab"',
     );
     expect(bar).toMatch(/role="alert"/);
     expect(bar).toMatch(/处理中…/);
