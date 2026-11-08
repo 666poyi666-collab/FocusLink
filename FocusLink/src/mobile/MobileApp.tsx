@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { App as CapacitorApp, type URLOpenListenerEvent } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { APP_VERSION } from '@shared/version';
@@ -352,8 +352,13 @@ export function MobileApp() {
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [nativeReadinessEpoch, setNativeReadinessEpoch] = useState(0);
   const [activeView, setActiveView] = useState<MobileView>('focus');
-  // 页面切换动效的 reduced-motion 降级：开启时入场/退出均为瞬时，信息不损失。
-  const reduceMotion = useReducedMotion();
+  // 任务页一旦打开过就常驻，切走只隐藏，避免每次回来都重建列表、丢掉搜索与展开状态。
+  const [taskPageMounted, setTaskPageMounted] = useState(false);
+  useEffect(() => {
+    if (activeView === 'tasks') setTaskPageMounted(true);
+    // 四个页面共用文档滚动：切页立即回到顶部，避免沿用上一页的滚动位置。
+    window.scrollTo(0, 0);
+  }, [activeView]);
   const [liveSnapshotSource, setLiveSnapshotSource] = useState<LiveSnapshotSource>('none');
   const [offlineRuntime, setOfflineRuntime] = useState<OfflineFocusRuntime | null>(null);
   const [authorityMode, setAuthorityMode] = useState<MobileAuthorityMode>('cloud-live');
@@ -3294,65 +3299,51 @@ export function MobileApp() {
         )}
         <AppNavigation activeView={activeView} onChange={setActiveView} />
         <main className="mobile-main">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              className="mobile-workspace"
-              key={activeView}
-              variants={
-                reduceMotion
-                  ? { initial: { opacity: 1 }, enter: { opacity: 1 }, exit: { opacity: 1 } }
-                  : {
-                      initial: { opacity: 0, y: 8 },
-                      // 页面交接 320ms（规范 4.2：页面/面板 320–420ms），入场用 expo-out 前置曲线，
-                      // 截图驱动等待约 80ms 时已完成绝大部分位移；退出近乎瞬时，保证新视图立即挂载。
-                      enter: {
-                        opacity: 1,
-                        y: 0,
-                        transition: { duration: 0.32, ease: [0.16, 1, 0.3, 1] },
-                      },
-                      exit: { opacity: 0, transition: { duration: 0.01 } },
-                    }
-              }
-              initial="initial"
-              animate="enter"
-              exit="exit"
+          {/* 切页不做入场动画：320ms 的淡入 + 位移会被读成"又在重新加载"。
+              页面之间应当像系统标签页一样瞬时切换。 */}
+          <div className="mobile-workspace" data-view={activeView}>
+            {activeView === 'focus' && (
+              <FocusConsole
+                snapshot={displaySnapshot}
+                connection={liveConnection}
+                connectionNotice={liveConnectionNotice}
+                titleDraft={titleDraft}
+                pendingCommand={pendingCommand}
+                commandNotice={commandNotice}
+                localDeviceId={deviceId}
+                tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
+                selectedTaskId={selectedTaskId}
+                onTaskChange={(taskId) => {
+                  setSelectedTaskId(taskId);
+                  const task = visibleTaskSnapshot.snapshot?.tasks.find(
+                    (item) => item.id === taskId,
+                  );
+                  if (task) setTitleDraft(task.title);
+                }}
+                onTitleChange={setTitleDraft}
+                onCommand={(command) => void handleCommand(command)}
+                onOpenConnection={() => setConfigOpen(true)}
+                onOpenTasks={() => setActiveView('tasks')}
+                snapshotSource={liveSnapshotSource}
+                nativeSystemControls={nativeSystemControls}
+                onToggleImmersiveSystemBars={() => void handleToggleImmersiveSystemBars()}
+                onEnterPictureInPicture={() => void handleEnterPictureInPicture()}
+                localOfflineMode={offlineRuntime !== null}
+                authorityMode={authorityMode}
+                allowOfflineStart={offlineRuntime === null && liveConnection !== 'live'}
+                timerStyle={appearance.timerStyle}
+                runtimeReady={cacheReady}
+                appActive={appActive}
+                documentVisible={documentVisible}
+              />
+            )}
+            {/* 任务页首次进入后常驻，切走只是隐藏：搜索词、展开状态、详情面板都不会被重置。 */}
+            <div
+              className="mobile-view-pane"
+              hidden={activeView !== 'tasks'}
+              aria-hidden={activeView !== 'tasks'}
             >
-              {activeView === 'focus' && (
-                <FocusConsole
-                  snapshot={displaySnapshot}
-                  connection={liveConnection}
-                  connectionNotice={liveConnectionNotice}
-                  titleDraft={titleDraft}
-                  pendingCommand={pendingCommand}
-                  commandNotice={commandNotice}
-                  localDeviceId={deviceId}
-                  tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
-                  selectedTaskId={selectedTaskId}
-                  onTaskChange={(taskId) => {
-                    setSelectedTaskId(taskId);
-                    const task = visibleTaskSnapshot.snapshot?.tasks.find(
-                      (item) => item.id === taskId,
-                    );
-                    if (task) setTitleDraft(task.title);
-                  }}
-                  onTitleChange={setTitleDraft}
-                  onCommand={(command) => void handleCommand(command)}
-                  onOpenConnection={() => setConfigOpen(true)}
-                  onOpenTasks={() => setActiveView('tasks')}
-                  snapshotSource={liveSnapshotSource}
-                  nativeSystemControls={nativeSystemControls}
-                  onToggleImmersiveSystemBars={() => void handleToggleImmersiveSystemBars()}
-                  onEnterPictureInPicture={() => void handleEnterPictureInPicture()}
-                  localOfflineMode={offlineRuntime !== null}
-                  authorityMode={authorityMode}
-                  allowOfflineStart={offlineRuntime === null && liveConnection !== 'live'}
-                  timerStyle={appearance.timerStyle}
-                  runtimeReady={cacheReady}
-                  appActive={appActive}
-                  documentVisible={documentVisible}
-                />
-              )}
-              {activeView === 'tasks' && (
+              {taskPageMounted && (
                 <TickTickTaskPage
                   {...taskPageActions}
                   tasks={visibleTaskSnapshot.snapshot?.tasks ?? []}
@@ -3393,51 +3384,49 @@ export function MobileApp() {
                   onToggleComplete={setCloudTaskCompleted}
                 />
               )}
-              {activeView === 'history' && (
-                <DashboardView
-                  records={cache.bundles}
-                  ready={cacheReady}
-                  configured={configured}
-                  lastSyncAt={cache.lastSyncAt}
-                  cursor={cache.cursor}
-                  tasks={taskSnapshot?.snapshot?.tasks ?? null}
-                  onStartFocus={() => setActiveView('focus')}
-                />
-              )}
-              {activeView === 'settings' && (
-                <SettingsView
-                  connection={liveConnection}
-                  online={online}
-                  accountLabel={accountProfile?.accountLabel ?? null}
-                  authenticated={configured}
-                  lastSyncAt={cache.lastSyncAt}
-                  pullState={pullState}
-                  ledgerNotice={ledgerNotice}
-                  taskCount={taskSnapshot?.snapshot?.tasks.length ?? 0}
-                  taskRevision={taskSnapshot?.revision ?? 0}
-                  taskConfirmedAt={taskConfirmedAt}
-                  ledgerPendingCount={pendingUploadCount}
-                  ledgerRejectedCount={ledgerRejectedCount}
-                  ledgerCount={cache.bundles.length}
-                  onOpenAccount={() => setConfigOpen(true)}
-                  appearance={appearance}
-                  onAppearanceChange={setAppearance}
-                  conflicts={presentMobileV2Conflicts(syncConflicts)}
-                  conflictBusyId={conflictBusyId}
-                  conflictNotice={conflictNotice}
-                  retryNotice={
-                    ledgerRetryAt === null
-                      ? null
-                      : describeMobileV2RetryWait(Math.max(1_000, ledgerRetryAt - Date.now()))
-                  }
-                  onResolveConflict={(conflictId, side) =>
-                    void resolveSyncConflict(conflictId, side)
-                  }
-                  foregroundActive={foregroundActive}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
+            </div>
+            {activeView === 'history' && (
+              <DashboardView
+                records={cache.bundles}
+                ready={cacheReady}
+                configured={configured}
+                lastSyncAt={cache.lastSyncAt}
+                cursor={cache.cursor}
+                tasks={taskSnapshot?.snapshot?.tasks ?? null}
+                onStartFocus={() => setActiveView('focus')}
+              />
+            )}
+            {activeView === 'settings' && (
+              <SettingsView
+                connection={liveConnection}
+                online={online}
+                accountLabel={accountProfile?.accountLabel ?? null}
+                authenticated={configured}
+                lastSyncAt={cache.lastSyncAt}
+                pullState={pullState}
+                ledgerNotice={ledgerNotice}
+                taskCount={taskSnapshot?.snapshot?.tasks.length ?? 0}
+                taskRevision={taskSnapshot?.revision ?? 0}
+                taskConfirmedAt={taskConfirmedAt}
+                ledgerPendingCount={pendingUploadCount}
+                ledgerRejectedCount={ledgerRejectedCount}
+                ledgerCount={cache.bundles.length}
+                onOpenAccount={() => setConfigOpen(true)}
+                appearance={appearance}
+                onAppearanceChange={setAppearance}
+                conflicts={presentMobileV2Conflicts(syncConflicts)}
+                conflictBusyId={conflictBusyId}
+                conflictNotice={conflictNotice}
+                retryNotice={
+                  ledgerRetryAt === null
+                    ? null
+                    : describeMobileV2RetryWait(Math.max(1_000, ledgerRetryAt - Date.now()))
+                }
+                onResolveConflict={(conflictId, side) => void resolveSyncConflict(conflictId, side)}
+                foregroundActive={foregroundActive}
+              />
+            )}
+          </div>
         </main>
       </div>
 

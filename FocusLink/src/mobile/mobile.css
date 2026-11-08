@@ -6935,11 +6935,19 @@ html[data-runtime='mobile-focus'] {
   --tt-secondary: rgb(117 117 117);
   --tt-muted: rgb(163 163 163);
   --tt-blue: rgb(97 127 222);
+  /* 交互色跟随全局主题强调色（设置里的配色）；低优先级仍是固定蓝，语义不随主题漂移。 */
+  --tt-accent: rgb(var(--app-accent, 97 127 222));
+  --tt-priority-low: rgb(97 127 222);
   --tt-red: rgb(225 62 57);
   --tt-orange: rgb(242 176 75);
   --tt-hairline: rgba(0, 0, 0, 0.06);
   --tt-row: 44px;
   --tt-check: 22px;
+}
+
+/* 常驻的视图面板：切走时只隐藏，不卸载，状态与滚动都不丢。 */
+html[data-runtime='mobile-focus'] .mobile-view-pane[hidden] {
+  display: none !important;
 }
 
 html[data-runtime='mobile-focus'].dark {
@@ -7099,7 +7107,7 @@ html[data-runtime='mobile-focus'] .tt-check[data-tone='medium'] {
 }
 
 html[data-runtime='mobile-focus'] .tt-check[data-tone='low'] {
-  border-color: var(--tt-blue);
+  border-color: var(--tt-priority-low);
 }
 
 html[data-runtime='mobile-focus'] .tt-check[data-checked='true'] {
@@ -7142,6 +7150,31 @@ html[data-runtime='mobile-focus'] .tt-row[data-completed='true'] .tt-row-title {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   text-decoration-color: currentColor;
+}
+
+/* 父任务完成后子任务被提升到顶层：用一条灰色父路径抬头 + 一层缩进保留层级关系。 */
+html[data-runtime='mobile-focus'] .tt-ancestor-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 16px 4px 52px;
+  color: var(--tt-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+html[data-runtime='mobile-focus'] .tt-ancestor-name {
+  overflow: hidden;
+  flex: 0 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-ancestor-state {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 html[data-runtime='mobile-focus'] .tt-row-tags {
@@ -7217,9 +7250,9 @@ html[data-runtime='mobile-focus'] .tt-fab {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--tt-blue);
+  background: var(--tt-accent);
   color: rgb(255 255 255);
-  box-shadow: 0 4px 10px rgba(61, 110, 232, 0.22);
+  box-shadow: 0 4px 10px rgb(var(--app-accent, 97 127 222) / 0.22);
   cursor: pointer;
 }
 
@@ -7319,8 +7352,8 @@ html[data-runtime='mobile-focus'] .tt-drawer-item {
 }
 
 html[data-runtime='mobile-focus'] .tt-drawer-item[data-active='true'] {
-  background: rgba(61, 110, 232, 0.1);
-  color: var(--tt-blue);
+  background: rgb(var(--app-accent, 97 127 222) / 0.1);
+  color: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .tt-drawer-item span:nth-child(2) {
@@ -7353,7 +7386,7 @@ html[data-runtime='mobile-focus'] .tt-drawer-add {
   border: 0;
   border-radius: 10px;
   background: none;
-  color: var(--tt-blue);
+  color: var(--tt-accent);
   font-size: 15px;
   cursor: pointer;
 }
@@ -7457,7 +7490,7 @@ html[data-runtime='mobile-focus'] .tt-composer-submit {
   padding: 0 20px;
   border: 0;
   border-radius: 20px;
-  background: var(--tt-blue);
+  background: var(--tt-accent);
   color: rgb(255 255 255);
   font-size: 15px;
   font-weight: 600;
@@ -7525,8 +7558,8 @@ html[data-runtime='mobile-focus'] .tt-detail-done {
   padding: 0 14px;
   border: 0;
   border-radius: 17px;
-  background: rgba(61, 110, 232, 0.12);
-  color: var(--tt-blue);
+  background: rgb(var(--app-accent, 97 127 222) / 0.12);
+  color: var(--tt-accent);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -7659,7 +7692,7 @@ html[data-runtime='mobile-focus'] .tt-detail-start {
   padding: 0 22px;
   border: 0;
   border-radius: 23px;
-  background: var(--tt-blue);
+  background: var(--tt-accent);
   color: rgb(255 255 255);
   font-size: 16px;
   font-weight: 600;
@@ -7719,11 +7752,11 @@ html[data-runtime='mobile-focus'] .app-navigation button.is-active span {
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active {
   background: none;
-  color: var(--tt-blue);
+  color: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active svg {
-  background: var(--tt-blue);
+  background: var(--tt-accent);
   color: rgb(255 255 255);
 }
 
@@ -7764,7 +7797,7 @@ html[data-runtime='mobile-focus'] .tt-swipe-move {
 }
 
 html[data-runtime='mobile-focus'] .tt-swipe-done {
-  background: var(--tt-blue);
+  background: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .tt-swipe-move {
@@ -7826,8 +7859,8 @@ html[data-runtime='mobile-focus'] .tt-chip {
 
 html[data-runtime='mobile-focus'] .tt-chip[data-active='true'] {
   border-color: transparent;
-  background: rgba(97, 127, 222, 0.12);
-  color: var(--tt-blue);
+  background: rgb(var(--app-accent, 97 127 222) / 0.12);
+  color: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .tt-detail-tags-input {
@@ -7846,7 +7879,7 @@ html[data-runtime='mobile-focus'] .tt-detail-tags-input {
 html[data-runtime='mobile-focus'] .tt-detail-tags-input:focus,
 html[data-runtime='mobile-focus'] .tt-detail-tags-input:focus-visible {
   outline: none;
-  border-bottom-color: var(--tt-blue);
+  border-bottom-color: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .tt-detail-delete {
@@ -7937,8 +7970,8 @@ html[data-runtime='mobile-focus'] .settings-account-avatar {
   width: 44px;
   height: 44px;
   border-radius: 22px;
-  background: rgba(97, 127, 222, 0.14);
-  color: var(--tt-blue);
+  background: rgb(var(--app-accent, 97 127 222) / 0.14);
+  color: var(--tt-accent);
   font-size: 18px;
   font-weight: 600;
 }
@@ -8098,7 +8131,7 @@ html[data-runtime='mobile-focus'] .tt-appbar-text {
   padding: 0 6px;
   border: 0;
   background: none;
-  color: var(--tt-blue);
+  color: var(--tt-accent);
   font-family: inherit;
   font-size: 15px;
   font-weight: 500;
@@ -8117,7 +8150,7 @@ html[data-runtime='mobile-focus'] .tt-search {
 }
 
 html[data-runtime='mobile-focus'] .tt-search:focus-within {
-  box-shadow: 0 0 0 2px var(--tt-blue);
+  box-shadow: 0 0 0 2px var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .tt-search-icon {
@@ -8168,12 +8201,12 @@ html[data-runtime='mobile-focus'] .tt-search-clear svg {
 }
 
 html[data-runtime='mobile-focus'] .tt-row[data-selected='true'] {
-  background: rgba(97, 127, 222, 0.12);
+  background: rgb(var(--app-accent, 97 127 222) / 0.12);
 }
 
 html[data-runtime='mobile-focus'] .tt-check.tt-select-mark[data-checked='true'] {
   border-color: transparent;
-  background: var(--tt-blue);
+  background: var(--tt-accent);
   color: rgb(255 255 255);
 }
 
@@ -8315,7 +8348,7 @@ html[data-runtime='mobile-focus'] .tt-subtask-input {
 
 html[data-runtime='mobile-focus'] .tt-subtask-input:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--tt-blue);
+  box-shadow: 0 0 0 2px var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .tt-subtask-add {
@@ -8323,7 +8356,7 @@ html[data-runtime='mobile-focus'] .tt-subtask-add {
   min-height: 44px;
   border: 0;
   border-radius: 10px;
-  background: var(--tt-blue);
+  background: var(--tt-accent);
   color: rgb(255 255 255);
   font-family: inherit;
   font-size: 14px;
@@ -8366,7 +8399,7 @@ html[data-runtime='mobile-focus'] .tt-row-select {
 }
 
 html[data-runtime='mobile-focus'] .tt-row-select[data-selected='true'] {
-  color: var(--tt-blue);
+  color: var(--tt-accent);
   font-weight: 600;
 }
 
@@ -8388,7 +8421,7 @@ html[data-runtime='mobile-focus'] .tt-empty-action {
   border: 1px solid var(--tt-hairline);
   border-radius: 20px;
   background: none;
-  color: var(--tt-blue);
+  color: var(--tt-accent);
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -8457,12 +8490,12 @@ html[data-runtime='mobile-focus'] .app-navigation button span {
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active {
   background: none;
-  color: var(--tt-blue);
+  color: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active svg {
   background: none;
-  color: var(--tt-blue);
+  color: var(--tt-accent);
 }
 
 html[data-runtime='mobile-focus'] .app-navigation button.is-active span {

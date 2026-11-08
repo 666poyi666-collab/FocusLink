@@ -117,7 +117,13 @@ describe('mobile completion pipeline contract', () => {
     expect(pageSource).toMatch(/onToggle\(node, !completed\)/);
     // 原位停留靠的是「按未完成交给过滤器、单独渲染勾选态」；若把 isCompleted 改成 true
     // 交给过滤器，filterSyncedTaskForest 会把已完成叶子节点直接丢掉，行立刻消失。
-    expect(pageSource).toMatch(/isCompleted: false \},\s*\);/);
+    expect(pageSource).toMatch(
+      /heldCompletions\[task\.id\] === undefined \? task : \{ \.\.\.task, isCompleted: false \}/,
+    );
+    // 已完成任务不能在这里被整条剔掉，否则子任务会失去父节点、退化成顶层任务。
+    expect(pageSource).toMatch(
+      /tasks\.map\(\(task\) =>\s*heldCompletions\[task\.id\] === undefined \? task :/,
+    );
   });
 
   it('does not replay the completion pop on a refresh or in the completed list', () => {

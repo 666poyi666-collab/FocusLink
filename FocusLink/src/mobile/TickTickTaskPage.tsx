@@ -545,14 +545,16 @@ export function TickTickTaskPage({
 
   // 窗口中刚勾选的任务必须继续留在「待办」森林里才能保住原位：过滤器按 isCompleted 选状态，
   // 所以这里把它按未完成交给过滤器，勾选态由 TaskRow 的 completed 单独渲染。
-  const displayTasks = useMemo(() => {
-    if (showCompleted) return tasks;
-    return tasks
-      .filter((task) => !task.isCompleted || heldCompletions[task.id] !== undefined)
-      .map((task) =>
+  //
+  // 注意不能在这里把已完成任务整条剔掉：父任务一旦被提前删除，子任务在森林里就成了根节点，
+  // 会跟顶层任务并列显示、也丢掉"父任务 ›"的路径。状态筛选交给 filterSyncedTaskForest。
+  const displayTasks = useMemo(
+    () =>
+      tasks.map((task) =>
         heldCompletions[task.id] === undefined ? task : { ...task, isCompleted: false },
-      );
-  }, [heldCompletions, showCompleted, tasks]);
+      ),
+    [heldCompletions, tasks],
+  );
   // 搜索词只交给同一条森林过滤器：排序、层级、父任务折叠都是现成的，不再另造一套。
   const trimmedQuery = query.trim();
   const groups = useMemo<SyncedTaskGroup[]>(
@@ -973,48 +975,68 @@ export function TickTickTaskPage({
       .finally(() => setEditBusy(false));
   };
 
-  const renderNodes = (nodes: readonly SyncedTaskTreeNode[], depth: number): ReactNode =>
-    nodes.map((node) => (
-      <div
-        key={node.id}
-        className="tt-node"
-        data-exit={heldCompletions[node.id]?.phase === 'exiting'}
-      >
-        <div className="tt-node-collapse">
-          <div className="tt-node-content">
-            <ul className="tt-rows">
-              <TaskRow
-                node={node}
-                depth={depth}
-                collapsed={collapsed.has(node.id)}
-                onToggleCollapse={toggleCollapsed}
-                onOpen={(task) => {
-                  setDetailTaskId(task.id);
-                  onSelect(task);
-                }}
-                onToggle={setTaskCompleted}
-                onMoveRequest={(task) => {
-                  setMoveError(null);
-                  setMoveTaskId(task.id);
-                }}
-                completionState={rowErrors[node.id] ? 'failed' : completionStates?.[node.id]}
-                completionError={rowErrors[node.id]}
-                justCompleted={!showCompleted && heldCompletions[node.id] !== undefined}
-                completed={heldCompletions[node.id] !== undefined || node.isCompleted}
-                now={now}
-                selectMode={selectMode}
-                selected={selection.has(node.id)}
-                onSelect={toggleSelected}
-                onEnterSelectMode={(task) => enterSelectMode(task)}
-              />
-            </ul>
-            {node.children.length > 0 && !collapsed.has(node.id)
-              ? renderNodes(node.children, depth + 1)
-              : null}
+  const renderNodes = (nodes: readonly SyncedTaskTreeNode[], depth: number): ReactNode => {
+    // 父任务已完成时子任务会被提升到顶层。这里给每组被提升的子任务加一条灰色父路径抬头，
+    // 而不是在每一行里重复父任务名——否则十几行都顶着同一段灰字，比并列更乱。
+    let lastAncestorPath: string | null = null;
+    return nodes.flatMap((node) => {
+      const ancestorPath = node.hiddenAncestorTitles?.length
+        ? node.hiddenAncestorTitles.join(' › ')
+        : null;
+      const header =
+        ancestorPath !== null && ancestorPath !== lastAncestorPath ? (
+          <p className="tt-ancestor-head" key={`${node.id}:ancestor`}>
+            <span className="tt-ancestor-name">{ancestorPath}</span>
+            <span className="tt-ancestor-state">已完成</span>
+          </p>
+        ) : null;
+      lastAncestorPath = ancestorPath;
+      return [
+        header,
+        <div
+          key={node.id}
+          className="tt-node"
+          data-exit={heldCompletions[node.id]?.phase === 'exiting'}
+          data-promoted={node.hiddenAncestorTitles?.length ? 'true' : undefined}
+        >
+          <div className="tt-node-collapse">
+            <div className="tt-node-content">
+              <ul className="tt-rows">
+                <TaskRow
+                  node={node}
+                  // 父任务已完成时子任务会被提升到顶层，但仍保留一层缩进，不与顶层任务并列。
+                  depth={node.hiddenAncestorTitles?.length ? Math.max(depth, 1) : depth}
+                  collapsed={collapsed.has(node.id)}
+                  onToggleCollapse={toggleCollapsed}
+                  onOpen={(task) => {
+                    setDetailTaskId(task.id);
+                    onSelect(task);
+                  }}
+                  onToggle={setTaskCompleted}
+                  onMoveRequest={(task) => {
+                    setMoveError(null);
+                    setMoveTaskId(task.id);
+                  }}
+                  completionState={rowErrors[node.id] ? 'failed' : completionStates?.[node.id]}
+                  completionError={rowErrors[node.id]}
+                  justCompleted={!showCompleted && heldCompletions[node.id] !== undefined}
+                  completed={heldCompletions[node.id] !== undefined || node.isCompleted}
+                  now={now}
+                  selectMode={selectMode}
+                  selected={selection.has(node.id)}
+                  onSelect={toggleSelected}
+                  onEnterSelectMode={(task) => enterSelectMode(task)}
+                />
+              </ul>
+              {node.children.length > 0 && !collapsed.has(node.id)
+                ? renderNodes(node.children, depth + 1)
+                : null}
+            </div>
           </div>
-        </div>
-      </div>
-    ));
+        </div>,
+      ];
+    });
+  };
 
   return (
     <section className="tt-page" aria-label="任务" data-select-mode={selectMode}>
