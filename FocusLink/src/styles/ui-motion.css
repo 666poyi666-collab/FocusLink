@@ -19,8 +19,8 @@
  * 颜色取 --app-accent（α = 0.18，触顶约束上限），属于微交互档 140ms。 */
 .icon-hover {
   transition:
-    transform var(--dur-micro, 140ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    filter var(--dur-micro, 140ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transform var(--dur-micro, 120ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+    filter var(--dur-micro, 120ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
   will-change: transform;
 }
 

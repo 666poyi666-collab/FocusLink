@@ -15,14 +15,15 @@
 
 /* ---------- 动效 token ---------- */
 :root {
-  /* 缓动：入场/显现用 out-expo，移动/交换用 standard */
+  /* 缓动：入场/显现用 out-expo，移动/交换用 standard，退场/按压收敛用 exit */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
-  /* 时长：微交互 140ms / 常规 240ms / 页面·面板 360ms */
-  --dur-micro: 140ms;
-  --dur-base: 240ms;
-  --dur-page: 360ms;
+  /* 时长（v1.11.0 收窄，PROPOSAL_V1110 §3）：微交互 120ms / 常规 200ms / 页面·面板 320ms */
+  --dur-micro: 120ms;
+  --dur-base: 200ms;
+  --dur-page: 320ms;
 }
 
 /* ---------- 入场：上浮淡入（一次播放，mount 时触发） ---------- */

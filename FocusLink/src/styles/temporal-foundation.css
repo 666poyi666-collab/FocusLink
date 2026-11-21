@@ -65,6 +65,10 @@
   --app-ink-fg: 250 249 246;
   --app-grid: 24 26 29;
   --app-highlight: 255 255 255;
+  /* 交互叠加层（v1.11.0，PROPOSAL_V1110 §1）：hover/按下/选中的半透明填充 */
+  --app-hover-fill: rgb(var(--app-text) / 0.04);
+  --app-press-fill: rgb(var(--app-text) / 0.08);
+  --app-selected-fill: rgb(var(--app-accent) / 0.08);
   /* Dashboard visualization roles stay independent from the chosen accent.
      Focus follows the user's accent, while gap/night/now remain distinguishable. */
   --app-ledger-gap: 74 101 119;
@@ -166,6 +170,10 @@ html:not([data-runtime]):not(.mini-window-page) {
   --app-subtle: 130 135 140;
   --app-border: 47 50 54;
   --app-border-strong: 66 70 76;
+  /* 交互叠加层（v1.11.0）：暗色下透明度分档略升保证可见性 */
+  --app-hover-fill: rgb(var(--app-text) / 0.06);
+  --app-press-fill: rgb(var(--app-text) / 0.12);
+  --app-selected-fill: rgb(var(--app-accent) / 0.14);
   --app-accent: 96 165 250;
   --app-accent-hover: 147 197 253;
   --app-accent-active: 191 219 254;

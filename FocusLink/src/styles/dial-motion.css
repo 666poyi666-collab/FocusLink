@@ -15,7 +15,7 @@
 
 /* ---------- 通用：状态色切换柔化（ink ↔ success ↔ pause，240ms） ---------- */
 .timer-dial {
-  transition: color var(--dur-base, 240ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: color var(--dur-base, 200ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
   contain: layout style;
 }
 
@@ -34,7 +34,7 @@
 }
 
 .timer-dial .motion-digit-flip[data-changed='true'] {
-  animation: dial-digit-slide var(--dur-base, 240ms)
+  animation: dial-digit-slide var(--dur-base, 200ms)
     var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
@@ -61,12 +61,12 @@
 }
 
 .dial-standard .instrument-chrome-state {
-  animation: dial-marker-in var(--dur-base, 240ms)
+  animation: dial-marker-in var(--dur-base, 200ms)
     var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .dial-standard .instrument-chrome-label {
-  animation: dial-label-in var(--dur-base, 240ms)
+  animation: dial-label-in var(--dur-base, 200ms)
     var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
@@ -134,7 +134,7 @@
   inset: -16% -24%;
   background: radial-gradient(closest-side, currentColor, transparent 70%);
   opacity: 0;
-  transition: opacity var(--dur-page, 360ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: opacity var(--dur-page, 320ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
 
@@ -194,7 +194,7 @@
 
 /* segment：段码亮灭 140ms 透明度过渡，消除硬闪 */
 .timer-dial.dial-segment .segment-digit path {
-  transition: opacity var(--dur-micro, 140ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: opacity var(--dur-micro, 120ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 .timer-dial .motion-digit-flip,
@@ -212,12 +212,12 @@
 
   .timer-dial .motion-digit-flip[data-changed='true'] {
     animation-name: dial-label-in; /* 仅透明度 */
-    animation-duration: var(--dur-micro, 140ms);
+    animation-duration: var(--dur-micro, 120ms);
   }
 
   .dial-standard .instrument-chrome-state {
     animation-name: dial-label-in; /* 仅透明度 */
-    animation-duration: var(--dur-micro, 140ms);
+    animation-duration: var(--dur-micro, 120ms);
   }
 
   .timer-dial .dial-sweep {

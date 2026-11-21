@@ -810,7 +810,8 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 4px;
+  padding: var(--list-head-pad-y, 8px) 4px;
+  min-height: var(--list-head-h, 32px);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-tertiary);
@@ -836,7 +837,7 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   margin-top: 6px;
 }
 
-/* 单行任务条目 (42px 舒适行高) */
+/* 单行任务条目（工作台内行高/内边距走 --row-h 密度令牌；基础 42px 供选择器等复用） */
 /* contain: layout/paint/style 让每个任务行成为独立的布局与重绘孤岛。
    实测（160Hz，140 行）勾选一批 20 次：最差帧 145.6ms -> 100.1ms、
    >33ms 帧 16 -> 3、点击批次主线程耗时 3.6s -> 2.5s。
@@ -847,7 +848,11 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   height: 42px;
   padding: 0 10px;
   border-radius: var(--r-md);
-  transition: background 0.12s ease;
+  /* v1.11.0 状态矩阵（PROPOSAL_V1110 §5）：hover/选中 200ms，按压下沉 120ms exit 收敛 */
+  transition:
+    background var(--dur-base, 200ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform var(--dur-micro, 120ms) var(--ease-exit, cubic-bezier(0.4, 0, 1, 1)),
+    box-shadow var(--dur-base, 200ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
   position: relative;
   contain: layout paint style;
   cursor: pointer;
@@ -858,9 +863,17 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .task-entry:hover {
   background: var(--bg-hover);
 }
+.task-entry:active {
+  background: var(--bg-active);
+  transform: translateY(1px);
+}
 .task-entry[aria-selected='true'] {
   background: var(--bg-selected);
   box-shadow: inset 2.5px 0 0 var(--selected-border);
+}
+.task-entry:focus-visible {
+  outline: 2px solid rgb(var(--app-accent) / 0.55);
+  outline-offset: -2px;
 }
 
 /* 任务圆圈勾选器：灵动弹性微动效、自适应主题色幽灵对勾与外扩光晕环 */
@@ -2522,10 +2535,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .task-workspace-root {
   /* 衬线档：用产品自带的 Noto Serif SC（打包分片见 dist/assets） */
   --font-ui-serif: 'Noto Serif SC Variable', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif;
-  /* 密度档：default 必须等于改动前的现状，保证默认视觉零变化 */
-  --row-h: 42px;
-  --row-pad-x: 10px;
-  --subtask-h: 34px;
+  /* 密度档（v1.11.0，PROPOSAL_V1110 §2.4）：标准=舒适呼吸行高，紧凑=高信息密度 */
+  --row-h: 56px;
+  --row-pad-x: 16px;
+  --subtask-h: 40px;
+  --list-head-pad-y: 8px;
+  --list-head-h: 32px;
 }
 
 .task-workspace-root[data-task-font='serif'] {
@@ -2533,22 +2548,27 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 }
 
 .task-workspace-root[data-density='compact'] {
-  --row-h: 34px;
-  --row-pad-x: 8px;
-  --subtask-h: 28px;
+  --row-h: 44px;
+  --row-pad-x: 12px;
+  --subtask-h: 32px;
+  --list-head-pad-y: 4px;
+  --list-head-h: 24px;
 }
 
 .task-workspace-root[data-density='relaxed'] {
-  --row-h: 52px;
-  --row-pad-x: 16px;
-  --subtask-h: 42px;
+  --row-h: 64px;
+  --row-pad-x: 20px;
+  --subtask-h: 48px;
+  --list-head-pad-y: 10px;
+  --list-head-h: 36px;
 }
 
 /* 让行真正吃这些令牌。用 :where() 把特异性压到 0-0-1，
    避免重演「.task-workspace-root button (0-1-1) 压掉 .task-check-circle (0-1-0)」
    那个把勾选圆环清零的 bug。 */
 :where(.task-workspace-root) .task-entry {
-  height: var(--row-h);
+  min-height: var(--row-h);
+  height: auto;
   padding: 0 var(--row-pad-x);
 }
 

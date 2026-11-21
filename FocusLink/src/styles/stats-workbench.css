@@ -220,6 +220,10 @@ html[data-density='compact'] .subtask-item {
 html[data-density='compact'] .list-toolbar {
   padding: 12px 26px 8px;
 }
+/* v1.11.0：紧凑档看板卡内边距 20px -> 16px（PROPOSAL_V1110 §2.4） */
+html[data-density='compact'] .stats-page .dashboard-card-tile {
+  padding: 16px;
+}
 
 /* ═════════════════════════════════════════════════════════════════════════
 
@@ -722,17 +726,16 @@ button {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
+  /* v1.11.0（PROPOSAL_V1110 P0④）：hover 去上浮去投影增量，只做强调色细边，
+     阴影完全静止不参与过渡，避免大面积阴影动画重绘；时长走 micro 档。 */
   transition:
-    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.18s ease,
-    border-color 0.18s ease;
+    border-color var(--dur-micro, 120ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1)),
+    background var(--dur-micro, 120ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
   position: relative;
   overflow: hidden;
 }
 .card-widget:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.07);
-  border-color: var(--border-default);
+  border-color: rgb(var(--app-accent) / 0.25);
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -2464,9 +2467,8 @@ html:not([data-skin]) .card-widget {
 }
 [data-skin='ceramic'] .card-widget:hover,
 html:not([data-skin]) .card-widget:hover {
-  border-color: var(--border-default) !important;
-  box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.06) !important;
-  transform: translateY(-2px) !important;
+  /* v1.11.0：与基础卡贴一致——去上浮去投影增量，强调色细边 */
+  border-color: rgb(var(--app-accent) / 0.25) !important;
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -3601,9 +3603,10 @@ html body .stats-page[data-pal='linear'] {
   --bg-list: rgb(var(--app-surface));
   --bg-detail: rgb(var(--app-surface-2));
   --bg-card: rgb(var(--app-surface));
-  --bg-hover: rgb(var(--app-text) / 0.04);
-  --bg-active: rgb(var(--app-text) / 0.07);
-  --bg-selected: rgb(var(--app-accent) / 0.09);
+  /* v1.11.0：改指 foundation 交互叠加层令牌（暗色透明度分档），消除双源字面量 */
+  --bg-hover: var(--app-hover-fill);
+  --bg-active: var(--app-press-fill);
+  --bg-selected: var(--app-selected-fill);
   --selected-border: rgb(var(--app-accent));
   --border-app: rgb(var(--app-border));
   --border-subtle: rgb(var(--app-border) / 0.7);

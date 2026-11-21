@@ -108,6 +108,8 @@ export function HistoryPanel() {
     document.documentElement.classList.contains('dark') ? 'dark' : 'light',
   );
   const [font, setFont] = useState<'sans' | 'serif'>('sans');
+  /* 信息密度（v1.11.0）：紧凑档收窄看板行高与卡内边距；本页自持，卸载还原 html 属性 */
+  const [density, setDensity] = useState<'compact' | 'default'>('default');
   const [soundEnabled, setSoundEnabled] = useState(false);
 
   /* 外观属性（data-pal/data-font/data-skin/data-sound）写在 <html> 上。
@@ -124,6 +126,7 @@ export function HistoryPanel() {
     const attributes = {
       'data-pal': palette,
       'data-font': font,
+      'data-density': density,
       'data-skin': 'ceramic',
       'data-sound': soundEnabled ? 'on' : 'off',
     };
@@ -138,6 +141,7 @@ export function HistoryPanel() {
     applyStatsAppearance(root, {
       'data-pal': palette,
       'data-font': font,
+      'data-density': density,
       'data-skin': 'ceramic',
       'data-sound': soundEnabled ? 'on' : 'off',
     });
@@ -146,7 +150,7 @@ export function HistoryPanel() {
       original.forEach(([key, value]) =>
         value === null ? root.removeAttribute(key) : root.setAttribute(key, value),
       );
-  }, [palette, font, soundEnabled]);
+  }, [palette, font, density, soundEnabled]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -956,6 +960,35 @@ export function HistoryPanel() {
           }}
         >
           衬线体
+        </div>
+
+        <div className="ctx-divider" />
+        <div className="ctx-menu-title">信息密度</div>
+        <div
+          className="ctx-menu-item"
+          data-density="compact"
+          aria-checked={density === 'compact'}
+          onClick={() => {
+            playWebAudioChime('click');
+            setDensity('compact');
+            setMenuOpen(false);
+            showToast('信息密度：紧凑');
+          }}
+        >
+          紧凑
+        </div>
+        <div
+          className="ctx-menu-item"
+          data-density="default"
+          aria-checked={density === 'default'}
+          onClick={() => {
+            playWebAudioChime('click');
+            setDensity('default');
+            setMenuOpen(false);
+            showToast('信息密度：标准');
+          }}
+        >
+          标准
         </div>
 
         <div className="ctx-divider" />

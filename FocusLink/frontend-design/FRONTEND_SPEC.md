@@ -802,6 +802,14 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 任务行「开始专注」快捷胶囊（`.row-focus-chip`）：默认 `opacity: 0` + `translate: 4px 0` + `pointer-events: none`，行 `:hover` / `:focus-within` 时 140ms（`--dur-micro` + `--ease-out-expo`）渐显并接管指针；`:active` 下沉 1px；强调底 `rgb(var(--app-accent) / 0.18)`。已完成行与编辑态不渲染该按钮（`TaskWorkspace.tsx`）。键盘路径由 `:focus-within` 覆盖，与第 7 节「hover/焦点渐显 140ms」一致。
 - 清理：删除 `stats-workbench.css` 两处从未定义的 `pulseRing` 死引用；`.meta-pill` 的 `transition: all` 收窄为 `background-color / color`，避免主题切换时无关属性跟着过渡。
 
+## v1.11.0 PC 看板与任务页动效收敛（2026-11-21）
+
+- 动效时长 token 收窄（`src/styles/motion.css`）：`--dur-micro` 140→120ms、`--dur-base` 240→200ms、`--dur-page` 360→320ms；新增 `--ease-exit`（`cubic-bezier(0.4,0,1,1)`）作按压收尾曲线。dial/ui-motion 里的静态兜底字面量同步收紧，token 加载失败时不再回落到旧节奏。
+- 叠加层 token 进 foundation（`temporal-foundation.css`）：`--app-hover-fill` / `--app-press-fill` / `--app-selected-fill` 亮色 0.04 / 0.08 / accent 0.08，暗色分档加深 0.06 / 0.12 / 0.14；`stats-workbench.css` 的 linear 调色板继承映射改指这三个 token，消除双源（rose/contrast 调色板的显式槽位不变）。
+- 任务行状态矩阵（`task-workbench.css`）：hover/selected 之外补 `:active`（底色 `--bg-active` + 下沉 1px，120ms `--ease-exit`）与 `:focus-visible`（2px accent 聚焦环）；行高从固定 42px 改 `min-height: var(--row-h)`，三档密度（紧凑 44 / 标准 56 / 宽松 64），标题换行不被裁。
+- 看板卡 hover 去浮夸（`stats-workbench.css`）：`.card-widget` 基础与陶瓷皮 hover 都不再 `translateY(-2px)` + 投影增量，只换 `border-color: rgb(var(--app-accent)/0.25)` 细边（120ms）；`html[data-density='compact']` 下卡内边距 16px。
+- 信息密度接线（`HistoryPanel.tsx`）：外观弹层在「排版字形」与「音效」之间新增「信息密度」组（紧凑/标准），与设置页 `TaskWorkspaceAppearance.density` 同 resolver；属性同步到 `html[data-density]`，卸载时还原。
+
 ## v1.5.9 跨午夜会话的专注只算在实际发生的那一天
 
 - 用户报告（2026-10-07）：「像这种跨了两天的专注时间，比如今天的，昨天的暂停一直到今天，但专注算昨天的啊，为什么算到今天了？」—— 昨天 16:03 开始、暂停跨夜到今早 09:29 结束的会话，41 分钟专注（三段片段）全部发生在昨天，今日看板却显示 48 分钟，其中约 22 分钟是按墙钟比例摊出来的。
