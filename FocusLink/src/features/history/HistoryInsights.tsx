@@ -210,7 +210,10 @@ function HistoryInsightsImpl({
         </div>
 
         {/* 卡贴五：心流活跃热力 (24 周心流矩阵 (近半年)) */}
-        <div className="card-widget dashboard-card-tile span-12 section-panel" id="tileHeatmap">
+        <div
+          className="card-widget dashboard-card-tile span-12 section-panel anim-in-5"
+          id="tileHeatmap"
+        >
           <FlowHeatmapCard daily={heatmapDaily ?? analytics?.daily ?? []} />
         </div>
       </div>
@@ -257,7 +260,10 @@ function HeroFocusCard({
         })
       : ['00:00', '06:00', '12:00', '18:00', '24:00'];
   return (
-    <div className="card-widget dashboard-card-tile span-12 hero-focus-card" id="tileHero">
+    <div
+      className="card-widget dashboard-card-tile span-12 hero-focus-card anim-in-1"
+      id="tileHero"
+    >
       <div className="hero-top-grid">
         <div className="focus-summary">
           <span className="summary-label">专注时长</span>

@@ -1353,7 +1353,6 @@ button {
   height: 5px;
   border-radius: 50%;
   background: #2563eb;
-  animation: pulseRing 1.8s infinite;
 }
 
 /* 任务相对投入时长条 (Relative Time Bar) */
@@ -1904,7 +1903,6 @@ button {
   height: 5px;
   border-radius: 50%;
   background: #2563eb;
-  animation: pulseRing 1.8s infinite;
 }
 .tr-bar-track {
   width: 100%;
@@ -3627,4 +3625,68 @@ html body .stats-page[data-pal='linear'] {
   --r-sm: var(--radius-md);
   --r-md: var(--radius-lg);
   --r-lg: var(--radius-2xl);
+}
+
+/* ═══ v1.10.8：看板五卡入场编排 ═══
+   JSX 上的 anim-in-2/3/4 自挂类以来从未有过 CSS 定义（空壳）；本文件 .stats-page
+   neutral 皮段又把旧动画 !important 全部关掉，于是看板 mount 时五张卡是瞬时弹出。
+   这里在文件最末以更高特异性 (0-3-0) + !important 重建一次性入场：
+   240ms out-expo、透明度 + 8px 上浮、每卡 40ms 阶梯（规范 §8 区段间隔 ≤40ms）。
+   位移用独立 translate 属性而非 transform —— 上面 neutral 皮写的是
+   transform:none !important，重要声明位于动画层之上、会压制 keyframes 里的
+   transform；translate 未被禁，入场位移得以生效，静止态与 hover 依旧不含
+   任何位移（遵守 v1.5.0 取消光斑/上浮的决定）。
+   范围切换不重挂 HistoryInsights（memo、无 key 变化），编排只在首次进入
+   看板时播放一次，不违反「范围切换就地 360ms 不闪页」。 */
+.stats-page .dashboard-card-tile.anim-in-1,
+.stats-page .dashboard-card-tile.anim-in-2,
+.stats-page .dashboard-card-tile.anim-in-3,
+.stats-page .dashboard-card-tile.anim-in-4,
+.stats-page .dashboard-card-tile.anim-in-5 {
+  animation: stats-tile-in var(--dur-base) var(--ease-out-expo) both !important;
+}
+.stats-page .dashboard-card-tile.anim-in-1 {
+  animation-delay: 0ms !important;
+}
+.stats-page .dashboard-card-tile.anim-in-2 {
+  animation-delay: 40ms !important;
+}
+.stats-page .dashboard-card-tile.anim-in-3 {
+  animation-delay: 80ms !important;
+}
+.stats-page .dashboard-card-tile.anim-in-4 {
+  animation-delay: 120ms !important;
+}
+.stats-page .dashboard-card-tile.anim-in-5 {
+  animation-delay: 160ms !important;
+}
+@keyframes stats-tile-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+/* reduced-motion：只保留 140ms 纯透明度，零位移、零阶梯（规范：降级后
+   信息完整、运行中切换立即生效）。 */
+@media (prefers-reduced-motion: reduce) {
+  .stats-page .dashboard-card-tile.anim-in-1,
+  .stats-page .dashboard-card-tile.anim-in-2,
+  .stats-page .dashboard-card-tile.anim-in-3,
+  .stats-page .dashboard-card-tile.anim-in-4,
+  .stats-page .dashboard-card-tile.anim-in-5 {
+    animation: stats-tile-in-fade var(--dur-micro) var(--ease-standard) both !important;
+    animation-delay: 0ms !important;
+  }
+  @keyframes stats-tile-in-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }

@@ -793,6 +793,15 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 热力矩阵不得丢记录：列数按 `Math.ceil((HEATMAP_WINDOW_DAYS + endOffset) / 7)` 计算，未来格子淡化并标注「还没到」；列数按周对齐后最左超出数据窗口的格子必须隐形且无 tooltip，不得渲染成「无记录」的空格。
 - 硬约束由 `tests/statsAlignment.test.ts` 锁定（时长取整基准、侧栏分类与环形图同源的真实函数断言、渲染层源码契约），跨午夜语义由 `tests/sessionAnalytics.test.ts` 与 `tests/dayLedgerAnalytics.test.ts` 锁定。
 
+## v1.10.8 统计看板入场编排与任务行快捷专注（2026-11-21）
+
+- 统计页五张卡的 `anim-in-1..5` 类此前只是 JSX 空壳（CSS 无定义），neutral 皮肤段（`.stats-page .card-widget` 的 `animation: none !important`）还把卡片动效整体关死，看板首帧是「整页瞬时弹出」。本轮在 `stats-workbench.css` 尾部加入场编排段：`.stats-page .dashboard-card-tile.anim-in-1..5` 以 `var(--dur-base)` `var(--ease-out-expo)` 依次入场，`animation-delay` 按 0/40/80/120/160ms 阶梯（符合第 8 节「区段间隔 ≤40ms」）。
+- **重要实现约束**：入场 keyframes 必须用独立 `opacity` + `translate` 属性，**不得用 `transform`**——neutral 皮肤段的 `transform: none !important` 属于作者重要声明，位于 CSS 动画层之上，会把 keyframes 里的 `transform` 压制回 `none`，动画瞬间失效；`translate`/`opacity` 不在其列表内，可穿透。删除或改写该皮肤段前必须重新核对这条层级关系。
+- 范围切换（今日/7 天/30 天）不重挂载、不重放入场：`HistoryInsights` 由 `HistoryPanel` 挂载一次、无 `key` 变化，入场动画只在首次进入页面时播一遍，符合「范围切换就地 360ms 不闪页」。
+- `prefers-reduced-motion` 下降级为 `stats-tile-in-fade`：140ms 纯透明度、零阶梯、零位移。
+- 任务行「开始专注」快捷胶囊（`.row-focus-chip`）：默认 `opacity: 0` + `translate: 4px 0` + `pointer-events: none`，行 `:hover` / `:focus-within` 时 140ms（`--dur-micro` + `--ease-out-expo`）渐显并接管指针；`:active` 下沉 1px；强调底 `rgb(var(--app-accent) / 0.18)`。已完成行与编辑态不渲染该按钮（`TaskWorkspace.tsx`）。键盘路径由 `:focus-within` 覆盖，与第 7 节「hover/焦点渐显 140ms」一致。
+- 清理：删除 `stats-workbench.css` 两处从未定义的 `pulseRing` 死引用；`.meta-pill` 的 `transition: all` 收窄为 `background-color / color`，避免主题切换时无关属性跟着过渡。
+
 ## v1.5.9 跨午夜会话的专注只算在实际发生的那一天
 
 - 用户报告（2026-10-07）：「像这种跨了两天的专注时间，比如今天的，昨天的暂停一直到今天，但专注算昨天的啊，为什么算到今天了？」—— 昨天 16:03 开始、暂停跨夜到今早 09:29 结束的会话，41 分钟专注（三段片段）全部发生在昨天，今日看板却显示 48 分钟，其中约 22 分钟是按墙钟比例摊出来的。

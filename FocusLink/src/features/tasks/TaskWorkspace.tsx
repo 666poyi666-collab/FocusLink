@@ -3822,6 +3822,25 @@ export function TaskWorkspace() {
             </span>
           )}
         </div>
+
+        {/* v1.10.8：行尾「开始专注」快捷胶囊 —— hover/键盘焦点渐显（140ms，规范 §7）。
+            此前这入口只在右键菜单与详情 dock；胶囊默认 opacity 0 且不接指针，
+            只在行悬停/含焦点时浮现。已完成行不渲染。 */}
+        {!t.isCompleted && !isEditing && (
+          <button
+            type="button"
+            className="row-focus-chip"
+            title="开始专注"
+            aria-label={'开始专注：' + t.title}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleStartFocus(t);
+            }}
+          >
+            <span dangerouslySetInnerHTML={{ __html: ICONS.play }} />
+            开始专注
+          </button>
+        )}
       </div>
     );
   }
