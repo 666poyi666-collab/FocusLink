@@ -1,5 +1,40 @@
 # FocusLink 实施日志
 
+## 2026-11-21 · `FL-UI-20261121-PC-MOTION-TIGHTEN`：动效时长与状态反馈收敛、任务行密度接线（v1.11.0）
+
+**结论**
+
+用户要求 PC 端看板与任务界面继续打磨（审美高、动效丝滑、轻量不卡顿）。设计职责移交 DeepSeek1017（opencode 供应商），其产出 `PROPOSAL_V1110_PC_UI.md` 后本轮按 P0 五项实施：时长 token 收敛（120/200/320ms）+ 退出缓动、交互叠加层三档 token、任务行状态矩阵与密度三档、看板卡 hover 去上浮改细边、HistoryPanel 数据密度接线。门禁全绿，Windows 静默覆盖安装回读通过；按用户 PC-only 指令（2026-11-21），小米/华为本轮不装机验收。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `--dur-micro/base/page` 140/240/360ms → 120/200/320ms，新增 `--ease-exit: cubic-bezier(0.4,0,1,1)`；dial/ui-motion 8 处静态兜底字面量同步 | `src/styles/motion.css:18-26` + `dial-motion.css`/`ui-motion.css` | 实测 |
+| ② | foundation 新增 `--app-hover-fill/--app-press-fill/--app-selected-fill`（亮 0.04/0.08/accent0.08，暗 0.06/0.12/0.14）；linear 继承映射改指 token，暗色自动升档 | `src/styles/temporal-foundation.css` 亮/暗 token 块 + `src/styles/stats-workbench.css` 继承映射段 | 实测 |
+| ③ | 任务行补 `:active`（按压底色+下沉 1px）与 `:focus-visible`（2px 焦点环）；行高 42px 固定改 min-height；密度三档 token：紧凑 44 / 标准 56 / 宽松 64px（子行 32/40/48） | `src/styles/task-workbench.css` 密度与 `.task-entry` 段 | 实测 |
+| ④ | HistoryPanel 外观弹层新增「信息密度」组（紧凑/标准），`data-density` 属性随首渲染与 effect 同步写 html | `src/features/history/HistoryPanel.tsx:112-149` | 实测 |
+| ⑤ | 看板卡 hover 移除 translateY(-2px) 与投影增量，只留 120ms accent 细边；陶瓷皮同改；紧凑密度看板卡 pad 20→16px | `src/styles/stats-workbench.css:720-736` + 陶瓷皮 hover 块 | 实测 |
+| ⑥ | reduced-motion 降级完整：入场编排 translate 属性穿透 neutral `transform:none !important`，降级为纯透明度 | `src/styles/stats-workbench.css:3641-3692` | 实测 |
+| ⑦ | 门禁：format/typecheck/lint exit 0；npm test 181 文件/1580 用例全绿；build/dist exit 0 嵌入 `b4dafdb` | 本轮命令回读 | 实测 |
+| ⑧ | Windows /S 静默覆盖安装：注册表 `DisplayVersion=1.11.0`、EXE `FileVersion=1.11.0`（写入 22:19:06，对应 b4dafdb 构建波）；smoke:window-visible pid 8388 通过且实例回收 | 注册表 + smoke 回读 | 实测 |
+| ⑨ | verify:packaged PASS version=1.11.0 commit=b4dafdb（页面就绪 7441ms）；release:verify 21/21 全过；release-v1110 四文件齐 | 命令回读 | 实测 |
+| ⑩ | 按用户 2026-11-21 PC-only 指令，小米/华为本轮不安装、不验收；Android debug APK（1.11.0/1385）构建后仅本地备份 | 用户指令 + APK 备份目录 | 实测 |
+
+**问题**
+
+P1 任务行无按压/键盘焦点状态 — 点击无下沉反馈、Tab 焦点不可见，触觉层级缺失 — 事实③。
+P1 密度字段存在于类型但未接线 — 设置三档实际不生效 — 事实④。
+P2 看板卡 hover 上浮+投影 — 25ms 内 3 张卡同时 hover 时阴影抖动明显，违背轻量原则 — 事实⑤。
+
+**处置**
+
+时长 token 全局收敛并同步全部静态兜底；叠加层 token 进 foundation 亮暗两块并去重 linear 映射；任务行状态矩阵与密度三档 token 化落地并接线 HistoryPanel；看板卡 hover 只留细边。详情栏字段行距维持现状（提案「详情字段距 12/8」语义未定稿，不盲改，留待下轮与设计确认）。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；npm test 181 文件/1580 用例全绿；build/dist exit 0；Windows /S 覆盖安装回读 1.11.0；smoke:window-visible 实例回收；verify:packaged PASS；release:verify 21/21。
+
 ## 2026-11-21 · `FL-UI-20261121-DESKTOP-DASHBOARD-MOTION`：看板五卡零入场动效、任务行缺快捷开始专注（v1.10.8）
 
 **结论**
