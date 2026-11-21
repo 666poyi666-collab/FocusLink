@@ -1,5 +1,45 @@
 # FocusLink 实施日志
 
+## 2026-11-21 · `FL-UI-20261121-DESKTOP-DASHBOARD-MOTION`：看板五卡零入场动效、任务行缺快捷开始专注（v1.10.8）
+
+**结论**
+
+用户要求 PC 端看板与任务界面交互打磨（审美、动效、轻量、反馈高级）。审计发现统计看板五卡 mount 瞬时弹出（`anim-in-*` 类挂在 JSX 但 CSS 从未定义，且 neutral 皮 `!important` 关闭动画），任务行没有就地开始专注入口。本轮补齐看板入场编排与行尾快捷胶囊，门禁与三设备安装（华为不可达除外）全部通过。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `anim-in-2/3/4` 挂在 JSX 上但全 CSS 无定义；tileHero/tileHeatmap 改前连类都没有 | `src/features/history/HistoryInsights.tsx:178-264`（改前检索） | 实测 |
+| ② | neutral 皮段 `animation: none !important` + `transform: none !important` 把五卡动画全部关闭，mount 瞬时弹出 | `src/styles/stats-workbench.css:3315-3323` | 实测 |
+| ③ | `pulseRing` keyframes 从未定义却有 2 处死引用；1340-1372 与 1894-1921 为重复定义段 | `src/styles/stats-workbench.css`（pulseRing 现已 0 命中） | 实测 |
+| ④ | 任务行尾部改前无「开始专注」入口，开始专注必须先进详情栏 | `src/features/tasks/TaskWorkspace.tsx:3826-3841`（改前结构） | 实测 |
+| ⑤ | 改后五卡 `anim-in-1..5` 依次显现 40ms 阶梯 240ms out-expo；keyframes 必须 `opacity`+`translate`（`transform` 会被 3319 行作者级 `!important` 压制）；reduced-motion 降级 `stats-tile-in-fade` 140ms 零阶梯 | `src/styles/stats-workbench.css:3641-3692` | 实测 |
+| ⑥ | 行尾胶囊 hover/`:focus-within` 140ms 渐显、`:active` 下沉 1px、强调底 `rgb(var(--app-accent)/0.18)`；已完成行/编辑态不渲染 | `src/styles/task-workbench.css:2835-2889` + `src/features/tasks/TaskWorkspace.tsx:3826-3841` | 实测 |
+| ⑦ | 门禁：format/typecheck/lint exit 0；npm test 181 文件/1580 用例全绿；build exit 0；dist 重跑 commit=581ef5e；verify:packaged PASS version=1.10.8 | 本轮命令回读 | 实测 |
+| ⑧ | Windows /S 覆盖 exit 0，注册表 `DisplayVersion=1.10.8`、已安装 EXE `FileVersion=1.10.8`；smoke:window-visible pid 24108 通过且实例回收 | 注册表 + smoke 回读 | 实测 |
+| ⑨ | 小米 22041216C `adb install -r` Success，回读 `versionName=1.10.8`、`versionCode=1384` | `dumpsys package` | 实测 |
+| ⑩ | 华为平板 `192.168.1.12:5555` 连接失败（10060 超时），本轮未安装、不计入通过 | `adb connect` 回读 | 实测 |
+
+**问题**
+
+P1 看板五卡 mount 零动效 — 首帧瞬时弹出，与规范「首次进入分区依次显现」不符 — 事实①②。
+P2 任务行缺就地开始专注 — 每次开始都要多一次详情栏往返 — 事实④。
+P2 pulseRing 死引用 — 无定义的 animation 引用属维护噪音 — 事实③。
+
+**处置**
+
+- `src/styles/stats-workbench.css`：删 2 处 pulseRing 死引用；尾接入场编排段 `anim-in-1..5`（`stats-tile-in` 用 opacity+translate）+ reduced-motion `stats-tile-in-fade` 降级；`.meta-pill` 的 `transition:all` 收窄为 background-color/color。
+- `src/features/history/HistoryInsights.tsx`：tileHero 补 `anim-in-1`、tileHeatmap 补 `anim-in-5`。
+- `src/styles/task-workbench.css` + `src/features/tasks/TaskWorkspace.tsx`：`.row-focus-chip` 行尾快捷胶囊（hover/键盘焦点 140ms 渐显，:active 下沉，已完成/编辑态不渲染）。
+- 版本 1.10.8 四处常量 + Android 1384 同步；CHANGELOG/FRONTEND_SPEC/USER_REQUIREMENTS/README 对应更新；APK 备份 `.tmp/android-apk-backups/FocusLink-1.10.8-1384-debug.apk`（SHA256 36f2ff3fe171bd390326838253a3fe7589a5956913da71fafac95da48925b8e0）。
+
+**门禁**
+
+- format:check / typecheck / lint / npm test（181 文件/1580 用例）/ build 全绿；dist 重跑 commit=581ef5e；verify:packaged PASS。
+- Windows 1.10.8 覆盖安装 + 注册表/EXE 回读 + smoke:window-visible 通过；小米 1.10.8/1384 安装回读；华为连接失败未安装，如实记录。
+
+
 ## 2026-11-04 · `FL-API-20261104-PROJECT-TASK-CREATE`：`/v1` 支持建清单与建任务（1.10.5）
 ## 2026-11-08 · `FL-UI-20261108-TAB-SWITCH`：切页像重新加载、底部配色不跟主题、被提升的子任务并列（v1.10.7）
 
