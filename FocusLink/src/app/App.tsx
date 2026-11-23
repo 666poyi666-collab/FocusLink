@@ -57,7 +57,7 @@ type View = 'timer' | 'tasks' | 'history' | 'settings';
  *
  * 第七版（当前）：**去掉 AnimatePresence，单页不透明，只在内容上做一次性轻入场**。
  * 旧页立即卸载，新页根容器始终带 `--app-surface` 不透明背景，背景亮度全程恒定；
- * 只有 `.page-content` 做 160ms / 4px 的轻微落位，由 CSS 动画一次性播放，
+ * 只有 `.page-content` 做 160ms / 3px 的轻微落位，由 CSS 动画一次性播放，
  * React 重渲染不会重播，也不再有任何跨页的透明度交叉。
  * 注意：过渡再短也压不掉挂载期的同步长任务——挂载重活必须由页面自己解决，
  * 这段时间主线程被占，浏览器连第一帧都画不出来（见 FL-PERF-20261021-PAGE-SWITCH）。
