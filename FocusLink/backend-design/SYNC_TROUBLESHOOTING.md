@@ -1022,7 +1022,8 @@ P2 真实 finish 尚未验收 — 结束时必须回读账本，不能只凭实�
 
 - 共享时长：`shared/sync/liveFocusTime.ts` 用 pause 与 segment 的交集扣减，封顶为 segment 跨度；live 原生边界 pause 重叠为 0，本机嵌套 pause 会被扣除。
 - 服务端：`materializeLive` 用 `liveActiveElapsedMs`，`buildCompletedLiveBundle` 逐段用 `liveSegmentActiveElapsedMs`；个人云镜像保持同一实现。
+- 客户端：`toTimerSnapshot` 的分段 active 也改用 `liveSegmentActiveElapsedMs`，否则会话总时长正确、分段明细仍会把暂停算进去。
 - 部署：wrangler 与 workers-types 升级到支持 `code_update_strategy` 的版本；部署后一分钟内回读快照，确认数值闭合，而不是只看 Current Version ID。
-- 回归：`tests/liveFocusTime.test.ts` 与 `tests/liveFocusCloud.test.ts` 覆盖嵌套 pause、open pause、整段暂停与 finish 账本；定向 16/16，全量 186 文件 / 1,610 用例全绿。
+- 回归：`tests/liveFocusTime.test.ts`、`tests/liveFocusCloud.test.ts` 与 `tests/desktopLiveFocusController.test.ts` 覆盖嵌套 pause、open pause、整段暂停、finish 账本与客户端分段映射；定向 30/30，全量 186 文件 / 1,611 用例全绿。
 - 真机验收：手机端与 PC 端读取同一 sessionId 时，active 不应因暂停而增长；用户结束专注后，完成账本的 active+pause 必须等于 wall。
 

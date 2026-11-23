@@ -15,11 +15,11 @@
 | ③ | 该会话 3 段中前两段各自包含一段长暂停：seg1 内 pause 5,315,288ms，seg2 内 pause 14,206,076ms；seg3 在 open pause 起点收口 | 云端 live 快照 segments/pauses | 实测 |
 | ④ | 旧 `materializeLive` 直接累加 `(segment.endedAt ?? serverTime) - segment.startedAt`，没有扣除 segment 内的 pause 区间 | `cloudflare/accountDurableObject.ts:4626`（修复前） | 实测 |
 | ⑤ | 新 `shared/sync/liveFocusTime.ts` 用 pause 与 segment 的交集扣减：`liveSegmentActiveElapsedMs = max(0, 跨度 - 重叠)`，并封顶为 segment 跨度；live 原生边界 pause 重叠为 0，本机嵌套 pause 会被扣除 | `shared/sync/liveFocusTime.ts` | 实测 |
-| ⑥ | 实时快照与完成账本都改用该函数：`materializeLive` 用 `liveActiveElapsedMs`，`buildCompletedLiveBundle` 逐段用 `liveSegmentActiveElapsedMs`；个人云镜像同步修改 | `cloudflare/accountDurableObject.ts:4632`、`:4755`；`cloud/deviceSyncStore.ts:972`、`:1068` | 实测 |
+| ⑥ | 实时快照、完成账本、个人云镜像与客户端快照映射都改用该函数：`materializeLive` 用 `liveActiveElapsedMs`，完成账本逐段用 `liveSegmentActiveElapsedMs`，客户端 `toTimerSnapshot` 的分段 active 也按 pause 扣减 | `cloudflare/accountDurableObject.ts:4632`、`:4755`；`cloud/deviceSyncStore.ts:972`、`:1068`；`electron/timer/focusTimerController.ts:901` | 实测 |
 | ⑦ | 修正后回读：serverNow 04:01:43 时 active=3,892,826、pause=22,102,999、wall=25,995,825，三者闭合；04:07 再读 active 不变、pause/wall 继续增长且仍闭合 | `.tmp/verify-live.cjs` 两次回读 | 实测 |
 | ⑧ | 旧 wrangler 4.125 的产物中没有 `code_update_strategy` 字段，配置被忽略，部署后约 5 分钟才切到新代码；升级到 4.167.0 与 workers-types 5.20261123.1 后重新部署 a9285410，部署后一分钟内即读到修正值 | `node_modules/wrangler/wrangler-dist` 搜索；`wrangler deploy` 输出与快照回读 | 实测 |
-| ⑨ | 定向用例 16/16：嵌套 pause 扣减、open pause 不扣、pause 覆盖整段为 0、adopt 后 active/pause/wall 与 finish 账本同口径 | `tests/liveFocusTime.test.ts`、`tests/liveFocusCloud.test.ts` | 实测 |
-| ⑩ | 全量门禁：format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,610 用例全绿 | `FocusLink/.tmp/gates-v1114-helper.log` | 实测 |
+| ⑨ | 定向用例 30/30：嵌套 pause 扣减、open pause 不扣、pause 覆盖整段为 0、adopt 后 active/pause/wall 与 finish 账本同口径、客户端分段 active 不含嵌套 pause | `tests/liveFocusTime.test.ts`、`tests/liveFocusCloud.test.ts`、`tests/desktopLiveFocusController.test.ts` | 实测 |
+| ⑩ | 全量门禁：format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿 | `FocusLink/.tmp/format-v1114-final.log` | 实测 |
 
 **问题**
 
@@ -29,11 +29,11 @@ P2 当前真实会话尚未结束 — finish 后的完成账本仍需在用户�
 
 **处置**
 
-新增无依赖的时长纯函数，按 pause 与 segment 的交集扣减专注时长；实时快照、完成账本与个人云镜像统一引用，避免 live 原生边界 pause 与本机嵌套 pause 两种形状各算一套。升级 wrangler 与 workers-types，使 `durable_objects.code_update_strategy.mode='immediate'` 真正进入部署产物；本次以部署后一分钟内的快照闭合作为生效证据，不再只看版本号。真实会话保持 paused，不手动结束，避免把未验收的 finish 路径强加到用户正在使用的计时上。
+新增无依赖的时长纯函数，按 pause 与 segment 的交集扣减专注时长；实时快照、完成账本、个人云镜像与客户端分段映射统一引用，避免 live 原生边界 pause 与本机嵌套 pause 两种形状各算一套。客户端 `toTimerSnapshot` 原先直接返回 segment 跨度，已改为按 pause 交集扣减；否则会话总时长正确、分段明细仍会把暂停算进去。升级 wrangler 与 workers-types，使 `durable_objects.code_update_strategy.mode='immediate'` 真正进入部署产物；本次以部署后一分钟内的快照闭合作为生效证据，不再只看版本号。真实会话保持 paused，不手动结束，避免把未验收的 finish 路径强加到用户正在使用的计时上。
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,610 用例全绿；定向 16/16；`npm run build:cloud` 与 `npm run typecheck:cloudflare` exit 0；`wrangler deploy` exit 0（a9285410-a184-4bb1-ae3a-97710fef093f）；部署后 `GET /sync/v2/live` 的 active+pause=wall。打包、Windows 安装回读与真实 finish 验收见 v1.11.4 发布记录。
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；定向 30/30；`npm run build:cloud` 与 `npm run typecheck:cloudflare` exit 0；`wrangler deploy` exit 0（a9285410-a184-4bb1-ae3a-97710fef093f）；部署后 `GET /sync/v2/live` 的 active+pause=wall。打包、Windows 安装回读与真实 finish 验收见 v1.11.4 发布记录。
 
 ## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-LOCAL-SESSION`：已配对设备，但 PC 进行中的专注没有实时同步（v1.11.4）
 

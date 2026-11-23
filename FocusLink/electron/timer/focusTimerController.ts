@@ -17,6 +17,7 @@ import {
   liveSegmentTitle,
 } from '@shared/sync/liveFocusProtocol';
 import { normalizeDeviceSyncEndpoint } from '@shared/sync/deviceProtocol';
+import { liveSegmentActiveElapsedMs } from '@shared/sync/liveFocusTime';
 import { FINISHED_PRESENTATION_HOLD_MS } from '@shared/focus/bandMath';
 import {
   liveSnapshotVersion,
@@ -898,7 +899,11 @@ export class FocusTimerController {
           title: liveSegmentTitle(segment, sessionTask, session.title),
           startedAt: local(segment.startedAt)!,
           endedAt: local(segment.endedAt),
-          activeElapsedMs: (segment.endedAt ?? observedAt - this.clockOffsetMs) - segment.startedAt,
+          activeElapsedMs: liveSegmentActiveElapsedMs(
+            segment,
+            session.pauses,
+            observedAt - this.clockOffsetMs,
+          ),
         };
       }),
       pauseEvents: session.pauses.map((pause) => ({

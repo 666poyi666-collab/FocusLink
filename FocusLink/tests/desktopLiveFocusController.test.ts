@@ -703,6 +703,72 @@ describe('desktop live focus controller', () => {
     vi.useRealTimers();
   });
 
+  it('excludes a pause nested inside an adopted segment from the live segment total', async () => {
+    const now = Date.now();
+    const response = new Response(
+      JSON.stringify({
+        protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+        serverTime: now,
+        snapshot: {
+          revision: 7,
+          state: 'running',
+          session: {
+            id: 'remote-adopted-session',
+            title: '远程采用',
+            state: 'running',
+            startedAt: now - 10_000,
+            activeElapsedMs: 8_000,
+            pauseElapsedMs: 2_000,
+            wallElapsedMs: 10_000,
+            currentPauseStartedAt: null,
+            segments: [
+              { id: 'adopted-segment-1', startedAt: now - 10_000, endedAt: now - 4_000 },
+              { id: 'adopted-segment-2', startedAt: now - 4_000, endedAt: null },
+            ],
+            pauses: [
+              {
+                id: 'adopted-pause',
+                segmentId: 'adopted-segment-1',
+                startedAt: now - 8_000,
+                endedAt: now - 6_000,
+              },
+            ],
+            task: null,
+            updatedAt: now,
+            lastCommandDeviceId: 'desktop-test-device',
+          },
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith('/sync/v2/live')) return Promise.resolve(response);
+      if (url.includes('/sync/v2/live/wait')) return Promise.reject(new TypeError('fetch failed'));
+      return Promise.reject(new Error(`unexpected URL: ${url}`));
+    });
+    const local = {
+      getSnapshot: vi.fn(() => snapshot('idle')),
+      onSnapshot: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const controller = new FocusTimerController(local as never);
+
+    controller.reloadConfiguration();
+    await flushMicrotasks();
+
+    const mapped = controller.getSnapshot();
+    expect(mapped.state).toBe('running');
+    expect(mapped.segments[0]).toMatchObject({
+      id: 'adopted-segment-1',
+      activeElapsedMs: 4_000,
+    });
+    expect(mapped.segments[1]?.activeElapsedMs).toBeGreaterThanOrEqual(4_000);
+
+    controller.dispose();
+    fetchSpy.mockRestore();
+  });
+
   it('backs off repeated handshake failures instead of retrying every two seconds forever', async () => {
     vi.useFakeTimers();
     const local = {
