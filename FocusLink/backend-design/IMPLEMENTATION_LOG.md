@@ -33,7 +33,7 @@ P2 当前真实会话尚未结束 — finish 后的完成账本仍需在用户�
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；定向 30/30；`npm run build:cloud` 与 `npm run typecheck:cloudflare` exit 0；`wrangler deploy` exit 0（a9285410-a184-4bb1-ae3a-97710fef093f）；部署后 `GET /sync/v2/live` 的 active+pause=wall。打包、Windows 安装回读与真实 finish 验收见 v1.11.4 发布记录。
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；定向 30/30；`npm run build:cloud` 与 `npm run typecheck:cloudflare` exit 0；`wrangler deploy` exit 0（a9285410-a184-4bb1-ae3a-97710fef093f）；部署后 `GET /sync/v2/live` 的 active+pause=wall。`npm run dist` exit 0；`verify:packaged` PASS commit=b55a3db；Windows `/S` 覆盖安装回读 `DisplayVersion` 与 `FileVersion=1.11.4`，`smoke:window-visible` 通过。真实 finish 尚未发生，完成账本仍待用户结束会话后回读。
 
 ## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-LOCAL-SESSION`：已配对设备，但 PC 进行中的专注没有实时同步（v1.11.4）
 
@@ -68,7 +68,7 @@ P2 交接失败时若接受远端 idle 会把本机计时藏起来 — 用户看
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1605 用例全绿；定向用例 35/35；服务端 `wrangler deploy` exit 0；打包、Windows 安装回读与真机实时验收见 v1.11.4 发布记录。
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；定向用例 35/35；服务端 `wrangler deploy` exit 0；Windows 安装回读 `FileVersion=1.11.4`；真实会话已交接成功，手机端未装机验收。
 
 ## 2026-11-24 · `FL-UI-20261124-PAGE-TRANSITION-FLASH`：每个界面切换一闪一闪（v1.11.4）
 
@@ -99,7 +99,7 @@ P2 Framer presence 在重渲染时会重放 initial 并写回内联 opacity — 
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1605 用例全绿；逐帧冒烟根容器 floor=1、dips=0；Windows 安装后真实窗口复验见 v1.11.4 发布记录。
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；逐帧冒烟根容器 floor=1、dips=0；Windows 静默覆盖安装回读 `FileVersion=1.11.4`，`smoke:window-visible` 通过；真实窗口内的切页手感由用户验收。
 
 ## 2026-11-23 · `FL-SYNC-20261123-LIVE-GHOST-REVIVAL`：已结束的专注被远端 live 残留复活成两小时（v1.11.3）
 
