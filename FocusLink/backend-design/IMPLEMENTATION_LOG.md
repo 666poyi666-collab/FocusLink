@@ -35,7 +35,7 @@ P2 今日统计日期在 UTC 负偏移时落到前一天 — 自动化日报与�
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1599 用例全绿；定向用例 26/26；`npm audit --omit=dev --registry=https://registry.npmjs.org` 0 漏洞（`undici` 7.30.2）；dist、verify:packaged、Windows 静默覆盖安装回读与 release:verify 在发布记录提交回填。
+format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1599 用例全绿；定向用例 26/26；`npm audit --omit=dev --registry=https://registry.npmjs.org` 0 漏洞（`undici` 7.30.2）；dist exit 0；`verify:packaged` PASS（version=1.11.3、commit=943f56c、页面就绪 7,863ms）；Windows `/S` 静默覆盖安装回读 `DisplayVersion=1.11.3`、`FileVersion=1.11.3`；`smoke:window-visible:launch` exit 0（pid 64728 窗口可见且实例已回收）；`release:verify` 21/21。
 
 ## 2026-11-23 · `FL-SYNC-20261123-LIVE-ADOPT-DURATION`：实时断线接管补齐时长，修「58 分钟专注只记 21 分钟」（v1.11.2）
 

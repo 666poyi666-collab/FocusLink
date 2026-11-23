@@ -2,11 +2,11 @@
 
 > 发布日期：2026-11-23
 >
-> 对应提交：`PENDING`
+> 对应提交：`943f56c`
 >
 > 发布类型：候选补丁
 >
-> 验证状态：源码门禁通过，打包与 Windows 安装回读在发布记录提交中回填（PC-only 轮次；Android 仅同步版本元数据，不装机）
+> 验证状态：源码门禁、打包启动自检、Windows 静默覆盖安装回读与窗口可见性通过（PC-only 轮次；Android 仅同步版本元数据，不装机）
 
 ## 主要变化
 
@@ -21,7 +21,9 @@
 
 - 源码门禁：`format:check` / `typecheck` / `lint` exit 0；`npm test` **185 文件 / 1599 用例全绿**；定向用例 26/26。
 - 云端：`wrangler deploy` 成功，Durable Objects 立即更新；对幽灵会话的 `abort` 返回 `applied`，revision 814，随后 `/sync/v2/live` 与 `/v1/status` 均为 idle。
-- 打包启动自检、Windows 静默覆盖安装回读与 `release:verify`：安装完成后回填。
+- 打包启动自检：`npm run verify:packaged` PASS，portable 回读 version=1.11.3、commit=943f56c，页面就绪 7,863ms，实例已回收。
+- Windows：安装器 `/S` 静默覆盖 exit 0，卸载注册表 `DisplayVersion=1.11.3`、已安装 `FocusLink.exe` `FileVersion=1.11.3`；`smoke:window-visible:launch` 主窗口 handle 可见且实例已回收。
+- 记录校验：`npm run release:verify` 21/21。
 - Android：仅同步 `versionName=1.11.3` / `versionCode=1388` 元数据，不执行 `adb install`（用户 2026-11-21 指令：只负责开发 PC）。
 
 ## 升级提示
@@ -41,7 +43,7 @@
 
 | 文件 | SHA256 |
 | --- | --- |
-| `FocusLink-1.11.3-x64.exe` | `PENDING` |
-| `FocusLink-1.11.3-x64-portable.exe` | `PENDING` |
+| `FocusLink-1.11.3-x64.exe` | `01c7976cc30dca93e5af94814209ca9d186ef10514a867b14c3e56807d0628d2` |
+| `FocusLink-1.11.3-x64-portable.exe` | `a0737e4d70f1d5d9a82870a97a5571a730abec454093f0ef42fed18bdb0d45bc` |
 
 同时提供 `SHA256SUMS.txt`。
