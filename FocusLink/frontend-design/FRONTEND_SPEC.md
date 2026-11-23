@@ -802,6 +802,22 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 任务行「开始专注」快捷胶囊（`.row-focus-chip`）：默认 `opacity: 0` + `translate: 4px 0` + `pointer-events: none`，行 `:hover` / `:focus-within` 时 140ms（`--dur-micro` + `--ease-out-expo`）渐显并接管指针；`:active` 下沉 1px；强调底 `rgb(var(--app-accent) / 0.18)`。已完成行与编辑态不渲染该按钮（`TaskWorkspace.tsx`）。键盘路径由 `:focus-within` 覆盖，与第 7 节「hover/焦点渐显 140ms」一致。
 - 清理：删除 `stats-workbench.css` 两处从未定义的 `pulseRing` 死引用；`.meta-pill` 的 `transition: all` 收窄为 `background-color / color`，避免主题切换时无关属性跟着过渡。
 
+## v1.11.1 PC 断网可用与动效收束（2026-11-23）
+
+- 实时同步模式下的暂停/继续/结束不再被网络卡死：传输失败（超时、401/403）时先把远端快照接管为本机账本（沿用远端 session/segment id，重连后同 id 收口），再执行本地操作；HTTP 409 等语义拒绝仍原样上抛（`electron/timer/focusTimerController.ts:137-201`、`electron/timer/manager.ts:183`）。
+- 叠加层去模糊：`.modal-overlay` 删 `backdrop-filter: blur(4px)`，遮罩改 `rgba(0,0,0,0.52)`（`src/styles/task-workbench.css`）。
+- 设置页仪表预览延后挂载：`requestIdleCallback`（900ms 超时）优先、无该 API 时 160ms `setTimeout` 兜底，卸载时取消（`src/features/settings/SettingsPanel.tsx`）。
+- 长列表跳过视口外排版：`.task-entry`（`task-workbench.css`）与 `.session-card`（`stats-workbench.css`）加 `content-visibility: auto` + `contain-intrinsic-size`；外观菜单 emoji 换成色点与 sun/moon SVG，支持 Esc 关闭并回焦（`src/features/history/HistoryPanel.tsx`）。
+- 动效收敛：悬停位移、发光、过亮投影与过冲曲线删除，只保留颜色/边框/透明度；任务行密度标准 48px（子行 34px）、紧凑 40px（30px）、宽松 58px（42px）。
+
+## v1.11.1 移动端任务页分组卡、原生切页过渡与统计看板卡片化（2026-11-23）
+
+- 任务页分组升级为卡片（`src/mobile/TickTickTaskPage.tsx` + `src/mobile/mobile.css` 的 TASKS-TICKTICK 段）：每组是 `.tt-group.tt-group-card`，抬头为组名 + 任务数，行容器 `.tt-group-rows` 走 14px 圆角 + 0.5px 行间分隔；有子任务的分支在 `.tt-node[data-branch='true'] > .tt-node-collapse > .tt-node-content::before` 画 1px 竖向引导线（depth 0 左偏 31px、depth 1 左偏 63px），层级不再靠猜缩进。
+- 待办 / 已完成改筛选芯片（`.tt-filter-row` + `.tt-chip`）：两颗芯片各带 `.tt-chip-count` 数量，激活态用 `rgb(var(--app-accent) / 0.12)` 底 + `var(--tt-accent)` 字，`aria-pressed` 与 `data-active` 同步；切换只改列表内容，不重建页面。
+- 切页改系统原生 View Transition（`src/mobile/useViewTransition.ts`）：`document.startViewTransition` 回调里用 `flushSync` 提交 React 状态，保证快照取到新 DOM；`.mobile-workspace` 声明 `view-transition-name: mobile-workspace`，`::view-transition-old/new(root)` 显式 `animation: none` 后只对 workspace 做新页 190ms 上浮淡入 / 旧页 140ms 上收淡出。浏览器不支持该 API 或 `prefers-reduced-motion: reduce` 时退回直接切换；两种路径都派发 `fl:view-transition`（detail 为 `{from,to,animated}`），供后续埋点或测试挂钩。
+- 统计看板卡片化（`src/mobile/mobile.css` 的 INSIGHTS 段「统计看板重做（v1.11.1）」块）：`.dashboard-summary.dash-metrics` 三格指标改独立圆角卡（14px 边框，`> strong` 22px/26px）；`.dashboard-view .dashboard-band` 统一 16px 卡壳 + `rgb(var(--app-border)/0.6)` 描边；7 日趋势区域高 128px，柱宽 7px→22px 且改圆角上沿，`.daily-ledger-trend > button.is-today` 加 8% 强调底色并加粗日期。`prefers-reduced-motion` 下同时关掉柱高与底色的过渡。
+- 连续专注天数（`DashboardView.tsx` 的 `focusStreak`）：取「已完成且 `activeElapsedMs > 0`」会话的 `dayKey(session.startedAt)` 建集合，从今天倒推；今天没有专注记录时改从昨天起算，避免早上打开就显示 0 天。跨日位移统一走 `shiftDayKey`（本地 12:00 构造，不经 UTC）。
+
 ## v1.11.0 PC 看板与任务页动效收敛（2026-11-21）
 
 - 动效时长 token 收窄（`src/styles/motion.css`）：`--dur-micro` 140→120ms、`--dur-base` 240→200ms、`--dur-page` 360→320ms；新增 `--ease-exit`（`cubic-bezier(0.4,0,1,1)`）作按压收尾曲线。dial/ui-motion 里的静态兜底字面量同步收紧，token 加载失败时不再回落到旧节奏。

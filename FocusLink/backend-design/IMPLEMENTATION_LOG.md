@@ -1,5 +1,73 @@
 # FocusLink 实施日志
 
+## 2026-11-23 · `FL-SYNC-20261123-LIVE-OFFLINE-LOCALIZE`：实时权威断网时本地收尾、同步队列退避/熔断/死信、PC 去冗余动效（v1.11.1）
+
+**结论**
+
+用户报告「断网时连结束专注都做不到，提示同步有问题」，并明确同步是次要的、离线态必须功能全可用、队列算法参考成熟方案。根因是实时模式把远端当唯一权威：暂停/继续/结束只发远端命令，没有任何本地兜底。本轮改为「读远端快照→接管成本机账本→本地执行→重连同 id 收口」，队列改指数退避 + 稳定抖动 + 熔断 + 死信，并清掉五份审计报告里最影响跟手感的模糊/位移/同步挂载。门禁全绿；打包版实时断网 E2E 受 canonical 端点固定策略阻断，依据记录在问题 P2。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `TimerManager` 新增 `adoptFromSnapshot`：把远端快照写成本机 focus_sessions / focus_segments / pause_events（沿用远端 id，重复调用幂等），写 `timer.lastTick/lastState/lastSegmentId` 后 `recover()` | `electron/timer/manager.ts:183` | 实测 |
+| ② | 暂停/继续/结束/中止/重置统一走 `sendOrLocalize`；传输失败（含超时、401/403）→ 接管快照、停长轮询、`liveMode=false`、执行本地动作；HTTP 409 等语义拒绝原样上抛 | `electron/timer/focusTimerController.ts:137-201`、`:866` | 实测 |
+| ③ | 重连后按远端 revision 发 `abort` 收口已接管的实时会话，ack 为 applied/duplicate 才清标记，失败留待下次重连 | `electron/timer/focusTimerController.ts:459`、`:589` | 实测 |
+| ④ | 队列：传输失败只记 `[retry:n]` 且不消耗 retryCount、立即让出；退避 30s×2^n 封顶 30min 再乘 FNV-1a 稳定抖动；语义失败 5 次进 `[dead-letter]`；连续 3 次传输失败熔断 30s→10min；日志按状态去重 | `electron/sync/syncService.ts:505-511`、`:629`、`:756`、`:769`、`:785`、`:658` | 实测 |
+| ⑤ | 回归测试：`tests/timerLiveOfflineFallback.test.ts` 2 例（断网收尾落地本机并沿用远端 id；409 上抛）、`tests/syncServiceQueue.test.ts` 19 例（8 轮离线不死信、抖动窗口、语义死信） | 本轮 `npx vitest run` 回读 | 实测 |
+| ⑥ | UI：设置页仪表预览改 `requestIdleCallback`（900ms 超时）/160ms 延后挂载；外观菜单 emoji 换色点与 sun/moon SVG、Esc 关闭回焦、AudioContext 单例；任务行与历史卡加 `content-visibility`；遮罩去 blur，悬停位移/发光/过冲曲线删除 | `src/features/settings/SettingsPanel.tsx`、`src/features/history/HistoryPanel.tsx`、`src/styles/task-workbench.css`、`src/styles/stats-workbench.css` | 实测 |
+| ⑦ | 门禁：format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1592 用例全绿；dist 必须带 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`（直连 GitHub 下载 Electron 报 TLS 失败） | 本轮命令回读 | 实测 |
+
+**问题**
+
+P0 实时模式断网无法结束专注 — 用户被锁在运行态，只能杀进程并丢数据 — 事实①②
+P1 传输失败也消耗重试预算，离线久了队列永久 failed，且每 60s 刷一条 paused 日志 — 网络恢复后记录不再重试，日志淹没有效信息 — 事实④
+P1 遮罩背景模糊、9 台仪表同步挂载、整片悬停位移与发光 — 打开弹层/设置页/悬停列表掉帧，观感像模板生成 — 事实⑥
+P2 打包版无法在 loopback 上复现实时权威 — 自动 E2E 只能覆盖「真实 TimerManager + 真实控制器 + 内存库」层；阻断依据：canonical token 被强制路由官方端点（`electron/sync/deviceSyncService.ts:1173`），legacy loopback 凭据启动即被迁移销毁（`electron/sync/deviceSyncAccountService.ts:76`、`electron/main.ts:1444`），官方端点本机 TLS 不可达 — 事实⑦
+
+**处置**
+
+把实时权威降级为「可接管的上游」而不是唯一事实源：接管保留远端 id，重连后同 id upsert 不产生重复账本；只有传输/凭据类失败才本地化，409 等语义冲突仍让用户看到。队列把网络问题与服务器拒绝分开计费：网络问题永不判死，语义问题 5 次进死信并保留原文；熔断只挡传输失败，手动重试立即可跑。UI 侧只删不加，保留 reduced-motion 与全部键盘路径。打包版 E2E 的阻断按产品策略记录，不修改 canonical 路由。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；npm test 184 文件 / 1592 用例全绿；dist（ELECTRON_MIRROR）exit 0；verify:packaged PASS；Windows /S 静默覆盖安装回读 1.11.1；release:verify 21/21。
+
+
+## 2026-11-23 · `FL-UI-20261123-MOBILE-V1111`：任务页分组卡与筛选、系统原生切页过渡、统计看板卡片化（v1.11.1）
+
+**结论**
+
+用户要求华为一并开发、任务界面重新设计、每个界面切换与动画丝滑不卡顿、统计看板重做，并派五个助手协助。运行时未提供创建子代理的工具，四个既有可续代理启动即失败，因此全部改动由主代理串行完成：任务页改分组圆角卡 + 待办/已完成筛选芯片 + 层级引导线，切页改系统原生 View Transition（140/190ms 交叉过渡），统计看板改卡片分区 + 连续专注天数 + 今天高亮。门禁与三端装机回读全部通过。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 任务页分组改 `.tt-group.tt-group-card`（组名 + 任务数抬头，行容器 14px 圆角、0.5px 行间分隔）；子任务分支补 1px 竖向引导线（depth 0/1 两档左偏 31px/63px） | `src/mobile/TickTickTaskPage.tsx` 分组渲染段 + `src/mobile/mobile.css` TASKS-TICKTICK 段 | 实测 |
+| ② | 顶部新增 `.tt-filter-row` 两颗 `.tt-chip`（待办/已完成，各带 `.tt-chip-count` 数量，`aria-pressed` 同步）；已完成筛选为空时给专属文案 | `src/mobile/TickTickTaskPage.tsx` 筛选段 + `src/mobile/mobile.css` `.tt-chip` 段 | 实测 |
+| ③ | 切页改 `document.startViewTransition`：新页 190ms 上浮淡入、旧页 140ms 上收淡出，`flushSync` 保证快照取到新 DOM；不支持或 reduced-motion 时直接切换；两种路径都派发 `fl:view-transition` | `src/mobile/useViewTransition.ts` 全文 + `src/mobile/MobileApp.tsx:onChange={changeView}` | 实测 |
+| ④ | 统计看板卡片化：三格指标独立圆角卡（14px）、五块看板统一 16px 卡壳 + `rgb(var(--app-border)/0.6)` 描边；7 日趋势柱 7px→22px 圆角柱、区域 120→128px，今天那列 8% 强调底 | `src/mobile/mobile.css` INSIGHTS 段「统计看板重做（v1.11.1）」块 + `src/mobile/DashboardView.tsx` `dashboard-summary dash-metrics` | 实测 |
+| ⑤ | 新增连续专注天数 `focusStreak`：按已完成且有专注时长的会话日期倒推；今天无专注时从昨天起算；`shiftDayKey` 用本地 12:00 构造避免 UTC 漂移 | `src/mobile/DashboardView.tsx` `focusStreak` useMemo 与 `shiftDayKey` | 实测 |
+| ⑥ | 新增契约测试两份：`tests/mobileViewTransition.test.ts`（3 例）、`tests/mobileDashboardRedesign.test.ts`（4 例）；既有看板契约 5 文件 / 34 例保持全绿 | 本轮 `npx vitest run` 回读 | 实测 |
+| ⑦ | 门禁：format:check / typecheck / lint exit 0；`npm test` 183 文件 / 1587 用例全绿 | 本轮命令回读 | 实测 |
+
+**问题**
+
+P1 任务页缺少分组层级容器 — 长列表平铺，子任务缩进不可辨，扫描成本高 — 事实①。
+P1 待办与已完成只能整段滚到底 — 无法只看看待办，已完成混在尾部 — 事实②。
+P1 切页为直接替换 — 无过渡，页面间缺少空间关系，观感生硬 — 事实③。
+P2 看板条目无卡片边界 — 五块内容靠留白分隔，长页滚动时容易丢失分区块 — 事实④。
+P2 用户无法一眼知道自己的连续专注情况 — 只有单次数/时长/最长连续三项，无连续天数 — 事实⑤。
+
+**处置**
+
+任务页把分组升级为卡片容器并补筛选芯片与层级引导线，保留 `tt-check`/`tt-row`/`tt-search`/`tt-batch`/`tt-undo`/`data-*` 全部既有契约、480ms 长按与 6s 撤销窗口；切页接入系统 View Transition 并保留 reduced-motion 降级；看板统一卡片壳、加高趋势柱、补今天高亮与连续天数。并行助手方案因运行时无创建工具而放弃，未留下半成品分支；同版本另一路 desktop 改动（断网本地兜底、同步队列重写、去冗余动效）已合入同一 main，见上一条 `FL-SYNC-20261123-LIVE-OFFLINE-LOCALIZE`。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；npm test 183 文件/1587 用例全绿。
+
 ## 2026-11-21 · `FL-UI-20261121-PC-MOTION-TIGHTEN`：动效时长与状态反馈收敛、任务行密度接线（v1.11.0）
 
 **结论**
