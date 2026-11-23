@@ -358,6 +358,8 @@ Get-Content "$env:APPDATA\focuslink\logs\focuslink-$(Get-Date -Format yyyy-MM-dd
 - 回读到 `main window failed to become visible`、`first paint timed out`、`off every display` 或
   `no display in this session` 时，按 [INSTALLER_TROUBLESHOOTING.md](INSTALLER_TROUBLESHOOTING.md) 的
   `FL-INSTALL-011` / `FL-INSTALL-012` 处理。
+- 隔离冒烟若与已安装实例并行，必须设 `FOXLINK_DISABLE_BUSINESS_API=1` 跳过 `127.0.0.1:18770` 监听；
+  该开关只用于不读业务 API 的只读冒烟，不能用于安装验收或真实同步验证。
 - **自动化不得代替用户拉起 GUI**：本机 agent shell 可能带 `ELECTRON_RUN_AS_NODE=1`，继承它会让 Electron
   退化为纯 Node（实测退出码 9 或静默退出 0 且不写日志）。任何脚本化拉起前必须
   `Remove-Item Env:ELECTRON_RUN_AS_NODE`；**且脚本化拉起后仍必须跑 `smoke:window-visible`** ——

@@ -986,3 +986,43 @@ P2 交接失败时若直接接受远端 idle 会把本机计时藏起来 — 用
 - 客户端：`reloadConfiguration()` 对本机 running/paused 也发起初次快照；远端 idle 时发 adopt，确认后切换实时权威并删除本机活动行；远端已有别的会话或种子不自洽时返回 blocked，保留本机计时。
 - 回归：客户端 paused 交接用例断言上传的最后一段 `endedAt` 等于 open pause 起点；云端 paused adopt 用例断言 active 不增长、pause 随时间增长。
 - 真机验收：升级到包含 adopt 的 PC 构建后重启，观察日志出现 `local session handed off to live authority`，再用手机端确认同一 sessionId 与 state；只有当场看到才算通过。
+
+## FL-SYNC-041：本机会话接入实时后，云端把暂停算成专注，active+pause 大于 wall
+
+**结论**
+
+这是实时快照的时长口径错误，不是本机账本被改写。adopt 保留了本机“一个 segment 跨多段暂停”的形状，旧服务端却直接累加 segment 跨度，把 segment 内部暂停同时算进 active 和 pause。状态：已收口（v1.11.4）。不要在此时结束专注，否则完成账本会沿用偏大的 active。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 真实会话交接后云端同 id、paused、revision 815，但 activeElapsedMs=23,414,190，active+pause 明显大于 wall | `GET /sync/v2/live`（`.tmp/verify-live.cjs`） | 实测 |
+| ② | 会话 3 段中前两段各含一段长暂停（5,315,288ms、14,206,076ms），第三段在 open pause 起点收口；暂停嵌在 segment 内部而不是边界 | 云端 live 快照 segments/pauses | 实测 |
+| ③ | 旧 `materializeLive` 直接累加 `(endedAt ?? serverTime) - startedAt`，未扣 segment 内 pause 重叠 | `cloudflare/accountDurableObject.ts:4626`（修复前） | 实测 |
+| ④ | 旧 wrangler 4.125 不认识 `code_update_strategy`，配置被忽略，部署后约 5 分钟才切到新代码 | `node_modules/wrangler/wrangler-dist` 搜索；部署后连续快照 | 实测 |
+| ⑤ | 升级 wrangler 4.167.0 与 workers-types 5.20261123.1 后部署 a9285410，部署后一分钟内读到修正值 | `wrangler deploy` 输出；`.tmp/verify-live.cjs` | 实测 |
+| ⑥ | 修正后 active=3,892,826、pause=22,102,999、wall=25,995,825；再读 active 不变、pause/wall 增长且仍闭合 | `.tmp/verify-live.cjs` 两次回读 | 实测 |
+
+**问题**
+
+P0 暂停被重复计入专注 — 手机端与完成账本会显示 6.5 小时，账本不可信 — 事实①②③  
+P1 部署工具静默忽略更新策略 — 修复部署后最长 5 分钟不生效 — 事实④  
+P2 真实 finish 尚未验收 — 结束时必须回读账本，不能只凭实时快照通过 — 事实⑥
+
+**诊断顺序**
+
+1. 先读 `GET /sync/v2/live`，记录 revision、state、activeElapsedMs、pauseElapsedMs、wallElapsedMs，并检查 `active + pause === wall`。只要不闭合，就按本编号处理。
+2. 列出 segments 与 pauses，确认是否存在“pause 完全落在某个 segment 内部”的形状；这是 adopt 本机会话的典型特征。
+3. 确认部署产物真的包含 `liveActiveElapsedMs` 与 `liveSegmentActiveElapsedMs`：旧 wrangler 不认配置时，部署版本号会变，但代码更新仍按 5 分钟延迟生效。
+4. 不要用 finish/abort 试探修复。旧算法下 finish 会把偏大的 active 写进完成账本；等快照闭合后再让用户结束。
+5. 结束时复查完成账本的 active、pause、wall 与每条 segment 的 active；任一段 active 仍包含暂停，都算未收口。
+
+**修复与验收**
+
+- 共享时长：`shared/sync/liveFocusTime.ts` 用 pause 与 segment 的交集扣减，封顶为 segment 跨度；live 原生边界 pause 重叠为 0，本机嵌套 pause 会被扣除。
+- 服务端：`materializeLive` 用 `liveActiveElapsedMs`，`buildCompletedLiveBundle` 逐段用 `liveSegmentActiveElapsedMs`；个人云镜像保持同一实现。
+- 部署：wrangler 与 workers-types 升级到支持 `code_update_strategy` 的版本；部署后一分钟内回读快照，确认数值闭合，而不是只看 Current Version ID。
+- 回归：`tests/liveFocusTime.test.ts` 与 `tests/liveFocusCloud.test.ts` 覆盖嵌套 pause、open pause、整段暂停与 finish 账本；定向 16/16，全量 186 文件 / 1,610 用例全绿。
+- 真机验收：手机端与 PC 端读取同一 sessionId 时，active 不应因暂停而增长；用户结束专注后，完成账本的 active+pause 必须等于 wall。
+

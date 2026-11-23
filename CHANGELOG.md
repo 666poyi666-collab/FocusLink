@@ -8,6 +8,9 @@
 - **客户端交接**：`reloadConfiguration()` 不再因为本机 running/paused 就放弃实时连接；初次快照为 idle 时先发 adopt，收到 applied/duplicate 且快照确认同 id 后才切到实时权威，并删除本机活动行；云端已有另一条会话或交接未被确认时保留本机计时，绝不让远端 idle 盖住正在跑的专注（`electron/timer/focusTimerController.ts`）。
 - **暂停边界**：本机暂停只写 `pause_events`，当前 segment 要等 resume 才关闭；交接时用暂停起点收口最后一段，否则服务端会把暂停时间也算成专注时间。新增“暂停中的本机会话也能正确交接”的客户端与云端用例。
 - **服务端**：`cloudflare/accountDurableObject.ts` 与 `cloud/deviceSyncStore.ts` 同步支持 adopt、幂等重试、时钟/时长上限与暂停时间线；`finish/abort` 继续只在账本尚未存在时发布，避免重复实体。
+- **云端时长口径**：真实会话交接后回读发现 active 被算成 23,414,190ms（6.5 小时），而真实专注只有 3,892,826ms。adopt 保留的本机 segment 可以跨多段暂停，旧 `materializeLive` 直接累加 segment 跨度，把暂停同时算进 active 与 pause。新增 `shared/sync/liveFocusTime.ts`，按 pause 与 segment 的交集扣减并封顶为 segment 跨度；实时快照、完成账本与个人云镜像统一使用（`cloudflare/accountDurableObject.ts`、`cloud/deviceSyncStore.ts`）。修正后 active+pause=wall，暂停期间 active 不再增长。
+- **部署工具**：wrangler 4.125 的产物不认识 `code_update_strategy`，配置被忽略，服务端部署后约 5 分钟才切到新代码。升级到 wrangler 4.167.0 与 workers-types 5.20261123.1，重新部署 a9285410 后一分钟内即读到修正值；以后验收必须回读实际快照，不能只看版本号。
+
 - **切页闪烁根因**：旧页 90ms 淡出、新页 140ms 淡入，两页容器都没有不透明背景，同时半透明时露出 `.app-stage` 底色；换用 Framer 变体后，实测退出重算仍会把内联 `opacity` 写回 0，入场被压在 0 上。
 - **切页修复**：路由层移除 AnimatePresence，只渲染一个带 `--app-surface` 不透明背景的页面根；旧页立即卸载，页内内容只做一次 160ms、94%→100%、3px 上浮的轻入场。逐帧采样根容器全程 `opacity=1`、无掉亮帧、始终只有一层。
 - **发布口径**：按用户 2026-11-21「只负责开发 PC」指令，本轮只验证 Windows 安装与运行；Android 仅同步版本元数据，不构建、不装机。

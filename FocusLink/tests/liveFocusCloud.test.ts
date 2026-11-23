@@ -388,6 +388,80 @@ describe('live focus cloud store', () => {
     });
   });
 
+  it('does not count a pause nested inside an adopted desktop segment as focus time', () => {
+    let now = 1_720_000_000_000;
+    const store = createDeviceSyncCloudStore({ now: () => now });
+    const startedAt = now - 1_000_000;
+    const adopted = store.commandLive(ACCOUNT_A, {
+      protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+      deviceId: 'desktop-a',
+      command: {
+        commandId: 'adopt-nested-pause',
+        action: 'adopt',
+        expectedRevision: 0,
+        sessionId: 'local-nested-pause',
+        session: {
+          id: 'local-nested-pause',
+          title: null,
+          state: 'running',
+          startedAt,
+          clientNow: now,
+          segments: [
+            { id: 'local-segment-1', startedAt, endedAt: startedAt + 600_000, task: null },
+            { id: 'local-segment-2', startedAt: startedAt + 600_000, endedAt: null, task: null },
+          ],
+          pauses: [
+            {
+              id: 'local-pause-1',
+              segmentId: 'local-segment-1',
+              startedAt: startedAt + 100_000,
+              endedAt: startedAt + 300_000,
+            },
+          ],
+          task: null,
+        },
+      },
+    });
+
+    expect(adopted.ack).toMatchObject({ status: 'applied', revision: 1 });
+    expect(adopted.snapshot.session).toMatchObject({
+      activeElapsedMs: 800_000,
+      pauseElapsedMs: 200_000,
+      wallElapsedMs: 1_000_000,
+    });
+
+    const finish = store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'finish-nested-pause',
+        action: 'finish',
+        expectedRevision: 1,
+        sessionId: 'local-nested-pause',
+      }),
+    );
+    expect(finish.ack).toMatchObject({
+      status: 'applied',
+      completedEntityId: 'local-nested-pause',
+    });
+    const ledger = store.sync(ACCOUNT_A, {
+      protocolVersion: 1,
+      deviceId: 'phone-a',
+      cursor: null,
+      mutations: [],
+      pullLimit: 10,
+    });
+    expect(ledger.changes[0]?.payload?.session).toMatchObject({
+      activeElapsedMs: 800_000,
+      pauseElapsedMs: 200_000,
+      wallElapsedMs: 1_000_000,
+    });
+    expect(ledger.changes[0]?.payload?.segments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'local-segment-1', activeElapsedMs: 400_000 }),
+      ]),
+    );
+  });
+
   it('rejects an adopt seed whose client clock is days away from the server', () => {
     const now = 1_720_000_000_000;
     const store = createDeviceSyncCloudStore({ now: () => now });

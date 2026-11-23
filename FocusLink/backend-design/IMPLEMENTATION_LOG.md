@@ -1,10 +1,45 @@
 # FocusLink 实施日志
 
+## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-PAUSE-OVERLAP`：本机会话接入实时后，云端把暂停算成专注（v1.11.4）
+
+**结论**
+
+本机 paused 会话已成功交接为云端 live（revision 815），但服务端把 `activeElapsedMs` 算成 23,414,190ms（6.5 小时），而真实专注只有 3,892,826ms。根因是 adopt 保留了本机 segment 形状，一个 segment 可以跨越多段暂停；服务端 `materializeLive` 直接累加 segment 跨度，没有扣除 segment 内部的 pause 重叠，暂停被同时算进 active 与 pause。本轮新增共享时长函数并按区间交集扣减，已完成账本与实时快照都走同一口径；部署后回读 active+pause=wall，时长闭合。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 真实会话 `ff051228-f750-4461-b381-d7b847334c06` 在安装 1.11.4 后交接成功，日志有 `local session handed off to live authority`，本机活动行与分段已删除 | `%APPDATA%/FocusLink/logs/focuslink-2026-11-23.log`；本机 `focuslink.db` 查询 | 实测 |
+| ② | 交接后云端 `GET /sync/v2/live` 为 revision 815、paused、同 id，但 `activeElapsedMs=23,414,190`，active+pause 明显大于 wall | `.tmp/verify-live.cjs` 回读 | 实测 |
+| ③ | 该会话 3 段中前两段各自包含一段长暂停：seg1 内 pause 5,315,288ms，seg2 内 pause 14,206,076ms；seg3 在 open pause 起点收口 | 云端 live 快照 segments/pauses | 实测 |
+| ④ | 旧 `materializeLive` 直接累加 `(segment.endedAt ?? serverTime) - segment.startedAt`，没有扣除 segment 内的 pause 区间 | `cloudflare/accountDurableObject.ts:4626`（修复前） | 实测 |
+| ⑤ | 新 `shared/sync/liveFocusTime.ts` 用 pause 与 segment 的交集扣减：`liveSegmentActiveElapsedMs = max(0, 跨度 - 重叠)`，并封顶为 segment 跨度；live 原生边界 pause 重叠为 0，本机嵌套 pause 会被扣除 | `shared/sync/liveFocusTime.ts` | 实测 |
+| ⑥ | 实时快照与完成账本都改用该函数：`materializeLive` 用 `liveActiveElapsedMs`，`buildCompletedLiveBundle` 逐段用 `liveSegmentActiveElapsedMs`；个人云镜像同步修改 | `cloudflare/accountDurableObject.ts:4632`、`:4755`；`cloud/deviceSyncStore.ts:972`、`:1068` | 实测 |
+| ⑦ | 修正后回读：serverNow 04:01:43 时 active=3,892,826、pause=22,102,999、wall=25,995,825，三者闭合；04:07 再读 active 不变、pause/wall 继续增长且仍闭合 | `.tmp/verify-live.cjs` 两次回读 | 实测 |
+| ⑧ | 旧 wrangler 4.125 的产物中没有 `code_update_strategy` 字段，配置被忽略，部署后约 5 分钟才切到新代码；升级到 4.167.0 与 workers-types 5.20261123.1 后重新部署 a9285410，部署后一分钟内即读到修正值 | `node_modules/wrangler/wrangler-dist` 搜索；`wrangler deploy` 输出与快照回读 | 实测 |
+| ⑨ | 定向用例 16/16：嵌套 pause 扣减、open pause 不扣、pause 覆盖整段为 0、adopt 后 active/pause/wall 与 finish 账本同口径 | `tests/liveFocusTime.test.ts`、`tests/liveFocusCloud.test.ts` | 实测 |
+| ⑩ | 全量门禁：format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,610 用例全绿 | `FocusLink/.tmp/gates-v1114-helper.log` | 实测 |
+
+**问题**
+
+P0 云端把暂停同时算进专注与暂停 — 手机端和完成账本会显示 6.5 小时，active+pause 大于 wall，账本不可信 — 事实②③④  
+P1 部署工具静默忽略更新策略 — 服务端修复部署后最长 5 分钟不生效，容易把旧值当成修复失败 — 事实⑧  
+P2 当前真实会话尚未结束 — finish 后的完成账本仍需在用户结束时回读确认 — 事实⑦⑨
+
+**处置**
+
+新增无依赖的时长纯函数，按 pause 与 segment 的交集扣减专注时长；实时快照、完成账本与个人云镜像统一引用，避免 live 原生边界 pause 与本机嵌套 pause 两种形状各算一套。升级 wrangler 与 workers-types，使 `durable_objects.code_update_strategy.mode='immediate'` 真正进入部署产物；本次以部署后一分钟内的快照闭合作为生效证据，不再只看版本号。真实会话保持 paused，不手动结束，避免把未验收的 finish 路径强加到用户正在使用的计时上。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,610 用例全绿；定向 16/16；`npm run build:cloud` 与 `npm run typecheck:cloudflare` exit 0；`wrangler deploy` exit 0（a9285410-a184-4bb1-ae3a-97710fef093f）；部署后 `GET /sync/v2/live` 的 active+pause=wall。打包、Windows 安装回读与真实 finish 验收见 v1.11.4 发布记录。
+
 ## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-LOCAL-SESSION`：已配对设备，但 PC 进行中的专注没有实时同步（v1.11.4）
 
 **结论**
 
-用户完成设备配对后，PC 正在进行的一场专注在手机端仍显示为空闲。根因不是配对或鉴权，而是实时控制只在 PC 计时器已经 idle 时才接管：本机先开始的 running/paused 会话不会被介绍给云端，旧协议也没有“把已存在的本机会话交给云端”的动作。本轮新增 adopt 协议、服务端时间线平移与客户端交接，并在确定交接成功后删除本机活动行；暂停中的会话以 pause 起点收口最后一段，避免把暂停算成专注。真实会话的端到端验收在安装 1.11.4 后执行。
+用户完成设备配对后，PC 正在进行的一场专注在手机端仍显示为空闲。根因不是配对或鉴权，而是实时控制只在 PC 计时器已经 idle 时才接管：本机先开始的 running/paused 会话不会被介绍给云端，旧协议也没有“把已存在的本机会话交给云端”的动作。本轮新增 adopt 协议、服务端时间线平移与客户端交接，并在确定交接成功后删除本机活动行；暂停中的会话以 pause 起点收口最后一段。真实会话交接后在云端发现 segment 内嵌套暂停被重复计入 active，已由下一条 FL-SYNC-20261124-LIVE-ADOPT-PAUSE-OVERLAP 修正。
 
 **事实**
 
@@ -18,7 +53,7 @@
 | ⑥ | 本机暂停只写 `pause_events`，segment 要等 resume 才关闭；按原样上传 open segment 会把暂停时长算成 active | `electron/timer/manager.ts:425-457`、`:459-509` | 实测 |
 | ⑦ | 客户端交接：远端 idle 时发 adopt，只有 applied/duplicate 且快照同 id 才切换实时权威并删除本机活动行；种子不自洽或远端已有别的会话时保留本机计时 | `electron/timer/focusTimerController.ts:435-536`、`:609-735` | 实测 |
 | ⑧ | 服务端 adopt 以 `serverTime-clientNow` 平移全部 segment/pause 边界，保留本地 id；7 天时钟偏差与 30 天时长上限拒绝 | `cloudflare/accountDurableObject.ts:118-119`、`:3487-3504`、`:4658`；`cloud/deviceSyncStore.ts:712-713`、`:862` | 实测 |
-| ⑨ | 带 adopt 的服务端已部署，Current Version ID `735ca097-6280-4e68-bed4-de7ca84e7a41` | `npx wrangler deploy` 输出 | 实测 |
+| ⑨ | 带 adopt 的服务端已部署，Current Version ID `735ca097-6280-4e68-bed4-de7ca84e7a41`；其中嵌套暂停的时长口径由下一条修正 | `npx wrangler deploy` 输出 | 实测 |
 | ⑩ | 定向用例 35/35：running/paused 交接、暂停边界、云端幂等重试、时钟偏差拒绝、同 id 恢复 | `tests/desktopLiveFocusController.test.ts`、`tests/liveFocusCloud.test.ts`、`tests/liveFocusProtocol.test.ts`、`tests/accountDurableObjectLiveCompletion.test.ts` | 实测 |
 
 **问题**

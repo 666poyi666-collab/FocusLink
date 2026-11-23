@@ -47,6 +47,7 @@ import {
   type LiveFocusTimelineSegment,
   type LiveFocusWaitResponse,
 } from '../shared/sync/liveFocusProtocol';
+import { liveActiveElapsedMs, liveSegmentActiveElapsedMs } from '../shared/sync/liveFocusTime';
 import {
   TASK_SNAPSHOT_PROTOCOL_VERSION,
   TASK_SNAPSHOT_MAX_FUTURE_SKEW_MS,
@@ -4628,10 +4629,7 @@ function materializeLive(
   serverTime: number,
 ): LiveFocusSnapshot {
   if (!session) return { revision, state: 'idle', session: null };
-  const activeElapsedMs = session.segments.reduce(
-    (total, segment) => total + ((segment.endedAt ?? serverTime) - segment.startedAt),
-    0,
-  );
+  const activeElapsedMs = liveActiveElapsedMs(session.segments, session.pauses, serverTime);
   const pauseElapsedMs = session.pauses.reduce(
     (total, pause) => total + ((pause.endedAt ?? serverTime) - pause.startedAt),
     0,
@@ -4752,7 +4750,7 @@ function buildCompletedLiveBundle(
       title: liveSegmentTitle(segment, session.task ?? null, session.title),
       startedAt: segment.startedAt,
       endedAt: segment.endedAt,
-      activeElapsedMs: segment.endedAt - segment.startedAt,
+      activeElapsedMs: liveSegmentActiveElapsedMs(segment, session.pauses, endedAt),
       note: null,
       tomatodoSubject: null,
       createdAt: segment.startedAt,
