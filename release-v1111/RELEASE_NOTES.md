@@ -6,7 +6,7 @@
 >
 > 发布类型：候选补丁
 >
-> 验证状态：源码门禁、打包启动自检、Windows 安装版本回读通过；按用户 2026-11-21 PC-only 指令，小米/华为本轮不安装、不验收
+> 验证状态：源码门禁、打包与已安装程序启动自检、Windows / 小米 / 华为三端同版装机回读通过（1.11.1 / versionCode 1386）
 
 ## 主要变化
 
@@ -22,7 +22,8 @@
 - 源码门禁：`format:check` / `typecheck` / `lint` 全部 exit 0；`npm test` **184 文件 / 1592 用例全绿**。
 - 打包启动自检：便携版 PASS（version=1.11.1，commit=fc959dc，页面就绪 8536ms，实例已回收）；已安装主程序 PASS（version=1.11.1，commit=fc959dc，页面就绪 4361ms，实例已回收）。
 - Windows：静默覆盖安装后注册表 `DisplayVersion=1.11.1`、已安装 `FocusLink.exe` `FileVersion=1.11.1`，页面回读 commit=fc959dc。
-- 小米 / 华为平板：按用户 2026-11-21 PC-only 指令，本轮不安装、不验收。
+- 小米 `192.168.1.5:5555`：`adb install -r` 后回读 `versionName=1.11.1`、`versionCode=1386`；锁屏后无法再截屏（PIN 未知），故移动端证据以华为平板为主。
+- 华为平板 `DBY-W09` `192.168.1.7:5555`：原机 1.3.0/1306 因签名不匹配报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，卸载后重装并回读 `1.11.1`/`1386`；CDP 实测 viewport 1024x608、dpr 2.5，`startViewTransition` 可用，任务页分组卡 1 个（收件箱 3）、筛选芯片 `待办3`/`已完成0`、切页事件 `animated:true` 双向成立。
 
 ## 升级提示
 
@@ -32,7 +33,8 @@
 ## 已知限制
 
 - 打包版「实时权威断网收尾」没有真机 E2E：canonical 设备令牌会被强制路由到官方端点（`electron/sync/deviceSyncService.ts:1173`），legacy loopback 凭据启动即被迁移销毁（`electron/sync/deviceSyncAccountService.ts:76`、`electron/main.ts:1444`），而官方端点在本机 TLS 不可达。该路径的证据为 `tests/timerLiveOfflineFallback.test.ts`（真实 TimerManager + 真实控制器 + 内存库 + fetch 桩）。
-- 本轮按 PC-only 指令不做移动端装机验收，三端同版矩阵缺小米/华为两项。
+- 小米与华为当前都未与桌面完成设备配对：移动端新建任务只进本机队列，行内显示「同步失败 / 请先完成设备配对」，专注记录为空。
+- 华为平板因旧签名不兼容只能卸载重装，平板本机原有的任务与专注数据随卸载重置。
 - 任务列表虚拟化未做（仅加 `content-visibility`），超大任务集滚动仍走全量 DOM。
 
 ## 下载与校验

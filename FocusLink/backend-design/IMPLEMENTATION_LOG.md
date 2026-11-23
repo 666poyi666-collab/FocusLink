@@ -49,8 +49,11 @@ format:check / typecheck / lint exit 0；npm test 184 文件 / 1592 用例全绿
 | ③ | 切页改 `document.startViewTransition`：新页 190ms 上浮淡入、旧页 140ms 上收淡出，`flushSync` 保证快照取到新 DOM；不支持或 reduced-motion 时直接切换；两种路径都派发 `fl:view-transition` | `src/mobile/useViewTransition.ts` 全文 + `src/mobile/MobileApp.tsx:onChange={changeView}` | 实测 |
 | ④ | 统计看板卡片化：三格指标独立圆角卡（14px）、五块看板统一 16px 卡壳 + `rgb(var(--app-border)/0.6)` 描边；7 日趋势柱 7px→22px 圆角柱、区域 120→128px，今天那列 8% 强调底 | `src/mobile/mobile.css` INSIGHTS 段「统计看板重做（v1.11.1）」块 + `src/mobile/DashboardView.tsx` `dashboard-summary dash-metrics` | 实测 |
 | ⑤ | 新增连续专注天数 `focusStreak`：按已完成且有专注时长的会话日期倒推；今天无专注时从昨天起算；`shiftDayKey` 用本地 12:00 构造避免 UTC 漂移 | `src/mobile/DashboardView.tsx` `focusStreak` useMemo 与 `shiftDayKey` | 实测 |
-| ⑥ | 新增契约测试两份：`tests/mobileViewTransition.test.ts`（3 例）、`tests/mobileDashboardRedesign.test.ts`（4 例）；既有看板契约 5 文件 / 34 例保持全绿 | 本轮 `npx vitest run` 回读 | 实测 |
-| ⑦ | 门禁：format:check / typecheck / lint exit 0；`npm test` 183 文件 / 1587 用例全绿 | 本轮命令回读 | 实测 |
+| ⑥ | 新增契约测试两份：`tests/mobileViewTransition.test.ts`（3 例）、`tests/mobileDashboardRedesign.test.ts`（5 例）；既有看板契约 5 文件 / 34 例保持全绿 | 本轮 `npx vitest run` 回读 | 实测 |
+| ⑦ | 门禁：format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1592 用例全绿 |
+| ⑧ | 三端装机回读：小米 `192.168.1.5:5555` 与华为平板 `DBY-W09` `192.168.1.7:5555` 均为 `versionName=1.11.1`/`versionCode=1386`；华为原机为 1.3.0/1306，`adb install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`（旧签名与 2026-09-10 起的 `focuslinkStable` 不一致），卸载后重装，平板本机数据随卸载重置 | `adb shell dumpsys package app.focuslink.mobile` 回读 | 实测 |
+| ⑨ | 华平 CDP 实测（pid 14813，`adb forward tcp:9223 localabstract:webview_devtools_remote_14813`，viewport 1024x608 CSS / dpr 2.5 / 物理 1600x2560）：`hasVT=true`、四页导航齐、任务页 1 个 `.tt-group-card`（收件箱 3）、chips `待办3`/`已完成0`、切页事件 `{from:'tasks',to:'history',animated:true}` 与反向、行内状态 `同步失败`（title `请先完成设备配对`，队列 `localTaskCreates.v1` 为 unpaired scope）；平板主题取默认绿 `0 122 85`，小米为紫 `113 73 188` | 本轮 CDP 求值 + 截图 `C:\fl-tmp\fl-hw-tasks.png`、`fl-hw-stats.png` | 实测 |
+| ⑩ | 小米锁屏后无法解锁（PIN 未知）：`wm dismiss-keyguard`、`input swipe`、`settings put system screen_off_timeout 1800000` 均无效，08:33 后截图全黑；08:29 起的一次专注会话未收尾 | 本轮 adb 命令回读 | 实测 | 本轮命令回读 | 实测 |
 
 **问题**
 
@@ -59,6 +62,8 @@ P1 待办与已完成只能整段滚到底 — 无法只看看待办，已完成
 P1 切页为直接替换 — 无过渡，页面间缺少空间关系，观感生硬 — 事实③。
 P2 看板条目无卡片边界 — 五块内容靠留白分隔，长页滚动时容易丢失分区块 — 事实④。
 P2 用户无法一眼知道自己的连续专注情况 — 只有单次数/时长/最长连续三项，无连续天数 — 事实⑤。
+P2 两台移动设备均未与桌面配对 — 任务写入停留在本机队列，行内只显示「同步失败/请先完成设备配对」，专注记录为空、看板停在空态 — 事实⑨。
+P2 华为平板旧签名与新构建不兼容 — 只能卸载重装，平板本机任务与专注数据随卸载丢失 — 事实⑧。
 
 **处置**
 
@@ -66,7 +71,7 @@ P2 用户无法一眼知道自己的连续专注情况 — 只有单次数/时�
 
 **门禁**
 
-format:check / typecheck / lint exit 0；npm test 183 文件/1587 用例全绿。
+format:check / typecheck / lint exit 0；npm test 184 文件/1592 用例全绿；Windows /S 静默覆盖安装回读 `DisplayVersion=1.11.1`、EXE `FileVersion=1.11.1`，`smoke:window-visible:launch` 主窗口可见且实例已回收；小米/华为均 `1.11.1`/`1386`（华为卸载重装后回读）。
 
 ## 2026-11-21 · `FL-UI-20261121-PC-MOTION-TIGHTEN`：动效时长与状态反馈收敛、任务行密度接线（v1.11.0）
 
