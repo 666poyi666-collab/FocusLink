@@ -29,6 +29,11 @@
         "class_name": "FocusLinkAccount",
       },
     ],
+    // 实时计时收口依赖新代码立即生效。默认 deferred 允许活动对象继续跑旧代码
+    // 最多 300 秒，会让已部署的修复在长连接轮询下迟迟不生效。
+    "code_update_strategy": {
+      "mode": "immediate",
+    },
   },
   "migrations": [
     {

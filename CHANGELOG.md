@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.11.3 - 2026-11-23（关掉已结束的专注不会再复活成两小时；今日统计日期归位）
+
+- **症状**：用户 09:19 开始、10:17 结束的一场 58.56 分钟专注，结束后又被显示成一场仍在进行、累计 2 小时 22 分的会话；应用重启后仍然存在。
+- **根因**：断网接管时本机先把已完成账本同步到云端，但云端 `live_state` 仍保留同 id 的活动会话。服务端 `finish/abort` 与重复发布账本共用 `session_id_exists` 拒绝，导致这条活动会话永远无法收口；客户端重启后丢掉“已接管”的内存标记，又把这份过期快照当作实时权威展示出来。
+- **客户端防复活**：`adoptFromSnapshot` 在本机同 id 会话已 `finished/aborted/endedAt!=null` 时拒绝接管并记录 `adopt rejected: local session already closed`；重连收口不再只依赖内存标记，只要本机同 id 已结束就发同 revision 的 `abort`，收口失败时留在本机账本、不再展示远端活动态（`electron/timer/manager.ts:195-212`、`electron/timer/focusTimerController.ts:585-660`）。
+- **服务端幂等收口**：`finish/abort` 在账本实体已存在时跳过重复发布，只清 `live_state` 并推进 revision；同步完成账本时若命中同 id 的活动会话，也自动丢弃残留，杜绝再次分裂（`cloudflare/accountDurableObject.ts:3517-3560`、`:1640-1645`、`:3750-3763`）。
+- **部署策略**：Durable Objects 默认 `deferred` 代码更新最多让活动对象继续跑旧代码 300 秒，已把 `wrangler.jsonc` 的 `code_update_strategy` 设为 `immediate` 并重新部署；远端幽灵会话已按 revision 814 收口为 idle。
+- **今日统计日期**：`/v1/analytics/today` 原先把本地零点转成 UTC 日期，东八区会显示成前一天；现复用本地日期键，返回真实的本地 `YYYY-MM-DD`（`electron/mcp/businessApi.ts:567`、`shared/dayLedgerAnalytics.ts:109`）。
+- **回归**：`tests/timerLiveOfflineFallback.test.ts` 新增“本机已结束拒绝接管”和“重启后仍能收口远端幽灵”两例；`tests/accountDurableObjectLiveCompletion.test.ts` 覆盖账本已存在时 finish/abort 放行、start 仍拒绝及源码装配；`tests/dayLedgerAnalytics.test.ts` 增加本地日期键断言。
+- **发布口径**：按用户 2026-11-21「只负责开发 PC」指令，本轮只验证 Windows 安装与运行；Android 仅同步版本元数据，不装机。
+
 ## v1.11.2 - 2026-11-23（实时断线接管补齐时长：约 58 分钟的专注不再只记 21 分钟）
 
 - **症状**：用户结束一场约 58 分钟的专注后，历史与统计只显示 21 分钟；会话的自然跨度（wall）仍是 58 分钟，专注与暂停之和却只有 21 分钟。

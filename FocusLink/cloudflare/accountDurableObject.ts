@@ -1640,6 +1640,9 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
       payload === null ? null : JSON.stringify(payload),
       now,
     );
+    if (!deleted && mutation.entityType === 'focus_ledger_v2') {
+      this.discardLiveSessionIfCompleted(mutation.entityId);
+    }
     if (mutation.kind === 'purge') {
       this.sql.exec(
         `INSERT OR REPLACE INTO v2_graveyard(entity_hash, deleted_generation, purged_at)
@@ -3448,15 +3451,12 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
         this.insertLiveOperation(request.command.commandId, fingerprint, ack);
         return this.liveCommandResponse(ack, serverTime);
       }
-      const rejection = validateLiveTransition(
-        live.session,
-        request.command,
-        Boolean(
-          this.entity(request.command.sessionId) ??
-          this.v2Entity('focus_ledger_v2', request.command.sessionId) ??
-          this.v2Entity('focus_metadata_v2', request.command.sessionId),
-        ),
+      const existingEntity = Boolean(
+        this.entity(request.command.sessionId) ??
+        this.v2Entity('focus_ledger_v2', request.command.sessionId) ??
+        this.v2Entity('focus_metadata_v2', request.command.sessionId),
       );
+      const rejection = validateLiveTransition(live.session, request.command, existingEntity);
       if (rejection) {
         const ack = liveRejectedAck(request.command.commandId, live.revision, rejection);
         this.insertLiveOperation(request.command.commandId, fingerprint, ack);
@@ -3517,15 +3517,20 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
         case 'finish':
         case 'abort': {
           const active = requireLiveSession(session);
-          closeLivePhase(active, serverTime);
-          active.updatedAt = serverTime;
-          active.lastCommandDeviceId = request.deviceId;
-          const bundle = buildCompletedLiveBundle(
-            active,
-            command.action === 'finish' ? 'finished' : 'aborted',
-            serverTime,
-          );
-          this.publishLiveBundle(request.deviceId, bundle);
+          // 账本实体已存在说明该会话已在别处（通常是离线接管后）完成：
+          // live_state 只是没有被收口的残留。此时重复发布账本会 409，
+          // 正确处置是幂等丢弃活动会话，把已存在的账本视为最终事实。
+          if (!existingEntity) {
+            closeLivePhase(active, serverTime);
+            active.updatedAt = serverTime;
+            active.lastCommandDeviceId = request.deviceId;
+            const bundle = buildCompletedLiveBundle(
+              active,
+              command.action === 'finish' ? 'finished' : 'aborted',
+              serverTime,
+            );
+            this.publishLiveBundle(request.deviceId, bundle);
+          }
           completedEntityId = active.id;
           session = null;
           break;
@@ -3740,6 +3745,20 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
       revision: row.revision,
       session: row.session_json ? (JSON.parse(row.session_json) as StoredLiveSession) : null,
     };
+  }
+
+  /**
+   * 完成账本已经落库时，live_state 中同 id 的活动会话必然是残留：
+   * 离线接管后本机先同步了完成实体，而远端 live 会话没有收口。
+   * 这里幂等清掉残留并 bump revision，让所有轮询端立即看到 idle。
+   */
+  private discardLiveSessionIfCompleted(entityId: string): void {
+    const live = this.readLive();
+    if (live.session?.id !== entityId) return;
+    this.sql.exec(
+      'UPDATE live_state SET revision = ?, session_json = NULL WHERE singleton = 1',
+      live.revision + 1,
+    );
   }
 
   private entity(entityId: string): EntityRow | undefined {
@@ -4534,7 +4553,7 @@ function toChange(row: ChangeRow): DeviceSyncChange {
   };
 }
 
-function validateLiveTransition(
+export function validateLiveTransition(
   session: StoredLiveSession | null,
   command: LiveFocusCommand,
   existingEntity: boolean,
@@ -4558,7 +4577,10 @@ function validateLiveTransition(
       ? null
       : 'segment_not_found';
   }
-  return existingEntity ? 'session_id_exists' : null;
+  // finish/abort 的目标就是把活动会话变成完成账本。账本实体已存在时，
+  // 说明这个会话已经被收口过（例如离线接管后本机先同步了完成实体），
+  // 继续用 session_id_exists 拒绝会让 live_state 永远无法清空。
+  return null;
 }
 
 function materializeLive(

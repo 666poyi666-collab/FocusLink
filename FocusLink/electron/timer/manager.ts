@@ -195,6 +195,20 @@ export class TimerManager {
     if (!active) {
       const now = Date.now();
       const prior = getSession(sessionId);
+      // 已经在本机收口过的会话绝不能被一份过期的远端快照复活：那会把 58 分钟的账
+      // 改写成断线期间服务端继续空转的两小时，用户看到的是凭空多出来的专注。
+      // 远端残留应由控制器按本机结束时间收口（abort），而不是在这里重开账本。
+      if (
+        prior &&
+        (prior.status === 'finished' || prior.status === 'aborted' || prior.endedAt !== null)
+      ) {
+        logger.warn('timer', 'adopt rejected: local session already closed', {
+          localSessionId: prior.id,
+          localStatus: prior.status,
+          remoteActiveElapsedMs: snapshot.activeElapsedMs,
+        });
+        return false;
+      }
       const startedAt =
         snapshot.segments[0]?.startedAt ?? now - Math.max(0, snapshot.wallElapsedMs);
       const base: FocusSession = prior ?? {

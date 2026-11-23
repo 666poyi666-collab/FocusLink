@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCalendarDayLedger, buildDayLedger } from '@shared/dayLedgerAnalytics';
+import { buildCalendarDayLedger, buildDayLedger, localDateKey } from '@shared/dayLedgerAnalytics';
 import type { FocusSegment, FocusSession, PauseEvent } from '@shared/types';
 
 const MINUTE = 60_000;
@@ -542,5 +542,12 @@ describe('buildCalendarDayLedger record-bounded observation (1.3.1 side-effect f
     expect(first.totals.focusMs).toBe(24 * HOUR); // capped at day end, never wraps
     expect(second.totals.focusMs).toBe(6 * HOUR);
     expect(first.totals.focusMs + second.totals.focusMs).toBe(30 * HOUR);
+  });
+});
+
+describe('localDateKey', () => {
+  it('formats the local calendar day instead of the UTC day', () => {
+    expect(localDateKey(new Date(2026, 10, 23, 0, 30).getTime())).toBe('2026-11-23');
+    expect(localDateKey(new Date(2026, 0, 1, 23, 59).getTime())).toBe('2026-01-01');
   });
 });

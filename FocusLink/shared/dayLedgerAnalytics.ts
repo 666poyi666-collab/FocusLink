@@ -106,7 +106,7 @@ function localHour(timestamp: number, hour: number): number {
   return value.getTime();
 }
 
-function localDateKey(timestamp: number): string {
+export function localDateKey(timestamp: number): string {
   const value = new Date(timestamp);
   return [
     value.getFullYear(),

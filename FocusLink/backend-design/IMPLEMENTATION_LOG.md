@@ -1,5 +1,42 @@
 # FocusLink 实施日志
 
+## 2026-11-23 · `FL-SYNC-20261123-LIVE-GHOST-REVIVAL`：已结束的专注被远端 live 残留复活成两小时（v1.11.3）
+
+**结论**
+
+用户报告一场已经结束的专注在界面上又变成两小时且没有关掉。审计确认本机账本仍是 58.56 分钟，屏幕上的是云端 `live_state` 里同 id 的活动残留：断网接管后完成账本先同步成功，但服务端 `finish/abort` 因账本实体已存在而拒绝收口；应用重启又丢掉“已接管”的内存标记，于是这份过期快照被重新展示。本轮同时补客户端拒绝复活、服务端幂等收口和 Durable Objects 立即更新策略，远端残留已在 revision 814 清空，本机账本未改写。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 用户 11:42 反馈结束专注后仍看到两小时；当时界面读取的是实时快照而不是本机账本 | 用户消息 `m02179`；`electron/timer/focusTimerController.ts:123-125` | 实测 |
+| ② | 本机会话 `db19414b-e91e-4e08-8198-64e294689a1b` 已是 `finished`，`active_elapsed_ms=3,513,747`（58.56 分钟），`ended_at=1795400257027`（10:17:37）；审计时无未结束会话、无未结束分段 | 本机 `focuslink.db` 查询（`.tmp/dbaudit.cjs`） | 实测 |
+| ③ | 同一时刻 `GET /v1/status` 返回同 id、`state='paused'`、`activeElapsedMs=8,566,580`（2 小时 22 分 46 秒）、`wallElapsedMs=10,074,336`，分段结束于 11:41:50，revision 270 | 本机 `127.0.0.1:18770/v1/status` 与 `.tmp/api-read.cjs` | 实测 |
+| ④ | 日志显示 03:10:08Z 实时连接断开、03:10:01Z 已在本机结束（`activeMs=2,284,346`）；03:11:04Z 与 03:12:21Z 两次重启均记录 `no active session to recover`，随后实时重连把远端 paused 会话带回 | `%APPDATA%/FocusLink/logs/focuslink-2026-11-23.log` | 实测 |
+| ⑤ | 旧 `adoptFromSnapshot` 会把本机同 id 的 finished 记录改回 active，并以 `now - startedAt` 为 active 上限；断线 84 分钟足以把 58 分钟账本写成两小时 | `electron/timer/manager.ts:195-250`（修复前） | 实测 |
+| ⑥ | 服务端 `validateLiveTransition` 在 `existingEntity=true` 时对 finish/abort 返回 `session_id_exists`；重复发布再命中 409，导致 `live_state` 永远无法清空。revision 813 的 abort 实测被拒 | `cloudflare/accountDurableObject.ts:4537-4583`（修复前）；`POST /sync/v2/live/command` 回读 | 实测 |
+| ⑦ | 新逻辑：finish/abort 在账本已存在时跳过 `publishLiveBundle`，直接清 `session_json` 并 bump revision；`applyV2Mutation` 写入完成的 `focus_ledger_v2` 后调用 `discardLiveSessionIfCompleted` 自动丢弃同 id 残留 | `cloudflare/accountDurableObject.ts:3517-3560`、`:1640-1645`、`:3750-3763` | 实测 |
+| ⑧ | Durable Objects 默认 `deferred` 更新最多让活动对象继续跑旧代码 300 秒；改为 `immediate` 后重新部署，Version ID `56727513-5ca6-4e6d-8981-512d88970158`，再发 abort 得到 `applied`、revision 814、snapshot idle | `FocusLink/wrangler.jsonc:32-36`；`wrangler deploy` 与 `.tmp/clear-ghost-live.cjs` 回读 | 实测 |
+| ⑨ | 远端已 idle 后 `/v1/status` 与 `/v1/focus/current` 均为 idle、active=0；`/v1/sessions` 中 `db19414b` 仍是 finished、3,513,747ms，本机账本未被改写 | 本机 `/v1/status`、`/v1/sessions` 回读 | 实测 |
+| ⑩ | `/v1/analytics/today` 曾把本地零点转成 UTC 日期，返回 `2026-11-22`（当天为 2026-11-23）；现改用本地日期键 | `electron/mcp/businessApi.ts:567`、`shared/dayLedgerAnalytics.ts:109` | 实测 |
+
+**问题**
+
+P0 已结束会话可被过期远端快照改回 active — 58.56 分钟的真实账本存在被写成两小时的风险，用户会直接失去对账本的信任 — 事实②③⑤
+P1 服务端无法收口“账本已存在、live 仍活动”的会话 — 幽灵永久存在，且同一账号无法再开始新的实时专注 — 事实⑥
+P1 重启丢失 `localizedSessionId` 后没有第二条收口判据 — 每次断网收口后的重启都可能重新展示幽灵 — 事实④⑤
+P2 Durable Objects 默认延迟更新让服务端修复在长连接下迟迟不生效 — 部署成功不等于行为已生效，必须验证实际 revision — 事实⑧
+P2 今日统计日期在 UTC 负偏移时落到前一天 — 自动化日报与用户本地日期不一致 — 事实⑩
+
+**处置**
+
+客户端以“本机账本已结束”为最高事实：接管入口拒绝复活，重连收口不再依赖易失的内存标记；收口失败时保留本机视图并重试，不把远端活动态交给用户。服务端把 finish/abort 改成幂等收口，并在完成账本落库时主动清理同 id 残留，避免再产生 live/ledger 分裂。部署侧把 Durable Objects 更新策略固定为 `immediate`，本轮以实际 abort 的 applied 回执和 idle 快照验收，而不是只看部署版本号。远端残留只做收口，不改写本机 58.56 分钟记录；今日统计顺带改用本地日期键并补回归；同时把生产依赖 `undici` 由 7.29.0 升到 7.30.2，清除审计中的高危项。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1599 用例全绿；定向用例 26/26；`npm audit --omit=dev --registry=https://registry.npmjs.org` 0 漏洞（`undici` 7.30.2）；dist、verify:packaged、Windows 静默覆盖安装回读与 release:verify 在发布记录提交回填。
+
 ## 2026-11-23 · `FL-SYNC-20261123-LIVE-ADOPT-DURATION`：实时断线接管补齐时长，修「58 分钟专注只记 21 分钟」（v1.11.2）
 
 **结论**

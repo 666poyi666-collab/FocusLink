@@ -908,3 +908,40 @@ P2 部分成功无法回滚 — 遇错即停不能承诺原子批量 — 证据�
 | ⑥ | `npm test` 179 文件 / 1572 用例全绿；format / typecheck / lint 退出 0；装机版以陈旧 `If-Match` 只读验证返回 409，未写入 | 命令输出与 `127.0.0.1:18770` 请求 | 实测 |
 
 状态：已收口。重放验证使用隔离内存回执表与伪服务，不依赖生产库；装机版只做了陈旧前置条件的只读验证，真实写入仍由用户批准后执行。
+
+## FL-SYNC-039：专注已经结束，重启后又变成两小时 / 远端实时会话收不口
+
+**结论**
+
+这不是本机账本被改写，而是远端 `live_state` 与已完成账本出现同 id 分裂，客户端重启后又把远端活动快照当成实时权威展示。状态：已收口（v1.11.3）。先保本机账本，再收口远端，不要先删数据库或重新开始专注。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 本机会话已是 finished、时长为真实值；界面却显示 paused/running 且时长继续增长，通常是实时快照覆盖了本机展示 | `electron/timer/focusTimerController.ts:123-125` | 证据记录 |
+| ② | 断网接管时本机先同步了完成账本，云端 `live_state` 仍保留同 id 会话；旧服务端对 finish/abort 返回 `session_id_exists`，重复发布账本返回 409，形成永久残留 | `cloudflare/accountDurableObject.ts:3517-3560`、`:4537-4583` | 证据记录 |
+| ③ | 重启会丢掉内存里的 `localizedSessionId`，旧客户端没有“本机已结束”这条第二判据，于是重新接受远端活动快照 | `electron/timer/focusTimerController.ts:585-660`、`electron/timer/manager.ts:195-212` | 证据记录 |
+| ④ | v1.11.3 实测：本地 `db19414b` 保持 finished/3,513,747ms，远端 abort 在 revision 814 返回 applied，随后 `/v1/status` 为 idle | 本机 DB、`/v1/status` 与 `POST /sync/v2/live/command` 回读 | 实测 |
+
+**问题**
+
+P0 远端幽灵会让用户误以为专注没有结束 — 不要点旧版的“结束”，旧版可能走接管把两小时写进本机 — 事实②③
+P1 服务端无法收口会阻塞同一账号开始下一次实时专注 — 需要部署包含幂等收口逻辑的版本 — 事实②
+P2 Durable Objects 默认延迟更新 — 部署成功不等于行为生效，必须用实际 abort 回执验证 — 事实④
+
+**诊断顺序**
+
+1. 先只读本机账本，确认同 id 会话的 `status`、`active_elapsed_ms`、`ended_at`，并确认没有未结束会话。记录原始值，不要先改库。
+2. 再读 `GET /v1/status` 与 `GET /sync/v2/live`，对比 session id、state、activeElapsedMs、revision。若本机已 finished 而远端仍 paused/running，按本编号处理。
+3. 查日志是否有 `live connection lost`、`no active session to recover`、`stale remote session reconcile`；不要用历史 `lastError` 代替当前可达性判断。
+4. 确认部署版本包含 `if (!existingEntity)` 收口分支和 `discardLiveSessionIfCompleted`；若仍是旧行为，检查 Durable Objects 是否仍按 `deferred` 跑旧代码。
+5. 用当前 revision 发同 id `abort`，只有 ack `applied`（或 `duplicate`）且随后快照 idle 才算收口；被拒时不要把拒绝写成已修复。
+
+**修复与验收**
+
+- 客户端：本机同 id 已 finished/aborted/endedAt!=null 时，`adoptFromSnapshot` 必须拒绝；重连收口必须同时认内存标记和本机结束状态，收口失败留在本机事实源。
+- 服务端：finish/abort 在账本实体已存在时跳过重复发布，只清 `live_state` 并推进 revision；完成账本落库时自动丢弃同 id 活动残留。
+- 部署：`wrangler.jsonc` 的 `durable_objects.code_update_strategy` 固定为 `immediate`；重新部署后必须用真实 abort 的 applied 回执与 idle 快照验收。
+- 回归：`tests/timerLiveOfflineFallback.test.ts` 覆盖“拒绝接管”和“重启后收口”，`tests/accountDurableObjectLiveCompletion.test.ts` 覆盖“账本已存在时 finish/abort 放行、start 仍拒绝”。
+- 若远端暂时无法收口，关闭“PC 参与实时专注”并重启客户端只能先恢复本机计时，不能宣称幽灵已清理；手机端仍会看到 paused 状态。

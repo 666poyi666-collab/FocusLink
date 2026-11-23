@@ -583,19 +583,31 @@ export class FocusTimerController {
   }
 
   /**
-   * 离线接管过的会话在重连时收口。本机已经结束过它而远端仍是活动态，就以本机为准下 abort；
-   * 远端已经结束或已换成别的会话则只清标记，不发任何写命令。
+   * 收口远端残留的活动会话。两类事实都要以本机已结束的账本为准：
+   * 1. 断网接管过、内存里还留着 localizedSessionId 的会话；
+   * 2. 本机同 id 会话已经结束，但远端还挂着——例如断网收口后应用重启，内存标记丢失。
+   * 第二类绝不能被 accept 成运行中快照，否则 58 分钟的账会变成断线期间服务端空转的两小时。
+   * 收口失败时抛出，让调用方留在本机事实源，而不是展示幽灵计时器。
    */
   private async reconcileLocalizedSession(
     response: LiveFocusSnapshotResponse,
     connection: { endpoint: string; accessToken: string; deviceId: string },
   ): Promise<LiveFocusSnapshotResponse> {
-    const sessionId = this.localizedSessionId;
-    if (!sessionId) return response;
-    if (response.snapshot.state === 'idle' || response.snapshot.session?.id !== sessionId) {
+    const active = response.snapshot.session;
+    if (!active || response.snapshot.state === 'idle') {
       this.localizedSessionId = null;
       return response;
     }
+    const marked = this.localizedSessionId === active.id;
+    if (this.localizedSessionId && !marked) this.localizedSessionId = null;
+    const localSession = getSession(active.id);
+    const locallyFinished =
+      !!localSession &&
+      (localSession.status === 'finished' ||
+        localSession.status === 'aborted' ||
+        localSession.endedAt !== null);
+    if (!marked && !locallyFinished) return response;
+    const sessionId = active.id;
     try {
       const command: LiveFocusCommand = {
         commandId: crypto.randomUUID(),
@@ -618,17 +630,30 @@ export class FocusTimerController {
           sessionId,
           code: acked.ack.errorCode,
         });
+        if (locallyFinished) throw new Error('stale remote session reconcile rejected');
         return response;
       }
+      if (acked.snapshot.state !== 'idle' && acked.snapshot.session?.id === sessionId) {
+        // abort 已 ack 却仍返回同一条活动会话：停止向用户展示它，等下一轮重试。
+        logger.warn('liveFocus', 'remote session still active after reconcile ack', { sessionId });
+        if (locallyFinished) throw new Error('remote session still active after reconcile');
+      }
       this.localizedSessionId = null;
-      logger.warn('liveFocus', 'stale remote session closed after offline finish', { sessionId });
+      logger.warn(
+        'liveFocus',
+        locallyFinished
+          ? 'stale remote session closed after local finish'
+          : 'stale remote session closed after offline finish',
+        { sessionId },
+      );
       return acked;
     } catch (error) {
-      // 保留标记，下一次重连再试。
+      // 本地已结束的会话无法收口时保留标记并抛错：下一次重连再试，期间只展示本机账本。
       logger.warn('liveFocus', 'stale remote session reconcile deferred', {
         sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
+      if (locallyFinished) throw error;
       return response;
     }
   }

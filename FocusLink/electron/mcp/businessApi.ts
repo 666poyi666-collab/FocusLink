@@ -3,6 +3,7 @@ import http from 'node:http';
 import { BrowserWindow } from 'electron';
 import { APP_VERSION } from '@shared/version';
 import { AUTOMATION_API_PREFIX, AUTOMATION_LISTEN_PORT } from '@shared/automation/contract';
+import { localDateKey } from '@shared/dayLedgerAnalytics';
 import type { TimerSnapshot, TimerState } from '@shared/types';
 import {
   findTaskCache,
@@ -563,7 +564,7 @@ export function startFoxlinkBusinessApi(
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
         const items = listSessions(1000).filter((item) => item.startedAt >= start);
         return send(response, 200, {
-          date: new Date(start).toISOString().slice(0, 10),
+          date: localDateKey(start),
           sessionCount: items.length,
           activeElapsedMs: items.reduce((sum, item) => sum + item.activeElapsedMs, 0),
           pauseElapsedMs: items.reduce((sum, item) => sum + item.pauseElapsedMs, 0),

@@ -252,13 +252,129 @@ describe('实时专注断网兜底', () => {
 
     expect(finished.sessionId).toBe(REMOTE_SESSION_ID);
     expect(finished.state).toBe('finished');
-    expect(memDb.sessions).toHaveLength(1);
-    expect(memDb.segments).toHaveLength(1);
-    // 21.5 分钟快照 + 37 分钟断线增量，封顶到真实跨度 58.5 分钟
-    expect(memDb.sessions[0].activeElapsedMs).toBeGreaterThanOrEqual(58.5 * 60_000);
-    expect(memDb.sessions[0].activeElapsedMs).toBeLessThan(58.5 * 60_000 + 1_500);
-    expect(memDb.sessions[0].pauseElapsedMs).toBe(0);
     // session 与 segment 必须同口径，统计页求和不能再退回 21.5 分钟
     expect(memDb.segments[0].activeElapsedMs).toBe(memDb.sessions[0].activeElapsedMs);
+  });
+
+  it('本机已经结束的会话拒绝被远端活动快照接管，账本保持原值', () => {
+    const now = Date.now();
+    const startedAt = now - 58.5 * 60_000;
+    memDb.insertSession({
+      id: REMOTE_SESSION_ID,
+      title: null,
+      status: 'finished',
+      startedAt,
+      endedAt: startedAt + 58.5 * 60_000,
+      activeElapsedMs: 3_513_747,
+      pauseElapsedMs: 0,
+      wallElapsedMs: 3_513_747,
+      defaultTaskId: null,
+      defaultTaskSource: null,
+      defaultTaskTitle: null,
+      note: null,
+      createdAt: startedAt,
+      updatedAt: startedAt + 58.5 * 60_000,
+    });
+    const snapshot = {
+      state: 'paused' as const,
+      sessionId: REMOTE_SESSION_ID,
+      currentSegmentId: null,
+      currentTaskId: null,
+      currentTaskTitle: null,
+      currentTaskSource: null,
+      sessionDefaultTaskId: null,
+      sessionDefaultTaskTitle: null,
+      activeElapsedMs: 2.4 * 60 * 60_000,
+      pauseElapsedMs: 0,
+      wallElapsedMs: 2.4 * 60 * 60_000,
+      currentPauseStartedAt: now,
+      segments: [
+        {
+          id: REMOTE_SEGMENT_ID,
+          taskId: null,
+          taskTitle: null,
+          taskSource: null,
+          title: null,
+          startedAt,
+          endedAt: null,
+          activeElapsedMs: 2.4 * 60 * 60_000,
+        },
+      ],
+      pauseEvents: [],
+      lastTick: now,
+    };
+
+    expect(timer.adoptFromSnapshot(snapshot)).toBe(false);
+    expect(memDb.sessions).toHaveLength(1);
+    expect(memDb.sessions[0].status).toBe('finished');
+    expect(memDb.sessions[0].activeElapsedMs).toBe(3_513_747);
+    expect(memDb.segments).toHaveLength(0);
+  });
+
+  it('重启后远端仍挂着本机已结束的会话时，先 abort 收口，不展示幽灵计时器', async () => {
+    const now = Date.now();
+    memDb.insertSession({
+      id: REMOTE_SESSION_ID,
+      title: null,
+      status: 'finished',
+      startedAt: now - 58.5 * 60_000,
+      endedAt: now - 60_000,
+      activeElapsedMs: 3_513_747,
+      pauseElapsedMs: 0,
+      wallElapsedMs: 3_513_747,
+      defaultTaskId: null,
+      defaultTaskSource: null,
+      defaultTaskTitle: null,
+      note: null,
+      createdAt: now - 58.5 * 60_000,
+      updatedAt: now - 60_000,
+    });
+    const commands: any[] = [];
+    const fetchMock = vi.fn(async (input: any, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/sync/v2/live/command')) {
+        const body = JSON.parse(String(init?.body));
+        commands.push(body);
+        return jsonResponse({
+          protocolVersion: 1,
+          serverTime: now,
+          snapshot: { revision: 271, state: 'idle', session: null },
+          ack: {
+            commandId: body.command.commandId,
+            status: 'applied',
+            revision: 271,
+            errorCode: null,
+            completedEntityId: REMOTE_SESSION_ID,
+          },
+        });
+      }
+      if (url.includes('/sync/v2/live/wait')) {
+        const signal = init?.signal;
+        return await new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+            return;
+          }
+          signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('The operation was aborted.', 'AbortError')),
+            { once: true },
+          );
+        });
+      }
+      return jsonResponse(runningSnapshot(now));
+    });
+    (globalThis as any).fetch = fetchMock;
+
+    controller.reloadConfiguration();
+    await waitFor(() => commands.length === 1, '收口远端幽灵会话');
+    await waitFor(() => controller.getSnapshot().state === 'idle', '保持本机空闲账本');
+
+    expect(commands[0].command.action).toBe('abort');
+    expect(commands[0].command.sessionId).toBe(REMOTE_SESSION_ID);
+    expect(memDb.sessions).toHaveLength(1);
+    expect(memDb.sessions[0].status).toBe('finished');
+    expect(memDb.sessions[0].activeElapsedMs).toBe(3_513_747);
+    expect((controller as any).liveMode).toBe(true);
   });
 });
