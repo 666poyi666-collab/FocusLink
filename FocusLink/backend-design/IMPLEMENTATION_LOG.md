@@ -50,10 +50,10 @@ format:check / typecheck / lint exit 0；npm test 184 文件 / 1592 用例全绿
 | ④ | 统计看板卡片化：三格指标独立圆角卡（14px）、五块看板统一 16px 卡壳 + `rgb(var(--app-border)/0.6)` 描边；7 日趋势柱 7px→22px 圆角柱、区域 120→128px，今天那列 8% 强调底 | `src/mobile/mobile.css` INSIGHTS 段「统计看板重做（v1.11.1）」块 + `src/mobile/DashboardView.tsx` `dashboard-summary dash-metrics` | 实测 |
 | ⑤ | 新增连续专注天数 `focusStreak`：按已完成且有专注时长的会话日期倒推；今天无专注时从昨天起算；`shiftDayKey` 用本地 12:00 构造避免 UTC 漂移 | `src/mobile/DashboardView.tsx` `focusStreak` useMemo 与 `shiftDayKey` | 实测 |
 | ⑥ | 新增契约测试两份：`tests/mobileViewTransition.test.ts`（3 例）、`tests/mobileDashboardRedesign.test.ts`（5 例）；既有看板契约 5 文件 / 34 例保持全绿 | 本轮 `npx vitest run` 回读 | 实测 |
-| ⑦ | 门禁：format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1592 用例全绿 |
+| ⑦ | 门禁：format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1592 用例全绿 | 本轮命令回读 | 实测 |
 | ⑧ | 三端装机回读：小米 `192.168.1.5:5555` 与华为平板 `DBY-W09` `192.168.1.7:5555` 均为 `versionName=1.11.1`/`versionCode=1386`；华为原机为 1.3.0/1306，`adb install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`（旧签名与 2026-09-10 起的 `focuslinkStable` 不一致），卸载后重装，平板本机数据随卸载重置 | `adb shell dumpsys package app.focuslink.mobile` 回读 | 实测 |
 | ⑨ | 华平 CDP 实测（pid 14813，`adb forward tcp:9223 localabstract:webview_devtools_remote_14813`，viewport 1024x608 CSS / dpr 2.5 / 物理 1600x2560）：`hasVT=true`、四页导航齐、任务页 1 个 `.tt-group-card`（收件箱 3）、chips `待办3`/`已完成0`、切页事件 `{from:'tasks',to:'history',animated:true}` 与反向、行内状态 `同步失败`（title `请先完成设备配对`，队列 `localTaskCreates.v1` 为 unpaired scope）；平板主题取默认绿 `0 122 85`，小米为紫 `113 73 188` | 本轮 CDP 求值 + 截图 `C:\fl-tmp\fl-hw-tasks.png`、`fl-hw-stats.png` | 实测 |
-| ⑩ | 小米锁屏后无法解锁（PIN 未知）：`wm dismiss-keyguard`、`input swipe`、`settings put system screen_off_timeout 1800000` 均无效，08:33 后截图全黑；08:29 起的一次专注会话未收尾 | 本轮 adb 命令回读 | 实测 | 本轮命令回读 | 实测 |
+| ⑩ | 小米锁屏后无法解锁（PIN 未知）：`wm dismiss-keyguard`、`input swipe`、`settings put system screen_off_timeout 1800000` 均无效，08:33 后截图全黑；08:29 起的一次专注会话未收尾 | 本轮 adb 命令回读 | 实测 |
 
 **问题**
 
