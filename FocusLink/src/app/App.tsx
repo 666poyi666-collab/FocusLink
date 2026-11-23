@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, MotionConfig, motion, useIsPresent } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { MotionConfig } from 'framer-motion';
 import '../styles/shell-motion.css';
 import { useStore } from './store';
 import {
@@ -43,41 +43,25 @@ type View = 'timer' | 'tasks' | 'history' | 'settings';
  * 第三版：整页不再位移，只做不透明度交叉。位移量由 `__flPageShiftPx` 控制，
  * 默认 0；诊断时可注入 18 复现旧观感。
  *
- * 第四版（当前）：**缩短并去掉延迟**。第三版是 40ms 延迟 + 200ms 淡入 + 180ms 淡出，
+ * 第四版：**缩短并去掉延迟**。第三版是 40ms 延迟 + 200ms 淡入 + 180ms 淡出，
  * 一次切页从点击到完全可见要 240ms；用户反馈「过渡很差劲、显示出来不丝滑」。
- * 现在 0 延迟 + 140ms 淡入 + 90ms 淡出，点击后第一帧就开始显影，总时长约 140ms。
+ * 于是改成 0 延迟 + 140ms 淡入 + 90ms 淡出。
+ *
+ * 第五版：**旧页不再淡出**。第四版旧页 90ms 先淡到 0、新页还在 140ms 淡入中途，
+ * 两层同时半透明时露出 `.app-stage` 底色，整块内容区亮度先掉再回来。
+ * 改成旧页全程不透明垫底、新页自带 `--app-surface` 从上层淡入。
+ *
+ * 第六版：**入场淡入交给 CSS，Framer 只负责保留旧页 140ms**。
+ * 实测发现 Framer 在退出完成后的重算仍会把页面内联 opacity 写回 0，CSS 入场
+ * 被压在这个 0 上，切页尾部反而出现整块空白；presence/变体机制无法保证不闪。
+ *
+ * 第七版（当前）：**去掉 AnimatePresence，单页不透明，只在内容上做一次性轻入场**。
+ * 旧页立即卸载，新页根容器始终带 `--app-surface` 不透明背景，背景亮度全程恒定；
+ * 只有 `.page-content` 做 160ms / 4px 的轻微落位，由 CSS 动画一次性播放，
+ * React 重渲染不会重播，也不再有任何跨页的透明度交叉。
  * 注意：过渡再短也压不掉挂载期的同步长任务——挂载重活必须由页面自己解决，
  * 这段时间主线程被占，浏览器连第一帧都画不出来（见 FL-PERF-20261021-PAGE-SWITCH）。
  */
-const PAGE_ENTER = {
-  duration: 0.14,
-  delay: 0,
-  ease: [0.16, 1, 0.3, 1] as const,
-};
-const PAGE_EXIT = {
-  duration: 0.09,
-  ease: [0.4, 0, 0.2, 1] as const,
-};
-
-/** 页面切换的横向位移量。0 = 只做淡化（当前），诊断时可注入 18 对比旧观感。 */
-function pageShiftPx(): number {
-  const forced = (globalThis as { __flPageShiftPx?: number }).__flPageShiftPx;
-  return typeof forced === 'number' ? forced : 0;
-}
-
-const PAGE_VARIANTS = {
-  initial: (direction: number) => ({ opacity: 0, x: direction * pageShiftPx() }),
-  animate: {
-    opacity: 1,
-    x: 0,
-    transition: PAGE_ENTER,
-  },
-  exit: (direction: number) => ({
-    opacity: 0,
-    x: direction * -pageShiftPx() * 0.6,
-    transition: PAGE_EXIT,
-  }),
-};
 
 /**
  * 只在设置页样张与仪表预览里出现、主界面默认不会用到的字族。
@@ -96,13 +80,6 @@ const PREVIEW_ONLY_FONT_FAMILIES = [
   'Noto Serif SC Variable',
 ];
 
-const VIEW_ORDER: Record<View, number> = {
-  timer: 0,
-  tasks: 1,
-  history: 2,
-  settings: 3,
-};
-
 export default function App() {
   // Subscribe to stable slices instead of the entire store. A running timer publishes a fresh
   // snapshot every second; selecting the whole store made every route (including history) rebuild
@@ -117,13 +94,6 @@ export default function App() {
   const addToast = useStore((state) => state.addToast);
 
   const [bootError, setBootError] = useState<string | null>(null);
-  const previousViewRef = useRef<View>(view);
-  const navigationDirection =
-    Math.sign(VIEW_ORDER[view] - VIEW_ORDER[previousViewRef.current]) || 1;
-
-  useEffect(() => {
-    previousViewRef.current = view;
-  }, [view]);
 
   // 窗口失焦：类挂在根节点，仅用于必要的失焦表现，不触碰布局与内容可读性。
   useEffect(() => {
@@ -285,28 +255,26 @@ export default function App() {
           <EdgeDock view={view} state={timerState} onSelect={setView} />
 
           <main id="focuslink-main" className="app-stage">
-            <AnimatePresence mode="sync" initial={false} custom={navigationDirection}>
-              {view === 'timer' && (
-                <ViewPage key="view-timer" direction={navigationDirection}>
-                  <TimerStage state={timerState} />
-                </ViewPage>
-              )}
-              {view === 'history' && (
-                <ViewPage key="view-history" direction={navigationDirection}>
-                  <HistoryPanel />
-                </ViewPage>
-              )}
-              {view === 'tasks' && (
-                <ViewPage key="view-tasks" direction={navigationDirection}>
-                  <TaskWorkspace />
-                </ViewPage>
-              )}
-              {view === 'settings' && (
-                <ViewPage key="view-settings" direction={navigationDirection}>
-                  <SettingsPanel />
-                </ViewPage>
-              )}
-            </AnimatePresence>
+            {view === 'timer' && (
+              <ViewPage key="view-timer">
+                <TimerStage state={timerState} />
+              </ViewPage>
+            )}
+            {view === 'history' && (
+              <ViewPage key="view-history">
+                <HistoryPanel />
+              </ViewPage>
+            )}
+            {view === 'tasks' && (
+              <ViewPage key="view-tasks">
+                <TaskWorkspace />
+              </ViewPage>
+            )}
+            {view === 'settings' && (
+              <ViewPage key="view-settings">
+                <SettingsPanel />
+              </ViewPage>
+            )}
           </main>
 
           {/* 窗口按钮必须排在 `.app-stage` 之后 —— 这是硬约束，不是排版偏好。
@@ -331,23 +299,17 @@ export default function App() {
   );
 }
 
-function ViewPage({ children, direction }: { children: React.ReactNode; direction: number }) {
-  const isPresent = useIsPresent();
+function ViewPage({ children }: { children: React.ReactNode }) {
+  // 根容器只负责不透明底：切页时旧页立即卸载，新页背景从第一帧就覆盖整块内容区，
+  // 不存在两层同时半透明露出 .app-stage 的窗口。入场动画只作用于 .page-content，
+  // 且由 CSS 在挂载时播放一次，不受 React/Framer 重渲染影响。
   return (
-    <motion.div
-      variants={PAGE_VARIANTS}
-      custom={direction}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      className="absolute inset-0 will-change-transform"
-      // AnimatePresence(mode="sync") retains the previous route during its fade. useIsPresent flips
-      // immediately, so an exiting full-screen layer can never intercept the next route's clicks.
-      style={{ pointerEvents: isPresent ? 'auto' : 'none' }}
-      aria-hidden={!isPresent}
+    <div
+      className="page-layer absolute inset-0"
+      style={{ backgroundColor: 'rgb(var(--app-surface))' }}
     >
-      {children}
-    </motion.div>
+      <div className="page-content h-full">{children}</div>
+    </div>
   );
 }
 

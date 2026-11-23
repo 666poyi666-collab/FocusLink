@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.11.4 - 2026-11-24（本机进行中的专注接入实时同步；切页不再整块掉亮）
+
+- **症状**：用户已经配好设备、PC 与手机都联网，但 PC 先开始的专注在手机端一直显示空闲，只有等 PC 计时结束才看到账本；同时每个界面切换都会整块亮度先掉一下再回来。
+- **实时同步根因**：实时控制只在“本机计时器已经空闲”时才接管。PC 先开始时，设置变更触发的 `reloadConfiguration()` 只记录 `live control deferred until local timer is idle`，并不会把已经在跑的会话介绍给云端；配对完成也不会补一次接管。云端实时协议只有 start/pause/resume/finish/abort，没有“接管一条已经存在的本机会话”的入口。
+- **接管协议**：新增 `adopt` 动作与严格时间线校验（`shared/sync/liveFocusProtocol.ts`）。客户端把本机 session/segment/pause id、任务三态和真实起止时间作为种子上传；服务端以 `serverTime - clientNow` 平移全部边界，不信任本机累计时长，再用分段与暂停重新计算 active/pause/wall。同 id adopt 幂等重试不重写时间线，时钟偏差超过 7 天或时间线不自洽直接拒绝。
+- **客户端交接**：`reloadConfiguration()` 不再因为本机 running/paused 就放弃实时连接；初次快照为 idle 时先发 adopt，收到 applied/duplicate 且快照确认同 id 后才切到实时权威，并删除本机活动行；云端已有另一条会话或交接未被确认时保留本机计时，绝不让远端 idle 盖住正在跑的专注（`electron/timer/focusTimerController.ts`）。
+- **暂停边界**：本机暂停只写 `pause_events`，当前 segment 要等 resume 才关闭；交接时用暂停起点收口最后一段，否则服务端会把暂停时间也算成专注时间。新增“暂停中的本机会话也能正确交接”的客户端与云端用例。
+- **服务端**：`cloudflare/accountDurableObject.ts` 与 `cloud/deviceSyncStore.ts` 同步支持 adopt、幂等重试、时钟/时长上限与暂停时间线；`finish/abort` 继续只在账本尚未存在时发布，避免重复实体。
+- **切页闪烁根因**：旧页 90ms 淡出、新页 140ms 淡入，两页容器都没有不透明背景，同时半透明时露出 `.app-stage` 底色；换用 Framer 变体后，实测退出重算仍会把内联 `opacity` 写回 0，入场被压在 0 上。
+- **切页修复**：路由层移除 AnimatePresence，只渲染一个带 `--app-surface` 不透明背景的页面根；旧页立即卸载，页内内容只做一次 160ms、94%→100%、3px 上浮的轻入场。逐帧采样根容器全程 `opacity=1`、无掉亮帧、始终只有一层。
+- **发布口径**：按用户 2026-11-21「只负责开发 PC」指令，本轮只验证 Windows 安装与运行；Android 仅同步版本元数据，不构建、不装机。
+
 ## v1.11.3 - 2026-11-23（关掉已结束的专注不会再复活成两小时；今日统计日期归位）
 
 - **症状**：用户 09:19 开始、10:17 结束的一场 58.56 分钟专注，结束后又被显示成一场仍在进行、累计 2 小时 22 分的会话；应用重启后仍然存在。

@@ -30,7 +30,7 @@ const ORIGIN = 'http://localhost:5175';
 
 function commandRequest(input: {
   commandId: string;
-  action: LiveFocusAction;
+  action: Exclude<LiveFocusAction, 'adopt'>;
   expectedRevision: number;
   sessionId?: string;
   deviceId?: string;
@@ -258,6 +258,167 @@ describe('live focus cloud store', () => {
       defaultTaskId: 'math-1',
       defaultTaskTitle: '第二章第二节',
     });
+  });
+
+  it('adopts an already-running local session without inventing extra duration', () => {
+    let now = 1_720_000_000_000;
+    const store = createDeviceSyncCloudStore({ now: () => now });
+    const startedAt = now - 3_600_000;
+    const adopt = (commandId: string, clientNow: number): LiveFocusCommandRequest => ({
+      protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+      deviceId: 'desktop-a',
+      command: {
+        commandId,
+        action: 'adopt',
+        expectedRevision: store.getLiveSnapshot(ACCOUNT_A).snapshot.revision,
+        sessionId: 'local-session-1',
+        session: {
+          id: 'local-session-1',
+          title: '本机任务',
+          state: 'running',
+          startedAt,
+          clientNow,
+          segments: [
+            { id: 'local-segment-1', startedAt, endedAt: startedAt + 2_000, task: null },
+            { id: 'local-segment-2', startedAt: startedAt + 4_000, endedAt: null, task: null },
+          ],
+          pauses: [
+            {
+              id: 'local-pause-1',
+              segmentId: 'local-segment-1',
+              startedAt: startedAt + 2_000,
+              endedAt: startedAt + 4_000,
+            },
+          ],
+          task: null,
+        },
+      },
+    });
+
+    const applied = store.commandLive(ACCOUNT_A, adopt('adopt-1', now));
+    expect(applied.ack).toMatchObject({ status: 'applied', revision: 1 });
+    expect(applied.snapshot.session).toMatchObject({
+      id: 'local-session-1',
+      state: 'running',
+      startedAt,
+      activeElapsedMs: 3_598_000,
+    });
+
+    const retry = store.commandLive(ACCOUNT_A, adopt('adopt-2', now + 1_000));
+    expect(retry.ack, '同 id 重试不重写权威时间线').toMatchObject({
+      status: 'applied',
+      revision: 1,
+    });
+    expect(retry.snapshot.session?.startedAt).toBe(startedAt);
+
+    now += 60_000;
+    const finish = store.commandLive(
+      ACCOUNT_A,
+      commandRequest({
+        commandId: 'finish-adopted',
+        action: 'finish',
+        expectedRevision: 1,
+        sessionId: 'local-session-1',
+      }),
+    );
+    expect(finish.ack).toMatchObject({ status: 'applied', completedEntityId: 'local-session-1' });
+    const ledger = store.sync(ACCOUNT_A, {
+      protocolVersion: 1,
+      deviceId: 'phone-a',
+      cursor: null,
+      mutations: [],
+      pullLimit: 10,
+    });
+    expect(ledger.changes[0]?.payload?.session).toMatchObject({
+      id: 'local-session-1',
+      activeElapsedMs: 3_658_000,
+    });
+    expect(store.commandLive(ACCOUNT_A, adopt('adopt-after-finish', now)).ack.errorCode).toBe(
+      'session_id_exists',
+    );
+  });
+
+  it('adopts a paused local session with its open pause at the segment boundary', () => {
+    let now = 1_720_000_000_000;
+    const store = createDeviceSyncCloudStore({ now: () => now });
+    const startedAt = now - 900_000;
+    const pauseStartedAt = now - 300_000;
+    const adopted = store.commandLive(ACCOUNT_A, {
+      protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+      deviceId: 'desktop-a',
+      command: {
+        commandId: 'adopt-paused',
+        action: 'adopt',
+        expectedRevision: 0,
+        sessionId: 'local-paused-session',
+        session: {
+          id: 'local-paused-session',
+          title: null,
+          state: 'paused',
+          startedAt,
+          clientNow: now,
+          segments: [{ id: 'local-segment-1', startedAt, endedAt: pauseStartedAt, task: null }],
+          pauses: [
+            {
+              id: 'local-pause-1',
+              segmentId: 'local-segment-1',
+              startedAt: pauseStartedAt,
+              endedAt: null,
+            },
+          ],
+          task: null,
+        },
+      },
+    });
+
+    expect(adopted.ack).toMatchObject({ status: 'applied', revision: 1 });
+    expect(adopted.snapshot).toMatchObject({ state: 'paused' });
+    expect(adopted.snapshot.session).toMatchObject({
+      activeElapsedMs: 600_000,
+      pauseElapsedMs: 300_000,
+      wallElapsedMs: 900_000,
+      currentPauseStartedAt: pauseStartedAt,
+    });
+
+    now += 10_000;
+    expect(store.getLiveSnapshot(ACCOUNT_A).snapshot.session).toMatchObject({
+      activeElapsedMs: 600_000,
+      pauseElapsedMs: 310_000,
+      wallElapsedMs: 910_000,
+    });
+  });
+
+  it('rejects an adopt seed whose client clock is days away from the server', () => {
+    const now = 1_720_000_000_000;
+    const store = createDeviceSyncCloudStore({ now: () => now });
+    const rejected = store.commandLive(ACCOUNT_A, {
+      protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+      deviceId: 'desktop-a',
+      command: {
+        commandId: 'adopt-skew',
+        action: 'adopt',
+        expectedRevision: 0,
+        sessionId: 'local-session-1',
+        session: {
+          id: 'local-session-1',
+          title: null,
+          state: 'running',
+          startedAt: now - 8 * 24 * 60 * 60 * 1_000,
+          clientNow: now - 8 * 24 * 60 * 60 * 1_000 + 1_000,
+          segments: [
+            {
+              id: 'local-segment-1',
+              startedAt: now - 8 * 24 * 60 * 60 * 1_000,
+              endedAt: null,
+            },
+          ],
+          pauses: [],
+          task: null,
+        },
+      },
+    });
+    expect(rejected.ack).toMatchObject({ status: 'rejected', errorCode: 'clock_skew' });
+    expect(rejected.snapshot.state).toBe('idle');
   });
 
   it('an explicit null clears one segment override instead of falling back to the session task', () => {

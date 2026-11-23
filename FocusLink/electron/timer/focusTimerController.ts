@@ -7,6 +7,7 @@ import {
   LIVE_FOCUS_SNAPSHOT_PATH,
   LIVE_FOCUS_WAIT_PATH,
   type LiveFocusAction,
+  type LiveFocusAdoptSeed,
   type LiveFocusCommand,
   type LiveFocusCommandResponse,
   type LiveFocusSnapshot,
@@ -23,7 +24,7 @@ import {
   type LiveSnapshotVersion,
 } from '@shared/sync/liveSnapshotPolicy';
 import { logger } from '../logger.js';
-import { getSession } from '../db/index.js';
+import { deleteSession, getSession } from '../db/index.js';
 import {
   getDeviceSyncRuntimeConnection,
   runDeviceSync,
@@ -102,12 +103,8 @@ export class FocusTimerController {
       this.publish(preserveActiveLiveSession ? this.snapshot : this.local.getSnapshot());
       return;
     }
-    const localSnapshot = this.local.getSnapshot();
-    if (!preserveActiveLiveSession && localSnapshot.state !== 'idle') {
-      logger.warn('liveFocus', 'live control deferred until local timer is idle');
-      this.publish(localSnapshot);
-      return;
-    }
+    // A local running/paused session is not a reason to stay private: refreshAndWait offers it
+    // to the live authority with an adopt command so the phone sees the same active timer.
     void this.refreshAndWait(this.generation);
   }
 
@@ -178,7 +175,7 @@ export class FocusTimerController {
    * 否则会把真正的状态冲突伪装成操作成功。
    */
   private async sendOrLocalize(
-    action: LiveFocusAction,
+    action: Exclude<LiveFocusAction, 'adopt'>,
     localAction: () => TimerSnapshot,
   ): Promise<TimerSnapshot> {
     if (!this.isLiveEnabled()) return localAction();
@@ -195,7 +192,7 @@ export class FocusTimerController {
    */
   private localizeLiveSession(
     error: unknown,
-    action: LiveFocusAction,
+    action: Exclude<LiveFocusAction, 'adopt'>,
     localAction: () => TimerSnapshot,
   ): TimerSnapshot {
     if (!canLocalizeActiveLiveSession(error)) throw error;
@@ -365,7 +362,7 @@ export class FocusTimerController {
   }
 
   private send(
-    action: LiveFocusAction,
+    action: Exclude<LiveFocusAction, 'adopt'>,
     task: LiveFocusTaskContext | null = null,
     segmentId: string | null = null,
   ): Promise<TimerSnapshot> {
@@ -386,7 +383,7 @@ export class FocusTimerController {
   }
 
   private async sendCommand(
-    action: LiveFocusAction,
+    action: Exclude<LiveFocusAction, 'adopt'>,
     task: LiveFocusTaskContext | null = null,
     segmentId: string | null = null,
   ): Promise<TimerSnapshot> {
@@ -438,7 +435,6 @@ export class FocusTimerController {
   private async refreshAndWait(generation: number): Promise<void> {
     const connection = getDeviceSyncRuntimeConnection();
     if (!connection || generation !== this.generation) return;
-    if (!this.liveMode && this.local.getSnapshot().state !== 'idle') return;
     try {
       // Do not switch the local fact source until the first authoritative snapshot
       // has been fetched and accepted. A configured-but-stopped loopback service must
@@ -449,19 +445,41 @@ export class FocusTimerController {
         await this.request(LIVE_FOCUS_SNAPSHOT_PATH, connection, {}, initialController.signal)
       ).json()) as LiveFocusSnapshotResponse;
       if (generation !== this.generation || !this.isCurrentConnection(connection)) return;
-      if (!this.liveMode && this.local.getSnapshot().state !== 'idle') {
-        this.markLiveDisconnected();
-        this.publish(this.local.getSnapshot());
-        return;
-      }
       this.abortController = null;
       // 断网接管过的会话：重连时如果远端还挂着活动态，用本机账本收口远端，避免幽灵计时器。
       const reconciled = await this.reconcileLocalizedSession(initial, connection);
       if (generation !== this.generation || !this.isCurrentConnection(connection)) return;
+      // 本机先开始的会话在配对/联网后交接给云端，避免手机端一直看到 idle。
+      const handoff = await this.handoffLocalSession(reconciled, connection);
+      if (generation !== this.generation || !this.isCurrentConnection(connection)) return;
+      if (handoff === 'blocked') {
+        this.markLiveDisconnected();
+        this.publish(this.local.getSnapshot());
+        throw new Error('云端已有另一条进行中的专注，本机会话暂不接入实时同步');
+      }
       // Do not advertise live mode until the initial response has passed `accept`. If protocol
       // validation fails, the desktop remains on the local fact source and can still start.
-      this.accept(reconciled);
-      this.liveMode = true;
+      if (handoff) {
+        const localSessionId = this.local.getSnapshot().sessionId;
+        this.liveMode = true;
+        try {
+          if (!this.accept(handoff)) {
+            this.liveMode = false;
+            return;
+          }
+          if (localSessionId) this.releaseLocalSession(localSessionId);
+          logger.info('liveFocus', 'local session handed off to live authority', {
+            sessionId: localSessionId,
+            liveRevision: this.liveRevision,
+          });
+        } catch (error) {
+          this.liveMode = false;
+          throw error;
+        }
+      } else {
+        if (!this.accept(reconciled)) return;
+        this.liveMode = true;
+      }
       this.reconnectAttempt = 0;
       while (generation === this.generation && getDeviceSyncRuntimeConnection()) {
         const controller = new AbortController();
@@ -580,6 +598,150 @@ export class FocusTimerController {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
+  }
+
+  /**
+   * 把本机先开始、云端还没见过的会话交给实时权威。
+   * - 云端已有同 id 活动会话：崩溃恢复，直接沿用。
+   * - 云端 idle：用 adopt 上传完整时间线，之后由服务端外推时长。
+   * - 云端已有别的活动会话：保留本机会话，等它收口后再试。
+   */
+  private async handoffLocalSession(
+    response: LiveFocusSnapshotResponse,
+    connection: { endpoint: string; accessToken: string; deviceId: string },
+  ): Promise<LiveFocusSnapshotResponse | 'blocked' | null> {
+    if (this.liveMode) return null;
+    const localSnapshot = this.local.getSnapshot();
+    if (localSnapshot.state !== 'running' && localSnapshot.state !== 'paused') return null;
+    if (!localSnapshot.sessionId) return null;
+    const remote = response.snapshot;
+    if (remote.session) {
+      if (remote.session.id === localSnapshot.sessionId) return response;
+      return 'blocked';
+    }
+    const seed = this.buildAdoptSeed(localSnapshot);
+    if (!seed) {
+      logger.warn('liveFocus', 'local session cannot be handed off: inconsistent timeline', {
+        sessionId: localSnapshot.sessionId,
+      });
+      // 本机仍有活动计时，绝不能退回远端 idle 快照：那会把真实计时藏起来，
+      // 让用户以为已经结束，同时本机计时还在后台继续。
+      return 'blocked';
+    }
+    const command: LiveFocusCommand = {
+      commandId: crypto.randomUUID(),
+      expectedRevision: response.snapshot.revision,
+      sessionId: localSnapshot.sessionId,
+      action: 'adopt',
+      session: seed,
+    };
+    const acked = (await (
+      await this.request(LIVE_FOCUS_COMMAND_PATH, connection, {
+        method: 'POST',
+        body: JSON.stringify({
+          protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+          deviceId: connection.deviceId,
+          command,
+        }),
+      })
+    ).json()) as LiveFocusCommandResponse;
+    if (acked.ack.status !== 'applied' && acked.ack.status !== 'duplicate') {
+      logger.warn('liveFocus', 'local session handoff rejected', {
+        sessionId: localSnapshot.sessionId,
+        code: acked.ack.errorCode,
+      });
+      throw new Error(this.commandError(acked.ack.errorCode));
+    }
+    if (acked.snapshot.state === 'idle' || acked.snapshot.session?.id !== localSnapshot.sessionId) {
+      throw new Error('实时同步未确认本机会话，保留本机计时');
+    }
+    return acked;
+  }
+
+  /** 从本机快照构造 adopt 种子；时间线不自洽时返回 null，绝不猜一个账本。 */
+  private buildAdoptSeed(snapshot: TimerSnapshot): LiveFocusAdoptSeed | null {
+    if ((snapshot.state !== 'running' && snapshot.state !== 'paused') || !snapshot.sessionId) {
+      return null;
+    }
+    const lastSegment = snapshot.segments.at(-1);
+    if (!lastSegment) return null;
+    const openPause = snapshot.pauseEvents.find((pause) => pause.pauseEndedAt === null);
+    if (snapshot.state === 'running' && openPause) return null;
+    if (snapshot.state === 'paused' && !openPause) return null;
+    if (snapshot.state === 'running' && lastSegment.endedAt !== null) return null;
+    if (snapshot.pauseEvents.some((pause) => !pause.segmentId)) return null;
+    // 本机 pause 只写 pause_events，当前 segment 要等到 resume 才关闭；交接时必须
+    // 用暂停起点把最后一段收口，否则服务端会把暂停时间也算成专注时间。
+    const lastSegmentEndedAt =
+      snapshot.state === 'paused'
+        ? (lastSegment.endedAt ?? openPause?.pauseStartedAt ?? null)
+        : lastSegment.endedAt;
+    if (snapshot.state === 'paused') {
+      if (openPause?.segmentId !== lastSegment.id) return null;
+      if (lastSegmentEndedAt === null) return null;
+      if (openPause && openPause.pauseStartedAt !== lastSegmentEndedAt) return null;
+    }
+    const session = getSession(snapshot.sessionId);
+    const sessionTask =
+      session?.defaultTaskId && session.defaultTaskSource
+        ? {
+            taskId: session.defaultTaskId,
+            taskSource: session.defaultTaskSource,
+            taskTitle: session.defaultTaskTitle ?? null,
+          }
+        : null;
+    const segmentTask = (segment: TimerSnapshot['segments'][number]) =>
+      segment.taskId && segment.taskSource
+        ? {
+            taskId: segment.taskId,
+            taskSource: segment.taskSource,
+            taskTitle: segment.taskTitle ?? segment.title ?? null,
+          }
+        : sessionTask
+          ? undefined
+          : null;
+    const clientNow = Date.now();
+    return {
+      id: snapshot.sessionId,
+      title: session?.title ?? snapshot.sessionDefaultTaskTitle ?? null,
+      state: snapshot.state,
+      startedAt: session?.startedAt ?? snapshot.segments[0].startedAt,
+      clientNow,
+      segments: snapshot.segments.map((segment) => ({
+        id: segment.id,
+        startedAt: segment.startedAt,
+        endedAt: segment === lastSegment ? lastSegmentEndedAt : segment.endedAt,
+        task: segmentTask(segment),
+      })),
+      pauses: snapshot.pauseEvents.map((pause) => ({
+        id: pause.id,
+        segmentId: pause.segmentId!,
+        startedAt: pause.pauseStartedAt,
+        endedAt: pause.pauseEndedAt,
+      })),
+      task: sessionTask,
+    };
+  }
+
+  /** 交接成功后本机只保留历史，不再持有同一条活动账本。 */
+  private releaseLocalSession(sessionId: string): void {
+    try {
+      deleteSession(sessionId);
+    } catch (error) {
+      logger.warn('liveFocus', 'handoff completed but local session row could not be removed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    try {
+      this.local.reset();
+    } catch (error) {
+      logger.warn('liveFocus', 'handoff completed but local timer reset failed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    this.localizedSessionId = null;
   }
 
   /**

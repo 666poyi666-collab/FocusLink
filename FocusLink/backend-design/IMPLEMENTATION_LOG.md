@@ -1,5 +1,71 @@
 # FocusLink 实施日志
 
+## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-LOCAL-SESSION`：已配对设备，但 PC 进行中的专注没有实时同步（v1.11.4）
+
+**结论**
+
+用户完成设备配对后，PC 正在进行的一场专注在手机端仍显示为空闲。根因不是配对或鉴权，而是实时控制只在 PC 计时器已经 idle 时才接管：本机先开始的 running/paused 会话不会被介绍给云端，旧协议也没有“把已存在的本机会话交给云端”的动作。本轮新增 adopt 协议、服务端时间线平移与客户端交接，并在确定交接成功后删除本机活动行；暂停中的会话以 pause 起点收口最后一段，避免把暂停算成专注。真实会话的端到端验收在安装 1.11.4 后执行。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 用户反馈已配置设备且双方联网，但进行中的专注没有实时同步 | 用户消息 `m02973` | 证据记录 |
+| ② | 配对与设备登记成功，日志有 `protected access token saved` 与 `device enrolled with trusted pairing code`；随后立即出现 `live control deferred until local timer is idle` | `%APPDATA%/FocusLink/logs/focuslink-2026-11-23.log` | 实测 |
+| ③ | 旧 `reloadConfiguration()` 在本机状态非 idle 时只记 defer 并发布本机快照，不发起任何 live 请求 | `electron/timer/focusTimerController.ts:81-111`（修复前） | 实测 |
+| ④ | 旧实时协议只有 start/pause/resume/link-task/finish/abort；云端 start 不接受历史时间线，因此本机会话无法被“重新开始”成同一场专注 | `shared/sync/liveFocusProtocol.ts`（修复前）、`cloudflare/accountDurableObject.ts:3419-3562` | 证据记录 |
+| ⑤ | 现场会话 `ff051228-f750-4461-b381-d7b847334c06` 当时为 paused：3 段，最后一段 `13794e21-4481-4059-8dde-b52afce1f64b` 的 `ended_at` 为 null，同时有一条 open pause 指向它 | 本机 `focuslink.db` 查询（`.tmp/inspect-active.cjs`） | 实测 |
+| ⑥ | 本机暂停只写 `pause_events`，segment 要等 resume 才关闭；按原样上传 open segment 会把暂停时长算成 active | `electron/timer/manager.ts:425-457`、`:459-509` | 实测 |
+| ⑦ | 客户端交接：远端 idle 时发 adopt，只有 applied/duplicate 且快照同 id 才切换实时权威并删除本机活动行；种子不自洽或远端已有别的会话时保留本机计时 | `electron/timer/focusTimerController.ts:435-536`、`:609-735` | 实测 |
+| ⑧ | 服务端 adopt 以 `serverTime-clientNow` 平移全部 segment/pause 边界，保留本地 id；7 天时钟偏差与 30 天时长上限拒绝 | `cloudflare/accountDurableObject.ts:118-119`、`:3487-3504`、`:4658`；`cloud/deviceSyncStore.ts:712-713`、`:862` | 实测 |
+| ⑨ | 带 adopt 的服务端已部署，Current Version ID `735ca097-6280-4e68-bed4-de7ca84e7a41` | `npx wrangler deploy` 输出 | 实测 |
+| ⑩ | 定向用例 35/35：running/paused 交接、暂停边界、云端幂等重试、时钟偏差拒绝、同 id 恢复 | `tests/desktopLiveFocusController.test.ts`、`tests/liveFocusCloud.test.ts`、`tests/liveFocusProtocol.test.ts`、`tests/accountDurableObjectLiveCompletion.test.ts` | 实测 |
+
+**问题**
+
+P0 已配对但进行中的专注不实时同步 — 手机端看到空闲，用户会误以为同步坏了或重复开始一场专注 — 事实②③④
+P1 暂停中的本机会话按原样交接会把暂停算成专注 — 账本 active 偏大，时长不可信 — 事实⑤⑥
+P2 交接失败时若接受远端 idle 会把本机计时藏起来 — 用户看到空闲而本机仍在计时 — 事实⑦
+
+**处置**
+
+协议新增 adopt 动作与严格的会话种子校验；服务端按客户端时钟平移时间线并保留本地 segment/pause id，使 finish 后仍能同 id 落账；客户端在本机 running/paused 时也主动拉取云端快照，远端 idle 才交接，确认后切换实时权威并删除本机活动行，失败则保留本机计时并退避。暂停会话在种子构造时用 open pause 起点收口最后一段，保证 active 只到暂停点、pause 从暂停点继续累计。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1605 用例全绿；定向用例 35/35；服务端 `wrangler deploy` exit 0；打包、Windows 安装回读与真机实时验收见 v1.11.4 发布记录。
+
+## 2026-11-24 · `FL-UI-20261124-PAGE-TRANSITION-FLASH`：每个界面切换一闪一闪（v1.11.4）
+
+**结论**
+
+用户反馈每次切换页面都会整块闪一下。根因是路由层用两层绝对定位页面做交叉过渡：旧页 90ms 淡出、新页 140ms 淡入，两层都没有独立不透明背景，同时半透明时露出 `.app-stage` 底色，合成亮度先掉再回。改为单页不透明根、旧页直接卸载，只让页内内容做一次 160ms 的极轻落位；逐帧冒烟确认根容器亮度全程为 1。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 用户反馈每个界面切换都一闪一闪 | 用户消息 `m02973` | 证据记录 |
+| ② | 旧过渡：`PAGE_ENTER` 0.14s、`PAGE_EXIT` 0.09s，`AnimatePresence mode="sync"`，两个页面容器均为 `absolute inset-0` 且无背景 | `src/app/App.tsx:52-80`、`:288`、`:334-351`（修复前） | 实测 |
+| ③ | 页面底色只由 `.app-stage` 提供 `rgb(var(--app-surface))`；两层同时半透明时底色透出 | `src/styles/focuslink-2.css:32-36` | 实测 |
+| ④ | 中间尝试用 Framer 让旧页不透明垫底、新页淡入，逐帧实测旧页卸载时仍出现一帧 opacity=0；改用 CSS 入场后 Framer 又把内联 opacity 写回 0，方案不可用 | `.tmp/page-transition-smoke.cjs` 帧采样 | 实测 |
+| ⑤ | 最终路由层只渲染当前页，根 `.page-layer` 自带 `background: rgb(var(--app-surface))`，不再有退出层 | `src/app/App.tsx:304-311` | 实测 |
+| ⑥ | 页内 `.page-content` 做 160ms、94%→100%、上浮 3px 的一次性入场；reduced-motion 下关闭 | `src/styles/focuslink-2.css:40-56` | 实测 |
+| ⑦ | 逐帧冒烟：toTasks 与 toTimer 的根容器 `floor=1`、`dips=0`、始终单层；内容最小 0.94、最大 1 | `.tmp/page-transition-smoke.cjs` 输出 | 实测 |
+
+**问题**
+
+P1 路由交叉过渡让整块背景亮度塌陷 — 每次切页都像闪一下，高频操作时非常廉价 — 事实②③
+P2 Framer presence 在重渲染时会重放 initial 并写回内联 opacity — 即使视觉参数正确也无法保证不闪 — 事实④
+
+**处置**
+
+路由层不再使用 `AnimatePresence`/页面级透明度动画，旧页立即卸载，当前页根容器从第一帧起不透明；过渡手感下放到 `.page-content` 的 94%→100% 与 3px 上浮，保留轻量落位但不改变页面底色。同步删除页面级 `PAGE_EXIT`/`PAGE_VARIANTS` 与相关方向位移代码，reduced-motion 保持静态。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 185 文件 / 1605 用例全绿；逐帧冒烟根容器 floor=1、dips=0；Windows 安装后真实窗口复验见 v1.11.4 发布记录。
+
 ## 2026-11-23 · `FL-SYNC-20261123-LIVE-GHOST-REVIVAL`：已结束的专注被远端 live 残留复活成两小时（v1.11.3）
 
 **结论**

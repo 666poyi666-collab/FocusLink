@@ -16,11 +16,12 @@ vi.mock('../electron/sync/deviceSyncService.js', () => ({
 
 vi.mock('../electron/db/index.js', () => ({
   getSession: vi.fn(),
+  deleteSession: vi.fn(),
 }));
 
 import { FocusTimerController } from '../electron/timer/focusTimerController';
 import { runDeviceSync } from '../electron/sync/deviceSyncService';
-import { getSession } from '../electron/db/index';
+import { deleteSession, getSession } from '../electron/db/index';
 
 function snapshot(state: TimerSnapshot['state']): TimerSnapshot {
   return {
@@ -248,6 +249,7 @@ describe('desktop live focus controller', () => {
   beforeEach(() => {
     vi.mocked(runDeviceSync).mockReset();
     vi.mocked(getSession).mockReset();
+    vi.mocked(deleteSession).mockReset();
     runtimeConnection.current = {
       endpoint: 'http://127.0.0.1:18787',
       accessToken: 'desktop-live-test-token',
@@ -281,28 +283,220 @@ describe('desktop live focus controller', () => {
     fetchSpy.mockRestore();
   });
 
-  it('defers the live fact-source switch while a local session is active', async () => {
-    const active = snapshot('running');
-    const listeners = new Set<(value: TimerSnapshot) => void>();
+  it('hands an already-running local session to live authority when the cloud is idle', async () => {
+    const startedAt = Date.now() - 600_000;
+    const active: TimerSnapshot = {
+      ...snapshot('running'),
+      sessionId: 'local-active-session',
+      currentSegmentId: 'local-segment',
+      segments: [
+        {
+          id: 'local-segment',
+          taskId: 'local-task',
+          taskTitle: '本机任务',
+          taskSource: 'local',
+          title: '本机任务',
+          startedAt,
+          endedAt: null,
+          activeElapsedMs: 600_000,
+        },
+      ],
+      lastTick: Date.now(),
+    };
+    vi.mocked(getSession).mockReturnValue({
+      id: 'local-active-session',
+      title: '本机任务',
+      startedAt,
+      defaultTaskId: 'local-task',
+      defaultTaskSource: 'local',
+      defaultTaskTitle: '本机任务',
+    } as never);
     const local = {
       getSnapshot: vi.fn(() => active),
-      onSnapshot: vi.fn((listener: (value: TimerSnapshot) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      }),
-      toggle: vi.fn(() => active),
+      onSnapshot: vi.fn(),
+      reset: vi.fn(() => snapshot('idle')),
       dispose: vi.fn(),
     };
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    let adoptCommand: { action?: string; session?: { id?: string; segments?: unknown[] } } | null =
+      null;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith('/sync/v2/live')) return Promise.resolve(liveResponse('idle', 5));
+      if (url.endsWith('/sync/v2/live/command')) {
+        const body = JSON.parse(String(init?.body)) as {
+          command: { action?: string; session?: { id?: string; segments?: unknown[] } };
+        };
+        adoptCommand = body.command;
+        const observedAt = Date.now();
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+              serverTime: observedAt,
+              ack: { status: 'applied', errorCode: null, completedEntityId: null },
+              snapshot: {
+                revision: 6,
+                state: 'running',
+                session: {
+                  id: 'local-active-session',
+                  title: '本机任务',
+                  state: 'running',
+                  startedAt,
+                  activeElapsedMs: 600_000,
+                  pauseElapsedMs: 0,
+                  wallElapsedMs: 600_000,
+                  currentPauseStartedAt: null,
+                  segments: [{ id: 'local-segment', startedAt, endedAt: null, task: null }],
+                  pauses: [],
+                  task: null,
+                  updatedAt: observedAt,
+                  lastCommandDeviceId: 'desktop-test-device',
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return new Promise<Response>(() => {});
+    });
     const controller = new FocusTimerController(local as never);
 
     controller.reloadConfiguration();
-    const result = await controller.toggle();
+    await vi.waitFor(() => expect(deleteSession).toHaveBeenCalledWith('local-active-session'));
 
-    expect(result).toBe(active);
-    expect(local.toggle).toHaveBeenCalledOnce();
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(controller.getSnapshot()).toBe(active);
+    expect(adoptCommand).toMatchObject({
+      action: 'adopt',
+      session: { id: 'local-active-session' },
+    });
+    expect(
+      (adoptCommand as { session: { segments: unknown[] } } | null)?.session?.segments,
+    ).toHaveLength(1);
+    expect(local.reset).toHaveBeenCalledOnce();
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'running',
+      sessionId: 'local-active-session',
+    });
+    controller.dispose();
+    fetchSpy.mockRestore();
+  });
+
+  it('closes the open local segment at the pause boundary when handing off a paused session', async () => {
+    const startedAt = Date.now() - 900_000;
+    const pauseStartedAt = Date.now() - 300_000;
+    const active: TimerSnapshot = {
+      ...snapshot('paused'),
+      sessionId: 'local-paused-session',
+      currentSegmentId: 'local-paused-segment',
+      activeElapsedMs: 600_000,
+      pauseElapsedMs: 0,
+      wallElapsedMs: 900_000,
+      currentPauseStartedAt: pauseStartedAt,
+      segments: [
+        {
+          id: 'local-paused-segment',
+          taskId: null,
+          taskTitle: null,
+          taskSource: null,
+          title: null,
+          startedAt,
+          endedAt: null,
+          activeElapsedMs: 600_000,
+        },
+      ],
+      pauseEvents: [
+        {
+          id: 'local-paused-pause',
+          segmentId: 'local-paused-segment',
+          pauseStartedAt,
+          pauseEndedAt: null,
+          durationMs: 0,
+          isCurrent: true,
+        },
+      ],
+      lastTick: pauseStartedAt,
+    };
+    vi.mocked(getSession).mockReturnValue({
+      id: 'local-paused-session',
+      title: '暂停中的本机会话',
+      startedAt,
+      defaultTaskId: null,
+      defaultTaskSource: null,
+      defaultTaskTitle: null,
+    } as never);
+    const local = {
+      getSnapshot: vi.fn(() => active),
+      onSnapshot: vi.fn(),
+      reset: vi.fn(() => snapshot('idle')),
+      dispose: vi.fn(),
+    };
+    let adoptSegmentEnd: number | null | undefined;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith('/sync/v2/live')) return Promise.resolve(liveResponse('idle', 9));
+      if (url.endsWith('/sync/v2/live/command')) {
+        const body = JSON.parse(String(init?.body)) as {
+          command?: { session?: { segments?: { endedAt?: number | null }[] } };
+        };
+        adoptSegmentEnd = body.command?.session?.segments?.[0]?.endedAt;
+        const observedAt = Date.now();
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+              serverTime: observedAt,
+              ack: { status: 'applied', errorCode: null, completedEntityId: null },
+              snapshot: {
+                revision: 10,
+                state: 'paused',
+                session: {
+                  id: 'local-paused-session',
+                  title: '暂停中的本机会话',
+                  state: 'paused',
+                  startedAt,
+                  activeElapsedMs: 600_000,
+                  pauseElapsedMs: 0,
+                  wallElapsedMs: 900_000,
+                  currentPauseStartedAt: pauseStartedAt,
+                  segments: [
+                    {
+                      id: 'local-paused-segment',
+                      startedAt,
+                      endedAt: pauseStartedAt,
+                      task: null,
+                    },
+                  ],
+                  pauses: [
+                    {
+                      id: 'local-paused-pause',
+                      segmentId: 'local-paused-segment',
+                      startedAt: pauseStartedAt,
+                      endedAt: null,
+                    },
+                  ],
+                  task: null,
+                  updatedAt: observedAt,
+                  lastCommandDeviceId: 'desktop-test-device',
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return new Promise<Response>(() => {});
+    });
+    const controller = new FocusTimerController(local as never);
+
+    controller.reloadConfiguration();
+    await vi.waitFor(() => expect(deleteSession).toHaveBeenCalledWith('local-paused-session'));
+
+    expect(adoptSegmentEnd).toBe(pauseStartedAt);
+    expect(local.reset).toHaveBeenCalledOnce();
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'paused',
+      sessionId: 'local-paused-session',
+    });
     controller.dispose();
     fetchSpy.mockRestore();
   });

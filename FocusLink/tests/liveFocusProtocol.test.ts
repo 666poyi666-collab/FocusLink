@@ -195,6 +195,58 @@ describe('live focus protocol', () => {
     ).toBe(false);
   });
 
+  it('accepts a strict adopt seed and rejects an inconsistent local timeline', () => {
+    const now = 1_720_000_000_000;
+    const adopt = (seed: Record<string, unknown>, sessionId = 'session-local-1') => ({
+      protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+      deviceId: 'desktop-a',
+      command: {
+        commandId: 'command-adopt-1',
+        action: 'adopt',
+        expectedRevision: 3,
+        sessionId,
+        session: {
+          id: sessionId,
+          title: '本机任务',
+          state: 'running',
+          startedAt: now - 60_000,
+          clientNow: now,
+          segments: [{ id: 'local-segment-1', startedAt: now - 60_000, endedAt: null }],
+          pauses: [],
+          task: null,
+          ...seed,
+        },
+      },
+    });
+
+    expect(validateLiveFocusCommandRequest(adopt({})).ok).toBe(true);
+    expect(validateLiveFocusCommandRequest(adopt({ id: 'session-local-2' })).ok).toBe(false);
+    expect(validateLiveFocusCommandRequest(adopt({ segments: [] })).ok).toBe(false);
+    expect(
+      validateLiveFocusCommandRequest(
+        adopt({
+          segments: [{ id: 'local-segment-1', startedAt: now - 60_000, endedAt: now - 1_000 }],
+        }),
+      ).ok,
+    ).toBe(false);
+    expect(
+      validateLiveFocusCommandRequest(
+        adopt({
+          state: 'paused',
+          segments: [{ id: 'local-segment-1', startedAt: now - 60_000, endedAt: null }],
+          pauses: [
+            {
+              id: 'local-pause-1',
+              segmentId: 'local-segment-1',
+              startedAt: now - 1_000,
+              endedAt: null,
+            },
+          ],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+
   it('resolves a segment override: missing inherits the session task, null clears it', () => {
     const sessionTask = {
       taskId: 'math-1',

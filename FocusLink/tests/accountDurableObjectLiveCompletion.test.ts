@@ -71,6 +71,31 @@ describe('Account DO live completion with an existing ledger', () => {
     ).toBe('active_session_exists');
   });
 
+  it('lets adopt claim an idle authority but never replaces an active session', () => {
+    const adopt = (sessionId: string) => ({
+      commandId: 'command-adopt',
+      expectedRevision: 1,
+      sessionId,
+      action: 'adopt' as const,
+      session: {
+        id: sessionId,
+        title: '本机任务',
+        state: 'running' as const,
+        startedAt: 1_000,
+        clientNow: 61_000,
+        segments: [{ id: 'segment-local', startedAt: 1_000, endedAt: null }],
+        pauses: [],
+        task: null,
+      },
+    });
+    expect(validateLiveTransition(null, adopt('session-ghost'), false)).toBeNull();
+    expect(validateLiveTransition(null, adopt('session-ghost'), true)).toBe('session_id_exists');
+    expect(validateLiveTransition(session(), adopt('session-ghost'), false)).toBeNull();
+    expect(validateLiveTransition(session(), adopt('other-session'), false)).toBe(
+      'active_session_exists',
+    );
+  });
+
   it('keeps the stale-live cleanup wired into commands and ledger mutations', () => {
     const source = readFileSync(
       path.join(process.cwd(), 'cloudflare', 'accountDurableObject.ts'),

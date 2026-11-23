@@ -945,3 +945,44 @@ P2 Durable Objects 默认延迟更新 — 部署成功不等于行为生效，�
 - 部署：`wrangler.jsonc` 的 `durable_objects.code_update_strategy` 固定为 `immediate`；重新部署后必须用真实 abort 的 applied 回执与 idle 快照验收。
 - 回归：`tests/timerLiveOfflineFallback.test.ts` 覆盖“拒绝接管”和“重启后收口”，`tests/accountDurableObjectLiveCompletion.test.ts` 覆盖“账本已存在时 finish/abort 放行、start 仍拒绝”。
 - 若远端暂时无法收口，关闭“PC 参与实时专注”并重启客户端只能先恢复本机计时，不能宣称幽灵已清理；手机端仍会看到 paused 状态。
+
+## FL-SYNC-040：已配对设备，但手机端看不到 PC 正在进行的专注
+
+**结论**
+
+这不是配对失败，也不是账号没登录。旧逻辑只在 PC 计时器已经 idle 时才接管实时控制；PC 先开始的 running/paused 会话不会被介绍给云端，手机端只能看到 idle。状态：已收口（v1.11.4）。不要为了“让它同步”先结束本机专注——结束会生成一条真正的账本，之后再接管就不是同一场专注了。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 配对与设备登记可以成功，日志仍有 `protected access token saved` 与 `device enrolled with trusted pairing code` | `%APPDATA%/FocusLink/logs/focuslink-*.log` | 实测 |
+| ② | 旧 `reloadConfiguration()` 在本机状态非 idle 时只写 `live control deferred until local timer is idle` 并发布本机快照，不发起任何 live 请求 | `electron/timer/focusTimerController.ts:81-111`（修复前） | 证据记录 |
+| ③ | 旧实时协议只有 start/pause/resume/link-task/finish/abort，没有把已存在的本机会话交给云端的动作；云端 start 也不能接受历史时间线 | `shared/sync/liveFocusProtocol.ts`（修复前）、`cloudflare/accountDurableObject.ts:3419-3562` | 证据记录 |
+| ④ | 现场会话 `ff051228-f750-4461-b381-d7b847334c06` 有 3 个 segment、2 个已结束 pause；当时处于 paused，最后一个 segment 的 `ended_at` 仍为 null，open pause 指向该 segment | 本机 `focuslink.db` 查询（`.tmp/inspect-active.cjs`） | 实测 |
+| ⑤ | 本机暂停只写 `pause_events`，segment 要等 resume 才关闭；交接若直接把 null `endedAt` 上传，服务端会把暂停时间算成专注时间 | `electron/timer/manager.ts:425-457`、`:459-509` | 实测 |
+| ⑥ | adopt 客户端与服务端已接通：服务端按 `serverTime - clientNow` 平移时间线，active/pause/wall 由 segment 与 pause 重新计算；客户端只在 applied/duplicate 且同 id 确认后删除本机活动行 | `shared/sync/liveFocusProtocol.ts`、`electron/timer/focusTimerController.ts:435-536`、`cloudflare/accountDurableObject.ts` | 实测 |
+| ⑦ | 服务端 `wrangler deploy` 成功，Current Version ID `735ca097-6280-4e68-bed4-de7ca84e7a41`，包含 adopt 与 clock_skew/invalid_timeline 校验 | `wrangler deploy` 输出 | 实测 |
+| ⑧ | 定向用例 35/35：running 与 paused 本机会话交接、暂停边界、云端幂等重试、时钟偏差拒绝、同 id 恢复 | `tests/desktopLiveFocusController.test.ts`、`tests/liveFocusCloud.test.ts`、`tests/liveFocusProtocol.test.ts`、`tests/accountDurableObjectLiveCompletion.test.ts` | 实测 |
+
+**问题**
+
+P0 已配对但进行中的专注不实时同步 — 手机端看到 idle，用户会以为同步坏了或重复开始一场专注 — 事实②③
+P1 暂停中的本机会话按原样交接会把暂停算成专注 — 时长会偏大，且账本不可信 — 事实④⑤
+P2 交接失败时若直接接受远端 idle 会把本机计时藏起来 — 用户看到空闲，本机仍在计时 — 事实⑥
+
+**诊断顺序**
+
+1. 先看本机 `GET /v1/status`：若 state 是 running/paused 且 sessionId 非空，而手机端 `GET /sync/v2/live` 是 idle，按本编号处理。
+2. 查日志是否出现 `live control deferred until local timer is idle`；出现即说明旧逻辑没有尝试接管，不要先去重装配对。
+3. 查 paired/enrolled 日志与 `deviceSync.enabled/liveControlEnabled`，确认不是凭据或开关问题。
+4. 若本机 paused，读 `focus_segments` 与 `pause_events`：最后一段 `ended_at` 可能为 null，open pause 的 `segment_id` 应指向它；交接种子必须用 pause 起点收口这一段。
+5. 交接只认 `ack.status=applied|duplicate` 且快照同 id；否则保留本机计时并退避重试，不要接受远端 idle。
+
+**修复与验收**
+
+- 协议：新增 `adopt` 动作与 `LiveFocusAdoptSeed`，严格校验 id、时间顺序、仅末段可 open、paused 的末段/末 pause 边界、任务三态。
+- 服务端：`adoptStoredLiveSession` 以 `serverTime-clientNow` 平移全部时间边界；同 id 重试幂等且不重写；偏差超过 7 天或时间线不自洽拒绝。
+- 客户端：`reloadConfiguration()` 对本机 running/paused 也发起初次快照；远端 idle 时发 adopt，确认后切换实时权威并删除本机活动行；远端已有别的会话或种子不自洽时返回 blocked，保留本机计时。
+- 回归：客户端 paused 交接用例断言上传的最后一段 `endedAt` 等于 open pause 起点；云端 paused adopt 用例断言 active 不增长、pause 随时间增长。
+- 真机验收：升级到包含 adopt 的 PC 构建后重启，观察日志出现 `local session handed off to live authority`，再用手机端确认同一 sessionId 与 state；只有当场看到才算通过。

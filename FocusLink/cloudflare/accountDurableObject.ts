@@ -114,6 +114,9 @@ import {
 } from './authorityObservation';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Adopting a PC session tolerates ordinary clock drift, not a forged multi-day timeline. */
+const LIVE_ADOPT_MAX_CLOCK_SKEW_MS = 7 * DAY_MS;
+const LIVE_ADOPT_MAX_DURATION_MS = 30 * DAY_MS;
 
 export interface WorkerEnv {
   FOCUSLINK_ACCOUNT: DurableObjectNamespace<FocusLinkAccount>;
@@ -3463,11 +3466,43 @@ export class FocusLinkAccount extends DurableObject<WorkerEnv> {
         return this.liveCommandResponse(ack, serverTime);
       }
 
+      const command = request.command;
+      if (command.action === 'adopt' && live.session?.id === command.sessionId) {
+        // A retry (or a crash between handoff and the local row deletion) must not rewrite the
+        // authority timeline. Return the live session as-is at its current revision.
+        const ack: LiveFocusCommandAck = {
+          commandId: command.commandId,
+          status: 'applied',
+          revision: live.revision,
+          errorCode: null,
+          completedEntityId: null,
+        };
+        this.insertLiveOperation(command.commandId, fingerprint, ack);
+        return this.liveCommandResponse(ack, serverTime);
+      }
+      if (command.action === 'adopt') {
+        const skewMs = Math.abs(serverTime - command.session.clientNow);
+        const durationMs = command.session.clientNow - command.session.startedAt;
+        const errorCode =
+          skewMs > LIVE_ADOPT_MAX_CLOCK_SKEW_MS
+            ? 'clock_skew'
+            : durationMs < 0 || durationMs > LIVE_ADOPT_MAX_DURATION_MS
+              ? 'invalid_timeline'
+              : null;
+        if (errorCode) {
+          const ack = liveRejectedAck(command.commandId, live.revision, errorCode);
+          this.insertLiveOperation(command.commandId, fingerprint, ack);
+          return this.liveCommandResponse(ack, serverTime);
+        }
+      }
+
       let session = live.session;
       let completedEntityId: string | null = null;
       // 取出为 const：闭包（如 segments.find 的回调）内不会丢失判别联合的收窄。
-      const command = request.command;
       switch (command.action) {
+        case 'adopt':
+          session = adoptStoredLiveSession(command, serverTime, request.deviceId);
+          break;
         case 'start':
           session = {
             id: command.sessionId,
@@ -4562,6 +4597,10 @@ export function validateLiveTransition(
     if (session) return 'active_session_exists';
     return existingEntity ? 'session_id_exists' : null;
   }
+  if (command.action === 'adopt') {
+    if (session) return session.id === command.sessionId ? null : 'active_session_exists';
+    return existingEntity ? 'session_id_exists' : null;
+  }
   if (!session) return 'no_active_session';
   if (session.id !== command.sessionId) return 'session_mismatch';
   if (command.action === 'pause') {
@@ -4614,6 +4653,44 @@ function materializeLive(
     lastCommandDeviceId: session.lastCommandDeviceId,
   };
   return { revision, state: session.state, session: snapshot };
+}
+
+function adoptStoredLiveSession(
+  command: Extract<LiveFocusCommand, { action: 'adopt' }>,
+  serverTime: number,
+  deviceId: string,
+): StoredLiveSession {
+  const seed = command.session;
+  const offsetMs = serverTime - seed.clientNow;
+  const shift = (timestamp: number): number => timestamp + offsetMs;
+  const segments: LiveFocusTimelineSegment[] = seed.segments.map((segment) => {
+    const next: LiveFocusTimelineSegment = {
+      id: segment.id,
+      startedAt: shift(segment.startedAt),
+      endedAt: segment.endedAt === null ? null : shift(segment.endedAt),
+    };
+    if (segment.task !== undefined) {
+      next.task = segment.task === null ? null : { ...segment.task };
+    }
+    return next;
+  });
+  const pauses: LiveFocusTimelinePause[] = seed.pauses.map((pause) => ({
+    id: pause.id,
+    segmentId: pause.segmentId,
+    startedAt: shift(pause.startedAt),
+    endedAt: pause.endedAt === null ? null : shift(pause.endedAt),
+  }));
+  return {
+    id: seed.id,
+    title: seed.title,
+    task: seed.task === null ? null : { ...seed.task },
+    state: seed.state,
+    startedAt: shift(seed.startedAt),
+    updatedAt: serverTime,
+    lastCommandDeviceId: deviceId,
+    segments,
+    pauses,
+  };
 }
 
 function makeLiveSegment(

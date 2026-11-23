@@ -19,6 +19,25 @@ const LIVE_FOCUS_START_COMMAND_KEYS = new Set([
   'task',
 ]);
 const LIVE_FOCUS_COMMAND_KEYS = new Set(['commandId', 'action', 'expectedRevision', 'sessionId']);
+const LIVE_FOCUS_ADOPT_COMMAND_KEYS = new Set([
+  'commandId',
+  'action',
+  'expectedRevision',
+  'sessionId',
+  'session',
+]);
+const LIVE_FOCUS_ADOPT_SEED_KEYS = new Set([
+  'id',
+  'title',
+  'state',
+  'startedAt',
+  'clientNow',
+  'segments',
+  'pauses',
+  'task',
+]);
+const LIVE_FOCUS_SEGMENT_KEYS = new Set(['id', 'startedAt', 'endedAt', 'task']);
+const LIVE_FOCUS_PAUSE_KEYS = new Set(['id', 'segmentId', 'startedAt', 'endedAt']);
 const LIVE_FOCUS_LINK_TASK_COMMAND_KEYS = new Set([
   'commandId',
   'action',
@@ -29,7 +48,8 @@ const LIVE_FOCUS_LINK_TASK_COMMAND_KEYS = new Set([
 ]);
 
 export type LiveFocusState = 'idle' | 'running' | 'paused';
-export type LiveFocusAction = 'start' | 'pause' | 'resume' | 'finish' | 'abort' | 'link-task';
+export type LiveFocusAction =
+  'start' | 'adopt' | 'pause' | 'resume' | 'finish' | 'abort' | 'link-task';
 
 interface LiveFocusCommandBase {
   commandId: string;
@@ -72,6 +92,27 @@ export interface LiveFocusTransitionCommand extends LiveFocusCommandBase {
   action: 'pause' | 'resume' | 'finish' | 'abort';
 }
 
+/**
+ * One already-running local session offered to the live authority. The authority adopts it as-is so
+ * the phone and the PC observe the same timeline instead of the PC staying a private local timer.
+ */
+export interface LiveFocusAdoptSeed {
+  id: string;
+  title: string | null;
+  state: Exclude<LiveFocusState, 'idle'>;
+  startedAt: number;
+  /** Client clock when the seed was captured; the authority uses it to remove clock skew. */
+  clientNow: number;
+  segments: LiveFocusTimelineSegment[];
+  pauses: LiveFocusTimelinePause[];
+  task: LiveFocusTaskContext | null;
+}
+
+export interface LiveFocusAdoptCommand extends LiveFocusCommandBase {
+  action: 'adopt';
+  session: LiveFocusAdoptSeed;
+}
+
 /** Relinks one timeline segment of the running session; null clears the override. */
 export interface LiveFocusLinkTaskCommand extends LiveFocusCommandBase {
   action: 'link-task';
@@ -80,7 +121,10 @@ export interface LiveFocusLinkTaskCommand extends LiveFocusCommandBase {
 }
 
 export type LiveFocusCommand =
-  LiveFocusStartCommand | LiveFocusTransitionCommand | LiveFocusLinkTaskCommand;
+  | LiveFocusStartCommand
+  | LiveFocusAdoptCommand
+  | LiveFocusTransitionCommand
+  | LiveFocusLinkTaskCommand;
 
 /**
  * Effective task of one live segment: an explicit segment override wins, including an explicit null
@@ -186,7 +230,9 @@ export function validateLiveFocusCommandRequest(value: unknown): LiveFocusComman
       ? LIVE_FOCUS_START_COMMAND_KEYS
       : action === 'link-task'
         ? LIVE_FOCUS_LINK_TASK_COMMAND_KEYS
-        : LIVE_FOCUS_COMMAND_KEYS;
+        : action === 'adopt'
+          ? LIVE_FOCUS_ADOPT_COMMAND_KEYS
+          : LIVE_FOCUS_COMMAND_KEYS;
   if (!hasOnlyKeys(command, allowedKeys)) {
     return invalid('command contains unsupported fields');
   }
@@ -210,6 +256,25 @@ export function validateLiveFocusCommandRequest(value: unknown): LiveFocusComman
           sessionId: command.sessionId,
           title: command.title,
           task: command.task ?? null,
+        },
+      },
+    };
+  }
+
+  if (action === 'adopt') {
+    const seed = parseLiveFocusAdoptSeed(command.session);
+    if (!seed || seed.id !== command.sessionId) return invalid('session is invalid');
+    return {
+      ok: true,
+      request: {
+        protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+        deviceId: value.deviceId,
+        command: {
+          commandId: command.commandId,
+          action,
+          expectedRevision: command.expectedRevision,
+          sessionId: command.sessionId,
+          session: seed,
         },
       },
     };
@@ -261,6 +326,7 @@ export function isLiveFocusRevision(value: unknown): value is number {
 function isLiveFocusAction(value: unknown): value is LiveFocusAction {
   return (
     value === 'start' ||
+    value === 'adopt' ||
     value === 'pause' ||
     value === 'resume' ||
     value === 'finish' ||
@@ -289,6 +355,112 @@ function isNullableTask(value: unknown): value is LiveFocusTaskContext | null {
 
 function isRevision(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
+function isTimestamp(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
+function isNullableTimestamp(value: unknown): value is number | null {
+  return value === null || isTimestamp(value);
+}
+
+/**
+ * Parses one PC timeline handed to the live authority. This is deliberately structural: the
+ * server does not trust elapsed counters, it recomputes them from the segment/pause boundaries.
+ * The only invariants enforced here are the ones that keep that recomputation well-defined.
+ */
+export function parseLiveFocusAdoptSeed(value: unknown): LiveFocusAdoptSeed | null {
+  if (!isRecord(value) || !hasOnlyKeys(value, LIVE_FOCUS_ADOPT_SEED_KEYS)) return null;
+  if (!isLiveFocusId(value.id)) return null;
+  if (!isNullableTitle(value.title)) return null;
+  if (value.state !== 'running' && value.state !== 'paused') return null;
+  if (!isTimestamp(value.startedAt) || !isTimestamp(value.clientNow)) return null;
+  if (value.clientNow < value.startedAt) return null;
+  const rawSegments = value.segments;
+  const rawPauses = value.pauses;
+  if (!Array.isArray(rawSegments) || rawSegments.length === 0) return null;
+  if (rawSegments.length > LIVE_FOCUS_MAX_TRANSITIONS) return null;
+  if (!Array.isArray(rawPauses) || rawPauses.length > LIVE_FOCUS_MAX_TRANSITIONS) return null;
+
+  const segments: LiveFocusTimelineSegment[] = [];
+  for (const raw of rawSegments) {
+    const segment = parseAdoptSegment(raw);
+    if (!segment) return null;
+    const previous = segments.at(-1);
+    if (previous) {
+      if (previous.endedAt === null) return null;
+      if (segment.startedAt < previous.endedAt) return null;
+    } else if (segment.startedAt < value.startedAt) {
+      return null;
+    }
+    segments.push(segment);
+  }
+  if (value.state === 'running' && segments.at(-1)?.endedAt !== null) return null;
+
+  const pauses: LiveFocusTimelinePause[] = [];
+  for (const raw of rawPauses) {
+    const pause = parseAdoptPause(raw);
+    if (!pause) return null;
+    const segment = segments.find((entry) => entry.id === pause.segmentId);
+    if (!segment) return null;
+    if (pause.startedAt < segment.startedAt) return null;
+    if (segment.endedAt !== null && pause.startedAt > segment.endedAt) return null;
+    const previous = pauses.at(-1);
+    if (previous) {
+      if (previous.endedAt === null) return null;
+      if (pause.startedAt < previous.endedAt) return null;
+    }
+    pauses.push(pause);
+  }
+  if (value.state === 'running' && pauses.some((pause) => pause.endedAt === null)) return null;
+  const lastSegment = segments.at(-1);
+  const lastPause = pauses.at(-1);
+  if (value.state === 'paused') {
+    if (lastSegment?.endedAt === null) return null;
+    if (!lastPause || lastPause.endedAt !== null) return null;
+    if (lastPause.segmentId !== lastSegment?.id) return null;
+    if (lastPause.startedAt !== lastSegment.endedAt) return null;
+  }
+  if (value.task !== null && !isNullableTask(value.task)) return null;
+  return {
+    id: value.id,
+    title: value.title,
+    state: value.state,
+    startedAt: value.startedAt,
+    clientNow: value.clientNow,
+    segments,
+    pauses,
+    task: value.task === null ? null : { ...value.task },
+  };
+}
+
+function parseAdoptSegment(value: unknown): LiveFocusTimelineSegment | null {
+  if (!isRecord(value) || !hasOnlyKeys(value, LIVE_FOCUS_SEGMENT_KEYS)) return null;
+  if (!isLiveFocusId(value.id)) return null;
+  if (!isTimestamp(value.startedAt) || !isNullableTimestamp(value.endedAt)) return null;
+  if (value.endedAt !== null && value.endedAt < value.startedAt) return null;
+  if (value.task !== undefined && !isNullableTask(value.task)) return null;
+  const segment: LiveFocusTimelineSegment = {
+    id: value.id,
+    startedAt: value.startedAt,
+    endedAt: value.endedAt,
+  };
+  if (value.task !== undefined) segment.task = value.task === null ? null : { ...value.task };
+  return segment;
+}
+
+function parseAdoptPause(value: unknown): LiveFocusTimelinePause | null {
+  if (!isRecord(value) || !hasOnlyKeys(value, LIVE_FOCUS_PAUSE_KEYS)) return null;
+  if (!isLiveFocusId(value.id) || !isLiveFocusId(value.segmentId)) return null;
+  if (!isTimestamp(value.startedAt) || !isNullableTimestamp(value.endedAt)) return null;
+  if (value.endedAt !== null && value.endedAt < value.startedAt) return null;
+  return {
+    id: value.id,
+    segmentId: value.segmentId,
+    startedAt: value.startedAt,
+    endedAt: value.endedAt,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

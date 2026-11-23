@@ -71,6 +71,9 @@ import type {
 
 const STORE_FORMAT = 'focuslink-device-sync-test-v1' as const;
 const CURSOR_FORMAT = 'v1';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const LIVE_ADOPT_MAX_CLOCK_SKEW_MS = 7 * DAY_MS;
+const LIVE_ADOPT_MAX_DURATION_MS = 30 * DAY_MS;
 
 interface StoredEntity {
   revision: number;
@@ -671,6 +674,33 @@ function applyLiveCommand(
     return { ack, dirty: true, revisionChanged: false };
   }
 
+  if (command.action === 'adopt' && account.live.session?.id === command.sessionId) {
+    const ack: LiveFocusCommandAck = {
+      commandId: command.commandId,
+      status: 'applied',
+      revision: account.live.revision,
+      errorCode: null,
+      completedEntityId: null,
+    };
+    account.live.operations.set(command.commandId, { fingerprint, ack: { ...ack } });
+    return { ack, dirty: true, revisionChanged: false };
+  }
+  if (command.action === 'adopt') {
+    const skewMs = Math.abs(serverTime - command.session.clientNow);
+    const durationMs = command.session.clientNow - command.session.startedAt;
+    const errorCode =
+      skewMs > LIVE_ADOPT_MAX_CLOCK_SKEW_MS
+        ? 'clock_skew'
+        : durationMs < 0 || durationMs > LIVE_ADOPT_MAX_DURATION_MS
+          ? 'invalid_timeline'
+          : null;
+    if (errorCode) {
+      const ack = liveRejectedAck(command.commandId, account.live.revision, errorCode);
+      account.live.operations.set(command.commandId, { fingerprint, ack: { ...ack } });
+      return { ack, dirty: true, revisionChanged: false };
+    }
+  }
+
   if (account.live.revision >= Number.MAX_SAFE_INTEGER) {
     const ack = liveRejectedAck(command.commandId, account.live.revision, 'revision_exhausted');
     account.live.operations.set(command.commandId, { fingerprint, ack: { ...ack } });
@@ -679,6 +709,10 @@ function applyLiveCommand(
 
   let completedEntityId: string | null = null;
   switch (command.action) {
+    case 'adopt': {
+      account.live.session = adoptStoredLiveSession(command, serverTime, deviceId);
+      break;
+    }
     case 'start': {
       account.live.session = {
         id: command.sessionId,
@@ -739,15 +773,19 @@ function applyLiveCommand(
     case 'finish':
     case 'abort': {
       const session = requireLiveSession(account);
-      closeLivePhase(session, serverTime);
-      session.updatedAt = serverTime;
-      session.lastCommandDeviceId = deviceId;
-      const bundle = buildCompletedLiveBundle(
-        session,
-        command.action === 'finish' ? 'finished' : 'aborted',
-        serverTime,
-      );
-      publishLiveBundle(account, deviceId, bundle);
+      // 同 id 账本已存在说明这个活动态只是未收口的残留；重复发布会 409，
+      // 这里和 DO 一样只清 live，不重写既有账本。
+      if (!account.entities.has(session.id)) {
+        closeLivePhase(session, serverTime);
+        session.updatedAt = serverTime;
+        session.lastCommandDeviceId = deviceId;
+        const bundle = buildCompletedLiveBundle(
+          session,
+          command.action === 'finish' ? 'finished' : 'aborted',
+          serverTime,
+        );
+        publishLiveBundle(account, deviceId, bundle);
+      }
       completedEntityId = session.id;
       account.live.session = null;
       break;
@@ -773,6 +811,10 @@ function validateLiveTransition(account: AccountState, command: LiveFocusCommand
     if (account.entities.has(command.sessionId)) return 'session_id_exists';
     return null;
   }
+  if (command.action === 'adopt') {
+    if (session) return session.id === command.sessionId ? null : 'active_session_exists';
+    return account.entities.has(command.sessionId) ? 'session_id_exists' : null;
+  }
   if (!session) return 'no_active_session';
   if (session.id !== command.sessionId) return 'session_mismatch';
 
@@ -791,7 +833,6 @@ function validateLiveTransition(account: AccountState, command: LiveFocusCommand
         : 'segment_not_found';
     case 'finish':
     case 'abort':
-      if (account.entities.has(session.id)) return 'session_id_exists';
       return null;
   }
 }
@@ -816,6 +857,44 @@ function requireLiveSession(account: AccountState): StoredLiveSession {
     throw new DeviceSyncCloudStoreError('store_corrupt', 'live command lost its active session');
   }
   return session;
+}
+
+function adoptStoredLiveSession(
+  command: Extract<LiveFocusCommand, { action: 'adopt' }>,
+  serverTime: number,
+  deviceId: string,
+): StoredLiveSession {
+  const seed = command.session;
+  const offsetMs = serverTime - seed.clientNow;
+  const shift = (timestamp: number): number => timestamp + offsetMs;
+  const segments: StoredLiveSegment[] = seed.segments.map((segment) => {
+    const next: StoredLiveSegment = {
+      id: segment.id,
+      startedAt: shift(segment.startedAt),
+      endedAt: segment.endedAt === null ? null : shift(segment.endedAt),
+    };
+    if (segment.task !== undefined) {
+      next.task = segment.task === null ? null : { ...segment.task };
+    }
+    return next;
+  });
+  const pauses: StoredLivePause[] = seed.pauses.map((pause) => ({
+    id: pause.id,
+    segmentId: pause.segmentId,
+    startedAt: shift(pause.startedAt),
+    endedAt: pause.endedAt === null ? null : shift(pause.endedAt),
+  }));
+  return {
+    id: seed.id,
+    title: seed.title,
+    task: seed.task === null ? null : { ...seed.task },
+    state: seed.state,
+    startedAt: shift(seed.startedAt),
+    updatedAt: serverTime,
+    lastCommandDeviceId: deviceId,
+    segments,
+    pauses,
+  };
 }
 
 function makeLiveSegment(sessionId: string, index: number, startedAt: number): StoredLiveSegment {

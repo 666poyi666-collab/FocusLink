@@ -1478,9 +1478,15 @@ app.whenReady().then(async () => {
   automationService = startAutomationService(timer);
   // 安装版自带 focuslink 命令：写一层转发别名，装完即可在任意目录使用。
   ensureCliAlias(path.dirname(app.getPath('exe')));
-  foxlinkBusinessApi = startFoxlinkBusinessApi(timer, automationService, {
-    automationDirectory: path.join(app.getPath('userData'), 'automation'),
-  });
+  // 隔离实例（UI 冒烟、并行开发）与已安装实例共用 127.0.0.1:18770 时会 EADDRINUSE，
+  // 旧行为还会把整个进程带崩。只读冒烟不需要业务 API，用显式开关跳过监听。
+  if (process.env['FOXLINK_DISABLE_BUSINESS_API'] === '1') {
+    logger.info('main', 'business API disabled by FOXLINK_DISABLE_BUSINESS_API');
+  } else {
+    foxlinkBusinessApi = startFoxlinkBusinessApi(timer, automationService, {
+      automationDirectory: path.join(app.getPath('userData'), 'automation'),
+    });
+  }
 
   mainWindow = createMainWindow();
 
