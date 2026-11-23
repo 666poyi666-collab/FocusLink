@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { APP_VERSION } from '@shared/version';
 
 import { AppNavigation, type MobileView } from './AppNavigation';
+import { useViewTransition } from './useViewTransition';
 import { isMobileForegroundActive } from './backgroundPolicy';
 import { resolveMobileDisplaySnapshot } from './localFocusPresentation';
 import {
@@ -352,6 +353,8 @@ export function MobileApp() {
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [nativeReadinessEpoch, setNativeReadinessEpoch] = useState(0);
   const [activeView, setActiveView] = useState<MobileView>('focus');
+  // 切页走原生 View Transitions：合成器交叉淡入，React 只在回调里换内容，任务页继续常驻。
+  const changeView = useViewTransition(activeView, (next) => setActiveView(next as MobileView));
   // 任务页一旦打开过就常驻，切走只隐藏，避免每次回来都重建列表、丢掉搜索与展开状态。
   const [taskPageMounted, setTaskPageMounted] = useState(false);
   useEffect(() => {
@@ -3297,7 +3300,7 @@ export function MobileApp() {
             </button>
           </div>
         )}
-        <AppNavigation activeView={activeView} onChange={setActiveView} />
+        <AppNavigation activeView={activeView} onChange={changeView} />
         <main className="mobile-main">
           {/* 切页不做入场动画：320ms 的淡入 + 位移会被读成"又在重新加载"。
               页面之间应当像系统标签页一样瞬时切换。 */}

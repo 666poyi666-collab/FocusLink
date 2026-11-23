@@ -356,7 +356,14 @@ function TaskRow({
             </span>
           ) : null}
         </button>
-        {hasChildren ? <ListTree className="tt-subtasks-icon" aria-hidden="true" /> : null}
+        <span className="tt-row-meta">
+          {hasChildren ? <ListTree className="tt-subtasks-icon" aria-hidden="true" /> : null}
+          {due ? (
+            <span className="tt-row-due" data-overdue={due.overdue}>
+              {due.text}
+            </span>
+          ) : null}
+        </span>
         {completionState && completionState !== 'synced' ? (
           <span
             className="tt-row-status"
@@ -365,11 +372,6 @@ function TaskRow({
             aria-live="polite"
           >
             {completionState === 'pending' ? '待同步' : '同步失败'}
-          </span>
-        ) : null}
-        {due ? (
-          <span className="tt-row-due" data-overdue={due.overdue}>
-            {due.text}
           </span>
         ) : null}
         {hasChildren && !selectMode ? (
@@ -596,6 +598,16 @@ export function TickTickTaskPage({
     visibleTaskIds.length > 0 && visibleTaskIds.every((id) => selection.has(id));
   const searching = trimmedQuery !== '';
   const searchEmpty = searching && activeGroups.length === 0;
+  /** 筛选芯片上的数量：直接数当前清单的快照行，不另算一次森林。 */
+  const statusCounts = useMemo(() => {
+    let open = 0;
+    let done = 0;
+    for (const task of displayTasks) {
+      if (task.isCompleted) done += 1;
+      else open += 1;
+    }
+    return { open, done };
+  }, [displayTasks]);
 
   // 搜索或切清单之后，选中项收缩到当前可见范围：计数永远等于看得见的行。
   useEffect(() => {
@@ -997,6 +1009,10 @@ export function TickTickTaskPage({
           key={node.id}
           className="tt-node"
           data-exit={heldCompletions[node.id]?.phase === 'exiting'}
+          data-depth={
+            node.hiddenAncestorTitles?.length ? Math.min(Math.max(depth, 1), 2) : Math.min(depth, 2)
+          }
+          data-branch={node.children.length > 0 && !collapsed.has(node.id) ? 'true' : undefined}
           data-promoted={node.hiddenAncestorTitles?.length ? 'true' : undefined}
         >
           <div className="tt-node-collapse">
@@ -1112,6 +1128,28 @@ export function TickTickTaskPage({
             </button>
           ) : null}
         </div>
+        <div className="tt-filter-row" role="group" aria-label="任务状态筛选">
+          <button
+            type="button"
+            className="tt-chip"
+            data-active={!showCompleted}
+            aria-pressed={!showCompleted}
+            onClick={() => setShowCompleted(false)}
+          >
+            待办
+            <span className="tt-chip-count">{statusCounts.open}</span>
+          </button>
+          <button
+            type="button"
+            className="tt-chip"
+            data-active={showCompleted}
+            aria-pressed={showCompleted}
+            onClick={() => setShowCompleted(true)}
+          >
+            已完成
+            <span className="tt-chip-count">{statusCounts.done}</span>
+          </button>
+        </div>
         {searchEmpty ? (
           <div className="tt-empty">
             <p>没有匹配的任务</p>
@@ -1121,20 +1159,22 @@ export function TickTickTaskPage({
           </div>
         ) : activeGroups.length === 0 ? (
           <div className="tt-empty">
-            <p>还没有任务</p>
-            <p className="tt-empty-hint">点右下角的加号，写下第一件事</p>
+            <p>{showCompleted ? '还没有已完成的任务' : '还没有任务'}</p>
+            <p className="tt-empty-hint">
+              {showCompleted ? '完成一件事之后，它会出现在这里' : '点右下角的加号，写下第一件事'}
+            </p>
           </div>
         ) : (
           activeGroups.map((group) => (
-            <div key={group.key} className="tt-group">
+            <section key={group.key} className="tt-group tt-group-card">
               {projectFilter === ALL_PROJECTS ? (
                 <p className="tt-group-title">
-                  {group.name}
+                  <span className="tt-group-name">{group.name}</span>
                   <span className="tt-group-count">{group.tasks.length}</span>
                 </p>
               ) : null}
-              {renderNodes(group.tasks, 0)}
-            </div>
+              <div className="tt-group-rows">{renderNodes(group.tasks, 0)}</div>
+            </section>
           ))
         )}
       </div>

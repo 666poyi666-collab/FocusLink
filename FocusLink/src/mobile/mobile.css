@@ -8503,4 +8503,160 @@ html[data-runtime='mobile-focus'] .app-navigation button.is-active span {
   font-weight: 600;
 }
 
+/* ===== 任务页视觉重做（v1.11.1）：筛选芯片 + 分组卡片 + 层级引导线 ===== */
+html[data-runtime='mobile-focus'] .tt-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 4px;
+}
+
+html[data-runtime='mobile-focus'] .tt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0.5px solid var(--tt-hairline);
+  border-radius: 15px;
+  background: none;
+  color: var(--tt-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+html[data-runtime='mobile-focus'] .tt-chip[data-active='true'] {
+  border-color: transparent;
+  background: rgb(var(--app-accent, 97 127 222) / 0.12);
+  color: var(--tt-accent);
+  font-weight: 600;
+}
+
+html[data-runtime='mobile-focus'] .tt-chip:active {
+  opacity: 0.7;
+}
+
+html[data-runtime='mobile-focus'] .tt-chip-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* 分组从“一条分隔线”改成“一张卡片”：清单名在卡片外做抬头，行在卡片内成组。 */
+html[data-runtime='mobile-focus'] .tt-group + .tt-group {
+  margin-top: 10px;
+}
+
+html[data-runtime='mobile-focus'] .tt-group-title {
+  justify-content: space-between;
+  padding: 12px 18px 6px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+html[data-runtime='mobile-focus'] .tt-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-runtime='mobile-focus'] .tt-group-rows {
+  margin: 0 12px;
+  border: 0.5px solid var(--tt-hairline);
+  border-radius: 14px;
+  background: var(--tt-sheet);
+  overflow: hidden;
+}
+
+/* 行间分隔线只画在同一个列表里，卡片的圆角不会被行背景切掉。 */
+html[data-runtime='mobile-focus'] .tt-row-shell + .tt-row-shell {
+  border-top: 0.5px solid var(--tt-hairline);
+}
+
+/* 层级引导线：父任务有展开的子任务时，从父行下方连一条竖线贯穿整个子树。 */
+html[data-runtime='mobile-focus'] .tt-node-content {
+  position: relative;
+}
+
+html[data-runtime='mobile-focus']
+  .tt-node[data-branch='true']
+  > .tt-node-collapse
+  > .tt-node-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 31px;
+  width: 1px;
+  background: var(--tt-hairline);
+  pointer-events: none;
+}
+
+html[data-runtime='mobile-focus']
+  .tt-node[data-depth='1'][data-branch='true']
+  > .tt-node-collapse
+  > .tt-node-content::before {
+  left: 63px;
+}
+
+/* 行尾信息区：子任务图标与日期收进同一块，右侧不再各占一列。 */
+html[data-runtime='mobile-focus'] .tt-row-meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-runtime='mobile-focus'] .tt-row-meta:empty {
+  display: none;
+}
+
+/* ===== 视图切换过渡（v1.11.1）：合成器交叉淡入，主线程只换内容 ===== */
+html[data-runtime='mobile-focus'] .mobile-workspace {
+  view-transition-name: mobile-workspace;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(mobile-workspace) {
+    animation: fl-vt-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
+  ::view-transition-new(mobile-workspace) {
+    animation: fl-vt-in 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes fl-vt-out {
+  to {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+}
+
+@keyframes fl-vt-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
 /* ===== END SECTION: TASKS-TICKTICK ===== */
