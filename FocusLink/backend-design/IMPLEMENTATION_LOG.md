@@ -30,7 +30,7 @@ P2 打包版实时断网 E2E 仍受 canonical 端点固定策略阻断 — 自�
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1593 用例全绿；dist、verify:packaged、Windows 静默覆盖安装回读与 release:verify 在发布记录提交回填。
+format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1593 用例全绿；`npm run dist` exit 0，`verify:packaged` PASS（页面就绪 8677ms，version=1.11.2 commit=0457362）；Windows 静默覆盖安装 exit 0，回读 DisplayVersion/FileVersion 均为 1.11.2，`smoke:window-visible:launch` exit 0；`release:verify` 21/21；Android debug APK 1.11.2/1387 已构建备份但按 PC-only 指令未装机。
 
 ## 2026-11-23 · `FL-SYNC-20261123-LIVE-OFFLINE-LOCALIZE`：实时权威断网时本地收尾、同步队列退避/熔断/死信、PC 去冗余动效（v1.11.1）
 

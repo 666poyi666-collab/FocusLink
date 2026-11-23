@@ -2,11 +2,11 @@
 
 > 发布日期：2026-11-23
 >
-> 对应提交：`PENDING`
+> 对应提交：`0457362`
 >
 > 发布类型：候选补丁
 >
-> 验证状态：源码门禁与 Windows 安装回读通过（PC-only 轮次；Android 仅构建同版本备份，不装机）
+> 验证状态：源码门禁、打包自检、Windows 静默覆盖安装回读与主窗口可见性冒烟通过（PC-only 轮次；Android 仅构建同版本备份，不装机）
 
 ## 主要变化
 
@@ -17,7 +17,8 @@
 ## 验证
 
 - 源码门禁：`format:check` / `typecheck` / `lint` exit 0；`npm test` **184 文件 / 1593 用例全绿**。
-- 打包启动自检与 Windows 静默覆盖安装回读：安装完成后回填。
+- 打包启动自检 `verify:packaged` PASS：portable 页面就绪 8677ms，`version=1.11.2`、`commit=0457362`，实例已回收。
+- Windows 静默覆盖安装：安装器 exit 0，回读 HKCU `DisplayVersion=1.11.2`、安装目录 `FocusLink.exe` `FileVersion=1.11.2`；`smoke:window-visible:launch` exit 0（主窗口可见，pid 29272 进程树已回收）。
 - Android：仅构建同版本 debug APK 备份，未执行 `adb install`（用户 2026-11-21 指令：只负责开发 PC）。
 
 ## 升级提示
@@ -35,7 +36,7 @@
 
 | 文件 | SHA256 |
 | --- | --- |
-| `FocusLink-1.11.2-x64.exe` | `PENDING` |
-| `FocusLink-1.11.2-x64-portable.exe` | `PENDING` |
+| `FocusLink-1.11.2-x64.exe` | `7cf48f4d666381caed33fc7c13520ab42fc85bf94aa7fe865df938232c833867` |
+| `FocusLink-1.11.2-x64-portable.exe` | `d6e90806578845c0dcdd07f2c074f055b08bd0031fb9fbf1d5ba7043f6132c1f` |
 
 同时提供 `SHA256SUMS.txt`。
