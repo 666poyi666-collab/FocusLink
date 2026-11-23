@@ -5878,6 +5878,123 @@ html[data-runtime='mobile-focus'] .dashboard-view .dashboard-more:not([open]) > 
   display: none;
 }
 
+/* ===== 统计看板重做（v1.11.1）：卡片分区 + 连续天数 + 今天高亮 ===== */
+
+html[data-runtime='mobile-focus'] .dashboard-view .dash-streak {
+  display: flex;
+  align-items: baseline;
+  gap: var(--m-2);
+  margin: var(--m-2) 0 0;
+  color: var(--m-accent);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dash-streak[data-active='false'] {
+  color: var(--m-muted);
+  font-weight: 500;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dash-streak-hint {
+  color: var(--m-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 三块读数：并排数字改成三张同高卡片 */
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-summary.dash-metrics {
+  display: grid;
+  gap: var(--m-2);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dash-metrics .dashboard-summary-item {
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 0;
+  padding: 12px 12px 10px;
+  border: 1px solid rgb(var(--app-border) / 0.6);
+  border-radius: 14px;
+  background: rgb(var(--app-surface));
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dash-metrics .dashboard-summary-item > strong {
+  font-size: 22px;
+  line-height: 26px;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dash-metrics .dashboard-summary-item > span {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* 分区：发丝线改成可辨识面板，标题和内容成一个整体 */
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band {
+  margin: 0;
+  padding: 14px 14px 12px;
+  border: 1px solid rgb(var(--app-border) / 0.6);
+  border-radius: 16px;
+  background: rgb(var(--app-surface));
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band.dashboard-trend,
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band.dashboard-hours {
+  border-top: 1px solid rgb(var(--app-border) / 0.6);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .dashboard-band .dashboard-group-label {
+  margin: 0 0 10px;
+  color: var(--m-text);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* 每日专注：柱子更粗更圆，今天整列高亮，换天时柱高有过渡 */
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend {
+  height: 128px;
+  gap: 6px;
+  border-bottom: 0;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button {
+  gap: 6px;
+  border-radius: 10px;
+  transition: background-color 140ms ease;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button.is-today {
+  background: rgb(var(--app-accent) / 0.08);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-bar > i.focus {
+  width: 22px;
+  border-radius: 7px 7px 3px 3px;
+  transition: height 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button > small {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button.is-today > small {
+  color: var(--m-text);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-trend > button,
+  html[data-runtime='mobile-focus'] .dashboard-view .daily-ledger-bar > i.focus {
+    transition: none;
+  }
+}
+
 /* ===== END SECTION: INSIGHTS ===== */
 
 /* ===== SECTION: SETTINGS (owner: t-settings) ===== */

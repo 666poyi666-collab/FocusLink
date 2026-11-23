@@ -145,6 +145,26 @@ export function DashboardView({
     (longest, record) => Math.max(longest, Math.max(0, record.bundle.session.activeElapsedMs)),
     0,
   );
+  // 连续专注天数：从今天（今天还没专注就从昨天）往回数，遇到没专注的日期停下。
+  // 只数本机已有账本，不猜、不补，避免把没开应用的日子算成连续。
+  const focusStreak = useMemo(() => {
+    const focusedDays = new Set<string>();
+    for (const record of records) {
+      const session = record.bundle.session;
+      if (session.status !== 'finished') continue;
+      if (Math.max(0, session.activeElapsedMs) <= 0) continue;
+      focusedDays.add(dayKey(session.startedAt));
+    }
+    if (focusedDays.size === 0) return 0;
+    let cursor = dayKey(referenceNow);
+    if (!focusedDays.has(cursor)) cursor = shiftDayKey(cursor, -1);
+    let streak = 0;
+    while (focusedDays.has(cursor)) {
+      streak += 1;
+      cursor = shiftDayKey(cursor, -1);
+    }
+    return streak;
+  }, [records, referenceNow]);
   const recentSessions = finishedRecords.slice(0, 6).map((record) => ({
     key: record.entityId,
     startedAt: record.bundle.session.startedAt,
@@ -291,9 +311,15 @@ export function DashboardView({
                 <strong className="dashboard-primary-value">
                   {formatDurationText(dashboardFocus)}
                 </strong>
+                <p className="dash-streak" data-active={focusStreak > 0}>
+                  {focusStreak > 0 ? `连续专注 ${focusStreak} 天` : '连续专注 0 天'}
+                  <span className="dash-streak-hint">
+                    {focusStreak > 1 ? '每天都在记，别断' : '今天开始第一段'}
+                  </span>
+                </p>
               </section>
 
-              <div className="dashboard-summary" aria-label="专注摘要">
+              <div className="dashboard-summary dash-metrics" aria-label="专注摘要">
                 <div className="dashboard-summary-item">
                   <strong>{sessionCount}</strong>
                   <span>专注次数</span>
@@ -318,6 +344,7 @@ export function DashboardView({
                 <DailyLedgerTrend
                   ledgers={weeklyAnalytics.dayLedgers}
                   selectedDate={selectedDate}
+                  referenceNow={referenceNow}
                   onSelect={(date) =>
                     setSelectedDate((current) => (current === date ? null : date))
                   }
@@ -508,12 +535,15 @@ function AnalyticsHeading({ id, title, detail }: { id: string; title: string; de
 function DailyLedgerTrend({
   ledgers,
   selectedDate,
+  referenceNow,
   onSelect,
 }: {
   ledgers: readonly DayLedgerAnalytics[];
   selectedDate: string | null;
+  referenceNow: number;
   onSelect: (date: string) => void;
 }) {
+  const todayKey = dayKey(referenceNow);
   const max = Math.max(
     1,
     ...ledgers.map((ledger) => ledger.totals.focusMs + ledger.totals.estimatedFocusMs),
@@ -528,6 +558,7 @@ function DailyLedgerTrend({
         const tone = [
           focus > 0 ? 'has-focus' : 'is-empty',
           focus > 0 && focus === max ? 'is-max' : '',
+          ledger.date === todayKey ? 'is-today' : '',
           selected ? 'is-selected' : '',
         ]
           .filter(Boolean)
@@ -1124,6 +1155,13 @@ function dayKey(timestamp: number): string {
     String(date.getMonth() + 1).padStart(2, '0'),
     String(date.getDate()).padStart(2, '0'),
   ].join('-');
+}
+
+/** 在本地时区把 YYYY-MM-DD 平移若干天；不碰 UTC，避免跨时区日期漂移。 */
+function shiftDayKey(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const shifted = new Date(year, month - 1, day + days, 12, 0, 0, 0);
+  return dayKey(shifted.getTime());
 }
 
 function formatClock(timestamp: number): string {
