@@ -213,11 +213,29 @@ export class TimerManager {
         createdAt: startedAt,
         updatedAt: now,
       };
+      // 断线期间服务端快照不再更新，界面却一直按 lastTick 外推显示。接管时若直接抄
+      // snapshot.activeElapsedMs，结束兜底就会把"最后一份快照的时间"当成总时长，
+      // 50+ 分钟的专注只剩二十几分钟。这里按与 shared/focus/selectors 完全相同的口径
+      // 补齐 now - lastTick 的增量，并封顶到本机真实跨度（扣除暂停），保证落账值不
+      // 超过用户实际经历的时间。
+      const liveDelta = snapshot.state === 'running' ? Math.max(0, now - snapshot.lastTick) : 0;
+      const openPauseMs =
+        snapshot.state === 'paused' && snapshot.currentPauseStartedAt
+          ? Math.max(0, now - snapshot.currentPauseStartedAt)
+          : 0;
+      const wallNow = Math.max(0, now - startedAt);
+      const activeCap = Math.max(
+        Math.max(0, wallNow - Math.max(0, snapshot.pauseElapsedMs) - openPauseMs),
+        Math.max(0, snapshot.activeElapsedMs),
+      );
+      const activeNow = Math.min(Math.max(0, snapshot.activeElapsedMs) + liveDelta, activeCap);
+      const activeDelta = Math.max(0, activeNow - Math.max(0, snapshot.activeElapsedMs));
+
       base.status = 'active';
       base.endedAt = null;
-      base.activeElapsedMs = Math.max(0, snapshot.activeElapsedMs);
+      base.activeElapsedMs = activeNow;
       base.pauseElapsedMs = Math.max(0, snapshot.pauseElapsedMs);
-      base.wallElapsedMs = Math.max(0, snapshot.wallElapsedMs);
+      base.wallElapsedMs = Math.max(base.wallElapsedMs, wallNow);
       base.defaultTaskId = snapshot.sessionDefaultTaskId;
       base.defaultTaskSource =
         snapshot.segments.find((segment) => segment.taskId === snapshot.sessionDefaultTaskId)
@@ -231,6 +249,7 @@ export class TimerManager {
       const knownSegments = new Set(listSegments(sessionId).map((segment) => segment.id));
       for (const segment of snapshot.segments) {
         if (knownSegments.has(segment.id)) continue;
+        const isOpenSegment = segment.endedAt === null;
         insertSegment({
           id: segment.id,
           sessionId,
@@ -239,7 +258,7 @@ export class TimerManager {
           title: segment.title ?? segment.taskTitle,
           startedAt: segment.startedAt,
           endedAt: segment.endedAt,
-          activeElapsedMs: Math.max(0, segment.activeElapsedMs),
+          activeElapsedMs: Math.max(0, segment.activeElapsedMs) + (isOpenSegment ? activeDelta : 0),
           note: null,
           cloudFocusId: null,
           tomatodoSubject: null,

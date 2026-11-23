@@ -213,4 +213,52 @@ describe('实时专注断网兜底', () => {
     expect(memDb.sessions).toHaveLength(0);
     expect((controller as any).liveMode).toBe(true);
   });
+
+  it('接管断线快照时补齐 lastTick 之后的运行时长，不把冻结快照当总时长', () => {
+    const now = Date.now();
+    const startedAt = now - 58.5 * 60_000;
+    const snapshot = {
+      state: 'running' as const,
+      sessionId: REMOTE_SESSION_ID,
+      currentSegmentId: REMOTE_SEGMENT_ID,
+      currentTaskId: null,
+      currentTaskTitle: null,
+      currentTaskSource: null,
+      sessionDefaultTaskId: null,
+      sessionDefaultTaskTitle: null,
+      activeElapsedMs: 21.5 * 60_000,
+      pauseElapsedMs: 0,
+      wallElapsedMs: 21.5 * 60_000,
+      currentPauseStartedAt: null,
+      segments: [
+        {
+          id: REMOTE_SEGMENT_ID,
+          taskId: null,
+          taskTitle: null,
+          taskSource: null,
+          title: null,
+          startedAt,
+          endedAt: null,
+          activeElapsedMs: 21.5 * 60_000,
+        },
+      ],
+      pauseEvents: [],
+      // 最后一份实时快照停在 37 分钟前；界面一直靠 lastTick 外推显示 58.5 分钟
+      lastTick: now - 37 * 60_000,
+    };
+
+    expect(timer.adoptFromSnapshot(snapshot)).toBe(true);
+    const finished = timer.stop();
+
+    expect(finished.sessionId).toBe(REMOTE_SESSION_ID);
+    expect(finished.state).toBe('finished');
+    expect(memDb.sessions).toHaveLength(1);
+    expect(memDb.segments).toHaveLength(1);
+    // 21.5 分钟快照 + 37 分钟断线增量，封顶到真实跨度 58.5 分钟
+    expect(memDb.sessions[0].activeElapsedMs).toBeGreaterThanOrEqual(58.5 * 60_000);
+    expect(memDb.sessions[0].activeElapsedMs).toBeLessThan(58.5 * 60_000 + 1_500);
+    expect(memDb.sessions[0].pauseElapsedMs).toBe(0);
+    // session 与 segment 必须同口径，统计页求和不能再退回 21.5 分钟
+    expect(memDb.segments[0].activeElapsedMs).toBe(memDb.sessions[0].activeElapsedMs);
+  });
 });

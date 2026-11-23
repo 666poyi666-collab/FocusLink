@@ -802,6 +802,12 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 任务行「开始专注」快捷胶囊（`.row-focus-chip`）：默认 `opacity: 0` + `translate: 4px 0` + `pointer-events: none`，行 `:hover` / `:focus-within` 时 140ms（`--dur-micro` + `--ease-out-expo`）渐显并接管指针；`:active` 下沉 1px；强调底 `rgb(var(--app-accent) / 0.18)`。已完成行与编辑态不渲染该按钮（`TaskWorkspace.tsx`）。键盘路径由 `:focus-within` 覆盖，与第 7 节「hover/焦点渐显 140ms」一致。
 - 清理：删除 `stats-workbench.css` 两处从未定义的 `pulseRing` 死引用；`.meta-pill` 的 `transition: all` 收窄为 `background-color / color`，避免主题切换时无关属性跟着过渡。
 
+## v1.11.2 断线接管后的时长显示与真实跨度一致（2026-11-23）
+
+- 显示口径不变：历史与统计仍读取 `focus_sessions.activeElapsedMs` 与 `focus_segments.activeElapsedMs`；问题不在渲染层，而在实时断线后这两个值停在了最后一次快照。
+- 修复后，结束专注时落账的专注时长会覆盖整段自然跨度（扣除暂停），历史卡、今日汇总、7/30 天统计与分段明细重新同口径；界面上不再出现「跨度 58 分钟、专注 21 分钟」的自相矛盾。
+- 无新增视觉元素、无动效参数变化；`prefers-reduced-motion` 与全部键盘路径不受影响。
+
 ## v1.11.1 PC 断网可用与动效收束（2026-11-23）
 
 - 实时同步模式下的暂停/继续/结束不再被网络卡死：传输失败（超时、401/403）时先把远端快照接管为本机账本（沿用远端 session/segment id，重连后同 id 收口），再执行本地操作；HTTP 409 等语义拒绝仍原样上抛（`electron/timer/focusTimerController.ts:137-201`、`electron/timer/manager.ts:183`）。

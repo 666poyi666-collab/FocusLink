@@ -1,5 +1,37 @@
 # FocusLink 实施日志
 
+## 2026-11-23 · `FL-SYNC-20261123-LIVE-ADOPT-DURATION`：实时断线接管补齐时长，修「58 分钟专注只记 21 分钟」（v1.11.2）
+
+**结论**
+
+用户报告一场约 58 分钟的专注在最近记录里只显示 21 分钟。根因是实时模式断线后快照时长冻结，结束时 `adoptFromSnapshot` 直接抄冻结值落账，而自然跨度仍按真实时间计算。本轮在接管时补齐 `lastTick` 之后的运行增量并同步到未结束分段，受影响会话已按真实跨度修正，回归测试与门禁见下。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 受影响会话 `db19414b-e91e-4e08-8198-64e294689a1b`：修复前 `active_elapsed_ms=1,263,330`（21.05 分钟）、`pause_elapsed_ms=0`、`wall_elapsed_ms=3,513,747`（58.56 分钟），唯一 segment 的 active 同为 1,263,330 | 本机 `focuslink.db` 查询（`.tmp/dbcheck.cjs`） | 实测 |
+| ② | 日志显示 01:39:17Z 起 `[liveFocus] live connection lost` 并退避重试；02:17:37Z 结束专注时走 `live command unavailable; continuing on local ledger` → `adopted live session into local ledger` → `stopped {activeMs:1263330, pauseMs:0, wallMs:3513747}` | `C:/Users/16408/AppData/Roaming/FocusLink/logs/focuslink-2026-11-23.log` | 实测 |
+| ③ | 旧实现直接写 `base.activeElapsedMs = snapshot.activeElapsedMs`，`lastTick` 设为当前时间，随后 `recover()` 只累加 1ms，因此断线期间的 37 分钟从未进入账本 | `electron/timer/manager.ts:183-279`（修复前）、`:97-172` | 实测 |
+| ④ | 新实现：`liveDelta = state==='running' ? max(0, now - snapshot.lastTick) : 0`；`activeCap = max(wallNow - pause - openPause, snapshot.activeElapsedMs)`；`activeNow = min(snapshot.activeElapsedMs + liveDelta, activeCap)`，并把 `activeDelta` 加到 `endedAt === null` 的 segment | `electron/timer/manager.ts:195-236`、`:256-266` | 实测 |
+| ⑤ | 新增回归用例：running 快照 `startedAt=now-58.5min`、`active=21.5min`、`lastTick=now-37min`，接管后结束，断言会话 active 落在 58.5 分钟区间、pause=0、分段之和与会话完全相等；`npx vitest run tests/timerLiveOfflineFallback.test.ts` → 3 passed | `tests/timerLiveOfflineFallback.test.ts` 新增第 3 例 | 实测 |
+| ⑥ | 用户记录已修：会话与唯一 segment 的 `active_elapsed_ms` 均改为 3,513,747；改前备份 6,119,424B 到 `.tmp/focuslink-before-db19414b-2026-11-23T02-26-15-682Z.db` | `.tmp/repair-db19414b.cjs` 执行并回读 | 实测 |
+| ⑦ | 全库近 30 场扫描：只有 `db19414b` 存在 active+pause 与 wall 的 2,250,417ms 大缺口；`8cbfaa5a` 的 9,662ms 缺口是 active=0、pause=12,702,830 的旧会话，与本 bug 无关，未动 | `.tmp/dbcheck.cjs` | 实测 |
+
+**问题**
+
+P0 实时断线期间专注时长不落账 — 用户按真实时间专注 58 分钟，历史与统计只认 21 分钟，长期会低估全部专注产出 — 事实①②③
+P1 结束兜底只保证「能结束」，没有校验「时长是否覆盖自然跨度」 — 同类断线（睡眠、代理切换、网络切换）都会重复产生短记账 — 事实③
+P2 打包版实时断网 E2E 仍受 canonical 端点固定策略阻断 — 自动化只能覆盖真实 TimerManager + 真实控制器 + 内存库层 — 见 `FL-SYNC-20261123-LIVE-OFFLINE-LOCALIZE` 问题 P2
+
+**处置**
+
+接管远端快照时把「快照时长」升级为「快照时长 + 断线增量」，上限取自然跨度减暂停，避免本机与服务端时钟偏移把时长算超；增量同时落到未结束分段，杜绝会话已修正但分段仍是旧值的双口径。用户已产生的错账用一次性脚本修正并备份，不做批量重算，避免动到历史正常会话。后续同类问题若再出现，优先核对 `wall_elapsed_ms` 与 `active+pause` 的差值。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 184 文件 / 1593 用例全绿；dist、verify:packaged、Windows 静默覆盖安装回读与 release:verify 在发布记录提交回填。
+
 ## 2026-11-23 · `FL-SYNC-20261123-LIVE-OFFLINE-LOCALIZE`：实时权威断网时本地收尾、同步队列退避/熔断/死信、PC 去冗余动效（v1.11.1）
 
 **结论**
