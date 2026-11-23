@@ -18,15 +18,11 @@
  * Icon.tsx 的 hover prop 会挂上 .icon-hover；光晕用 drop-shadow 沿图标轮廓发光，
  * 颜色取 --app-accent（α = 0.18，触顶约束上限），属于微交互档 140ms。 */
 .icon-hover {
-  transition:
-    transform var(--dur-micro, 120ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    filter var(--dur-micro, 120ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-  will-change: transform;
+  transition: transform var(--dur-micro, 120ms) var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .icon-hover:hover {
-  transform: scale(1.12);
-  filter: drop-shadow(0 0 5px rgb(var(--app-accent) / 0.18));
+  transform: scale(1.04);
 }
 
 /* ---------- reduced-motion 降级：完全静态，无位移无光晕 ----------

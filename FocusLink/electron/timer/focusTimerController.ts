@@ -8,6 +8,7 @@ import {
   LIVE_FOCUS_WAIT_PATH,
   type LiveFocusAction,
   type LiveFocusCommand,
+  type LiveFocusCommandResponse,
   type LiveFocusSnapshot,
   type LiveFocusSnapshotResponse,
   type LiveFocusTaskContext,
@@ -58,6 +59,8 @@ export class FocusTimerController {
   private liveConnectionKey: string | null = null;
   private pendingCommand: { key: string; promise: Promise<TimerSnapshot> } | null = null;
   private completionTimer: NodeJS.Timeout | null = null;
+  /** 断网接管过的远端会话 id：重连时用它把远端残留的活动会话收口，避免幽灵计时器。 */
+  private localizedSessionId: string | null = null;
 
   constructor(private readonly local: TimerManager) {
     this.snapshot = local.getSnapshot();
@@ -130,21 +133,25 @@ export class FocusTimerController {
         return this.fallbackToLocalStart(error, () => this.local.toggle());
       }
     }
-    if (this.snapshot.state === 'running') return this.send('pause');
-    if (this.snapshot.state === 'paused') return this.send('resume');
+    if (this.snapshot.state === 'running') {
+      return this.sendOrLocalize('pause', () => this.local.pause());
+    }
+    if (this.snapshot.state === 'paused') {
+      return this.sendOrLocalize('resume', () => this.local.resume());
+    }
     return this.snapshot;
   }
 
   async pause(): Promise<TimerSnapshot> {
-    return this.isLiveEnabled() ? this.send('pause') : this.local.pause();
+    return this.sendOrLocalize('pause', () => this.local.pause());
   }
 
   async resume(): Promise<TimerSnapshot> {
-    return this.isLiveEnabled() ? this.send('resume') : this.local.resume();
+    return this.sendOrLocalize('resume', () => this.local.resume());
   }
 
   async stop(): Promise<TimerSnapshot> {
-    return this.isLiveEnabled() ? this.send('finish') : this.local.stop();
+    return this.sendOrLocalize('finish', () => this.local.stop());
   }
 
   /**
@@ -152,7 +159,7 @@ export class FocusTimerController {
    * 仍走 stop 收尾，由调用方把账本状态标为 aborted。
    */
   async abortActive(): Promise<TimerSnapshot> {
-    return this.isLiveEnabled() ? this.send('abort') : this.local.stop();
+    return this.sendOrLocalize('abort', () => this.local.stop());
   }
 
   async reset(): Promise<TimerSnapshot> {
@@ -160,9 +167,74 @@ export class FocusTimerController {
       this.isLiveEnabled() &&
       (this.snapshot.state === 'running' || this.snapshot.state === 'paused')
     ) {
-      return this.send('abort');
+      return this.sendOrLocalize('abort', () => this.local.stop());
     }
     return this.isLiveEnabled() ? this.snapshot : this.local.reset();
+  }
+
+  /**
+   * 实时命令的本地兜底边界。只有"服务不可达"这一类失败才允许降级到本机账本；
+   * 语义拒绝（revision 冲突、云端无活动会话、鉴权被拒）必须原样上抛，
+   * 否则会把真正的状态冲突伪装成操作成功。
+   */
+  private async sendOrLocalize(
+    action: LiveFocusAction,
+    localAction: () => TimerSnapshot,
+  ): Promise<TimerSnapshot> {
+    if (!this.isLiveEnabled()) return localAction();
+    try {
+      return await this.send(action);
+    } catch (error) {
+      return this.localizeLiveSession(error, action, localAction);
+    }
+  }
+
+  /**
+   * 实时权威失联时，把它最后一份快照接管成本机账本再执行用户动作。
+   * 接管沿用远端 id，重连后是同 id upsert，不会产生重复账本行。
+   */
+  private localizeLiveSession(
+    error: unknown,
+    action: LiveFocusAction,
+    localAction: () => TimerSnapshot,
+  ): TimerSnapshot {
+    if (!canLocalizeActiveLiveSession(error)) throw error;
+    const liveSessionId = this.snapshot.sessionId;
+    // 账本接管是能力边界而不是必成动作：实现缺席或拒绝接管时保留原始错误，
+    // 让调用方看到真正的失联原因，而不是被一个实现细节替换掉。
+    let adopted = false;
+    try {
+      adopted =
+        typeof this.local.adoptFromSnapshot === 'function' &&
+        this.local.adoptFromSnapshot(this.snapshot);
+    } catch (adoptError) {
+      logger.warn('liveFocus', 'local fallback adopt threw', {
+        action,
+        error: adoptError instanceof Error ? adoptError.message : String(adoptError),
+      });
+    }
+    if (!adopted) {
+      logger.warn('liveFocus', 'local fallback unavailable: nothing adoptable', {
+        action,
+        liveState: this.snapshot.state,
+      });
+      throw error;
+    }
+    // 先掐掉长轮询与重连，再切事实源：否则一条迟到的远端快照会把刚接管的本机状态盖掉。
+    this.generation += 1;
+    this.stopLiveLoop();
+    this.liveMode = false;
+    this.pendingCommand = null;
+    this.localizedSessionId = liveSessionId;
+    this.markLiveDisconnected();
+    logger.warn('liveFocus', 'live command unavailable; continuing on local ledger', {
+      action,
+      sessionId: liveSessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    const next = localAction();
+    this.publish(this.local.getSnapshot());
+    return next;
   }
 
   async startWithTask(
@@ -383,9 +455,12 @@ export class FocusTimerController {
         return;
       }
       this.abortController = null;
+      // 断网接管过的会话：重连时如果远端还挂着活动态，用本机账本收口远端，避免幽灵计时器。
+      const reconciled = await this.reconcileLocalizedSession(initial, connection);
+      if (generation !== this.generation || !this.isCurrentConnection(connection)) return;
       // Do not advertise live mode until the initial response has passed `accept`. If protocol
       // validation fails, the desktop remains on the local fact source and can still start.
-      this.accept(initial);
+      this.accept(reconciled);
       this.liveMode = true;
       this.reconnectAttempt = 0;
       while (generation === this.generation && getDeviceSyncRuntimeConnection()) {
@@ -505,6 +580,57 @@ export class FocusTimerController {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
+  }
+
+  /**
+   * 离线接管过的会话在重连时收口。本机已经结束过它而远端仍是活动态，就以本机为准下 abort；
+   * 远端已经结束或已换成别的会话则只清标记，不发任何写命令。
+   */
+  private async reconcileLocalizedSession(
+    response: LiveFocusSnapshotResponse,
+    connection: { endpoint: string; accessToken: string; deviceId: string },
+  ): Promise<LiveFocusSnapshotResponse> {
+    const sessionId = this.localizedSessionId;
+    if (!sessionId) return response;
+    if (response.snapshot.state === 'idle' || response.snapshot.session?.id !== sessionId) {
+      this.localizedSessionId = null;
+      return response;
+    }
+    try {
+      const command: LiveFocusCommand = {
+        commandId: crypto.randomUUID(),
+        expectedRevision: response.snapshot.revision,
+        sessionId,
+        action: 'abort',
+      };
+      const acked = (await (
+        await this.request(LIVE_FOCUS_COMMAND_PATH, connection, {
+          method: 'POST',
+          body: JSON.stringify({
+            protocolVersion: LIVE_FOCUS_PROTOCOL_VERSION,
+            deviceId: connection.deviceId,
+            command,
+          }),
+        })
+      ).json()) as LiveFocusCommandResponse;
+      if (acked.ack.status !== 'applied' && acked.ack.status !== 'duplicate') {
+        logger.warn('liveFocus', 'stale remote session reconcile rejected', {
+          sessionId,
+          code: acked.ack.errorCode,
+        });
+        return response;
+      }
+      this.localizedSessionId = null;
+      logger.warn('liveFocus', 'stale remote session closed after offline finish', { sessionId });
+      return acked;
+    } catch (error) {
+      // 保留标记，下一次重连再试。
+      logger.warn('liveFocus', 'stale remote session reconcile deferred', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return response;
+    }
   }
 
   private nextReconnectDelay(): number {
@@ -729,6 +855,17 @@ function isLocalStartFallbackFailure(error: unknown): boolean {
     isTransportFailure(error) ||
     (error instanceof LiveFocusHttpError && (error.status === 401 || error.status === 403))
   );
+}
+
+/**
+ * 能不能把一条进行中的实时会话降级到本机账本。
+ * - 传输层失败 / 控制请求超时：服务不可达或结果未知，本地接管是唯一可行路径。
+ * - 401/403：凭据被拒，实时通道对本机不可用，用户在断网态也必须能结束专注。
+ * - 其它（HTTP 4xx 语义拒绝、ack conflict/rejected）保持上抛，让冲突可见。
+ */
+function canLocalizeActiveLiveSession(error: unknown): boolean {
+  if (isLocalStartFallbackFailure(error)) return true;
+  return error instanceof Error && /实时同步请求超时/.test(error.message);
 }
 
 function idleSnapshot(now: number): TimerSnapshot {

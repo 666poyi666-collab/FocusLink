@@ -171,6 +171,113 @@ export class TimerManager {
     this.emit();
   }
 
+  /**
+   * 断网接管实时会话：实时权威不可达时，把它最后一份快照落成本机真实账本行，
+   * 让计时器在本机继续可暂停/继续/结束，而不是把用户锁死在"操作尚未确认"上。
+   *
+   * 不变量：sessionId / segmentId / pauseId 全部沿用远端 id。远端恢复后同一份会话
+   * 再同步下来是同 id 的 upsert，不会产生重复账本行；重复调用同样幂等。
+   *
+   * @returns 是否接管成功。本机已有别的活动会话时拒绝接管，绝不覆盖本机账本。
+   */
+  adoptFromSnapshot(snapshot: TimerSnapshot): boolean {
+    if (!snapshot.sessionId) return false;
+    if (snapshot.state !== 'running' && snapshot.state !== 'paused') return false;
+    const sessionId = snapshot.sessionId;
+    const active = getActiveSession();
+    if (active && active.id !== sessionId) {
+      logger.warn('timer', 'adopt rejected: another local session is active', {
+        localSessionId: active.id,
+        remoteSessionId: sessionId,
+      });
+      return false;
+    }
+    if (!active) {
+      const now = Date.now();
+      const prior = getSession(sessionId);
+      const startedAt =
+        snapshot.segments[0]?.startedAt ?? now - Math.max(0, snapshot.wallElapsedMs);
+      const base: FocusSession = prior ?? {
+        id: sessionId,
+        title: null,
+        status: 'active',
+        startedAt,
+        endedAt: null,
+        activeElapsedMs: 0,
+        pauseElapsedMs: 0,
+        wallElapsedMs: 0,
+        defaultTaskId: null,
+        defaultTaskSource: null,
+        defaultTaskTitle: null,
+        note: null,
+        createdAt: startedAt,
+        updatedAt: now,
+      };
+      base.status = 'active';
+      base.endedAt = null;
+      base.activeElapsedMs = Math.max(0, snapshot.activeElapsedMs);
+      base.pauseElapsedMs = Math.max(0, snapshot.pauseElapsedMs);
+      base.wallElapsedMs = Math.max(0, snapshot.wallElapsedMs);
+      base.defaultTaskId = snapshot.sessionDefaultTaskId;
+      base.defaultTaskSource =
+        snapshot.segments.find((segment) => segment.taskId === snapshot.sessionDefaultTaskId)
+          ?.taskSource ?? null;
+      base.defaultTaskTitle = snapshot.sessionDefaultTaskTitle;
+      base.title = base.title ?? snapshot.sessionDefaultTaskTitle;
+      base.updatedAt = now;
+      if (prior) updateSession(base);
+      else insertSession(base);
+
+      const knownSegments = new Set(listSegments(sessionId).map((segment) => segment.id));
+      for (const segment of snapshot.segments) {
+        if (knownSegments.has(segment.id)) continue;
+        insertSegment({
+          id: segment.id,
+          sessionId,
+          taskId: segment.taskId,
+          taskSource: segment.taskSource,
+          title: segment.title ?? segment.taskTitle,
+          startedAt: segment.startedAt,
+          endedAt: segment.endedAt,
+          activeElapsedMs: Math.max(0, segment.activeElapsedMs),
+          note: null,
+          cloudFocusId: null,
+          tomatodoSubject: null,
+          createdAt: segment.startedAt,
+          updatedAt: now,
+        });
+      }
+
+      const knownPauses = new Set(listPauses(sessionId).map((pause) => pause.id));
+      for (const pause of snapshot.pauseEvents) {
+        if (knownPauses.has(pause.id)) continue;
+        insertPause({
+          id: pause.id,
+          sessionId,
+          segmentId: pause.segmentId,
+          pauseStartedAt: pause.pauseStartedAt,
+          pauseEndedAt: pause.pauseEndedAt,
+          durationMs: Math.max(0, pause.durationMs),
+          reason: null,
+          createdAt: pause.pauseStartedAt,
+          updatedAt: now,
+        });
+      }
+
+      setMeta(META_LAST_TICK, String(now));
+      setMeta(META_LAST_STATE, snapshot.state);
+      setMeta(META_LAST_SEGMENT, snapshot.currentSegmentId ?? '');
+    }
+    this.recover();
+    logger.warn('timer', 'adopted live session into local ledger', {
+      sessionId,
+      state: snapshot.state,
+      segments: snapshot.segments.length,
+      pauses: snapshot.pauseEvents.length,
+    });
+    return true;
+  }
+
   // ============ 状态转换 ============
 
   toggle(): TimerSnapshot {

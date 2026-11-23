@@ -91,26 +91,6 @@
     box-shadow var(--dur-base) var(--ease-standard);
 }
 
-.font-profile-choice::before,
-.instrument-choice::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    140% 110% at 50% -20%,
-    rgb(var(--app-accent) / 0.14),
-    transparent 65%
-  );
-  opacity: 0;
-  transition: opacity var(--dur-base) var(--ease-out-expo);
-  pointer-events: none;
-}
-
-.font-profile-choice:hover::before,
-.instrument-choice:hover::before {
-  opacity: 1;
-}
-
 .font-profile-choice.preview-noto-serif .fp-sample {
   font-family: 'Noto Serif SC Variable', serif;
 }

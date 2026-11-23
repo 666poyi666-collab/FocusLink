@@ -63,18 +63,6 @@
 .window-controls button {
   position: relative;
 }
-.window-controls button:not(.window-close)::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(closest-side, rgb(var(--app-accent) / 0.14), transparent 75%);
-  opacity: 0;
-  transition: opacity var(--dur-micro) var(--ease-standard);
-  pointer-events: none;
-}
-.window-controls button:not(.window-close):hover::after {
-  opacity: 1;
-}
 /* 窗口控制按钮 hover 底色/图标色：140ms 微交互节奏 */
 .window-controls button {
   transition:

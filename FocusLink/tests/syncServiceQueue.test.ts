@@ -357,19 +357,54 @@ describe('sync queue rate limiting and batching', () => {
 
   it('still exhausts the retry budget for ordinary permanent failures', async () => {
     const [item] = addPendingItems(1);
-    harness.createFocusRecord.mockRejectedValue(new Error('network down'));
-    const { runPending } = await loadSyncService();
+    harness.createFocusRecord.mockRejectedValue(new Error('HTTP 400 Bad Request'));
+    const { runPendingNow } = await loadSyncService();
 
-    await expect(runPending()).resolves.toEqual({ processed: 1, succeeded: 0, failed: 1 });
-    expect(item.retryCount).toBe(1);
-    for (let attempt = 2; attempt <= 5; attempt++) {
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(item.retryCount).toBe(attempt);
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      await expect(runPendingNow()).resolves.toEqual({ processed: 1, succeeded: 0, failed: 1 });
+      if (attempt < 5) expect(item.retryCount).toBe(attempt);
     }
 
     expect(item.status).toBe('failed');
-    expect(item.lastError).toBe('network down');
+    expect(item.lastError).toBe('[dead-letter] HTTP 400 Bad Request');
     expect(harness.createFocusRecord).toHaveBeenCalledTimes(5);
+  });
+
+  it('never dead-letters a transport failure, however long the outage lasts', async () => {
+    const [item] = addPendingItems(1);
+    harness.createFocusRecord.mockRejectedValue(new Error('fetch failed'));
+    const { runPendingNow } = await loadSyncService();
+
+    // 每次都是一轮强制重试：熔断/退避窗口被清零，只看“是否死信”这一不变量。
+    for (let round = 1; round <= 8; round++) {
+      await expect(runPendingNow()).resolves.toEqual({ processed: 1, succeeded: 0, failed: 1 });
+      expect(item.retryCount).toBe(0);
+      expect(item.status).toBe('pending');
+      expect(item.lastError).toContain(`[retry:${round}]`);
+    }
+
+    harness.createFocusRecord.mockResolvedValue('focus-id');
+    await expect(runPendingNow()).resolves.toEqual({ processed: 1, succeeded: 1, failed: 0 });
+    expect(item).toMatchObject({ status: 'synced', retryCount: 0, lastError: null });
+  });
+
+  it('spreads retries with a deterministic jitter inside the exponential window', async () => {
+    const { getRetryDelayMs } = await loadSyncService();
+    const base = 30_000;
+
+    for (const attempt of [1, 2, 3]) {
+      const ceiling = base * 2 ** (attempt - 1);
+      const first = getRetryDelayMs('queue-1', attempt);
+      expect(first).toBe(getRetryDelayMs('queue-1', attempt));
+      expect(first).toBeGreaterThanOrEqual(ceiling / 2);
+      expect(first).toBeLessThanOrEqual(ceiling);
+    }
+
+    const distinct = new Set(
+      Array.from({ length: 24 }, (_, index) => getRetryDelayMs(`queue-${index}`, 2)),
+    );
+    expect(distinct.size).toBeGreaterThan(8);
+    expect(getRetryDelayMs('queue-1', 40)).toBeLessThanOrEqual(30 * 60_000);
   });
 
   it('reactivates failed items so a manual retry can process them again', async () => {

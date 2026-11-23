@@ -87,19 +87,6 @@
   position: relative;
 }
 
-.motion-glow-accent::before,
-.motion-glow-success::before,
-.motion-glow-pause::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(closest-side, rgb(var(--motion-glow-color) / 0.16), transparent 72%);
-  opacity: 1;
-  pointer-events: none;
-  z-index: 0;
-}
-
 /* ---------- 一次性扫光（重挂类名可重新触发） ---------- */
 @keyframes motion-sweep {
   from {
@@ -151,12 +138,5 @@
   .motion-sweep::after {
     animation: none;
     opacity: 0;
-  }
-
-  .motion-glow-accent::before,
-  .motion-glow-success::before,
-  .motion-glow-pause::before {
-    /* 辉光本身不含运动，保留静态呈现 */
-    opacity: 1;
   }
 }

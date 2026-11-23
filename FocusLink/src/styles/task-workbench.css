@@ -575,7 +575,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: grid;
   place-items: center;
   color: var(--text-tertiary);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .btn-add-section:hover {
   background: var(--bg-hover);
@@ -776,7 +781,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   font-size: 12px;
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .btn-tool:hover {
   background: var(--bg-hover);
@@ -855,6 +865,10 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
     box-shadow var(--dur-base, 200ms) var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
   position: relative;
   contain: layout paint style;
+  /* 视口外的行不参与排版与绘制；高度是固定 42px，intrinsic-size 与之对齐，
+     滚动条长度与拖拽落点不受影响。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 42px;
   cursor: pointer;
   /* 行间不再画分割线：每行本身是圆角卡片，悬停/选中态负责分隔。
      改为 2px 间距，保持扫描节奏但不出现横向边界。 */
@@ -1303,7 +1317,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: grid;
   place-items: center;
   color: var(--text-tertiary);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .btn-close-detail:hover {
   background: var(--bg-hover);
@@ -1381,7 +1400,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-primary);
   background: var(--bg-hover);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s ease;
   max-width: 68%;
   min-width: 0;
 }
@@ -1447,7 +1471,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   font-size: 11px;
   color: var(--text-tertiary);
   border: 1px dashed var(--border-subtle);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
   display: inline-flex;
   align-items: center;
 }
@@ -1578,7 +1607,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   place-items: center;
   color: var(--text-tertiary);
   opacity: 0;
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .btn-del-subtask:hover {
   color: var(--prio-p1);
@@ -1693,7 +1727,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   border-radius: 4px;
   background: var(--check-bg);
   opacity: 0.65;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   position: relative;
   display: flex;
@@ -1744,7 +1783,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-secondary);
   flex: none;
   border: 1px solid var(--border-subtle);
-  transition: all 0.15s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s;
 }
 .f-node-chip:hover {
   border-color: var(--check-border);
@@ -1791,13 +1835,17 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.15s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s;
   white-space: nowrap;
   cursor: pointer;
 }
 .btn-action-focus:hover {
   opacity: 0.92;
-  transform: translateY(-1px);
 }
 .btn-action-focus svg {
   width: 13px;
@@ -1825,7 +1873,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: flex;
   align-items: center;
   gap: 5px;
-  transition: all 0.15s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s;
   white-space: nowrap;
 }
 .btn-action-done:hover {
@@ -1867,7 +1920,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-tertiary);
   display: grid;
   place-items: center;
-  transition: all 0.15s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s;
   flex: none;
 }
 .btn-action-del:hover {
@@ -1929,7 +1987,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-tertiary);
   display: grid;
   place-items: center;
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .tab-btn.active {
   background: var(--bg-card);
@@ -1949,7 +2012,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   font-size: 11.5px;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .shortcut-chip:hover {
   background: var(--accent-soft);
@@ -1978,7 +2046,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   display: grid;
   place-items: center;
   color: var(--text-tertiary);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .cal-nav-btn:hover {
   background: var(--bg-hover);
@@ -2012,7 +2085,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-primary);
   cursor: pointer;
   position: relative;
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
 }
 .cal-day:hover {
   background: var(--bg-hover);
@@ -2315,7 +2393,7 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   background: var(--accent-soft);
 }
 .ctx-menu-item[aria-checked='true']::after {
-  content: '¹3';
+  content: '✓';
   font-size: 12px;
   font-weight: 700;
   color: var(--accent);
@@ -2372,7 +2450,12 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   place-items: center;
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
   background: var(--bg-hover);
   cursor: pointer;
 }
@@ -2454,16 +2537,14 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
 .grid-color-btn:hover {
-  transform: scale(1.12);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transform: scale(1.06);
 }
 
 /* 模态弹窗遮罩 (用于新建自定义智能视图) */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.52);
   z-index: 2000;
   display: none;
   place-items: center;
@@ -2535,10 +2616,11 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .task-workspace-root {
   /* 衬线档：用产品自带的 Noto Serif SC（打包分片见 dist/assets） */
   --font-ui-serif: 'Noto Serif SC Variable', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif;
-  /* 密度档（v1.11.0，PROPOSAL_V1110 §2.4）：标准=舒适呼吸行高，紧凑=高信息密度 */
-  --row-h: 56px;
-  --row-pad-x: 16px;
-  --subtask-h: 40px;
+  /* 密度档：标准 48px 保持可点面积又不显松散；紧凑 40px 接近传统列表；
+     relaxed 58px 给触控/大字模式。行高只吃令牌，不在这里写死。 */
+  --row-h: 48px;
+  --row-pad-x: 14px;
+  --subtask-h: 34px;
   --list-head-pad-y: 8px;
   --list-head-h: 32px;
 }
@@ -2548,17 +2630,17 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 }
 
 .task-workspace-root[data-density='compact'] {
-  --row-h: 44px;
+  --row-h: 40px;
   --row-pad-x: 12px;
-  --subtask-h: 32px;
+  --subtask-h: 30px;
   --list-head-pad-y: 4px;
   --list-head-h: 24px;
 }
 
 .task-workspace-root[data-density='relaxed'] {
-  --row-h: 64px;
-  --row-pad-x: 20px;
-  --subtask-h: 48px;
+  --row-h: 58px;
+  --row-pad-x: 18px;
+  --subtask-h: 42px;
   --list-head-pad-y: 10px;
   --list-head-h: 36px;
 }

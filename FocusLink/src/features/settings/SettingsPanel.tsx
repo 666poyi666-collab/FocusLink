@@ -196,6 +196,28 @@ export function SettingsPanel() {
   // captureKey 清理函数 ref：组件卸载时若仍在捕获，需移除全局监听
   const captureCleanupRef = useRef<(() => void) | null>(null);
 
+  /* 9 台真实仪表同步挂载会把设置页首帧变成 300ms 级长任务。先渲染等高空壳，
+     浏览器空闲（最多 900ms）后再补真机，布局不跳动，首帧立刻可交互。 */
+  const [instrumentPreviewsReady, setInstrumentPreviewsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let idleHandle: number | null = null;
+    let timeoutHandle: number | null = null;
+    const show = () => {
+      if (!cancelled) setInstrumentPreviewsReady(true);
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(show, { timeout: 900 });
+    } else {
+      timeoutHandle = window.setTimeout(show, 160);
+    }
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null) window.cancelIdleCallback(idleHandle);
+      if (timeoutHandle !== null) window.clearTimeout(timeoutHandle);
+    };
+  }, []);
+
   // 组件卸载时清理 captureKey 的全局监听，防止泄漏
   useEffect(() => {
     return () => {
@@ -872,7 +894,7 @@ export function SettingsPanel() {
                 >
                   <span className="ic-name">{style.label}</span>
                   <span className="ic-preview">
-                    <InstrumentPreview style={style.id} />
+                    {instrumentPreviewsReady ? <InstrumentPreview style={style.id} /> : null}
                   </span>
                   <span className="ic-note">{style.note}</span>
                 </button>

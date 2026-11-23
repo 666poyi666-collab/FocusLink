@@ -395,7 +395,12 @@ button {
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
-  transition: all 0.12s;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s;
   user-select: none;
 }
 .btn-tool:hover {
@@ -1091,7 +1096,12 @@ button {
   flex-direction: column;
   gap: 2px;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s ease;
 }
 .period-cap-card:hover {
   border-color: var(--border-strong);
@@ -1178,7 +1188,12 @@ button {
   border-radius: var(--r-md);
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
-  transition: all 0.15s ease;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s ease;
   cursor: pointer;
   width: 100%;
   box-sizing: border-box;
@@ -1186,8 +1201,6 @@ button {
 .alloc-row:hover {
   background: var(--bg-card);
   border-color: var(--border-default);
-  transform: translateY(-1px) translateX(2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 .alloc-row-main {
   width: 100%;
@@ -1265,10 +1278,8 @@ button {
   overflow: hidden;
 }
 .task-rank-card:hover {
-  transform: translateY(-1.5px) translateX(2px);
   background: var(--bg-card);
   border-color: var(--border-default);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 }
 .tr-top-row {
   display: flex;
@@ -1584,7 +1595,7 @@ button {
     0 2px 6px rgba(37, 99, 235, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
   transition:
-    height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.15s ease;
 }
 .bar-seg-pause {
@@ -1598,7 +1609,7 @@ button {
   width: 100%;
   border-radius: 3px 3px 0 0;
   margin-bottom: 1px;
-  transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: height 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .bar-empty-dot {
   width: 3px;
@@ -1616,9 +1627,7 @@ button {
   white-space: nowrap;
 }
 .bar-col:hover .bar-seg-focus {
-  transform: scaleY(1.04) translateY(-2px);
-  filter: brightness(1.15);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
+  transform: scaleY(1.02);
 }
 
 .bar-col::before {
@@ -1725,7 +1734,12 @@ button {
   border-radius: var(--r-md);
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
-  transition: all 0.15s ease;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s ease;
   cursor: pointer;
   width: 100%;
   box-sizing: border-box;
@@ -1733,8 +1747,6 @@ button {
 .alloc-row:hover {
   background: var(--bg-card);
   border-color: var(--border-default);
-  transform: translateY(-1px) translateX(2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 .alloc-row-main {
   width: 100%;
@@ -1814,10 +1826,8 @@ button {
   width: 100%;
 }
 .task-rank-card:hover {
-  transform: translateY(-1.5px) translateX(2px);
   background: var(--bg-card);
   border-color: var(--border-default);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 }
 .tr-top-row {
   display: flex;
@@ -1972,17 +1982,18 @@ button {
   padding: 10px 12px;
   cursor: pointer;
   transition:
-    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.18s ease,
     border-color 0.18s ease,
-    background 0.18s ease;
+    background-color 0.18s ease;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* 168 天范围会出现几百张卡片；视口外的卡片不参与排版与绘制，
+     高度用实测缓存（auto），滚动条长度不会因此失真。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
 }
 .session-card:hover {
   border-color: var(--border-default);
-  transform: translateX(2px);
 }
 .session-card.active {
   border-color: var(--accent);
@@ -2225,7 +2236,12 @@ button {
   border-radius: 50%;
   background: var(--border-subtle);
   margin-bottom: 2px;
-  transition: all 0.15s ease;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.15s ease;
 }
 .bar-col:hover .bar-empty-dot {
   background: var(--accent);
@@ -2240,7 +2256,7 @@ button {
     0 2px 6px rgba(37, 99, 235, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
   transition:
-    height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.15s ease !important;
 }
 .bar-seg-pause {
@@ -2254,12 +2270,10 @@ button {
   width: 100% !important;
   border-radius: 3px 3px 0 0 !important;
   margin-bottom: 1px !important;
-  transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition: height 0.5s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 .bar-col:hover .bar-seg-focus {
-  transform: scaleY(1.04) translateY(-2px) !important;
-  filter: brightness(1.15) !important;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45) !important;
+  transform: scaleY(1.02) !important;
 }
 
 /* ── 12 周心流活动矩阵 (GitHub-Style Heatmap) ── */
@@ -2286,9 +2300,7 @@ button {
     box-shadow 0.14s ease !important;
 }
 .hm-cell:hover {
-  transform: scale(1.3) !important;
-  filter: brightness(1.15) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  transform: scale(1.14) !important;
   z-index: 10 !important;
 }
 .hm-legend-row {
@@ -2370,9 +2382,7 @@ button {
     box-shadow 0.12s ease;
 }
 .hm-cell:hover {
-  transform: scale(1.3);
-  filter: brightness(1.15);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: scale(1.14);
   z-index: 10;
 }
 .hm-legend-row {
@@ -2516,13 +2526,17 @@ html:not([data-skin]) .card-widget:hover {
   font-weight: 500 !important;
   color: var(--text-secondary) !important;
   cursor: pointer !important;
-  transition: all 0.12s ease !important;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s ease !important;
   user-select: none !important;
 }
 .ctx-menu-item:hover {
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
-  transform: translateX(2px) !important;
 }
 .ctx-menu-item[aria-checked='true'] {
   color: var(--accent) !important;
@@ -2636,13 +2650,17 @@ html:not([data-skin]) .card-widget:hover {
   font-weight: 500 !important;
   color: var(--text-secondary) !important;
   cursor: pointer !important;
-  transition: all 0.12s ease !important;
+  transition:
+    background-color,
+    border-color,
+    color,
+    opacity,
+    transform 0.12s ease !important;
   user-select: none !important;
 }
 .ctx-menu-item:hover {
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
-  transform: translateX(2px) !important;
 }
 .ctx-menu-item[aria-checked='true'] {
   color: var(--accent) !important;
@@ -2680,6 +2698,35 @@ html:not([data-skin]) .card-widget:hover {
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
+.ctx-menu-item .ctx-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  min-width: 0 !important;
+}
+.ctx-menu-item .ctx-swatch {
+  width: 10px !important;
+  height: 10px !important;
+  flex: none !important;
+  border-radius: 50% !important;
+  border: 1px solid rgb(var(--app-text) / 0.3) !important;
+  box-sizing: border-box !important;
+}
+.ctx-menu-item .ctx-swatch[data-pal='linear'] {
+  background: rgb(var(--app-bg)) !important;
+}
+.ctx-menu-item .ctx-swatch[data-pal='rose'] {
+  background: rgb(var(--app-accent)) !important;
+}
+.ctx-menu-item .ctx-swatch[data-pal='contrast'] {
+  background: rgb(var(--app-text)) !important;
+}
+.ctx-menu-item .ctx-ico {
+  width: 12px !important;
+  height: 12px !important;
+  flex: none !important;
+}
+
    响应式与自适应视口弹性布局 (Adaptive Responsive Layout)
    完美适配各种尺寸：超宽屏、标准桌面、笔记本窄屏及半屏分屏
    ═════════════════════════════════════════════════════════════════════════ */

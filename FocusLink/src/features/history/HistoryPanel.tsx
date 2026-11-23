@@ -47,7 +47,9 @@ function playWebAudioChime(kind: 'kpi' | 'click') {
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    // 复用同一个 AudioContext：每次新建要 100ms 级主线程开销，连续点击会顶到帧。
+    if (!chimeContext) chimeContext = new AudioCtx();
+    const ctx = chimeContext;
     if (ctx.state === 'suspended') void ctx.resume();
     const now = ctx.currentTime;
     const freqs = kind === 'kpi' ? [523.25, 659.25, 783.99] : [587.33, 880];
@@ -65,6 +67,9 @@ function playWebAudioChime(kind: 'kpi' | 'click') {
     });
   } catch {}
 }
+
+/** 点击音效共用一条音频上下文，首次使用时创建，之后只排 oscillator。 */
+let chimeContext: AudioContext | null = null;
 
 /* 只在取值真的变化时才写 <html> 属性：重复写同值是白做，还会让浏览器把整棵文档标记为
    样式失效。 */
@@ -458,6 +463,19 @@ export function HistoryPanel() {
   }, []);
 
   // 鼠标移动高光跟随
+
+  // Esc 关闭外观菜单，并把焦点还给触发它的「外观」按钮
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setMenuOpen(false);
+      appearanceBtnRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [menuOpen]);
 
   // 外观操作
   const openAppearanceAt = (x: number, y: number) => {
@@ -875,7 +893,10 @@ export function HistoryPanel() {
             showToast('色彩基调：纯净白');
           }}
         >
-          ● 纯净白
+          <span className="ctx-label">
+            <span className="ctx-swatch" data-pal="linear" aria-hidden="true" />
+            纯净白
+          </span>
         </div>
         <div
           className="ctx-menu-item"
@@ -888,7 +909,10 @@ export function HistoryPanel() {
             showToast('色彩基调：典雅粉');
           }}
         >
-          ● 典雅粉
+          <span className="ctx-label">
+            <span className="ctx-swatch" data-pal="rose" aria-hidden="true" />
+            典雅粉
+          </span>
         </div>
         <div
           className="ctx-menu-item"
@@ -901,7 +925,10 @@ export function HistoryPanel() {
             showToast('色彩基调：高对比');
           }}
         >
-          ● 高对比
+          <span className="ctx-label">
+            <span className="ctx-swatch" data-pal="contrast" aria-hidden="true" />
+            高对比
+          </span>
         </div>
 
         <div className="ctx-divider" />
@@ -917,7 +944,21 @@ export function HistoryPanel() {
             showToast('主题：浅色模式');
           }}
         >
-          ☀️ 浅色模式
+          <span className="ctx-label">
+            <svg
+              className="ctx-ico"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.6}
+              strokeLinecap="round"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
+            </svg>
+            浅色模式
+          </span>
         </div>
         <div
           className="ctx-menu-item"
@@ -930,7 +971,21 @@ export function HistoryPanel() {
             showToast('主题：深色模式');
           }}
         >
-          🌙 深色模式
+          <span className="ctx-label">
+            <svg
+              className="ctx-ico"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+            </svg>
+            深色模式
+          </span>
         </div>
 
         <div className="ctx-divider" />

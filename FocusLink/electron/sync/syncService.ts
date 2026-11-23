@@ -480,6 +480,7 @@ async function processItem(item: SyncQueueItem): Promise<{ ok: boolean; error?: 
   }
 }
 
+/** 语义失败（服务端明确拒绝）的最大重试次数，超过即进入死信。传输失败不消耗该额度。 */
 const MAX_RETRIES = 5;
 
 /**
@@ -487,9 +488,29 @@ const MAX_RETRIES = 5;
  * 去重查询和创建记录等多次请求，因此不能把积压队列一次性全部重放。
  */
 const RUN_PENDING_BATCH_SIZE = 8;
+/** 仅本地模式下的设置探测周期：这只是在等用户切回云模式，不产生任何网络请求。 */
+const LOCAL_ONLY_PROBE_MS = 60_000;
 const BATCH_COOLDOWN_MS = 60_000;
 const RATE_LIMIT_BACKOFF_BASE_MS = 60_000;
 const RATE_LIMIT_BACKOFF_MAX_MS = 15 * 60_000;
+
+/**
+ * 重试策略（对齐 Stripe / AWS SDK 的做法）：
+ * - 指数退避：30s 起，每次翻倍，封顶 30min；
+ * - 全抖动：实际延迟取计算值的 50%–100%，抖动种子由 item id + 次数派生，
+ *   同一项每次重试的延迟稳定可复算，不同项/不同设备之间错峰；
+ * - 传输失败只累计退避次数，不消耗 MAX_RETRIES，因此长期离线不会把记录打死；
+ * - 语义失败才消耗重试额度，耗尽后进入 failed（死信），保留 last_error 供诊断。
+ */
+const RETRY_BASE_MS = 30_000;
+const RETRY_MAX_MS = 30 * 60_000;
+/** 连续传输失败达到阈值即打开熔断，避免离线时每轮都把 8 条记录挨个超时一遍。 */
+const CIRCUIT_OPEN_AFTER = 3;
+const CIRCUIT_BASE_MS = 30_000;
+const CIRCUIT_MAX_MS = 10 * 60_000;
+const DEAD_LETTER_PREFIX = '[dead-letter]';
+const TRANSPORT_ERROR_RE =
+  /(?:network|offline|ECONN(?:REFUSED|RESET|ABORTED)|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|fetch failed|socket hang up|connection (?:refused|reset|closed)|timed?\s?out|网络|断网|连接失败|连接超时|请求超时)/i;
 const RATE_LIMIT_ERROR_RE =
   /(?:\b429\b|too many requests?|rate[ -]?limit|100\s*requests?\s*\/\s*min|请求(?:过于|太)?频繁|访问频繁|频率限制|超过[^\n]*(?:频率|限额))/i;
 const RATE_LIMIT_ERROR_PREFIX_RE = /^\[rate-limit:(\d+)\]\s*/;
@@ -584,10 +605,67 @@ function schedulePendingRun(delayMs: number): void {
   scheduledRun.unref?.();
 }
 
+/** 解析 lastError 里的 [retry:n] 前缀；不用正则，避免中文错误串里的转义歧义。 */
+function retryAttemptOf(error: string | null | undefined): number {
+  if (!error) return 0;
+  const start = error.indexOf('[retry:');
+  if (start < 0) return 0;
+  const end = error.indexOf(']', start);
+  if (end < 0) return 0;
+  const attempt = Number(error.slice(start + 7, end));
+  return Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
+}
+
+function hashSeed(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+/** 指数退避 + 稳定全抖动：同一项同一轮算出的延迟固定，重启后依然可复算。 */
+export function getRetryDelayMs(itemId: string, attempt: number): number {
+  const exponent = Math.max(0, attempt - 1);
+  const base = Math.min(RETRY_BASE_MS * 2 ** exponent, RETRY_MAX_MS);
+  const factor = 0.5 + (hashSeed(itemId + ':' + attempt) % 1000) / 2000;
+  return Math.round(base * factor);
+}
+
+/** 该项最早可再次尝试的时间：限流与普通重试共用同一套持久化推导，重启后不早发。 */
+function getItemReadyAt(item: SyncQueueItem): number {
+  if (isRateLimitError(item.lastError)) {
+    const attempt = Math.max(1, getRateLimitAttempt(item.lastError));
+    return item.updatedAt + getRateLimitBackoffMs(attempt);
+  }
+  const attempt = retryAttemptOf(item.lastError);
+  if (attempt <= 0) return 0;
+  return item.updatedAt + getRetryDelayMs(item.id, attempt);
+}
+
+function isTransportError(error: string | null | undefined): boolean {
+  return !!error && TRANSPORT_ERROR_RE.test(error);
+}
+
+// 熔断状态：连续传输失败后整体暂停，恢复一次成功即清零。
+let transportFailStreak = 0;
+let circuitOpenUntil = 0;
+let forceNextRun = false;
+let lastQueueLogKey = '';
+
+/** 只在状态变化时写一条日志：离线时不再每轮刷屏。 */
+function logQueueState(key: string, message: string, data: Record<string, unknown>): void {
+  if (lastQueueLogKey === key) return;
+  lastQueueLogKey = key;
+  logger.info('sync', message, data);
+}
+
 async function runPendingBatch(): Promise<RunPendingResult> {
   const pending = listPendingSync();
   if (pending.length === 0) {
     clearScheduledRun();
+    lastQueueLogKey = '';
     return { processed: 0, succeeded: 0, failed: 0 };
   }
 
@@ -595,27 +673,58 @@ async function runPendingBatch(): Promise<RunPendingResult> {
   // 探测设置是否已恢复；用户手动点击重试时也可立即绕过该定时器执行。
   if (getSettings().syncMode === 'local-only') {
     nextBatchNotBefore = 0;
-    schedulePendingRun(BATCH_COOLDOWN_MS);
-    logger.info('sync', 'queue paused in local-only mode', { pending: pending.length });
+    circuitOpenUntil = 0;
+    schedulePendingRun(LOCAL_ONLY_PROBE_MS);
+    logQueueState('local-only:' + pending.length, 'queue paused in local-only mode', {
+      pending: pending.length,
+    });
     return { processed: 0, succeeded: 0, failed: 0 };
   }
 
   const now = Date.now();
+  const forced = forceNextRun;
+  forceNextRun = false;
+
+  // 熔断打开时整轮跳过，直到冷却结束；不逐条尝试，也不改任何 item。
+  if (!forced && circuitOpenUntil > now) {
+    schedulePendingRun(circuitOpenUntil - now);
+    logQueueState('circuit', 'sync circuit open; waiting for cooldown', {
+      pending: pending.length,
+      retryInMs: circuitOpenUntil - now,
+      streak: transportFailStreak,
+    });
+    return { processed: 0, succeeded: 0, failed: 0 };
+  }
+
   const blockedUntil = Math.max(nextBatchNotBefore, getPersistedRateLimitUntil(pending));
-  if (blockedUntil > now) {
+  if (!forced && blockedUntil > now) {
     schedulePendingRun(blockedUntil - now);
-    logger.info('sync', 'queue run deferred by cooldown', {
+    logQueueState('cooldown:' + Math.ceil((blockedUntil - now) / 10_000), 'queue run deferred', {
       pending: pending.length,
       retryInMs: blockedUntil - now,
     });
     return { processed: 0, succeeded: 0, failed: 0 };
   }
 
-  const items = pending.slice(0, RUN_PENDING_BATCH_SIZE);
+  // 只挑“已到重试时间”的项，避免一个坏项把整批拖进固定 60s 循环。
+  const ready = forced ? pending : pending.filter((item) => getItemReadyAt(item) <= now);
+  if (ready.length === 0) {
+    const earliest = Math.min(...pending.map((item) => getItemReadyAt(item)));
+    const delay = Math.max(1_000, earliest - now);
+    schedulePendingRun(delay);
+    logQueueState('waiting:' + Math.ceil(delay / 10_000), 'queue waiting for retry window', {
+      pending: pending.length,
+      retryInMs: delay,
+    });
+    return { processed: 0, succeeded: 0, failed: 0 };
+  }
+
+  const items = ready.slice(0, RUN_PENDING_BATCH_SIZE);
   let processed = 0;
   let succeeded = 0;
   let failed = 0;
   let rateLimitBackoffUntil = 0;
+  let transportFail = false;
 
   for (const item of items) {
     const res = await processItem(item);
@@ -623,7 +732,7 @@ async function runPendingBatch(): Promise<RunPendingResult> {
     // 消耗 retryCount；下一次探测恢复云模式后继续。
     if (res.error === 'sync_paused_local_only') {
       nextBatchNotBefore = 0;
-      schedulePendingRun(BATCH_COOLDOWN_MS);
+      schedulePendingRun(LOCAL_ONLY_PROBE_MS);
       break;
     }
     processed++;
@@ -631,6 +740,8 @@ async function runPendingBatch(): Promise<RunPendingResult> {
       item.status = 'synced';
       item.lastError = null;
       succeeded++;
+      transportFailStreak = 0;
+      circuitOpenUntil = 0;
     } else if (isRateLimitError(res.error)) {
       // 429/频率限制是服务端的临时状态，不应耗尽用户的 5 次永久重试额度。
       const attempt = getRateLimitAttempt(item.lastError) + 1;
@@ -642,20 +753,46 @@ async function runPendingBatch(): Promise<RunPendingResult> {
         attempt,
         retryInMs: getRateLimitBackoffMs(attempt),
       });
+    } else if (isTransportError(res.error)) {
+      // 离线/不可达：只累计退避次数，不消耗永久重试额度，离线再久也不会死信。
+      const attempt = retryAttemptOf(item.lastError) + 1;
+      item.status = 'pending';
+      item.lastError = `[retry:${attempt}] ${res.error ?? 'network error'}`;
+      failed++;
+      transportFail = true;
     } else {
+      // 服务端明确拒绝：消耗重试额度，耗尽后进入死信并保留最后错误。
       item.retryCount += 1;
-      item.lastError = res.error ?? 'unknown';
+      const attempt = retryAttemptOf(item.lastError) + 1;
       if (item.retryCount >= MAX_RETRIES) {
         item.status = 'failed';
+        item.lastError = `${DEAD_LETTER_PREFIX} ${res.error ?? 'unknown'}`;
+        logger.warn('sync', 'item moved to dead letter', { id: item.id, error: res.error });
+      } else {
+        item.lastError = `[retry:${attempt}] ${res.error ?? 'unknown'}`;
       }
       failed++;
-      logger.warn('sync', `item ${item.id} failed: ${item.lastError}`);
     }
     item.updatedAt = Date.now();
     updateSyncQueue(item);
 
-    // 一旦服务端返回限流，立即停止本轮，避免后续 item 继续打 API。
-    if (rateLimitBackoffUntil > 0) break;
+    // 限流或网络不可达时立即收手：继续打 API 只会制造更多失败。
+    if (rateLimitBackoffUntil > 0 || transportFail) break;
+  }
+
+  if (transportFail) {
+    transportFailStreak += 1;
+    if (transportFailStreak >= CIRCUIT_OPEN_AFTER) {
+      const openMs = Math.min(
+        CIRCUIT_BASE_MS * 2 ** (transportFailStreak - CIRCUIT_OPEN_AFTER),
+        CIRCUIT_MAX_MS,
+      );
+      circuitOpenUntil = Date.now() + openMs;
+      logger.warn('sync', 'sync circuit opened after consecutive transport failures', {
+        streak: transportFailStreak,
+        openMs,
+      });
+    }
   }
 
   const remaining = listPendingSync();
@@ -663,22 +800,30 @@ async function runPendingBatch(): Promise<RunPendingResult> {
     nextBatchNotBefore = rateLimitBackoffUntil;
     schedulePendingRun(rateLimitBackoffUntil - Date.now());
   } else if (remaining.length > 0) {
-    // 积压、新入队项和普通失败项都要自动续跑；一分钟最多启动一批，给每项内部的
-    // 多次 dida 请求留余量。不能只在正好处理满 8 项时续跑，否则小队列会永久搁置。
-    nextBatchNotBefore = Date.now() + BATCH_COOLDOWN_MS;
-    schedulePendingRun(BATCH_COOLDOWN_MS);
-  } else if (remaining.length === 0) {
+    // 积压时按批速前进（给 dida 每分钟 100 次留余量）；否则精确睡到下一项的重试窗口。
+    const nowTs = Date.now();
+    const readyBacklog = remaining.filter((item) => getItemReadyAt(item) <= nowTs).length;
+    const delay =
+      readyBacklog > 0
+        ? BATCH_COOLDOWN_MS
+        : Math.max(1_000, Math.min(...remaining.map((item) => getItemReadyAt(item))) - nowTs);
+    nextBatchNotBefore = nowTs + delay;
+    schedulePendingRun(delay);
+  } else {
     nextBatchNotBefore = 0;
     clearScheduledRun();
+    lastQueueLogKey = '';
   }
 
-  logger.info('sync', `run complete`, {
-    processed,
-    succeeded,
-    failed,
-    pending: remaining.length,
-    batchSize: RUN_PENDING_BATCH_SIZE,
-  });
+  if (processed > 0) {
+    logQueueState('run:' + succeeded + ':' + failed + ':' + remaining.length, 'run complete', {
+      processed,
+      succeeded,
+      failed,
+      pending: remaining.length,
+      batchSize: RUN_PENDING_BATCH_SIZE,
+    });
+  }
   return { processed, succeeded, failed };
 }
 
@@ -709,6 +854,8 @@ export async function runPendingNow(): Promise<RunPendingResult> {
     if (before === 0) break;
     clearScheduledRun();
     nextBatchNotBefore = 0;
+    circuitOpenUntil = 0;
+    forceNextRun = true;
     const result = await runPending();
     total.processed += result.processed;
     total.succeeded += result.succeeded;
