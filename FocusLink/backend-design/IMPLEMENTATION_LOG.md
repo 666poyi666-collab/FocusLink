@@ -4,7 +4,7 @@
 
 **结论**
 
-v1.11.5 只把内容做成了台账行，模块外壳还是卡：中列五块各是一张白卡漂在灰底上，右栏又是六张描边小卡加一张详情卡，三种底色三种圆角，读起来像三个组件库拼在一页。本轮把中列与右栏都当成同一张纸的分节：分节靠 1px 发丝线，选中靠左侧 2px 强调线，不再用整圈边框。状态：进行中（代码与文档已改，待装机）。
+v1.11.5 只把内容做成了台账行，模块外壳还是卡：中列五块各是一张白卡漂在灰底上，右栏又是六张描边小卡加一张详情卡，三种底色三种圆角，读起来像三个组件库拼在一页。本轮把中列与右栏都当成同一张纸的分节：分节靠 1px 发丝线，选中靠左侧 2px 强调线，不再用整圈边框。状态：已完成（Windows 静默覆盖安装并回读 1.11.6）。
 
 **事实**
 
@@ -34,7 +34,7 @@ P2 排行满宽蓝条压在读数下方 — 容易被读成下划线或进度条
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；`npm run smoke:stats` 13 条断言全 PASS；1600×1000 明暗两套截图逐张核对。Windows 静默安装回读待补。
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；`npm run smoke:stats` 13 条断言全 PASS；1600×1000 明暗两套截图逐张核对。`npm run dist` exit 0（安装包 125,738,841 字节、便携版 125,513,766 字节，均出自提交 `9ac114e` 的干净工作区）；`release:verify` 21/21。Windows `cmd /c start "" "<installer>" /S` 静默覆盖后卸载注册表 `DisplayVersion=1.11.6`、已安装 `FocusLink.exe` `FileVersion=1.11.6`；`smoke:window-visible:launch` 通过（pid 45932、handle 2427724、4,295ms、实例已回收），随后重新拉起 pid 45800、主窗口「FocusLink」；已装 `app.asar` 内可检索到 `--heatmap-0` / `mask-image` / `tr-bar-track`。
 
 ## 2026-11-25 · `FL-UI-20261125-STATS-DASHBOARD-RESKIN`：PC 统计看板重设成台账，骨架屏契约偶发红灯（v1.11.5）
 
