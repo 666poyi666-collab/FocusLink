@@ -802,6 +802,21 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 任务行「开始专注」快捷胶囊（`.row-focus-chip`）：默认 `opacity: 0` + `translate: 4px 0` + `pointer-events: none`，行 `:hover` / `:focus-within` 时 140ms（`--dur-micro` + `--ease-out-expo`）渐显并接管指针；`:active` 下沉 1px；强调底 `rgb(var(--app-accent) / 0.18)`。已完成行与编辑态不渲染该按钮（`TaskWorkspace.tsx`）。键盘路径由 `:focus-within` 覆盖，与第 7 节「hover/焦点渐显 140ms」一致。
 - 清理：删除 `stats-workbench.css` 两处从未定义的 `pulseRing` 死引用；`.meta-pill` 的 `transition: all` 收窄为 `background-color / color`，避免主题切换时无关属性跟着过渡。
 
+## v1.11.6 统计页并成一张纸（2026-11-25）
+
+**设计判断**：v1.11.5 把每块内容做成了台账行，但模块外壳还是卡：中列五块各是一张白卡浮在灰底，右栏又是「六张描边小卡 + 一张详情卡」。同一组读数被切成三种圆角、三种底色，页面的整体感被卡片缝隙吃掉。本轮不再分卡，而是把中列与右栏都当成**同一张纸上的分节**：分节靠 1px 发丝线，选中靠左侧强调线，不再用整圈边框。
+
+- **纸面**：一页只留一个纸面。`.stats-paper` 背景改 `var(--bg-card)`；`.list-toolbar` 背景透明、只留底部发丝线；`.stats-scroll-area` 改 `padding: 0 28px 48px`、`gap: 0`；`.stats-dashboard-grid` 网格间距归零。
+- **分节**：`.dashboard-card-tile` 改 `padding: 22px 0 26px` + `border-top: 1px solid var(--rule)`（首节无线、上内边距 24px）；`.card-widget:not(.deep-dive-box)` 一律透明底、零边框、零圆角。卡贴外壳只保留在右栏详情里。
+- **两栏分界**：容器 ≥721px 时，`.span-5` 右侧留 28px，`.span-7` 加 `border-left` 与 28px 左内边距；占比环与任务排行之间只有一条竖线，窄容器（≤720px）两者并成整宽、竖线消失。
+- **Hero**：右侧时间线去掉灰底小盒，改 `border-left` 竖发丝线与 26px 左内边距；≤720px 时竖线换成顶部横线。「较昨日增加」去掉胶囊底与描边，降为行内批注（绿色/红色只落在文字上）。
+- **时段列**：五个时段胶囊去盒，改透明底 + 左侧发丝线（首列无线），悬停只给 `--app-surface-2/.5` 底。
+- **右栏**：`.detail-pane` 背景与纸面同色、`padding: 0`、`gap: 0`；`.detail-head-bar` 与中列工具栏同为 68px 高，两列横线对齐；`.session-card` 去掉边框圆角、改 `border-bottom` 发丝线，选中态为 `accent/.06` 底 + `inset 2px` 左强调线；「关联任务 / 关联片段」(`.sc-link-btn`) 改行内文字链（悬停下划线）；`.deep-dive-box` 透明、零边框、顶部一条发丝线；`.ledger-totals` 去盒、只留上下两条线。
+- **列表截断**：`.session-card-stream` 在 980px 以上按 42% 高度滚动，底部 20px 用 `mask-image` 淡出，避免把最后一行文字切成两半；≤979px 的抽屉形态保留原有卡片外壳与内边距。
+- **排行刻度**：任务排行的进度条从「整行蓝色下划线」改成贴在时长左侧的 56px 刻度（`HistoryInsights.tsx` 里 `.tr-bar-track` 挪进 `.tr-right`），首行填充 `accent/.75`、其余 `accent/.5`；行高随之收到约 40px。
+- **降噪**：板块小标题图标改 `--text-tertiary`；热力矩阵空格从 `surface-3/.62` 改 `rgb(var(--app-border) / 0.5)`，白纸上能看见矩阵、暗色下同样成立。
+- **验收口径**：`npm run smoke:stats` 13 条断言全 PASS（6 档尺寸无横向溢出、账本抽屉、删除确认、骨架屏快照）；1600×1000 明暗两套截图逐张核对；`stats-style-contract` 的结构选择器与 CSS 规则仍全部命中（只改样式、未删类名）。
+
 ## v1.11.5 PC 统计看板重设成台账（2026-11-25）
 
 **设计判断**：统计页此前读起来像后台仪表盘 —— 四格描边 KPI、满宽进度条排行、紫蓝渐变环、默认图表色板、半张空着的热力卡。同一批数据在任务页用的是另一种语言。本轮把整页当一页纸质台账：**用发丝线分行，用留白和字号分层，强调色只承担信息不承担装饰**。数值本身不变，改的只是它们怎么被读。

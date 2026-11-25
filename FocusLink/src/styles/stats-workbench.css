@@ -2546,3 +2546,260 @@ html[data-density='compact'] .stats-page .dashboard-card-tile {
     }
   }
 }
+
+/* ── 14. 单页纸面：中列与右栏并成一张纸（v1.11.6） ── */
+/* 一页纸只该有纸面、发丝线和字。此前中列是四张白卡漂在灰底上，
+   右栏又是六张描边小卡加一张详情卡，三套底色、三套圆角，
+   读起来像三个拼在一起的组件库。这一节把中列与右栏都改回同一张纸的分节：
+   分节靠 1px 发丝线，不靠卡片边框；选中靠左侧 2px 强调线，不靠整圈蓝边。 */
+.stats-page .stats-paper {
+  background: var(--bg-card);
+}
+
+.stats-page .list-toolbar {
+  background: transparent;
+  border-bottom: 1px solid var(--rule);
+}
+
+.stats-page .stats-scroll-area {
+  padding: 0 28px 48px;
+  gap: 0;
+}
+
+.stats-page .stats-dashboard-grid {
+  gap: 0;
+}
+
+.stats-page .dashboard-card-tile {
+  padding: 22px 0 26px;
+  border-top: 1px solid var(--rule);
+}
+
+.stats-page .dashboard-card-tile:first-child {
+  border-top: 0;
+  padding-top: 24px;
+}
+
+/* 卡片外壳只在右栏详情里保留一次；中列的分节不再有边框与圆角 */
+.stats-page .card-widget:not(.deep-dive-box) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* 两栏并排时用一条竖发丝线分栏，而不是两个各自带框的盒子 */
+@container (min-width: 721px) {
+  .stats-page .dashboard-card-tile.span-5 {
+    padding-right: 28px;
+  }
+
+  .stats-page .dashboard-card-tile.span-7 {
+    padding-left: 28px;
+    border-left: 1px solid var(--rule);
+  }
+}
+
+/* Hero 右侧的时间谱从「灰底小盒」改成同纸面的右半栏 */
+.stats-page .hero-spectrum-box {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 2px 0 2px 26px;
+}
+
+@container (max-width: 720px) {
+  .stats-page .hero-spectrum-box {
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    padding: 14px 0 0;
+  }
+}
+
+/* 「较昨日增加」是批注，不是奖章：去掉描边与胶囊底 */
+.stats-page .hero-delta-pill,
+.stats-page .hero-delta-pill.positive,
+.stats-page .hero-delta-pill.negative {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-weight: 600;
+}
+
+/* 五个时段列去掉盒子，靠竖线分栏 */
+.stats-page .period-capsule-row {
+  gap: 0;
+  padding-top: 16px;
+}
+
+.stats-page .period-cap-card {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 2px 14px;
+}
+
+.stats-page .period-cap-card:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.stats-page .period-cap-card:hover {
+  background: rgb(var(--app-surface-2) / 0.5);
+}
+
+.stats-page .period-cap-card.active {
+  background: rgb(var(--app-accent) / 0.055);
+}
+
+/* 右栏：同一张纸的连续分节 */
+@media (min-width: 980px) {
+  .stats-page .detail-pane {
+    background: var(--bg-card);
+    padding: 0;
+    gap: 0;
+  }
+
+  .stats-page .detail-head-bar {
+    padding: 20px 20px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .stats-page .session-card-stream {
+    gap: 0;
+    padding: 0;
+    flex: 1 1 42%;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .stats-page .session-card {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--rule);
+    border-radius: 0;
+  }
+
+  .stats-page .session-card:last-child {
+    border-bottom: 0;
+  }
+
+  .stats-page .session-card:hover {
+    background: rgb(var(--app-surface-2) / 0.5);
+  }
+
+  .stats-page .session-card.active {
+    background: rgb(var(--app-accent) / 0.06);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .stats-page .session-select {
+    padding: 12px 20px 4px;
+    border-radius: 0;
+  }
+
+  .stats-page .sc-footer {
+    padding: 2px 20px 12px;
+  }
+
+  .stats-page .deep-dive-box {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 18px 20px 26px;
+  }
+}
+
+/* 「关联任务 / 关联片段」是行内文字链，不再画成小按钮 */
+.stats-page .sc-link-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-weight: 600;
+}
+
+.stats-page .sc-link-btn:hover {
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 详情里的合计行也同样去盒，留上下两条发丝线 */
+.stats-page .ledger-totals {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 10px 0;
+}
+
+@media (max-width: 979px) {
+  .stats-page .stats-scroll-area {
+    padding: 0 16px 28px;
+  }
+
+  .stats-page .dashboard-card-tile {
+    padding: 18px 0 22px;
+  }
+}
+
+/* ── 15. 右栏顶栏与中列同高、列表截断淡出（v1.11.6 续） ── */
+@media (min-width: 980px) {
+  /* 两列的第一行原本一高一低（68px 对 40px），纸面上的横线对不齐就整块散掉 */
+  .stats-page .detail-head-bar {
+    min-height: 68px;
+    padding: 0 20px;
+  }
+
+  /* 列表按 42% 高度裁切时最后一行会被切半，用一段淡出把「还有」说清楚 */
+  .stats-page .session-card-stream {
+    border-bottom: 0;
+    padding-bottom: 18px;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  }
+
+  .stats-page .deep-dive-box {
+    border-top: 1px solid var(--rule);
+  }
+}
+
+/* 小标题前的图标改成默认灰：四个蓝色小图标会把纸面又拉回仪表盘 */
+.stats-page .section-head-icon {
+  color: var(--text-tertiary);
+}
+
+/* 排行行的进度条挪到时长左边，当作跟着读数走的刻度 */
+.stats-page .tr-bar-track {
+  display: block;
+  width: 56px;
+  height: 2px;
+  margin: 0;
+  flex: none;
+  background: rgb(var(--app-border) / 0.55);
+  border-radius: 2px;
+}
+
+.stats-page .tr-bar-fill {
+  display: block;
+  height: 100%;
+  background: rgb(var(--app-accent) / 0.5);
+  border-radius: 2px;
+}
+
+.stats-page .task-rank-card:first-child .tr-bar-fill {
+  background: rgb(var(--app-accent) / 0.75);
+}
+
+/* 空格子在白纸上几乎看不见：按边框色给一档中性底，暗色下同样成立 */
+.stats-page {
+  --heatmap-0: rgb(var(--app-border) / 0.5);
+}
+@media (min-width: 980px) {
+  .stats-page .ledger-filter {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--rule);
+  }
+}

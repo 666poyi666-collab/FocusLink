@@ -1,5 +1,41 @@
 # FocusLink 实施日志
 
+## 2026-11-25 · `FL-UI-20261125-STATS-ONE-PAPER`：统计页中列与右栏并成一张纸（v1.11.6）
+
+**结论**
+
+v1.11.5 只把内容做成了台账行，模块外壳还是卡：中列五块各是一张白卡漂在灰底上，右栏又是六张描边小卡加一张详情卡，三种底色三种圆角，读起来像三个组件库拼在一页。本轮把中列与右栏都当成同一张纸的分节：分节靠 1px 发丝线，选中靠左侧 2px 强调线，不再用整圈边框。状态：进行中（代码与文档已改，待装机）。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 改前中列五块与右栏八块各自带边框、圆角与表面底，整页同时存在三种底色三套圆角 | `FocusLink/src/styles/stats-workbench.css:2573`（覆盖位置，改前为该处的 `.card-widget` 默认盒） | 实测 |
+| ② | 纸面统一：`.stats-paper` 改 `var(--bg-card)`，工具栏只留底部发丝线，滚动区改 `0 28px 48px`、网格间距归零 | `FocusLink/src/styles/stats-workbench.css:2555`、`:2559`、`:2564`、`:2569` | 实测 |
+| ③ | 中列分节：`.dashboard-card-tile` 改 `22px 0 26px` + `border-top`，首节无线；中列卡壳透明零边框 | `FocusLink/src/styles/stats-workbench.css:2573`、`:2578`、`:2584` | 实测 |
+| ④ | 两栏分界：容器 ≥721px 时 `.span-5` 右留 28px、`.span-7` 加左竖线与 28px 内边距 | `FocusLink/src/styles/stats-workbench.css:2591` | 实测 |
+| ⑤ | Hero 时间谱去灰底盒改竖线 26px（≤720px 换顶部横线）；「较昨日增加」去胶囊；五个时段列去盒改左竖线 | `FocusLink/src/styles/stats-workbench.css:2603`、`:2611`、`:2620`、`:2635` | 实测 |
+| ⑥ | 右栏同纸：`.detail-pane` 同纸面色、零 padding/gap；`.session-card` 去边框改底线，选中为 `inset 2px`；`.deep-dive-box` 只留顶线；`.sc-link-btn` 改行内文字链 | `FocusLink/src/styles/stats-workbench.css:2658`、`:2676`、`:2691`、`:2705`、`:2714` | 实测 |
+| ⑦ | 右栏顶栏抬到 68px 与中列工具栏同高；列表按 42% 高度裁切并加 20px `mask-image` 淡出，避免最后一行被切半 | `FocusLink/src/styles/stats-workbench.css:2751`、`:2757` | 实测 |
+| ⑧ | 排行满宽蓝条改为贴在时长左侧的 56px 刻度（`.tr-bar-track` 从行下移进 `.tr-right`），首行 `accent/.75`、其余 `accent/.5` | `FocusLink/src/features/history/HistoryInsights.tsx:870`；`FocusLink/src/styles/stats-workbench.css:2775` | 实测 |
+| ⑨ | 热力空格 `--heatmap-0` 改 `rgb(var(--app-border) / 0.5)`，白纸上矩阵可见；小标题图标降为 `--text-tertiary` | `FocusLink/src/styles/stats-workbench.css:2797`、`:2770` | 实测 |
+| ⑩ | 门禁：format:check / typecheck（含 cloudflare）/ lint 均 exit 0，`npm test` 186 文件 1,611 用例全绿，`npm run smoke:stats` 13 条断言全 PASS | 命令输出 | 实测 |
+
+**问题**
+
+P1 中列与右栏各自成卡 — 同一页被切成十几个圆角盒子、三种底色，视觉上像三个组件库拼在一起，一页纸的整体感被缝隙吃掉 — 事实①③⑥  
+P2 右栏顶栏 40px 对中列 68px — 两列第一条横线错位 28px，纸面上的横线一错位整块就散了 — 事实⑦  
+P2 列表在 42% 高度处硬裁 — 最后一行文字被切一半，读起来像内容丢了 — 事实⑦  
+P2 排行满宽蓝条压在读数下方 — 容易被读成下划线或进度条，抢走时长本身的注意力 — 事实⑧  
+
+**处置**
+
+中列与右栏都回到同一张纸：纸面统一 `--bg-card`，分节用 `border-top: 1px var(--rule)`，两栏之间一条竖线，选中用 `inset 2px` 强调线；卡片外壳只保留在右栏详情一次。右栏顶栏抬到 68px 与中列工具栏对齐；列表按 42% 裁切并加 20px 淡出；排行刻度压到 56px 贴在读数左侧；热力空格与小标题图标降噪。窄容器（≤720px）竖线换横线，抽屉形态（≤979px）保留原有卡片外壳。版本元数据同步到 1.11.6：`FocusLink/package.json`、`package-lock.json`、`shared/version.ts`（`release-v1116`）、`electron-builder.yml`、`android/app/build.gradle`（versionCode 1391）、根 `README.md`。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；`npm run smoke:stats` 13 条断言全 PASS；1600×1000 明暗两套截图逐张核对。Windows 静默安装回读待补。
+
 ## 2026-11-25 · `FL-UI-20261125-STATS-DASHBOARD-RESKIN`：PC 统计看板重设成台账，骨架屏契约偶发红灯（v1.11.5）
 
 **结论**

@@ -866,11 +866,12 @@ function TopTasksLeaderboard({
                     </span>
                   </div>
                   <div className="tr-right">
+                    {/* 度量条跟着读数走：贴在时长左边当刻度，不再整行铺成一条蓝色下划线 */}
+                    <span className="tr-bar-track" aria-hidden="true">
+                      <span className="tr-bar-fill" style={{ width: `${pct}%` }} />
+                    </span>
                     <span className="tr-time">{duration(task.activeMs)}</span>
                   </div>
-                </div>
-                <div className="tr-bar-track">
-                  <div className="tr-bar-fill" style={{ width: `${pct}%` }} />
                 </div>
               </button>
             );
