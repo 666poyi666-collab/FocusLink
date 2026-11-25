@@ -450,6 +450,13 @@
 .settings-row {
   min-height: 58px;
   border-bottom-color: rgb(var(--app-border));
+  transition: background var(--motion-fast);
+}
+.settings-row:hover {
+  background: var(--app-hover-fill);
+}
+.app-shell.view-tasks .window-controls {
+  background: transparent;
 }
 
 @media (max-width: 1199px) {

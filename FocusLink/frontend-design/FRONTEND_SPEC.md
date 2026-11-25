@@ -802,6 +802,21 @@ v1.3.21 生命周期补充：主窗切换到其他应用、最小化或隐藏时
 - 任务行「开始专注」快捷胶囊（`.row-focus-chip`）：默认 `opacity: 0` + `translate: 4px 0` + `pointer-events: none`，行 `:hover` / `:focus-within` 时 140ms（`--dur-micro` + `--ease-out-expo`）渐显并接管指针；`:active` 下沉 1px；强调底 `rgb(var(--app-accent) / 0.18)`。已完成行与编辑态不渲染该按钮（`TaskWorkspace.tsx`）。键盘路径由 `:focus-within` 覆盖，与第 7 节「hover/焦点渐显 140ms」一致。
 - 清理：删除 `stats-workbench.css` 两处从未定义的 `pulseRing` 死引用；`.meta-pill` 的 `transition: all` 收窄为 `background-color / color`，避免主题切换时无关属性跟着过渡。
 
+## v1.11.5 PC 统计看板重设成台账（2026-11-25）
+
+**设计判断**：统计页此前读起来像后台仪表盘 —— 四格描边 KPI、满宽进度条排行、紫蓝渐变环、默认图表色板、半张空着的热力卡。同一批数据在任务页用的是另一种语言。本轮把整页当一页纸质台账：**用发丝线分行，用留白和字号分层，强调色只承担信息不承担装饰**。数值本身不变，改的只是它们怎么被读。
+
+- **读数分层**：hero 时长按「数字 / 单位」拆开（`HistoryInsights.tsx` 的 `DurationText`），数字走 `--font-timer-thin` 衬线体，单位降到 0.4em、600 字重、次级灰；`letter-spacing: -.01em` 收住衬线体的松。四格 KPI（暂停 / 有效占比 / 关联任务 / 连续记录）从四个圆角描边小盒改成一条带上发丝线的台账，值 16px 等宽 tabular、标签 11px 三级灰。
+- **台账行取代卡片**：重点任务排行（`.task-rank-card`）与清单分类占比（`.alloc-row`）都去掉了逐行描边盒子，改为透明行 + `border-top: 1px var(--rule)`（首行无线），悬停只换 `--surface-2/.55` 与一条 2px 的强调左边。排行序号是 18px 宽的等宽数字，不是方块徽标；进度条压到 2px 并把轨道做实（`rgb(var(--app-border) / .7)`），否则空轨道在原背景上读成数值下划线。分类占比的百分号标签去描边去底色，只留 11px 等宽右对齐三级灰。
+- **分类配色令牌化**：环形图与侧栏分类点共用 `ALLOCATION_COLORS`（`statsLedgerModel.tsx`），原先写死六只 Tailwind 图表色，换色彩基调不跟随。改为 `--alloc-1..6`（`stats-workbench.css` 令牌块）：强调色 `.72` / `.44` 两阶 + `--warning` 82% + 两级中性灰，依次对应「主分类 → 其他已关联 → 未关联/旧记录」。图表色从此和导航、选中态同一个色相来源。
+- **图表去装饰**：柱体的暂停损耗原为 135° 斜纹，柱宽只有几像素时糊成噪点，改 `--viz-pause` 半透明纯色；专注重叠层改 `--viz-focus` 并在顶部做 2px 圆角。45 分钟参考线由强调蓝 + 加粗改为 `rgb(var(--app-muted) / .42)` 中性虚线，标签 500 字重次级灰 —— 参考线只该被读到，不该抢柱体。
+- **刻度单位只写一次**：节律图的 Y 轴此前四档各写一遍「分钟」，改完只剩最上面一格带单位（多日分支写「小时」）；单日分支为 `60 分钟 / 45 / 30 / 15`，从左到右读一次就够。
+- **热力矩阵铺满**：`.heatmap-strip-wrap` 从 flex 改 `display: grid` + `grid-auto-columns: minmax(0, 1fr)`，方块 `width: 100%` + `aspect-ratio: 1`（上限 30px、4px 圆角），日标签跟着列高拉伸。改前 24 列固定 13px、总宽约 400px，整块挤在卡片左侧，右半张卡是空的。
+- **容量条做实**：`.period-cap-meter` 由 2.5px 改 3px，轨道从近透明改为 `rgb(var(--app-border) / .55)`、填充 `accent/.78`，避免被读成数值下划线。
+- **不动的部分**：右栏会话账本在 38% 高度处滚动裁切是既有行为，不是卡片重叠；本轮只统一了圆角（`--r-card: 14px`）与分隔线，没有改层级。
+- **验收口径**：`npm run smoke:stats` 13 条断言（6 档尺寸无横向溢出 / 账本删除 / 子任务排序 / 骨架屏快照 / 删除确认）；1600×1000 明暗两套截图逐张核对；`tests/statsAlignment.test.ts` 与 `tests/statsCategoryScope.test.ts` 继续锁定色板常量与读数同源。
+- **骨架屏采样**：`smoke:stats` 原先在 showTasks() 后 150ms 断言骨架存在，而 `SKELETON_DELAY_MS = 140`，10ms 余量取决于 React 提交时机。等待窗口是产品行为（避免冷启动闪骨架），改的是采样时机：`scripts/regression/stats-responsive-smoke.cjs` 取 320ms。
+
 ## v1.11.2 断线接管后的时长显示与真实跨度一致（2026-11-23）
 
 - 显示口径不变：历史与统计仍读取 `focus_sessions.activeElapsedMs` 与 `focus_segments.activeElapsedMs`；问题不在渲染层，而在实时断线后这两个值停在了最后一次快照。

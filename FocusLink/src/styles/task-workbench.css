@@ -428,18 +428,20 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .app-brand-badge {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
-  background: var(--accent);
-  color: var(--app-solid-fg);
+  border-radius: var(--radius-sm, 5px);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--accent);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
+  font-family: var(--font-num);
 }
 
 .titlebar-center {
   flex: 1;
-  max-width: 460px;
+  max-width: 440px;
   margin: 0 20px;
   -webkit-app-region: no-drag;
 }
@@ -448,28 +450,28 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 32px;
-  background: var(--accent-soft);
+  height: 30px;
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  padding: 0 8px 0 11px;
+  border-radius: var(--r-sm);
+  padding: 0 8px 0 10px;
   font-size: 12.5px;
   color: var(--text-secondary);
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease;
+    border-color var(--dur-micro, 120ms) var(--ease-standard, ease),
+    box-shadow var(--dur-micro, 120ms) var(--ease-standard, ease),
+    background-color var(--dur-micro, 120ms) var(--ease-standard, ease),
+    color var(--dur-micro, 120ms) var(--ease-standard, ease);
 }
 .cmd-search-box:hover {
-  border-color: var(--accent);
+  border-color: var(--border-app);
   color: var(--text-primary);
 }
 .cmd-search-box:focus-within {
   background: var(--bg-card);
   border-color: var(--accent);
   color: var(--text-primary);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .cmd-search-box input {
   width: 100%;
@@ -481,10 +483,14 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
   color: var(--text-tertiary);
 }
 .cmd-search-box svg {
-  width: 14px;
-  height: 14px;
-  color: var(--accent);
+  width: 13.5px;
+  height: 13.5px;
+  color: var(--text-tertiary);
   flex: none;
+  transition: color var(--dur-micro, 120ms) ease;
+}
+.cmd-search-box:focus-within svg {
+  color: var(--accent);
 }
 .cmd-search-box .kbd-hint {
   flex: none;
@@ -492,9 +498,10 @@ html[data-theme='dark'][data-pal='contrast'] .btn-action-focus {
 .kbd-hint {
   font-family: var(--font-num);
   font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--bg-active);
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: var(--r-xs);
+  background: var(--bg-app);
   border: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
 }

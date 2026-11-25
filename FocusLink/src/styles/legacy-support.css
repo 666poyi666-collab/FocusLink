@@ -78,9 +78,21 @@
 }
 
 .toast-close {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
   border: 0;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: rgb(var(--app-muted));
+  transition:
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.toast-close:hover {
+  background: var(--app-hover-fill);
+  color: rgb(var(--app-text));
 }
 
 .state-block {

@@ -429,6 +429,8 @@ function SessionLedgerImpl({
                 <span className="sc-title" title={titleOf(session)}>
                   {titleOf(session)}
                 </span>
+              </button>
+              <div className="sc-footer">
                 <span className="sc-meta">
                   {linkedLabel(session)}
                   {cardClipped && (
@@ -438,17 +440,17 @@ function SessionLedgerImpl({
                     </span>
                   )}
                 </span>
-              </button>
-              <button
-                type="button"
-                className="sc-link-btn"
-                onClick={(event) => {
-                  event.currentTarget.focus();
-                  onLink(session);
-                }}
-              >
-                {session.defaultTaskId || session.defaultTaskTitle ? '更换任务' : '关联任务'}
-              </button>
+                <button
+                  type="button"
+                  className="sc-link-btn"
+                  onClick={(event) => {
+                    event.currentTarget.focus();
+                    onLink(session);
+                  }}
+                >
+                  {session.defaultTaskId || session.defaultTaskTitle ? '更换任务' : '关联任务'}
+                </button>
+              </div>
             </div>
           );
         })}
@@ -458,7 +460,7 @@ function SessionLedgerImpl({
           <div className="dd-head">
             <h4 id="ddTitle">{titleOf(selected)}</h4>
             <p id="ddMeta">
-              {formatLedgerClock(selected.startedAt, selected.endedAt)} · 总历时
+              {formatLedgerClock(selected.startedAt, selected.endedAt)} · 总历时{' '}
               {formatDuration(selected.wallElapsedMs)}
             </p>
             {sessionScoped && (

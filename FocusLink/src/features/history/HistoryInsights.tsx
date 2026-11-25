@@ -39,6 +39,26 @@ function duration(ms: number): string {
   return formatMinutes(Math.max(0, ms));
 }
 
+/** "4 小时 30 分钟" 拆成数字段与单位段：数字用衬线计时字形，单位缩一号。 */
+function DurationText({ value }: { value: string }) {
+  const parts = value.split(/\s+/).filter(Boolean);
+  return (
+    <>
+      {parts.map((part, index) =>
+        /^\d/.test(part) ? (
+          <span className="dur-num" key={index}>
+            {part}
+          </span>
+        ) : (
+          <span className="dur-unit" key={index}>
+            {part}
+          </span>
+        ),
+      )}
+    </>
+  );
+}
+
 function HistoryInsightsImpl({
   summary,
   heatmapDaily,
@@ -259,6 +279,10 @@ function HeroFocusCard({
           return `${new Date(stamp).getMonth() + 1}/${new Date(stamp).getDate()}`;
         })
       : ['00:00', '06:00', '12:00', '18:00', '24:00'];
+  const totalWithPause = dashboardFocus + dashboardPause;
+  const focusRatioPct =
+    totalWithPause > 0 ? Math.round((dashboardFocus / totalWithPause) * 100) : 0;
+
   return (
     <div
       className="card-widget dashboard-card-tile span-12 hero-focus-card anim-in-1"
@@ -267,14 +291,17 @@ function HeroFocusCard({
       <div className="hero-top-grid">
         <div className="focus-summary">
           <span className="summary-label">专注时长</span>
-          <div className="hero-time-massive">{duration(dashboardFocus)}</div>
+          <div className="hero-time-massive">
+            <DurationText value={duration(dashboardFocus)} />
+          </div>
           <div className="summary-secondary">
-            {summaryCount} 次专注
-            {yesterdayDiff !== null && yesterdayDiff !== 0
-              ? ' · 较昨日' +
-                (yesterdayDiff > 0 ? '增加 ' : '减少 ') +
-                duration(Math.abs(yesterdayDiff))
-              : ''}
+            <span>{summaryCount} 次专注</span>
+            {yesterdayDiff !== null && yesterdayDiff !== 0 && (
+              <span className={`hero-delta-pill ${yesterdayDiff > 0 ? 'positive' : 'negative'}`}>
+                {yesterdayDiff > 0 ? '↑ 较昨日增加 ' : '↓ 较昨日减少 '}
+                {duration(Math.abs(yesterdayDiff))}
+              </span>
+            )}
           </div>
         </div>
         <div className="hero-spectrum-box">
@@ -331,21 +358,28 @@ function HeroFocusCard({
       {/* v1.6.0：三个读数此前没有任何口径说明，「关联任务 0 个」尤其容易被读成
           「一次任务都没关联」，实际它是「当前范围内有专注时长的**已关联任务条数**」。 */}
       <dl className="summary-facts">
-        <div>
+        <div className="summary-fact-cell">
           <dt>暂停</dt>
-          <dd title="当前范围内的暂停总时长（跨午夜按自然日 0 点切分）">
+          <dd className="is-pause" title="当前范围内的暂停总时长（跨午夜按自然日 0 点切分）">
             {duration(dashboardPause)}
           </dd>
         </div>
-        <div>
+        <div className="summary-fact-cell">
+          <dt>有效占比</dt>
+          <dd title="有效专注时长 ÷（有效专注时长 + 暂停时长）">{focusRatioPct}%</dd>
+        </div>
+        <div className="summary-fact-cell">
           <dt>关联任务</dt>
           <dd title="当前范围内真正有专注时长的已关联任务数；不含「未关联任务」与「旧记录（无片段归类）」">
             {effectiveTasks.filter((task) => task.taskId).length} 个
           </dd>
         </div>
-        <div>
+        <div className="summary-fact-cell">
           <dt>连续记录</dt>
-          <dd title="截至今天，往前连续有专注记录的天数（取自最近 168 天，与侧栏「每日记录」同源）">
+          <dd
+            className={streakDays > 0 ? 'is-accent' : undefined}
+            title="截至今天，往前连续有专注记录的天数（取自最近 168 天，与侧栏「每日记录」同源）"
+          >
             {streakDays} 天
           </dd>
         </div>
@@ -409,7 +443,38 @@ function RhythmChartCard({
     f: day.activeMs / MINUTE,
     p: day.pauseMs / MINUTE,
   }));
-  const dailyMax = Math.max(360, ...dailyBars.map((day) => day.f + day.p));
+  const rawDailyMax = Math.max(360, ...dailyBars.map((day) => day.f + day.p));
+  const dailyMaxHours = Math.max(4, Math.ceil(rawDailyMax / 60 / 2) * 2);
+  const dailyMax = dailyMaxHours * 60;
+  const totalPeriodFocusMs = periodFocusMs.reduce((sum, ms) => sum + ms, 0);
+  /* 刻度只在最上面那格带单位，下面三格裸数字。
+     原来四格各写一遍「60 分钟 / 45 分钟 / 30 分钟 / 15 分钟」，同一行里重复四遍单位，
+     刻度区被撑宽，也不像坐标轴。 */
+  const gridMarks = multiDay
+    ? [
+        { topPct: 0, label: `${dailyMaxHours} 小时`, guide: false },
+        {
+          topPct: 25,
+          label: ((dailyMaxHours * 3) / 4).toFixed(dailyMaxHours % 4 === 0 ? 0 : 1),
+          guide: true,
+        },
+        {
+          topPct: 50,
+          label: (dailyMaxHours / 2).toFixed(dailyMaxHours % 2 === 0 ? 0 : 1),
+          guide: false,
+        },
+        {
+          topPct: 75,
+          label: (dailyMaxHours / 4).toFixed(dailyMaxHours % 4 === 0 ? 0 : 1),
+          guide: false,
+        },
+      ]
+    : [
+        { topPct: 0, label: '60 分钟', guide: false },
+        { topPct: 25, label: '45', guide: true },
+        { topPct: 50, label: '30', guide: false },
+        { topPct: 75, label: '15', guide: false },
+      ];
   return (
     <>
       <div className="section-head">
@@ -420,61 +485,43 @@ function RhythmChartCard({
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              style={{ width: '16px', height: '16px', color: 'var(--accent)' }}
+              className="section-head-icon"
             >
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
             {multiDay ? '自然日专注对比' : '按小时分布'}
           </h3>
           <p id="chartHeaderSub">
-            {multiDay ? '呈现周期内每个自然日的累计专注与损耗对比' : '每小时的专注与暂停时长'}
+            {multiDay
+              ? '周期内每个自然日的有效专注与暂停损耗对比'
+              : '每小时专注与暂停损耗（点击下方时段可高亮筛选）'}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '11.5px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '2px',
-                  background: 'var(--accent)',
-                }}
-              />
-              专注时长
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '2px',
-                  background: 'var(--pause-color)',
-                }}
-              />
-              暂停损耗
-            </span>
-          </div>
+        <div className="chart-legend-group">
+          <span className="chart-legend-item">
+            <span className="chart-legend-swatch is-focus" />
+            专注时长
+          </span>
+          <span className="chart-legend-item">
+            <span className="chart-legend-swatch is-pause" />
+            暂停损耗
+          </span>
         </div>
       </div>
 
       <div className="rhythm-chart-box">
         <div className="rhythm-grid-lines">
-          <div className="rhythm-grid-line rhythm-target-guide">
-            <span className="rhythm-grid-tag" id="rhythmGridGuideTag">
-              {multiDay ? `刻度 ${Math.round(dailyMax / 60)} 小时` : '45 分钟'}
-            </span>
-          </div>
-          <div className="rhythm-grid-line">
-            <span className="rhythm-grid-tag">
-              {multiDay ? `${Math.round(dailyMax / 120)} 小时` : '30 分钟'}
-            </span>
-          </div>
-          <div className="rhythm-grid-line">
-            <span className="rhythm-grid-tag">
-              {multiDay ? `${Math.round(dailyMax / 240)} 小时` : '15 分钟'}
-            </span>
-          </div>
+          {gridMarks.map((mark) => (
+            <div
+              key={mark.label}
+              className={`rhythm-grid-line ${mark.guide ? 'rhythm-target-guide' : ''}`}
+              style={{ top: `${mark.topPct}%` }}
+            >
+              <span className="rhythm-grid-tag" id={mark.guide ? 'rhythmGridGuideTag' : undefined}>
+                {mark.label}
+              </span>
+            </div>
+          ))}
         </div>
 
         <div className="bars-row" id="rhythmBarContainer">
@@ -482,7 +529,7 @@ function RhythmChartCard({
             ? hourlyData.map((item) => {
                 const isActive = item.f > 0 || item.p > 0;
                 const fPct = Math.min(100, Math.round((item.f / 60) * 100));
-                const pPct = Math.min(100, Math.round((item.p / 60) * 100));
+                const pPct = Math.min(100 - fPct, Math.round((item.p / 60) * 100));
                 const hourStr = `${String(item.h).padStart(2, '0')}:00`;
                 const showLbl = item.h % 4 === 0 || item.h === 23 ? hourStr : '';
 
@@ -493,11 +540,15 @@ function RhythmChartCard({
                   opacity = item.h >= p.start && item.h <= p.end ? '1' : '0.22';
                 }
 
+                const tipText = `${hourStr} · 专注 ${duration(item.f * MINUTE)}${item.p ? ` · 暂停 ${duration(item.p * MINUTE)}` : ''}`;
+
                 return (
                   <div
                     key={item.h}
                     className="bar-col"
                     data-hour={item.h}
+                    tabIndex={isActive ? 0 : undefined}
+                    aria-label={isActive ? tipText : undefined}
                     style={{ opacity, transition: 'opacity 0.2s ease' }}
                   >
                     {isActive ? (
@@ -513,27 +564,33 @@ function RhythmChartCard({
                       </div>
                     )}
                     <div className="bar-time-lbl">{showLbl}</div>
-                    <div className="bar-hover-tip">
-                      {hourStr} · 专注 {duration(item.f * MINUTE)}{' '}
-                      {item.p ? `· 暂停 ${duration(item.p * MINUTE)}` : ''}
-                    </div>
+                    <div className="bar-hover-tip">{tipText}</div>
                   </div>
                 );
               })
             : dailyBars.map((item, idx) => {
                 const fPct = Math.min(100, Math.round((item.f / dailyMax) * 100));
-                const pPct = Math.min(100, Math.round((item.p / dailyMax) * 100));
+                const pPct = Math.min(100 - fPct, Math.round((item.p / dailyMax) * 100));
                 const h = (item.f / 60).toFixed(1);
+                const tipText = `${item.label} · 专注 ${h} 小时 · 暂停 ${duration(item.p * MINUTE)}`;
+                const showStep =
+                  dailyBars.length <= 10 ||
+                  idx === 0 ||
+                  idx === dailyBars.length - 1 ||
+                  idx % Math.ceil(dailyBars.length / 7) === 0;
                 return (
-                  <div key={idx} className="bar-col">
-                    <div className="bar-track" style={{ maxWidth: '32px' }}>
+                  <div
+                    key={idx}
+                    className="bar-col"
+                    tabIndex={item.f > 0 || item.p > 0 ? 0 : undefined}
+                    aria-label={item.f > 0 || item.p > 0 ? tipText : undefined}
+                  >
+                    <div className="bar-track is-daily">
                       <div className="bar-seg-focus" style={{ height: `${fPct}%` }} />
-                      <div className="bar-seg-pause" style={{ height: `${pPct}%` }} />
+                      {pPct > 0 && <div className="bar-seg-pause" style={{ height: `${pPct}%` }} />}
                     </div>
-                    <div className="bar-time-lbl">{item.label}</div>
-                    <div className="bar-hover-tip">
-                      {item.label} · 专注 {h} 小时 · 暂停 {duration(item.p * MINUTE)}
-                    </div>
+                    <div className="bar-time-lbl">{showStep ? item.label : ''}</div>
+                    <div className="bar-hover-tip">{tipText}</div>
                   </div>
                 );
               })}
@@ -546,23 +603,25 @@ function RhythmChartCard({
           {PERIOD_CONFIG.map((p, idx) => {
             const isActive = activePeriod === idx;
             const focusMs = periodFocusMs[idx] ?? 0;
+            const sharePct =
+              totalPeriodFocusMs > 0 ? Math.round((focusMs / totalPeriodFocusMs) * 100) : 0;
             return (
-              <div
+              <button
+                type="button"
                 key={idx}
                 className={`period-cap-card ${isActive ? 'active' : ''}`}
+                aria-pressed={isActive}
                 onClick={() => onPeriodClick?.(idx)}
               >
                 <div className="period-cap-head">
                   <span>{p.name}</span>
                   <span>{p.range}</span>
                 </div>
-                <div
-                  className="period-cap-val"
-                  style={isActive ? { color: 'var(--accent)' } : undefined}
-                >
-                  {duration(focusMs)}
-                </div>
-              </div>
+                <div className="period-cap-val">{duration(focusMs)}</div>
+                <span className="period-cap-meter" aria-hidden="true">
+                  <i style={{ width: `${sharePct}%` }} />
+                </span>
+              </button>
             );
           })}
         </div>
@@ -628,14 +687,14 @@ function DonutAllocationCard({
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              style={{ width: '15px', height: '15px', color: 'var(--accent)' }}
+              className="section-head-icon"
             >
               <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
               <path d="M22 12A10 10 0 0 0 12 2v10z" />
             </svg>
             清单分类投入占比
           </h3>
-          <p>掌握不同清单的时间分配与精力沉淀</p>
+          <p>按有效专注时长统计的任务投入分布</p>
         </div>
       </div>
 
@@ -664,7 +723,7 @@ function DonutAllocationCard({
                   r="38"
                   fill="transparent"
                   stroke={seg.color}
-                  strokeWidth="11"
+                  strokeWidth={hoveredItem?.name === seg.title ? '13' : '11'}
                   strokeDasharray={seg.strokeDasharray}
                   strokeDashoffset={seg.strokeDashoffset}
                   onMouseEnter={() =>
@@ -675,7 +734,10 @@ function DonutAllocationCard({
                     })
                   }
                   onMouseLeave={() => setHoveredItem(null)}
-                  style={{ transition: 'all .2s ease', cursor: 'pointer' }}
+                  style={{
+                    transition: 'stroke-width .16s ease, opacity .16s ease',
+                    cursor: 'pointer',
+                  }}
                 />
               ))}
             </svg>
@@ -691,42 +753,44 @@ function DonutAllocationCard({
         </div>
 
         <div className="alloc-list">
-          {categories.map((c) => {
-            const isHovered = hoveredItem && hoveredItem.name === c.title;
-            const isDimmed = hoveredItem && !isHovered;
-            return (
-              <div
-                className="alloc-row"
-                key={c.key}
-                onMouseEnter={() =>
-                  setHoveredItem({ name: c.title, dur: duration(c.activeMs), pct: `${c.share}%` })
-                }
-                onMouseLeave={() => setHoveredItem(null)}
-                style={{
-                  opacity: isDimmed ? 0.45 : 1,
-                  transform: isHovered ? 'translateY(-1px) translateX(2px)' : undefined,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <div className="alloc-row-main">
-                  <div className="alloc-left">
-                    <span className="alloc-color-dot" style={{ background: c.color }} />
-                    <span title={c.title}>{c.title}</span>
+          {categories.length === 0 ? (
+            <div className="dashboard-empty-hint">当前范围暂无专注分类记录</div>
+          ) : (
+            categories.map((c) => {
+              const isHovered = hoveredItem && hoveredItem.name === c.title;
+              const isDimmed = hoveredItem && !isHovered;
+              return (
+                <div
+                  className={`alloc-row ${isHovered ? 'is-hovered' : ''}`}
+                  key={c.key}
+                  onMouseEnter={() =>
+                    setHoveredItem({ name: c.title, dur: duration(c.activeMs), pct: `${c.share}%` })
+                  }
+                  onMouseLeave={() => setHoveredItem(null)}
+                  style={{ opacity: isDimmed ? 0.48 : 1 }}
+                >
+                  <div className="alloc-row-main">
+                    <div className="alloc-left">
+                      <span className="alloc-color-dot" style={{ background: c.color }} />
+                      <span className="alloc-name" title={c.title}>
+                        {c.title}
+                      </span>
+                    </div>
+                    <div className="alloc-right">
+                      <span className="alloc-dur">{duration(c.activeMs)}</span>
+                      <span className="alloc-pct-tag">{c.share}%</span>
+                    </div>
                   </div>
-                  <div className="alloc-right">
-                    <span className="alloc-dur">{duration(c.activeMs)}</span>
-                    <span className="alloc-pct-tag">{c.share}%</span>
+                  <div className="alloc-micro-bar-track">
+                    <div
+                      className="alloc-micro-bar-fill"
+                      style={{ width: `${c.share}%`, background: c.color }}
+                    />
                   </div>
                 </div>
-                <div className="alloc-micro-bar-track">
-                  <div
-                    className="alloc-micro-bar-fill"
-                    style={{ width: `${c.share}%`, background: c.color }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
     </>
@@ -762,7 +826,7 @@ function TopTasksLeaderboard({
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              style={{ width: '15px', height: '15px', color: 'var(--accent)' }}
+              className="section-head-icon"
             >
               <line x1="18" y1="20" x2="18" y2="10" />
               <line x1="12" y1="20" x2="12" y2="4" />
@@ -770,55 +834,48 @@ function TopTasksLeaderboard({
             </svg>
             重点任务专注排行
           </h3>
-          <p>周期内投入精力最多的关键事务 · 相对时长可视化</p>
+          <p>按有效专注时长排序 · 点击可定位到对应会话</p>
         </div>
       </div>
 
       <div className="leaderboard-container">
-        {topTasks.map((task, idx) => {
-          const rankNum = String(idx + 1).padStart(2, '0');
-          const pct = Math.round((task.activeMs / maxMs) * 100);
-          const isSelected = hoveredIndex === idx;
+        {topTasks.length === 0 ? (
+          <div className="dashboard-empty-hint">
+            {keyword ? '未匹配到包含该关键词的任务记录' : '当前范围暂无专注任务记录'}
+          </div>
+        ) : (
+          topTasks.map((task, idx) => {
+            const rankNum = String(idx + 1).padStart(2, '0');
+            const pct = Math.round((task.activeMs / maxMs) * 100);
+            const isSelected = hoveredIndex === idx;
 
-          return (
-            <div
-              className="task-rank-card"
-              key={task.key}
-              onClick={() => onTaskSelect?.(task.taskId, task.title)}
-              onMouseEnter={() => onTaskHover?.(idx)}
-              onMouseLeave={() => onTaskHover?.(null)}
-              style={
-                isSelected
-                  ? {
-                      borderColor: 'var(--accent)',
-                      boxShadow: '0 0 0 1px var(--accent), 0 4px 14px var(--accent-soft)',
-                    }
-                  : undefined
-              }
-            >
-              <div className="tr-top-row">
-                <div className="tr-left">
-                  <span className="tr-rank-num">{rankNum}</span>
-                  <span className="tr-title" title={task.title}>
-                    {task.title}
-                  </span>
-                  {/* 2026-10-01 修复：这里原本写死 <span className="tr-cat-pill">工作任务</span>，
-                      于是每一行排行卡都顶着同一个假分类。DayLedgerTask 目前没有分类字段，
-                      所以不渲染这个标签，而不是编一个出来。 */}
+            return (
+              <button
+                type="button"
+                className={`task-rank-card ${isSelected ? 'is-selected' : ''}`}
+                key={task.key}
+                onClick={() => onTaskSelect?.(task.taskId, task.title)}
+                onMouseEnter={() => onTaskHover?.(idx)}
+                onMouseLeave={() => onTaskHover?.(null)}
+              >
+                <div className="tr-top-row">
+                  <div className="tr-left">
+                    <span className="tr-rank-num">{rankNum}</span>
+                    <span className="tr-title" title={task.title}>
+                      {task.title}
+                    </span>
+                  </div>
+                  <div className="tr-right">
+                    <span className="tr-time">{duration(task.activeMs)}</span>
+                  </div>
                 </div>
-                <div className="tr-right">
-                  <span className="tr-time">{duration(task.activeMs)}</span>
+                <div className="tr-bar-track">
+                  <div className="tr-bar-fill" style={{ width: `${pct}%` }} />
                 </div>
-              </div>
-              <div className="tr-bar-track">
-                <div
-                  className="tr-bar-fill"
-                  style={{ width: `${pct}%`, background: 'var(--accent)' }}
-                />
-              </div>
-            </div>
-          );
-        })}
+              </button>
+            );
+          })
+        )}
       </div>
     </>
   );
@@ -901,7 +958,7 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              style={{ width: '15px', height: '15px', color: 'var(--accent)' }}
+              className="section-head-icon"
             >
               <rect x="3" y="3" width="7" height="7" />
               <rect x="14" y="3" width="7" height="7" />
@@ -910,18 +967,16 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
             </svg>
             每日记录
           </h3>
-          <p>最近 168 天的专注记录</p>
+          <p>最近 168 天的专注密度记录</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="hm-legend-row">
-            <span>较少</span>
-            <div className="hm-leg-box" style={{ background: 'var(--heatmap-0)' }} />
-            <div className="hm-leg-box" style={{ background: 'var(--heatmap-1)' }} />
-            <div className="hm-leg-box" style={{ background: 'var(--heatmap-2)' }} />
-            <div className="hm-leg-box" style={{ background: 'var(--heatmap-3)' }} />
-            <div className="hm-leg-box" style={{ background: 'var(--heatmap-4)' }} />
-            <span>充沛</span>
-          </div>
+        <div className="hm-legend-row">
+          <span>较少</span>
+          <div className="hm-leg-box" style={{ background: 'var(--heatmap-0)' }} />
+          <div className="hm-leg-box" style={{ background: 'var(--heatmap-1)' }} />
+          <div className="hm-leg-box" style={{ background: 'var(--heatmap-2)' }} />
+          <div className="hm-leg-box" style={{ background: 'var(--heatmap-3)' }} />
+          <div className="hm-leg-box" style={{ background: 'var(--heatmap-4)' }} />
+          <span>充沛</span>
         </div>
       </div>
 
@@ -934,22 +989,13 @@ function FlowHeatmapCard({ daily }: { daily: SessionAnalyticsDaily[] }) {
         </div>
         <div className="heatmap-strip-wrap" id="heatmapStrip">
           {matrix.map((col, cIdx) => (
-            <div
-              className="hm-col"
-              key={cIdx}
-              style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}
-            >
+            <div className="hm-col" key={cIdx}>
               {col.map((cell) => (
                 <div
                   key={cell.date}
                   className="hm-box"
                   style={{
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '2px',
                     background: `var(--heatmap-${cell.level})`,
-                    transition: 'transform 0.15s ease',
-                    cursor: 'pointer',
                     visibility: cell.outside ? 'hidden' : undefined,
                   }}
                   data-future={cell.future ? 'true' : undefined}

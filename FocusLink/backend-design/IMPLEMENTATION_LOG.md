@@ -1,5 +1,40 @@
 # FocusLink 实施日志
 
+## 2026-11-25 · `FL-UI-20261125-STATS-DASHBOARD-RESKIN`：PC 统计看板重设成台账，骨架屏契约偶发红灯（v1.11.5）
+
+**结论**
+
+统计页此前是一套「后台仪表盘」外观：四格描边 KPI、满宽进度条排行、紫蓝渐变环、默认图表色板、半张空着的热力图，跟任务页不是一套语言。本轮把看板改成纸质台账的排版（发丝线分行、数字与单位分开、分类色走主题令牌），并修掉 `smoke:stats` 里一条跟 React 提交时机赛跑的断言。状态：进行中（等 Windows 装机回读）。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | 骨架屏不是被删：`SKELETON_DELAY_MS = 140`，骨架只在等待窗口之后才上屏 | `FocusLink/src/features/tasks/TaskWorkspace.tsx:36`、`:443` | 实测 |
+| ② | `smoke:stats` 在 showTasks() 后只等 150ms 就断言 `.task-loading-list` 存在，10ms 余量取决于 React 何时提交 | `FocusLink/scripts/regression/stats-responsive-smoke.cjs:410`、`:412`（修改前为 150ms） | 实测 |
+| ③ | 采样改 320ms 后 `npm run smoke:stats` exit 0，13 条断言全 PASS | 命令输出（6 档尺寸无横向溢出 / 账本删除 / 子任务排序 / 骨架屏快照 / 删除确认） | 实测 |
+| ④ | 右栏「会话时间账本被盖住」是误判：`.session-card-stream` 在 38% 高度处正常滚动裁切，不是两层卡片重叠 | `FocusLink/src/styles/stats-workbench.css`（.session-card-stream） | 实测 |
+| ⑤ | 环形图与侧栏分类点共用 `ALLOCATION_COLORS`，原为六只写死 Tailwind 图表色（#2563EB/#6366F1/#10B981/#F59E0B/#94A3B8/#CBD5E1），换色彩基调不跟随 | `FocusLink/src/features/history/statsLedgerModel.tsx:11` | 实测 |
+| ⑥ | 色板改为主题令牌 `--alloc-1..6`（强调色三阶 + 暖沙 + 两级中性灰），环形图/侧栏色点/占比条同源 | `FocusLink/src/styles/stats-workbench.css:63`；`statsLedgerModel.tsx:11` | 实测 |
+| ⑦ | Hero 时长按「数字/单位」分开排版（`DurationText`），四格 KPI 从描边小盒改成一条发丝线台账 | `FocusLink/src/features/history/HistoryInsights.tsx:43`、`:294` | 实测 |
+| ⑧ | 排行与占比行去掉逐行描边盒子；热力矩阵改 grid 按卡片宽度均分，实测方块 32.03px、矩阵高 258px（改前 13px 列挤在左侧约 400px） | `FocusLink/src/styles/stats-workbench.css:1634`、`:1783` | 实测 |
+| ⑨ | 暗色以 `html.classList 'dark'` + `.stats-page[data-theme]` 为准；实测该态 `--accent`=rgb(83 185 202)，侧栏读数与环形图同色（只改 documentElement.dataset.theme 无效） | `FocusLink/src/app/App.tsx:464`、`FocusLink/src/features/history/HistoryPanel.tsx:680`；CDP 探针输出 | 实测 |
+| ⑩ | 门禁：format:check / typecheck / lint exit 0；`npm test` 186 文件 1,611 用例全绿 | 命令输出 | 实测 |
+
+**问题**
+
+P1 骨架屏契约与实现之间存在 10ms 采样竞态 — 任何机器负载波动都会让 smoke:stats 红灯，并掩盖真正的回归 — 事实①②  
+P2 分类色板与主题脱钩 — 换色彩基调后环形图仍是默认图表色，与侧栏色点也对不上 — 事实⑤  
+P2 看板右栏被读成「卡片被盖住」 — 实际是 38% 高度裁切，但缺少视觉提示，用户会以为内容丢了 — 事实④  
+
+**处置**
+
+看板整体换成台账排版：Hero 用衬线数字 + 小号单位分层；四格 KPI 合成一条带上发丝线；排行与占比各成一行、靠分隔线分层，进度条压到 2px 并把轨道做实；柱体的暂停损耗从 135° 斜纹改半透明纯色（斜纹在柱宽下糊成噪点），45 分钟参考线与坐标刻度去强调色；分类色板从写死图表色改成 `--alloc-1..6` 令牌，换主题时环形图、侧栏色点、占比条一起变；热力矩阵从固定 13px 改成 grid 均分并按卡片宽度等比放大。骨架屏这条不改实现：等待窗口是产品行为（避免冷启动闪骨架），改的是采样时机，并在脚本里写明 140ms 的因果关系。
+
+**门禁**
+
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；`npm run smoke:stats` 13 条断言全 PASS；1600×1000 明暗两套截图（`FocusLink/.tmp/shots/`）逐张核对。Windows 装机回读待本轮打包后补。
+
 ## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-PAUSE-OVERLAP`：本机会话接入实时后，云端把暂停算成专注（v1.11.4）
 
 **结论**

@@ -146,8 +146,8 @@ function StatsSidebarImpl({
 
       <div className="sidebar-footer">
         <div className="sidebar-user-pill">
-          <div className="user-avatar-mini">FL</div>
-          <span>专注统计</span>
+          <span className="sidebar-foot-dot" aria-hidden="true" />
+          <span>按自然日裁切统计</span>
         </div>
       </div>
     </aside>

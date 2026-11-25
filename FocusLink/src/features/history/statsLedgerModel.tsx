@@ -7,14 +7,19 @@ import { buildDashboardTaskAllocation } from '@shared/dashboardPresentation';
 export const HEATMAP_WEEKS = 24;
 export const HEATMAP_WINDOW_DAYS = HEATMAP_WEEKS * 7;
 
-/** 环形图与侧栏清单分类共用的调色板：两侧色点必须同色，否则用户无法把侧栏与卡贴三对上。 */
+/** 环形图与侧栏清单分类共用的调色板：两侧色点必须同色，否则用户无法把侧栏与卡贴三对上。
+ *
+ * v1.11.5 起不再写死六只 Tailwind 图表色。原来的蓝/靛/绿/橙/灰并排放进环形图，
+ * 读起来就是一张默认图表模板，而且换色彩基调后它不会跟着走。
+ * 现在取主题令牌：同一块强调色的深浅阶 + 一个暖沙色 + 两级中性灰，
+ * 换调色板时环形图与侧栏色点一起变，仍是同一份数据。 */
 export const ALLOCATION_COLORS = [
-  '#2563EB',
-  '#6366F1',
-  '#10B981',
-  '#F59E0B',
-  '#94A3B8',
-  '#CBD5E1',
+  'var(--alloc-1)',
+  'var(--alloc-2)',
+  'var(--alloc-3)',
+  'var(--alloc-4)',
+  'var(--alloc-5)',
+  'var(--alloc-6)',
 ] as const;
 
 /**

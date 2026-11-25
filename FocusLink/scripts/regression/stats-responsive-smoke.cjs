@@ -405,7 +405,9 @@ async function main() {
     });
     await cdp.evaluate('window.slowRefresh=700;window.resetTaskWorkspace()');
     await cdp.evaluate('window.showTasks()');
-    await delay(150);
+    // TaskWorkspace 的骨架要等过 SKELETON_DELAY_MS(140ms) 才上屏，避免快载入时闪一下。
+    // 这里等满等待窗口再断言，否则 150ms 的边界会跟 React 提交时机赛跑。
+    await delay(320);
     assert.equal(
       await cdp.evaluate(`!!document.querySelector('.task-loading-list')`),
       true,

@@ -670,6 +670,9 @@ export function HistoryPanel() {
     [projectFilter, sidebarCategories],
   );
 
+  const todayStart = getDayRange(Date.now()).start;
+  const isViewingToday = curRange === 'today' && getDayRange(dayCursor).start === todayStart;
+
   return (
     <div
       className="stats-page app-window"
@@ -682,12 +685,14 @@ export function HistoryPanel() {
       onClick={() => setMenuOpen(false)}
       data-ledger-open={ledgerOpen}
     >
-      {/* 1. 42px 沉浸式标题栏 (100% 对齐任务页) */}
+      {/* 1. 42px 沉浸式标题栏 (对齐任务页外壳) */}
       <header className="app-titlebar">
         <div className="titlebar-left">
           <div className="app-brand">
-            <div className="app-brand-badge">FL</div>
-            <span>FocusLink</span>
+            <div className="app-brand-badge" aria-hidden="true">
+              FL
+            </div>
+            <span>时间看板</span>
           </div>
         </div>
 
@@ -745,22 +750,24 @@ export function HistoryPanel() {
         <main className="stats-paper">
           <div className="list-toolbar">
             <div className="list-title-group">
-              <h2 id="activeViewTitle">{activeViewTitle}</h2>
+              <div className="list-title-row">
+                <h2 id="activeViewTitle">{activeViewTitle}</h2>
+                {activeCategoryLabel ? (
+                  <button
+                    type="button"
+                    className="scope-chip"
+                    id="activeCategoryChip"
+                    title={`当前只统计「${activeCategoryLabel}」，点这里回到全部分类`}
+                    onClick={() => setProjectFilter('all')}
+                  >
+                    分类：{activeCategoryLabel}
+                    <span aria-hidden="true">✕</span>
+                  </button>
+                ) : null}
+              </div>
               <span className="list-stats-text" id="activeViewStats">
                 {activeViewStats}
               </span>
-              {activeCategoryLabel ? (
-                <button
-                  type="button"
-                  className="scope-chip"
-                  id="activeCategoryChip"
-                  title={`当前只统计「${activeCategoryLabel}」，点这里回到全部分类`}
-                  onClick={() => setProjectFilter('all')}
-                >
-                  分类：{activeCategoryLabel}
-                  <span aria-hidden="true">✕</span>
-                </button>
-              ) : null}
             </div>
 
             <div className="list-toolbar-actions">
@@ -772,32 +779,47 @@ export function HistoryPanel() {
               >
                 会话账本 · {filteredSessions.length}
               </button>
+              <div className="date-stepper-group" role="group" aria-label="单日切换">
+                <button
+                  type="button"
+                  disabled={curRange !== 'today'}
+                  className="btn-tool"
+                  onClick={() => handleStepDate(-1)}
+                  title="前一天"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                  前一天
+                </button>
+                {curRange === 'today' && !isViewingToday && (
+                  <button
+                    type="button"
+                    className="btn-tool"
+                    onClick={() => {
+                      playWebAudioChime('click');
+                      setDayCursor(Date.now());
+                    }}
+                    title="回到今天"
+                  >
+                    今天
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={curRange !== 'today' || isViewingToday}
+                  className="btn-tool"
+                  onClick={() => handleStepDate(1)}
+                  title="后一天"
+                >
+                  后一天
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              </div>
               <button
-                disabled={curRange !== 'today'}
-                className="btn-tool"
-                onClick={() => handleStepDate(-1)}
-                title="前一天"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
-                前一天
-              </button>
-              <button
-                disabled={
-                  curRange !== 'today' ||
-                  getDayRange(dayCursor).start >= getDayRange(Date.now()).start
-                }
-                className="btn-tool"
-                onClick={() => handleStepDate(1)}
-                title="后一天"
-              >
-                后一天
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-              <button
+                type="button"
                 disabled={!viewAnalytics}
                 className="btn-tool"
                 onClick={handleExportDataReport}

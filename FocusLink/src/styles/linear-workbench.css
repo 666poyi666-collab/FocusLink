@@ -13,6 +13,20 @@
   overflow: hidden;
   background: rgb(var(--app-bg));
 }
+.app-shell *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.app-shell *::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app-shell *::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: rgb(var(--app-text) / 0.14);
+}
+.app-shell *::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--app-text) / 0.26);
+}
 .app-shell::after {
   display: none;
 }
@@ -58,6 +72,9 @@
   border-radius: 0;
   background: transparent;
   color: rgb(var(--app-muted));
+  transition:
+    background var(--motion-fast),
+    color var(--motion-fast);
 }
 .window-controls button:hover {
   background: rgb(var(--app-surface-2));
@@ -3780,8 +3797,12 @@ button.stats-ledger-block:focus-visible {
   flex-direction: column;
   padding: 12px 14px;
   border: 1px solid rgb(var(--app-border));
+  border-radius: var(--radius-md);
   background: rgb(var(--app-surface) / 0.48);
   text-align: left;
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast);
 }
 .instrument-choice:hover {
   background: rgb(var(--app-surface-2));
