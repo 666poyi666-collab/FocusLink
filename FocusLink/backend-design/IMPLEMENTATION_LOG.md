@@ -4,7 +4,7 @@
 
 **结论**
 
-统计页此前是一套「后台仪表盘」外观：四格描边 KPI、满宽进度条排行、紫蓝渐变环、默认图表色板、半张空着的热力图，跟任务页不是一套语言。本轮把看板改成纸质台账的排版（发丝线分行、数字与单位分开、分类色走主题令牌），并修掉 `smoke:stats` 里一条跟 React 提交时机赛跑的断言。状态：进行中（等 Windows 装机回读）。
+统计页此前是一套「后台仪表盘」外观：四格描边 KPI、满宽进度条排行、紫蓝渐变环、默认图表色板、半张空着的热力图，跟任务页不是一套语言。本轮把看板改成纸质台账的排版（发丝线分行、数字与单位分开、分类色走主题令牌），并修掉 `smoke:stats` 里一条跟 React 提交时机赛跑的断言。状态：已完成（Windows 静默覆盖安装并回读 1.11.5）。
 
 **事实**
 
@@ -33,7 +33,36 @@ P2 看板右栏被读成「卡片被盖住」 — 实际是 38% 高度裁切，�
 
 **门禁**
 
-format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；`npm run smoke:stats` 13 条断言全 PASS；1600×1000 明暗两套截图（`FocusLink/.tmp/shots/`）逐张核对。Windows 装机回读待本轮打包后补。
+format:check / typecheck / lint exit 0；`npm test` 186 文件 / 1,611 用例全绿；`npm run smoke:stats` 13 条断言全 PASS；1600×1000 明暗两套截图（`FocusLink/.tmp/shots/`）逐张核对。`npm run dist` exit 0，安装包与便携版从提交 `9af8d97` 的干净工作区构建；`npm run release:verify` 21/21。Windows `/S` 静默覆盖安装后卸载注册表回读 `DisplayVersion=1.11.5`、已安装 `FocusLink.exe` `FileVersion=1.11.5`；`smoke:window-visible:launch` 通过（pid 52068、窗口 handle 196744、4,225ms），实例已回收，随后重新拉起 pid 52104 主窗口「FocusLink」；安装包 asar 内可检索到 `--alloc-1` / `hero-time-massive` / `dur-num`，确认装的是重设后的构建。Android 仅同步 `versionName=1.11.5` / `versionCode=1390`，不装机。
+
+## 2026-11-25 · `FL-INSTALL-20261125-SILENT-LAUNCH`：静默安装与重新拉起会「假成功」（v1.11.5）
+
+**结论**
+
+本轮在 DSH shell 里做 Windows 静默覆盖安装和重新拉起，两次遇到「命令返回了、应用没起来」的假成功：`Start-Process ... -Wait` 会一直挂住不返回，`cmd /c start` 在 `ELECTRON_RUN_AS_NODE=1` 的父进程里会把 Electron 应用当 Node 跑、进程直接退出。状态：已完成（两个坑都落到具体调用方式和环境变量，读回口径已固定）。
+
+**事实**
+
+| 序号 | 事实 | 证据位置 | 证据类型 |
+| --- | --- | --- | --- |
+| ① | `Start-Process <installer> -Wait` 两次都挂到工具超时，而安装其实已经完成；换 `cmd /c start "" "<installer>" /S` 后调用立即返回 | 本轮 job 超时输出与后续注册表回读 | 实测 |
+| ② | 静默安装后用注册表 DisplayVersion 与已安装 exe 的 FileVersion 双读回，比等待安装器退出码可靠 | `HKCU\...\Uninstall` 卸载项；`%LOCALAPPDATA%\Programs\FocusLink\FocusLink.exe` 版本信息 | 实测 |
+| ③ | 本 shell 里 `ELECTRON_RUN_AS_NODE=1`；此时拉起已安装 FocusLink.exe 后 1.2s 与 6s 的进程数都是 0，无窗口、无新日志 | `echo $env:ELECTRON_RUN_AS_NODE`；`Get-Process FocusLink` 轮询 | 实测 |
+| ④ | 清掉该变量后同一命令拉起成功：pid 52104、MainWindowTitle「FocusLink」、共 5 个进程 | `Get-Process FocusLink` 输出 | 实测 |
+| ⑤ | 仓库拉起脚本本来就清这个变量并打印「ELECTRON_RUN_AS_NODE 已清理」，本轮 smoke 因此通过（pid 52068、窗口 handle 196744、4,225ms、实例已回收） | `FocusLink/scripts/smoke/launch-and-verify-main-window.cjs`；smoke 输出 | 实测 |
+
+**问题**
+
+P1 从带 `ELECTRON_RUN_AS_NODE=1` 的父进程手工拉起已安装应用会静默退出 — 装机后「重新拉起」这一步会被当成成功，用户桌面上其实没有窗口 — 事实③④  
+P2 `Start-Process -Wait` 等安装器会挂死调用方 — 自动化门禁容易把「已经装好了」读成「命令失败」 — 事实①  
+
+**处置**
+
+静默安装不等待：用 `cmd /c start "" "<installer>" /S`，装完只认注册表 DisplayVersion + exe FileVersion + 一次 `smoke:window-visible:launch`。手工拉起前先 `Remove-Item Env:ELECTRON_RUN_AS_NODE`，或直接让 smoke 脚本清理。两条环境相关的判断以后不再靠「命令有没有报错」。
+
+**门禁**
+
+本轮按此执行：`npm run dist` exit 0；`release:verify` 21/21；卸载项 DisplayVersion=1.11.5；已安装 exe FileVersion=1.11.5；`smoke:window-visible:launch` 通过并回收实例；随后重新拉起 pid 52104、主窗口「FocusLink」。Android 只同步 `versionName=1.11.5` / `versionCode=1390`，不装机。
 
 ## 2026-11-24 · `FL-SYNC-20261124-LIVE-ADOPT-PAUSE-OVERLAP`：本机会话接入实时后，云端把暂停算成专注（v1.11.4）
 
